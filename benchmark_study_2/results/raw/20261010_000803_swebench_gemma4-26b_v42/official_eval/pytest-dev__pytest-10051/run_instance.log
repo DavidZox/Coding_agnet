@@ -1,0 +1,48 @@
+2026-10-10 00:58:22,655 - INFO - Creating container for pytest-dev__pytest-10051...
+2026-10-10 00:58:23,506 - INFO - Container for pytest-dev__pytest-10051 created: 8631b33ec6df2c3933cd2718e29edea756e88eb0dd496951d1ff0091c554e146
+2026-10-10 00:58:24,219 - INFO - Container for pytest-dev__pytest-10051 started: 8631b33ec6df2c3933cd2718e29edea756e88eb0dd496951d1ff0091c554e146
+2026-10-10 00:58:24,219 - INFO - Intermediate patch for pytest-dev__pytest-10051 written to logs/run_evaluation/20261010_000803_swebench_gemma4-26b_v42/gemma4-26b_v42/pytest-dev__pytest-10051/patch.diff, now applying to container...
+2026-10-10 00:58:24,258 - INFO - >>>>> Applied Patch:
+Checking patch src/_pytest/logging.py...
+Checking patch tests/test_caplog_issue.py...
+Applied patch src/_pytest/logging.py cleanly.
+Applied patch tests/test_caplog_issue.py cleanly.
+
+2026-10-10 00:58:24,304 - INFO - Git diff before:
+diff --git a/src/_pytest/logging.py b/src/_pytest/logging.py
+index a4f4214b1..b60465cb4 100644
+--- a/src/_pytest/logging.py
++++ b/src/_pytest/logging.py
+@@ -342,7 +342,7 @@ class LogCaptureHandler(logging_StreamHandler):
+         super().emit(record)
+ 
+     def reset(self) -> None:
+-        self.records = []
++        self.records.clear()
+         self.stream = StringIO()
+ 
+     def handleError(self, record: logging.LogRecord) -> None:
+2026-10-10 00:58:24,305 - INFO - Eval script for pytest-dev__pytest-10051 written to logs/run_evaluation/20261010_000803_swebench_gemma4-26b_v42/gemma4-26b_v42/pytest-dev__pytest-10051/eval.sh; copying to container...
+2026-10-10 00:58:30,488 - INFO - Test runtime: 6.17 seconds
+2026-10-10 00:58:30,489 - INFO - Test output for pytest-dev__pytest-10051 written to logs/run_evaluation/20261010_000803_swebench_gemma4-26b_v42/gemma4-26b_v42/pytest-dev__pytest-10051/test_output.txt
+2026-10-10 00:58:30,508 - INFO - Git diff after:
+diff --git a/src/_pytest/logging.py b/src/_pytest/logging.py
+index a4f4214b1..b60465cb4 100644
+--- a/src/_pytest/logging.py
++++ b/src/_pytest/logging.py
+@@ -342,7 +342,7 @@ class LogCaptureHandler(logging_StreamHandler):
+         super().emit(record)
+ 
+     def reset(self) -> None:
+-        self.records = []
++        self.records.clear()
+         self.stream = StringIO()
+ 
+     def handleError(self, record: logging.LogRecord) -> None:
+2026-10-10 00:58:30,508 - INFO - Grading answer for pytest-dev__pytest-10051...
+2026-10-10 00:58:30,509 - INFO - report: {'pytest-dev__pytest-10051': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'infra_failure': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['testing/logging/test_fixture.py::test_clear_for_call_stage']}, 'PASS_TO_PASS': {'success': ['testing/logging/test_fixture.py::test_change_level', 'testing/logging/test_fixture.py::test_with_statement', 'testing/logging/test_fixture.py::test_log_access', 'testing/logging/test_fixture.py::test_messages', 'testing/logging/test_fixture.py::test_record_tuples', 'testing/logging/test_fixture.py::test_unicode', 'testing/logging/test_fixture.py::test_clear', 'testing/logging/test_fixture.py::test_fixture_help', 'testing/logging/test_fixture.py::test_change_level_undo', 'testing/logging/test_fixture.py::test_change_level_undos_handler_level', 'testing/logging/test_fixture.py::test_ini_controls_global_log_level', 'testing/logging/test_fixture.py::test_caplog_can_override_global_log_level', 'testing/logging/test_fixture.py::test_caplog_captures_despite_exception', 'testing/logging/test_fixture.py::test_log_report_captures_according_to_config_option_upon_failure'], 'failure': ['testing/logging/test_fixture.py::test_caplog_captures_for_all_stages']}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for pytest-dev__pytest-10051: resolved: False
+2026-10-10 00:58:30,509 - INFO - Attempting to stop container sweb.eval.pytest-dev__pytest-10051.20261010_000803_swebench_gemma4-26b_v42...
+2026-10-10 00:58:48,046 - INFO - Container sweb.eval.pytest-dev__pytest-10051.20261010_000803_swebench_gemma4-26b_v42 stopped successfully.
+2026-10-10 00:58:48,046 - INFO - Attempting to remove container sweb.eval.pytest-dev__pytest-10051.20261010_000803_swebench_gemma4-26b_v42...
+2026-10-10 00:58:48,258 - INFO - Container sweb.eval.pytest-dev__pytest-10051.20261010_000803_swebench_gemma4-26b_v42 removed successfully.

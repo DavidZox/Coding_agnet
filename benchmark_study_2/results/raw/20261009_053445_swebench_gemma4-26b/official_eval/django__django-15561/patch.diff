@@ -1,0 +1,192 @@
+diff --git a/django/db/backends/sqlite3/schema.py b/django/db/backends/sqlite3/schema.py
+index b3a2f4282b..54a8fe3e42 100644
+--- a/django/db/backends/sqlite3/schema.py
++++ b/django/db/backends/sqlite3/schema.py
+@@ -120,9 +120,57 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
+         else:
+             super().alter_db_table(model, old_db_table, new_db_table)
+ 
++    def _field_should_be_altered(self, old_field, new_field):
++        """
++        Return True if the field should be altered.
++        """
++        old_deconstruct = old_field.deconstruct()
++        new_deconstruct = new_field.deconstruct()
++
++        if old_deconstruct == new_deconstruct:
++            return False
++
++        # Check if the column name changed.
++        if old_deconstruct[0] != new_deconstruct[0]:
++            return True
++
++        _, _, old_args, old_kwargs = old_deconstruct
++        _, _, new_args, new_kwargs = new_deconstruct
++
++        if old_args != new_args:
++            return True
++
++        # Remove attributes that don't affect the database schema.
++        old_kwargs = {k: v for k, v in old_kwargs.items() if k not in ("blank", "help_text", "choices")}
++        new_kwargs = {k: v for k, v in new_kwargs.items() if k not in ("blank", "help_text", "choices")}
++
++        return old_kwargs != new_kwargs
++
+     def alter_field(self, model, old_field, new_field, strict=False):
+         if not self._field_should_be_altered(old_field, new_field):
+             return
++
++        # If the only difference is choices, do nothing on SQLite.
++        if self.connection.vendor == 'sqlite':
++            old_deconstruct = old_field.deconstruct()
++            new_deconstruct = new_field.deconstruct()
++            _, _, old_args, old_kwargs = old_deconstruct
++            _, _, new_args, new_kwargs = new_deconstruct
++            if old_args == new_args and old_kwargs == new_kwargs:
++                # This case is already covered by _field_should_be_altered,
++                # but we check if the only difference is 'choices' in deconstruct.
++                pass
++            else:
++                # Check if the only difference is 'choices'
++                old_kwargs_no_choices = {
++                    k: v for k, v in old_kwargs.items() if k != "choices"
++                }
++                new_kwargs_no_choices = {
++                    k: v for k, v in new_kwargs.items() if k != "choices"
++                }
++                if old_args == new_args and old_kwargs_no_choices == new_kwargs_no_choices:
++                    return
++
+         old_field_name = old_field.name
+         table_name = model._meta.db_table
+         _, old_column_name = old_field.get_attname_column()
+diff --git a/tests/test_sqlite_choices_noop.py b/tests/test_sqlite_choices_noop.py
+new file mode 100644
+index 0000000000..157f6bb104
+--- /dev/null
++++ b/tests/test_sqlite_choices_noop.py
+@@ -0,0 +1,124 @@
++import django
++from django.conf import settings
++from django.db import connection, models, connections
++from django.db.migrations.executor import MigrationExecutor
++import os
++import sys
++import tempfile
++import shutil
++import unittest
++
++# Create temporary directory and app structure first
++tmpdir = tempfile.mkdtemp()
++sys.path.insert(0, tmpdir)
++
++app_dir = os.path.join(tmpdir, 'test_app')
++migrations_dir = os.path.join(app_dir, 'migrations')
++os.makedirs(migrations_dir)
++
++# Create __init__.py files
++with open(os.path.join(app_dir, '__init__.py'), 'w') as f:
++    f.write("")
++with open(os.path.join(migrations_dir, '__init__.py'), 'w') as f:
++    f.write("")
++
++# Create models.py
++with open(os.path.join(app_dir, 'models.py'), 'w') as f:
++    f.write("from django.db import models\n\n"
++            "class TestModel(models.Model):\n"
++            "    status = models.CharField(max_length=10, choices=[('A', 'Alpha'), ('B', 'Beta')])")
++
++# Create initial migration
++with open(os.path.join(migrations_dir, '0001_initial.py'), 'w') as f:
++    f.write("from django.db import migrations, models\n\n"
++            "class Migration(migrations.Migration):\n"
++            "    initial = True\n"
++            "    dependencies = []\n"
++            "    operations = [\n"
++            "        migrations.CreateModel(\n"
++            "            name='TestModel',\n"
++            "            fields=[\n"
++            "                ('id', models.AutoField(auto_created=True, primary_key=True, serialize=False)),\n"
++            "                ('status', models.CharField(choices=[('A', 'Alpha'), ('B', 'Beta')], max_length=10)),\n"
++            "            ],\n"
++            "        ),\n"
++            "    ]\n")
++
++# Create second migration (the one that changes choices)
++with open(os.path.join(migrations_dir, '0002_alter_status.py'), 'w') as f:
++    f.write("from django.db import migrations, models\n\n"
++            "class Migration(migrations.Migration):\n"
++            "    dependencies = [('test_app', '0001_initial')]\n"
++            "    operations = [\n"
++            "        migrations.AlterField(\n"
++            "            model_name='testmodel',\n"
++            "            name='status',\n"
++            "            field=models.CharField(choices=[('A', 'Alpha'), ('B', 'Beta'), ('C', 'Gamma')], max_length=10),\n"
++            "        ),\n"
++            "    ]\n")
++
++# Configure settings and setup Django
++if not settings.configured:
++    settings.configure(
++        DATABASES={
++            'default': {
++                'ENGINE': 'django.db.backends.sqlite3',
++                'NAME': os.path.join(tmpdir, 'test_db.sqlite3'),
++            }
++        },
++        INSTALLED_APPS=[
++            'django.contrib.contenttypes',
++            'django.contrib.auth',
++            'test_app',
++        ],
++        SECRET_KEY='test-secret-key',
++    )
++    django.setup()
++
++class SQLiteChoicesNoopTest(unittest.TestCase):
++    def setUp(self):
++        # Re-configure connections to ensure the settings are correctly applied
++        # and the database NAME is recognized.
++        connections.configure(
++            default={
++                'ENGINE': 'django.db.backends.sqlite3',
++                'NAME': os.path.join(tmpdir, 'test_db.sqlite3'),
++            }
++        )
++        # Manually manage connection for the test
++        self.connection = connection
++        # Ensure we are using a fresh connection for the test
++        self.connection.close()
++
++    def test_alter_field_choices_noop_on_sqlite(self):
++        """
++        Verify that changing choices on a CharField in SQLite does not trigger 
++        a table recreation (no CREATE TABLE or DROP TABLE in queries).
++        """
++        executor = MigrationExecutor(connection)
++        
++        # Run 0001_initial
++        executor.execute('test_app.0001_initial')
++        
++        # Clear query log to isolate the AlterField migration
++        connection.queries = []
++        
++        # Run 0002_alter_status
++        executor.execute('test_app.0002_alter_status')
++        
++        # Check queries
++        # If the issue exists, SQLite will perform a table recreation:
++        # CREATE TABLE, INSERT INTO, DROP TABLE, ALTER TABLE (rename)
++        for q in connection.queries:
++            sql = q['sql'].upper()
++            # If it's a no-op, there should be no "CREATE TABLE" or "DROP TABLE" 
++            # for the table being altered.
++            self.assertNotIn('CREATE TABLE', sql, f"Migration 0002 triggered table recreation: {sql}")
++            self.assertNotIn('DROP TABLE', sql, f"Migration 0002 triggered table recreation: {sql}")
++
++    def tearDown(self):
++        # Cleanup the temporary directory
++        try:
++            shutil.rmtree(tmpdir)
++        except Exception:
++            pass

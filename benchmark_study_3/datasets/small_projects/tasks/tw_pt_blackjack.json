@@ -1,0 +1,23 @@
+{
+ "id": "tw_pt_blackjack",
+ "family": "tw",
+ "source": "projecttest",
+ "repo": "blackjack",
+ "lang": "python",
+ "workspace": "workspaces/tw_pt_blackjack",
+ "task": "這個專案（blackjack）目前沒有任何測試，請幫我補上，最後我會看過才合併：\n1. 用 pytest 在 `tests/` 寫單元測試，涵蓋 `blackjack/base.py`、`blackjack/dealer.py`、`blackjack/game.py`、`blackjack/judger.py`、`blackjack/player.py` 裡的公開類別與函式，包含正常情況、邊界條件與錯誤處理。\n2. 測試要能在目前的程式上全部通過。不要修改正式程式；如果覺得程式本身有 bug，寫在回報裡就好。\n3. 完成後量測覆蓋率（行與分支），回報數字，並列出還沒涵蓋到、值得補測試的部分。",
+ "test_dir": "tests",
+ "prod_files": [
+  "blackjack/__init__.py",
+  "blackjack/base.py",
+  "blackjack/dealer.py",
+  "blackjack/game.py",
+  "blackjack/judger.py",
+  "blackjack/player.py"
+ ],
+ "cov_sources": [
+  "blackjack"
+ ],
+ "mutants": "mutants/pt_blackjack.json",
+ "python": "devbench_venv"
+}

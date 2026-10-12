@@ -1,0 +1,30 @@
+diff --git a/src/_pytest/logging.py b/src/_pytest/logging.py
+index a4f4214b1..25e43b5a4 100644
+--- a/src/_pytest/logging.py
++++ b/src/_pytest/logging.py
+@@ -441,6 +441,7 @@ class LogCaptureFixture:
+     def clear(self) -> None:
+         """Reset the list of log records and the captured log text."""
+         self.handler.reset()
++        self._item.stash[caplog_records_key] = {"setup": [], "call": [], "teardown": []}
+ 
+     def set_level(self, level: Union[int, str], logger: Optional[str] = None) -> None:
+         """Set the level of a logger for the duration of a test.
+diff --git a/tests/test_logging.py b/tests/test_logging.py
+new file mode 100644
+index 000000000..6de0b958c
+--- /dev/null
++++ b/tests/test_logging.py
+@@ -0,0 +1,12 @@
++import logging
++import pytest
++
++def test_caplog_clear_consistency(caplog):
++    def verify_consistency():
++        assert caplog.get_records("call") == caplog.records
++
++    verify_consistency()
++    logging.warning("test")
++    verify_consistency()
++    caplog.clear()
++    verify_consistency()  # should pass after fix

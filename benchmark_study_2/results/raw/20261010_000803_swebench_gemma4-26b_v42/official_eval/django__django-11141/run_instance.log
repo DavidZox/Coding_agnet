@@ -1,0 +1,129 @@
+2026-10-10 00:41:25,576 - INFO - Creating container for django__django-11141...
+2026-10-10 00:41:26,443 - INFO - Container for django__django-11141 created: aa134ec9bbcd37d7870ee8b2eb9479a5141ad27dca58e73d326856a612e6469a
+2026-10-10 00:41:27,165 - INFO - Container for django__django-11141 started: aa134ec9bbcd37d7870ee8b2eb9479a5141ad27dca58e73d326856a612e6469a
+2026-10-10 00:41:27,165 - INFO - Intermediate patch for django__django-11141 written to logs/run_evaluation/20261010_000803_swebench_gemma4-26b_v42/gemma4-26b_v42/django__django-11141/patch.diff, now applying to container...
+2026-10-10 00:41:27,211 - INFO - >>>>> Applied Patch:
+/tmp/patch.diff:100: trailing whitespace.
+        # To simulate a namespace package for the migrations, the app itself 
+/tmp/patch.diff:130: trailing whitespace.
+        
+Checking patch django/db/migrations/loader.py...
+Checking patch django/db/migrations/questioner.py...
+Checking patch tests/migrations/test_namespace_migrations.py...
+Applied patch django/db/migrations/loader.py cleanly.
+Applied patch django/db/migrations/questioner.py cleanly.
+Applied patch tests/migrations/test_namespace_migrations.py cleanly.
+warning: 2 lines add whitespace errors.
+
+2026-10-10 00:41:27,502 - INFO - Git diff before:
+diff --git a/django/db/migrations/loader.py b/django/db/migrations/loader.py
+index 8c308621d2..d075fcc5df 100644
+--- a/django/db/migrations/loader.py
++++ b/django/db/migrations/loader.py
+@@ -84,11 +84,6 @@ class MigrationLoader:
+                     continue
+                 raise
+             else:
+-                # Empty directories are namespaces.
+-                # getattr() needed on PY36 and older (replace w/attribute access).
+-                if getattr(module, '__file__', None) is None:
+-                    self.unmigrated_apps.add(app_config.label)
+-                    continue
+                 # Module is not a package (e.g. migrations.py).
+                 if not hasattr(module, '__path__'):
+                     self.unmigrated_apps.add(app_config.label)
+diff --git a/django/db/migrations/questioner.py b/django/db/migrations/questioner.py
+index 47a3052c80..233903500b 100644
+--- a/django/db/migrations/questioner.py
++++ b/django/db/migrations/questioner.py
+@@ -44,13 +44,14 @@ class MigrationQuestioner:
+         except ImportError:
+             return self.defaults.get("ask_initial", False)
+         else:
+-            # getattr() needed on PY36 and older (replace with attribute access).
+-            if getattr(migrations_module, "__file__", None):
+-                filenames = os.listdir(os.path.dirname(migrations_module.__file__))
+-            elif hasattr(migrations_module, "__path__"):
++            if hasattr(migrations_module, "__path__"):
+                 if len(migrations_module.__path__) > 1:
+                     return False
+                 filenames = os.listdir(list(migrations_module.__path__)[0])
++            elif getattr(migrations_module, "__file__", None):
++                filenames = os.listdir(os.path.dirname(migrations_module.__file__))
++            else:
++                return self.defaults.get("ask_initial", False)
+             return not any(x.endswith(".py") for x in filenames if x != "__init__.py")
+ 
+     def ask_not_null_addition(self, field_name, model_name):
+2026-10-10 00:41:27,502 - INFO - Eval script for django__django-11141 written to logs/run_evaluation/20261010_000803_swebench_gemma4-26b_v42/gemma4-26b_v42/django__django-11141/eval.sh; copying to container...
+2026-10-10 00:41:30,432 - INFO - Test runtime: 2.91 seconds
+2026-10-10 00:41:30,432 - INFO - Test output for django__django-11141 written to logs/run_evaluation/20261010_000803_swebench_gemma4-26b_v42/gemma4-26b_v42/django__django-11141/test_output.txt
+2026-10-10 00:41:30,454 - INFO - Git diff after:
+diff --git a/django/db/migrations/loader.py b/django/db/migrations/loader.py
+index 8c308621d2..d075fcc5df 100644
+--- a/django/db/migrations/loader.py
++++ b/django/db/migrations/loader.py
+@@ -84,11 +84,6 @@ class MigrationLoader:
+                     continue
+                 raise
+             else:
+-                # Empty directories are namespaces.
+-                # getattr() needed on PY36 and older (replace w/attribute access).
+-                if getattr(module, '__file__', None) is None:
+-                    self.unmigrated_apps.add(app_config.label)
+-                    continue
+                 # Module is not a package (e.g. migrations.py).
+                 if not hasattr(module, '__path__'):
+                     self.unmigrated_apps.add(app_config.label)
+diff --git a/django/db/migrations/questioner.py b/django/db/migrations/questioner.py
+index 47a3052c80..233903500b 100644
+--- a/django/db/migrations/questioner.py
++++ b/django/db/migrations/questioner.py
+@@ -44,13 +44,14 @@ class MigrationQuestioner:
+         except ImportError:
+             return self.defaults.get("ask_initial", False)
+         else:
+-            # getattr() needed on PY36 and older (replace with attribute access).
+-            if getattr(migrations_module, "__file__", None):
+-                filenames = os.listdir(os.path.dirname(migrations_module.__file__))
+-            elif hasattr(migrations_module, "__path__"):
++            if hasattr(migrations_module, "__path__"):
+                 if len(migrations_module.__path__) > 1:
+                     return False
+                 filenames = os.listdir(list(migrations_module.__path__)[0])
++            elif getattr(migrations_module, "__file__", None):
++                filenames = os.listdir(os.path.dirname(migrations_module.__file__))
++            else:
++                return self.defaults.get("ask_initial", False)
+             return not any(x.endswith(".py") for x in filenames if x != "__init__.py")
+ 
+     def ask_not_null_addition(self, field_name, model_name):
+diff --git a/tests/migrations/test_loader.py b/tests/migrations/test_loader.py
+index 0f0a590e7c..7bc9ccabd4 100644
+--- a/tests/migrations/test_loader.py
++++ b/tests/migrations/test_loader.py
+@@ -508,6 +508,17 @@ class LoaderTests(TestCase):
+         migrations = [name for app, name in loader.disk_migrations if app == 'migrations']
+         self.assertEqual(migrations, ['0001_initial'])
+ 
++    @override_settings(
++        MIGRATION_MODULES={'migrations': 'migrations.test_migrations_namespace_package'},
++    )
++    def test_loading_namespace_package(self):
++        """Migration directories without an __init__.py file are loaded."""
++        migration_loader = MigrationLoader(connection)
++        self.assertEqual(
++            migration_loader.graph.forwards_plan(('migrations', '0001_initial')),
++            [('migrations', '0001_initial')],
++        )
++
+ 
+ class PycLoaderTests(MigrationTestBase):
+2026-10-10 00:41:30,454 - INFO - Git diff changed after running eval script
+2026-10-10 00:41:30,454 - INFO - Grading answer for django__django-11141...
+2026-10-10 00:41:30,455 - INFO - report: {'django__django-11141': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'infra_failure': False, 'tests_status': {'FAIL_TO_PASS': {'success': ['Migration directories without an __init__.py file are loaded.'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_apply (migrations.test_loader.RecorderTests)', 'test_invalid (migrations.test_loader.PycLoaderTests)', 'test_valid (migrations.test_loader.PycLoaderTests)', 'test_check_consistent_history (migrations.test_loader.LoaderTests)', 'test_check_consistent_history_squashed (migrations.test_loader.LoaderTests)', 'test_explicit_missing_module (migrations.test_loader.LoaderTests)', 'test_first (migrations.test_loader.LoaderTests)', "Files prefixed with underscore, tilde, or dot aren't loaded.", 'test_load (migrations.test_loader.LoaderTests)', 'test_load_import_error (migrations.test_loader.LoaderTests)', 'test_load_module_file (migrations.test_loader.LoaderTests)', 'test_load_unmigrated_dependency (migrations.test_loader.LoaderTests)', 'Tests loading a squashed migration', 'Tests loading a complex set of squashed migrations', 'test_loading_squashed_complex_multi_apps (migrations.test_loader.LoaderTests)', 'test_loading_squashed_complex_multi_apps_partially_applied (migrations.test_loader.LoaderTests)', 'Tests loading a complex but erroneous set of squashed migrations', 'Tests loading a squashed migration with a new migration referencing it', 'test_marked_as_migrated (migrations.test_loader.LoaderTests)', 'test_marked_as_unmigrated (migrations.test_loader.LoaderTests)', 'Tests prefix name matching', 'test_plan_handles_repeated_migrations (migrations.test_loader.LoaderTests)', 'test_run_before (migrations.test_loader.LoaderTests)'], 'failure': ['test_load_empty_dir (migrations.test_loader.LoaderTests)']}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-11141: resolved: False
+2026-10-10 00:41:30,455 - INFO - Attempting to stop container sweb.eval.django__django-11141.20261010_000803_swebench_gemma4-26b_v42...
+2026-10-10 00:41:47,987 - INFO - Container sweb.eval.django__django-11141.20261010_000803_swebench_gemma4-26b_v42 stopped successfully.
+2026-10-10 00:41:47,987 - INFO - Attempting to remove container sweb.eval.django__django-11141.20261010_000803_swebench_gemma4-26b_v42...
+2026-10-10 00:41:48,265 - INFO - Container sweb.eval.django__django-11141.20261010_000803_swebench_gemma4-26b_v42 removed successfully.

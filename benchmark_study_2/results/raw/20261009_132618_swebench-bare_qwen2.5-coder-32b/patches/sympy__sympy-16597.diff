@@ -1,0 +1,15 @@
+diff --git a/sympy/core/mul.py b/sympy/core/mul.py
+index 25c4ac4e2..cd85704a2 100644
+--- a/sympy/core/mul.py
++++ b/sympy/core/mul.py
+@@ -1345,8 +1345,9 @@ def _eval_is_odd(self):
+ 
+     def _eval_is_even(self):
+         is_integer = self.is_integer
++        is_finite = self.is_finite
+ 
+-        if is_integer:
++        if is_integer and is_finite:
+             return fuzzy_not(self.is_odd)
+ 
+         elif is_integer is False:

@@ -1,0 +1,19 @@
+{
+ "id": "fe_lice",
+ "family": "fe",
+ "source": "devbench",
+ "repo": "lice",
+ "lang": "python",
+ "workspace": "workspaces/fe_lice",
+ "task": "`lice` 目前只能輸出純文字的授權條款。`lice/core.py` 已經有語言對照表 `LANGS`（副檔名 → 註解風格）與 `LANG_CMT`（註解風格 → `[開頭, 每行前綴, 結尾]`），但還沒有用到。請加上「把授權條款格式化成指定程式語言的註解」的功能：\n\n1. `format_license(template, lang)`：`template` 是 `StringIO`，回傳新的 `StringIO`。`lang` 是 `LANGS` 的鍵（副檔名），是 `None` 或空字串時當成 `'txt'`。輸出格式：先寫「開頭」加 `\\n`；接著從頭讀 template 的每一行，每行前面加上「每行前綴」再加一個空格；最後寫「結尾」加 `\\n`（結尾直接接在最後一行後面，最後一行沒有換行時就會在同一行）。例：`format_license(StringIO('Example License Text'), 'c').getvalue() == '/*\\n * Example License Text */\\n'`；`'py'` 得到 `'\\n# Example License Text\\n'`。\n2. `get_suffix(name)`：檔名含有 `.` 且最後一段副檔名在 `LANGS` 裡就回傳該副檔名（`'example.py'` → `'py'`），否則回傳 `False`（例如 `'example'`、`'example.xyz'`）。\n3. 命令列 `main()`：\n   - 新增 `-l/--language`（dest `language`）：指定輸出格式的語言；不在 `LANGS` 裡時在 stderr 印出說明（不認得這個副檔名）並以 exit code 1 結束。\n   - 新增 `--languages`（dest `list_languages`）：依字母順序每行印一個支援的副檔名，然後 `sys.exit(0)`。\n   - `--header` 產生的檔頭與一般的授權條款輸出，都要先用 `format_license(內容, 語言)` 格式化（沒指定語言就是 txt 格式）再輸出。\n   - `-f/--file`：檔名本身有可辨識的副檔名時，用該副檔名的格式並寫到這個檔名；否則有 `-l` 時寫到 `檔名.語言`（用該語言的格式），都沒有就用 txt 格式寫到該檔名。寫檔維持 `open(輸出檔名, \"w\")`；沒有 `-f` 時輸出到 stdout。\n\n要求：照這個專案現有的寫法與檔案結構實作（可能要改好幾個檔案）；同時在 `unit_tests/` 補上這個功能的單元測試。既有的測試（`python -m pytest -q unit_tests`）要維持全部通過，不要修改既有的測試。",
+ "test_dir": "unit_tests",
+ "feature": "依程式語言格式化授權文字（-l/--language、--languages、依副檔名自動判斷）",
+ "expected_files": [
+  "lice/core.py"
+ ],
+ "ref_files": [
+  "lice/core.py",
+  "unit_tests/test_lice.py"
+ ],
+ "python": "devbench_venv"
+}

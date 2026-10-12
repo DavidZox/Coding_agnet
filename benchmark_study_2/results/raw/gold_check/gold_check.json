@@ -1,0 +1,242 @@
+{
+ "django__django-12276": {
+  "resolved": true,
+  "applied": true,
+  "f2p_pass": 2,
+  "f2p_fail": 0,
+  "p2p_pass": 117,
+  "p2p_fail": 0,
+  "log_dir": "/home/amr-base/cah_eval/swe/eval/logs/run_evaluation/gold_check/gold/django__django-12276",
+  "eval_seconds": 314.1
+ },
+ "sympy__sympy-16597": {
+  "resolved": true,
+  "applied": true,
+  "f2p_pass": 3,
+  "f2p_fail": 0,
+  "p2p_pass": 74,
+  "p2p_fail": 0,
+  "log_dir": "/home/amr-base/cah_eval/swe/eval/logs/run_evaluation/gold_check/gold/sympy__sympy-16597",
+  "eval_seconds": 314.1
+ },
+ "sphinx-doc__sphinx-10435": {
+  "resolved": true,
+  "applied": true,
+  "f2p_pass": 1,
+  "f2p_fail": 0,
+  "p2p_pass": 74,
+  "p2p_fail": 0,
+  "log_dir": "/home/amr-base/cah_eval/swe/eval/logs/run_evaluation/gold_check/gold/sphinx-doc__sphinx-10435",
+  "eval_seconds": 314.1
+ },
+ "django__django-11734": {
+  "resolved": true,
+  "applied": true,
+  "f2p_pass": 1,
+  "f2p_fail": 0,
+  "p2p_pass": 275,
+  "p2p_fail": 0,
+  "log_dir": "/home/amr-base/cah_eval/swe/eval/logs/run_evaluation/gold_check/gold/django__django-11734",
+  "eval_seconds": 314.1
+ },
+ "django__django-11141": {
+  "resolved": true,
+  "applied": true,
+  "f2p_pass": 1,
+  "f2p_fail": 0,
+  "p2p_pass": 24,
+  "p2p_fail": 0,
+  "log_dir": "/home/amr-base/cah_eval/swe/eval/logs/run_evaluation/gold_check/gold/django__django-11141",
+  "eval_seconds": 314.1
+ },
+ "scikit-learn__scikit-learn-14496": {
+  "resolved": true,
+  "applied": true,
+  "f2p_pass": 1,
+  "f2p_fail": 0,
+  "p2p_pass": 39,
+  "p2p_fail": 0,
+  "log_dir": "/home/amr-base/cah_eval/swe/eval/logs/run_evaluation/gold_check/gold/scikit-learn__scikit-learn-14496",
+  "eval_seconds": 314.1
+ },
+ "sympy__sympy-18199": {
+  "resolved": true,
+  "applied": true,
+  "f2p_pass": 1,
+  "f2p_fail": 0,
+  "p2p_pass": 113,
+  "p2p_fail": 0,
+  "log_dir": "/home/amr-base/cah_eval/swe/eval/logs/run_evaluation/gold_check/gold/sympy__sympy-18199",
+  "eval_seconds": 314.1
+ },
+ "astropy__astropy-8872": {
+  "resolved": true,
+  "applied": true,
+  "f2p_pass": 1,
+  "f2p_fail": 0,
+  "p2p_pass": 80,
+  "p2p_fail": 0,
+  "log_dir": "/home/amr-base/cah_eval/swe/eval/logs/run_evaluation/gold_check/gold/astropy__astropy-8872",
+  "eval_seconds": 314.1
+ },
+ "django__django-15561": {
+  "resolved": true,
+  "applied": true,
+  "f2p_pass": 1,
+  "f2p_fail": 0,
+  "p2p_pass": 141,
+  "p2p_fail": 0,
+  "log_dir": "/home/amr-base/cah_eval/swe/eval/logs/run_evaluation/gold_check/gold/django__django-15561",
+  "eval_seconds": 314.1
+ },
+ "django__django-13410": {
+  "resolved": true,
+  "applied": true,
+  "f2p_pass": 2,
+  "f2p_fail": 0,
+  "p2p_pass": 40,
+  "p2p_fail": 0,
+  "log_dir": "/home/amr-base/cah_eval/swe/eval/logs/run_evaluation/gold_check/gold/django__django-13410",
+  "eval_seconds": 314.1
+ },
+ "django__django-14089": {
+  "resolved": true,
+  "applied": true,
+  "f2p_pass": 1,
+  "f2p_fail": 0,
+  "p2p_pass": 43,
+  "p2p_fail": 0,
+  "log_dir": "/home/amr-base/cah_eval/swe/eval/logs/run_evaluation/gold_check/gold/django__django-14089",
+  "eval_seconds": 314.1
+ },
+ "pallets__flask-5014": {
+  "resolved": true,
+  "applied": true,
+  "f2p_pass": 1,
+  "f2p_fail": 0,
+  "p2p_pass": 59,
+  "p2p_fail": 0,
+  "log_dir": "/home/amr-base/cah_eval/swe/eval/logs/run_evaluation/gold_check/gold/pallets__flask-5014",
+  "eval_seconds": 314.1
+ },
+ "sphinx-doc__sphinx-8035": {
+  "resolved": true,
+  "applied": true,
+  "f2p_pass": 1,
+  "f2p_fail": 0,
+  "p2p_pass": 2,
+  "p2p_fail": 0,
+  "log_dir": "/home/amr-base/cah_eval/swe/eval/logs/run_evaluation/gold_check/gold/sphinx-doc__sphinx-8035",
+  "eval_seconds": 314.1
+ },
+ "matplotlib__matplotlib-20488": {
+  "resolved": true,
+  "applied": true,
+  "f2p_pass": 1,
+  "f2p_fail": 0,
+  "p2p_pass": 111,
+  "p2p_fail": 0,
+  "log_dir": "/home/amr-base/cah_eval/swe/eval/logs/run_evaluation/gold_check/gold/matplotlib__matplotlib-20488",
+  "eval_seconds": 314.1
+ },
+ "pydata__xarray-3677": {
+  "resolved": true,
+  "applied": true,
+  "f2p_pass": 1,
+  "f2p_fail": 0,
+  "p2p_pass": 21,
+  "p2p_fail": 0,
+  "log_dir": "/home/amr-base/cah_eval/swe/eval/logs/run_evaluation/gold_check/gold/pydata__xarray-3677",
+  "eval_seconds": 314.1
+ },
+ "pytest-dev__pytest-10051": {
+  "resolved": true,
+  "applied": true,
+  "f2p_pass": 1,
+  "f2p_fail": 0,
+  "p2p_pass": 15,
+  "p2p_fail": 0,
+  "log_dir": "/home/amr-base/cah_eval/swe/eval/logs/run_evaluation/gold_check/gold/pytest-dev__pytest-10051",
+  "eval_seconds": 314.1
+ },
+ "redis__redis-13115": {
+  "resolved": true,
+  "applied": true,
+  "f2p_pass": 1,
+  "f2p_fail": 0,
+  "p2p_pass": 183,
+  "p2p_fail": 0,
+  "log_dir": "/home/amr-base/cah_eval/swe/eval/logs/run_evaluation/gold_check/gold/redis__redis-13115",
+  "eval_seconds": 314.1
+ },
+ "redis__redis-12472": {
+  "resolved": true,
+  "applied": true,
+  "f2p_pass": 1,
+  "f2p_fail": 0,
+  "p2p_pass": 2,
+  "p2p_fail": 0,
+  "log_dir": "/home/amr-base/cah_eval/swe/eval/logs/run_evaluation/gold_check/gold/redis__redis-12472",
+  "eval_seconds": 314.1
+ },
+ "jqlang__jq-2235": {
+  "resolved": true,
+  "applied": true,
+  "f2p_pass": 1,
+  "f2p_fail": 0,
+  "p2p_pass": 27,
+  "p2p_fail": 0,
+  "log_dir": "/home/amr-base/cah_eval/swe/eval/logs/run_evaluation/gold_check/gold/jqlang__jq-2235",
+  "eval_seconds": 314.1
+ },
+ "micropython__micropython-13039": {
+  "resolved": true,
+  "applied": true,
+  "f2p_pass": 1,
+  "f2p_fail": 0,
+  "p2p_pass": 13,
+  "p2p_fail": 0,
+  "log_dir": "/home/amr-base/cah_eval/swe/eval/logs/run_evaluation/gold_check/gold/micropython__micropython-13039",
+  "eval_seconds": 314.1
+ },
+ "fmtlib__fmt-1683": {
+  "resolved": false,
+  "applied": true,
+  "f2p_pass": 1,
+  "f2p_fail": 0,
+  "p2p_pass": 22,
+  "p2p_fail": 20,
+  "log_dir": "/home/amr-base/cah_eval/swe/eval/logs/run_evaluation/gold_check/gold/fmtlib__fmt-1683",
+  "eval_seconds": 314.1
+ },
+ "fmtlib__fmt-3901": {
+  "resolved": true,
+  "applied": true,
+  "f2p_pass": 1,
+  "f2p_fail": 0,
+  "p2p_pass": 122,
+  "p2p_fail": 0,
+  "log_dir": "/home/amr-base/cah_eval/swe/eval/logs/run_evaluation/gold_check/gold/fmtlib__fmt-3901",
+  "eval_seconds": 314.1
+ },
+ "fmtlib__fmt-2310": {
+  "resolved": true,
+  "applied": true,
+  "f2p_pass": 2,
+  "f2p_fail": 0,
+  "p2p_pass": 102,
+  "p2p_fail": 0,
+  "log_dir": "/home/amr-base/cah_eval/swe/eval/logs/run_evaluation/gold_check/gold/fmtlib__fmt-2310",
+  "eval_seconds": 314.1
+ },
+ "nlohmann__json-4237": {
+  "resolved": true,
+  "applied": true,
+  "f2p_pass": 1,
+  "f2p_fail": 0,
+  "p2p_pass": 21,
+  "p2p_fail": 0,
+  "log_dir": "/home/amr-base/cah_eval/swe/eval/logs/run_evaluation/gold_check/gold/nlohmann__json-4237",
+  "eval_seconds": 314.1
+ }
+}

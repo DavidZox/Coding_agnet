@@ -1,0 +1,82 @@
+#ifndef STACK_HPP
+#define STACK_HPP
+
+#include <stdexcept>
+#include <algorithm>
+
+template <typename T>
+class Stack {
+private:
+    static const int DEFAULT_SIZE = 10;
+    T* _array;
+    int size;
+    int capacity;
+
+    void resize() {
+        int new_capacity = capacity * 2;
+        T* new_array = new T[new_capacity];
+        for (int i = 0; i < size; ++i) {
+            new_array[i] = _array[i];
+        }
+        delete[] _array;
+        _array = new_array;
+        capacity = new_capacity;
+    }
+
+public:
+    Stack() : size(0), capacity(DEFAULT_SIZE) {
+        _array = new T[capacity];
+    }
+
+    ~Stack() {
+        delete[] _array;
+    }
+
+    // Copy constructor and assignment operator (Rule of Three/Five)
+    Stack(const Stack& other) : size(other.size), capacity(other.capacity) {
+        _array = new T[capacity];
+        for (int i = 0; i < size; ++i) {
+            _array[i] = other._array[i];
+        }
+    }
+
+    Stack& operator=(const Stack& other) {
+        if (this != &other) {
+            delete[] _array;
+            size = other.size;
+            capacity = other.capacity;
+            _array = new T[capacity];
+            for (int i = 0; i < size; ++i) {
+                _array[i] = other._array[i];
+            }
+        }
+        return *this;
+    }
+
+    void push(const T& data) {
+        if (size == capacity) {
+            resize();
+        }
+        _array[size++] = data;
+    }
+
+    T top() const {
+        if (empty()) {
+            throw std::out_of_range("Stack is empty");
+        }
+        return _array[size - 1];
+    }
+
+    void pop() {
+        if (empty()) {
+            throw std::out_of_range("Stack is empty");
+        }
+        size--;
+    }
+
+    bool empty() const {
+        return size == 0;
+    }
+};
+
+#endif // STACK_HPP

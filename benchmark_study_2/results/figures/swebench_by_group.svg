@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="890" height="480" viewBox="0 0 890 480" font-family="Noto Sans CJK TC, Noto Sans CJK, Microsoft JhengHei, sans-serif" font-size="12">
+<rect width="100%" height="100%" fill="white"/>
+<text x="445.0" y="24" text-anchor="middle" font-size="17" font-weight="bold">SWE-bench 子集：依難度與語言的解決率</text>
+<line x1="70" y1="380.0" x2="870" y2="380.0" stroke="#e2e8f0"/>
+<text x="62" y="384.0" text-anchor="end" fill="#4a5568">0</text>
+<line x1="70" y1="316.0" x2="870" y2="316.0" stroke="#e2e8f0"/>
+<text x="62" y="320.0" text-anchor="end" fill="#4a5568">20</text>
+<line x1="70" y1="252.0" x2="870" y2="252.0" stroke="#e2e8f0"/>
+<text x="62" y="256.0" text-anchor="end" fill="#4a5568">40</text>
+<line x1="70" y1="188.0" x2="870" y2="188.0" stroke="#e2e8f0"/>
+<text x="62" y="192.0" text-anchor="end" fill="#4a5568">60</text>
+<line x1="70" y1="123.99999999999999" x2="870" y2="123.99999999999999" stroke="#e2e8f0"/>
+<text x="62" y="127.99999999999999" text-anchor="end" fill="#4a5568">80</text>
+<line x1="70" y1="60.0" x2="870" y2="60.0" stroke="#e2e8f0"/>
+<text x="62" y="64.0" text-anchor="end" fill="#4a5568">100</text>
+<text x="18" y="220.0" transform="rotate(-90 18 220.0)" text-anchor="middle" fill="#4a5568">解決率（%）</text>
+<rect x="82.0" y="166.7" width="23.2" height="213.3" fill="#2b6cb0"/>
+<text x="93.6" y="162.7" text-anchor="middle" font-size="10">67</text>
+<rect x="109.2" y="220.0" width="23.2" height="160.0" fill="#dd6b20"/>
+<text x="120.8" y="216.0" text-anchor="middle" font-size="10">50</text>
+<rect x="136.4" y="273.3" width="23.2" height="106.7" fill="#38a169"/>
+<text x="148.0" y="269.3" text-anchor="middle" font-size="10">33</text>
+<rect x="163.6" y="326.7" width="23.2" height="53.3" fill="#805ad5"/>
+<text x="175.2" y="322.7" text-anchor="middle" font-size="10">17</text>
+<rect x="190.8" y="220.0" width="23.2" height="160.0" fill="#d53f8c"/>
+<text x="202.4" y="216.0" text-anchor="middle" font-size="10">50</text>
+<text x="150.0" y="398" text-anchor="middle" font-size="11">Python：&lt;15 分鐘</text>
+<text x="150.0" y="413" text-anchor="middle" font-size="11">（6 題）</text>
+<rect x="242.0" y="340.0" width="23.2" height="40.0" fill="#2b6cb0"/>
+<text x="253.6" y="336.0" text-anchor="middle" font-size="10">12</text>
+<rect x="269.2" y="340.0" width="23.2" height="40.0" fill="#dd6b20"/>
+<text x="280.8" y="336.0" text-anchor="middle" font-size="10">12</text>
+<rect x="296.4" y="300.0" width="23.2" height="80.0" fill="#38a169"/>
+<text x="308.0" y="296.0" text-anchor="middle" font-size="10">25</text>
+<rect x="323.6" y="260.0" width="23.2" height="120.0" fill="#805ad5"/>
+<text x="335.2" y="256.0" text-anchor="middle" font-size="10">38</text>
+<rect x="350.8" y="300.0" width="23.2" height="80.0" fill="#d53f8c"/>
+<text x="362.4" y="296.0" text-anchor="middle" font-size="10">25</text>
+<text x="310.0" y="398" text-anchor="middle" font-size="11">Python：15 分鐘～1 小時</text>
+<text x="310.0" y="413" text-anchor="middle" font-size="11">（8 題）</text>
+<rect x="402.0" y="380.0" width="23.2" height="0.0" fill="#2b6cb0"/>
+<text x="413.6" y="376.0" text-anchor="middle" font-size="10">0</text>
+<rect x="429.2" y="380.0" width="23.2" height="0.0" fill="#dd6b20"/>
+<text x="440.8" y="376.0" text-anchor="middle" font-size="10">0</text>
+<rect x="456.4" y="380.0" width="23.2" height="0.0" fill="#38a169"/>
+<text x="468.0" y="376.0" text-anchor="middle" font-size="10">0</text>
+<rect x="483.6" y="380.0" width="23.2" height="0.0" fill="#805ad5"/>
+<text x="495.2" y="376.0" text-anchor="middle" font-size="10">0</text>
+<rect x="510.8" y="380.0" width="23.2" height="0.0" fill="#d53f8c"/>
+<text x="522.4" y="376.0" text-anchor="middle" font-size="10">0</text>
+<text x="470.0" y="398" text-anchor="middle" font-size="11">Python：1 小時以上</text>
+<text x="470.0" y="413" text-anchor="middle" font-size="11">（2 題）</text>
+<rect x="562.0" y="380.0" width="23.2" height="0.0" fill="#2b6cb0"/>
+<text x="573.6" y="376.0" text-anchor="middle" font-size="10">0</text>
+<rect x="589.2" y="380.0" width="23.2" height="0.0" fill="#dd6b20"/>
+<text x="600.8" y="376.0" text-anchor="middle" font-size="10">0</text>
+<rect x="616.4" y="380.0" width="23.2" height="0.0" fill="#38a169"/>
+<text x="628.0" y="376.0" text-anchor="middle" font-size="10">0</text>
+<rect x="643.6" y="300.0" width="23.2" height="80.0" fill="#805ad5"/>
+<text x="655.2" y="296.0" text-anchor="middle" font-size="10">25</text>
+<rect x="670.8" y="380.0" width="23.2" height="0.0" fill="#d53f8c"/>
+<text x="682.4" y="376.0" text-anchor="middle" font-size="10">0</text>
+<text x="630.0" y="398" text-anchor="middle" font-size="11">C</text>
+<text x="630.0" y="413" text-anchor="middle" font-size="11">（4 題）</text>
+<rect x="722.0" y="220.0" width="23.2" height="160.0" fill="#2b6cb0"/>
+<text x="733.6" y="216.0" text-anchor="middle" font-size="10">50</text>
+<rect x="749.2" y="60.0" width="23.2" height="320.0" fill="#dd6b20"/>
+<text x="760.8" y="56.0" text-anchor="middle" font-size="10">100</text>
+<rect x="776.4" y="220.0" width="23.2" height="160.0" fill="#38a169"/>
+<text x="788.0" y="216.0" text-anchor="middle" font-size="10">50</text>
+<rect x="803.6" y="300.0" width="23.2" height="80.0" fill="#805ad5"/>
+<text x="815.2" y="296.0" text-anchor="middle" font-size="10">25</text>
+<rect x="830.8" y="220.0" width="23.2" height="160.0" fill="#d53f8c"/>
+<text x="842.4" y="216.0" text-anchor="middle" font-size="10">50</text>
+<text x="790.0" y="398" text-anchor="middle" font-size="11">C++</text>
+<text x="790.0" y="413" text-anchor="middle" font-size="11">（4 題）</text>
+<rect x="70" y="446" width="12" height="12" fill="#2b6cb0"/>
+<text x="86" y="456">harness gemma4:26b</text>
+<rect x="334" y="446" width="12" height="12" fill="#dd6b20"/>
+<text x="350" y="456">harness DeepSeek-R1-32B 規劃 ＋Qwen2.5-Coder-32B</text>
+<rect x="949" y="446" width="12" height="12" fill="#38a169"/>
+<text x="965" y="456">不用 harness gemma4:26b</text>
+<rect x="1252" y="446" width="12" height="12" fill="#805ad5"/>
+<text x="1268" y="456">不用 harness Qwen2.5-Coder-32B</text>
+<rect x="1646" y="446" width="12" height="12" fill="#d53f8c"/>
+<text x="1662" y="456">harness gemma4:26b （v4.2）</text>
+<text x="870" y="472" text-anchor="end" font-size="10" fill="#718096">難度是 SWE-bench Verified 的人工標註（修正大約要花多久），只有 Python 題目有；每格題數少，只看趨勢</text>
+</svg>

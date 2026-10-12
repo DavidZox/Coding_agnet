@@ -1,0 +1,965 @@
+{
+ "repo": "graph-cpp",
+ "seed": 20261010,
+ "official_tests": 22,
+ "mutants": [
+  {
+   "id": "graph-cpp#m0",
+   "file": "include/al_graph.hpp",
+   "line": 121,
+   "desc": "拿掉 !",
+   "point": {
+    "tok": 835,
+    "line": 121,
+    "desc": "拿掉 !",
+    "new": ""
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "graph-cpp#m1",
+   "file": "include/am_graph.hpp",
+   "line": 106,
+   "desc": "++ → --",
+   "point": {
+    "tok": 595,
+    "line": 106,
+    "desc": "++ → --",
+    "new": "--"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "graph-cpp#m2",
+   "file": "include/queue.hpp",
+   "line": 16,
+   "desc": "!= → ==",
+   "point": {
+    "tok": 85,
+    "line": 16,
+    "desc": "!= → ==",
+    "new": "=="
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "graph-cpp#m3",
+   "file": "include/stack.hpp",
+   "line": 34,
+   "desc": "- → +",
+   "point": {
+    "tok": 132,
+    "line": 34,
+    "desc": "- → +",
+    "new": "+"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "StackTest.PushAndTop"
+   ]
+  },
+  {
+   "id": "graph-cpp#m4",
+   "file": "include/al_graph.hpp",
+   "line": 71,
+   "desc": "true → false",
+   "point": {
+    "tok": 509,
+    "line": 71,
+    "desc": "true → false",
+    "new": "false"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "graph-cpp#m5",
+   "file": "include/am_graph.hpp",
+   "line": 52,
+   "desc": "1 → 0",
+   "point": {
+    "tok": 344,
+    "line": 52,
+    "desc": "1 → 0",
+    "new": "0"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "MatrixGraphTest.LocateVexTest"
+   ]
+  },
+  {
+   "id": "graph-cpp#m6",
+   "file": "include/queue.hpp",
+   "line": 75,
+   "desc": "== → !=",
+   "point": {
+    "tok": 207,
+    "line": 75,
+    "desc": "== → !=",
+    "new": "!="
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "graph-cpp#m7",
+   "file": "include/stack.hpp",
+   "line": 9,
+   "desc": "10 → 11",
+   "point": {
+    "tok": 43,
+    "line": 9,
+    "desc": "10 → 11",
+    "new": "11"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "graph-cpp#m8",
+   "file": "include/al_graph.hpp",
+   "line": 15,
+   "desc": "false → true",
+   "point": {
+    "tok": 83,
+    "line": 15,
+    "desc": "false → true",
+    "new": "true"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "graph-cpp#m9",
+   "file": "include/am_graph.hpp",
+   "line": 75,
+   "desc": "true → false",
+   "point": {
+    "tok": 422,
+    "line": 75,
+    "desc": "true → false",
+    "new": "false"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "MatrixGraphTest.VertexSetTest"
+   ]
+  },
+  {
+   "id": "graph-cpp#m10",
+   "file": "include/queue.hpp",
+   "line": 96,
+   "desc": "== → !=",
+   "point": {
+    "tok": 252,
+    "line": 96,
+    "desc": "== → !=",
+    "new": "!="
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "graph-cpp#m11",
+   "file": "include/stack.hpp",
+   "line": 76,
+   "desc": "-- → ++",
+   "point": {
+    "tok": 253,
+    "line": 76,
+    "desc": "-- → ++",
+    "new": "++"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "graph-cpp#m12",
+   "file": "include/al_graph.hpp",
+   "line": 101,
+   "desc": "< → <=",
+   "point": {
+    "tok": 624,
+    "line": 101,
+    "desc": "< → <=",
+    "new": "<="
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "graph-cpp#m13",
+   "file": "include/am_graph.hpp",
+   "line": 105,
+   "desc": "++ → --",
+   "point": {
+    "tok": 576,
+    "line": 105,
+    "desc": "++ → --",
+    "new": "--"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "graph-cpp#m14",
+   "file": "include/queue.hpp",
+   "line": 50,
+   "desc": "== → !=",
+   "point": {
+    "tok": 147,
+    "line": 50,
+    "desc": "== → !=",
+    "new": "!="
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "graph-cpp#m15",
+   "file": "include/stack.hpp",
+   "line": 11,
+   "desc": "0 → 1",
+   "point": {
+    "tok": 72,
+    "line": 11,
+    "desc": "0 → 1",
+    "new": "1"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "graph-cpp#m16",
+   "file": "include/al_graph.hpp",
+   "line": 120,
+   "desc": "!= → ==",
+   "point": {
+    "tok": 825,
+    "line": 120,
+    "desc": "!= → ==",
+    "new": "=="
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "graph-cpp#m17",
+   "file": "include/am_graph.hpp",
+   "line": 14,
+   "desc": "0 → 1",
+   "point": {
+    "tok": 87,
+    "line": 14,
+    "desc": "0 → 1",
+    "new": "1"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "graph-cpp#m18",
+   "file": "include/queue.hpp",
+   "line": 30,
+   "desc": "== → !=",
+   "point": {
+    "tok": 109,
+    "line": 30,
+    "desc": "== → !=",
+    "new": "!="
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "QueueTest.IsEmptyOnInitialization",
+    "QueueTest.Pop",
+    "QueueTest.PushAndFront",
+    "QueueTest.PushDouble"
+   ]
+  },
+  {
+   "id": "graph-cpp#m19",
+   "file": "include/stack.hpp",
+   "line": 34,
+   "desc": "1 → 0",
+   "point": {
+    "tok": 134,
+    "line": 34,
+    "desc": "1 → 0",
+    "new": "0"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "StackTest.PushAndTop"
+   ]
+  },
+  {
+   "id": "graph-cpp#m20",
+   "file": "include/al_graph.hpp",
+   "line": 129,
+   "desc": "1 → 0",
+   "point": {
+    "tok": 921,
+    "line": 129,
+    "desc": "1 → 0",
+    "new": "0"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "GraphTest.TestDFSNoRecursionAdjacencyList"
+   ]
+  },
+  {
+   "id": "graph-cpp#m21",
+   "file": "include/am_graph.hpp",
+   "line": 105,
+   "desc": "0 → 1",
+   "point": {
+    "tok": 567,
+    "line": 105,
+    "desc": "0 → 1",
+    "new": "1"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "graph-cpp#m22",
+   "file": "include/queue.hpp",
+   "line": 99,
+   "desc": "== → !=",
+   "point": {
+    "tok": 288,
+    "line": 99,
+    "desc": "== → !=",
+    "new": "!="
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "graph-cpp#m23",
+   "file": "include/stack.hpp",
+   "line": 75,
+   "desc": "0 → 1",
+   "point": {
+    "tok": 237,
+    "line": 75,
+    "desc": "0 → 1",
+    "new": "1"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "GraphTest.TestDFSNoRecursionAdjacencyList",
+    "StackTest.Pop",
+    "StackTest.PopThrowsWhenEmpty"
+   ]
+  },
+  {
+   "id": "graph-cpp#m24",
+   "file": "include/al_graph.hpp",
+   "line": 114,
+   "desc": "拿掉 !",
+   "point": {
+    "tok": 775,
+    "line": 114,
+    "desc": "拿掉 !",
+    "new": ""
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "graph-cpp#m25",
+   "file": "include/am_graph.hpp",
+   "line": 70,
+   "desc": "1 → 0",
+   "point": {
+    "tok": 371,
+    "line": 70,
+    "desc": "1 → 0",
+    "new": "0"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "graph-cpp#m26",
+   "file": "include/stack.hpp",
+   "line": 55,
+   "desc": "2 → 3",
+   "point": {
+    "tok": 208,
+    "line": 55,
+    "desc": "2 → 3",
+    "new": "3"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "graph-cpp#m27",
+   "file": "include/al_graph.hpp",
+   "line": 247,
+   "desc": "!= → ==",
+   "point": {
+    "tok": 1570,
+    "line": 247,
+    "desc": "!= → ==",
+    "new": "=="
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "graph-cpp#m28",
+   "file": "include/am_graph.hpp",
+   "line": 21,
+   "desc": "0 → 1",
+   "point": {
+    "tok": 192,
+    "line": 21,
+    "desc": "0 → 1",
+    "new": "1"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "graph-cpp#m29",
+   "file": "include/stack.hpp",
+   "line": 52,
+   "desc": "1 → 0",
+   "point": {
+    "tok": 161,
+    "line": 52,
+    "desc": "1 → 0",
+    "new": "0"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "graph-cpp#m30",
+   "file": "include/al_graph.hpp",
+   "line": 239,
+   "desc": "true → false",
+   "point": {
+    "tok": 1454,
+    "line": 239,
+    "desc": "true → false",
+    "new": "false"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "GraphTest.ArcNumberTest"
+   ]
+  },
+  {
+   "id": "graph-cpp#m31",
+   "file": "include/am_graph.hpp",
+   "line": 24,
+   "desc": "0 → 1",
+   "point": {
+    "tok": 222,
+    "line": 24,
+    "desc": "0 → 1",
+    "new": "1"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "graph-cpp#m32",
+   "file": "include/stack.hpp",
+   "line": 75,
+   "desc": "== → !=",
+   "point": {
+    "tok": 236,
+    "line": 75,
+    "desc": "== → !=",
+    "new": "!="
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "GraphTest.TestDFSNoRecursionAdjacencyList",
+    "StackTest.Pop",
+    "StackTest.PopThrowsWhenEmpty"
+   ]
+  },
+  {
+   "id": "graph-cpp#m33",
+   "file": "include/al_graph.hpp",
+   "line": 63,
+   "desc": "拿掉 !",
+   "point": {
+    "tok": 425,
+    "line": 63,
+    "desc": "拿掉 !",
+    "new": ""
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "graph-cpp#m34",
+   "file": "include/am_graph.hpp",
+   "line": 106,
+   "desc": "0 → 1",
+   "point": {
+    "tok": 586,
+    "line": 106,
+    "desc": "0 → 1",
+    "new": "1"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "graph-cpp#m35",
+   "file": "include/stack.hpp",
+   "line": 52,
+   "desc": ">= → >",
+   "point": {
+    "tok": 158,
+    "line": 52,
+    "desc": ">= → >",
+    "new": ">"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "graph-cpp#m36",
+   "file": "include/al_graph.hpp",
+   "line": 62,
+   "desc": "!= → ==",
+   "point": {
+    "tok": 415,
+    "line": 62,
+    "desc": "!= → ==",
+    "new": "=="
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "graph-cpp#m37",
+   "file": "include/am_graph.hpp",
+   "line": 101,
+   "desc": "true → false",
+   "point": {
+    "tok": 528,
+    "line": 101,
+    "desc": "true → false",
+    "new": "false"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "MatrixGraphTest.ArcSetTest"
+   ]
+  },
+  {
+   "id": "graph-cpp#m38",
+   "file": "include/stack.hpp",
+   "line": 33,
+   "desc": "0 → 1",
+   "point": {
+    "tok": 114,
+    "line": 33,
+    "desc": "0 → 1",
+    "new": "1"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "StackTest.PushAndTop",
+    "StackTest.TopThrowsWhenEmpty"
+   ]
+  },
+  {
+   "id": "graph-cpp#m39",
+   "file": "include/al_graph.hpp",
+   "line": 231,
+   "desc": "拿掉 !",
+   "point": {
+    "tok": 1361,
+    "line": 231,
+    "desc": "拿掉 !",
+    "new": ""
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "graph-cpp#m40",
+   "file": "include/am_graph.hpp",
+   "line": 72,
+   "desc": "1 → 0",
+   "point": {
+    "tok": 395,
+    "line": 72,
+    "desc": "1 → 0",
+    "new": "0"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "graph-cpp#m41",
+   "file": "include/stack.hpp",
+   "line": 33,
+   "desc": "== → !=",
+   "point": {
+    "tok": 113,
+    "line": 33,
+    "desc": "== → !=",
+    "new": "!="
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "StackTest.PushAndTop",
+    "StackTest.TopThrowsWhenEmpty"
+   ]
+  },
+  {
+   "id": "graph-cpp#m42",
+   "file": "include/al_graph.hpp",
+   "line": 126,
+   "desc": "1 → 0",
+   "point": {
+    "tok": 892,
+    "line": 126,
+    "desc": "1 → 0",
+    "new": "0"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "GraphTest.TestDFSNoRecursionAdjacencyList"
+   ]
+  },
+  {
+   "id": "graph-cpp#m43",
+   "file": "include/am_graph.hpp",
+   "line": 28,
+   "desc": "++ → --",
+   "point": {
+    "tok": 259,
+    "line": 28,
+    "desc": "++ → --",
+    "new": "--"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "graph-cpp#m44",
+   "file": "include/stack.hpp",
+   "line": 54,
+   "desc": "拿掉 !",
+   "point": {
+    "tok": 193,
+    "line": 54,
+    "desc": "拿掉 !",
+    "new": ""
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "graph-cpp#m45",
+   "file": "include/al_graph.hpp",
+   "line": 243,
+   "desc": "< → <=",
+   "point": {
+    "tok": 1501,
+    "line": 243,
+    "desc": "< → <=",
+    "new": "<="
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "graph-cpp#m46",
+   "file": "include/am_graph.hpp",
+   "line": 73,
+   "desc": "++ → --",
+   "point": {
+    "tok": 411,
+    "line": 73,
+    "desc": "++ → --",
+    "new": "--"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "graph-cpp#m47",
+   "file": "include/stack.hpp",
+   "line": 10,
+   "desc": "* → /",
+   "point": {
+    "tok": 59,
+    "line": 10,
+    "desc": "* → /",
+    "new": "/"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "graph-cpp#m48",
+   "file": "include/al_graph.hpp",
+   "line": 14,
+   "desc": "0 → 1",
+   "point": {
+    "tok": 67,
+    "line": 14,
+    "desc": "0 → 1",
+    "new": "1"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "graph-cpp#m49",
+   "file": "include/am_graph.hpp",
+   "line": 19,
+   "desc": "++ → --",
+   "point": {
+    "tok": 167,
+    "line": 19,
+    "desc": "++ → --",
+    "new": "--"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "graph-cpp#m50",
+   "file": "include/stack.hpp",
+   "line": 53,
+   "desc": "2 → 3",
+   "point": {
+    "tok": 176,
+    "line": 53,
+    "desc": "2 → 3",
+    "new": "3"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "graph-cpp#m51",
+   "file": "include/al_graph.hpp",
+   "line": 199,
+   "desc": "1 → 0",
+   "point": {
+    "tok": 1135,
+    "line": 199,
+    "desc": "1 → 0",
+    "new": "0"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "GraphTest.ArcNumberTest",
+    "GraphTest.LocateVexNonExisting",
+    "GraphTest.SetVexesAndLocateVex",
+    "GraphTest.SetVexesInvalidInput",
+    "GraphTest.TestBFSAdjacencyList",
+    "GraphTest.TestDFSNoRecursionAdjacencyList",
+    "GraphTest.VertexNumberTest"
+   ]
+  },
+  {
+   "id": "graph-cpp#m52",
+   "file": "include/am_graph.hpp",
+   "line": 72,
+   "desc": "== → !=",
+   "point": {
+    "tok": 396,
+    "line": 72,
+    "desc": "== → !=",
+    "new": "!="
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "MatrixGraphTest.ArcSetTest",
+    "MatrixGraphTest.LocateVexTest",
+    "MatrixGraphTest.VertexSetTest"
+   ]
+  },
+  {
+   "id": "graph-cpp#m53",
+   "file": "include/stack.hpp",
+   "line": 57,
+   "desc": "++ → --",
+   "point": {
+    "tok": 216,
+    "line": 57,
+    "desc": "++ → --",
+    "new": "--"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "graph-cpp#m54",
+   "file": "include/al_graph.hpp",
+   "line": 102,
+   "desc": "< → <=",
+   "point": {
+    "tok": 656,
+    "line": 102,
+    "desc": "< → <=",
+    "new": "<="
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "graph-cpp#m55",
+   "file": "include/am_graph.hpp",
+   "line": 19,
+   "desc": "0 → 1",
+   "point": {
+    "tok": 160,
+    "line": 19,
+    "desc": "0 → 1",
+    "new": "1"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "graph-cpp#m56",
+   "file": "include/stack.hpp",
+   "line": 88,
+   "desc": "0 → 1",
+   "point": {
+    "tok": 273,
+    "line": 88,
+    "desc": "0 → 1",
+    "new": "1"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "StackTest.IsEmptyOnInitialization",
+    "StackTest.Pop",
+    "StackTest.PushAndTop"
+   ]
+  },
+  {
+   "id": "graph-cpp#m57",
+   "file": "include/al_graph.hpp",
+   "line": 202,
+   "desc": "++ → --",
+   "point": {
+    "tok": 1180,
+    "line": 202,
+    "desc": "++ → --",
+    "new": "--"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "graph-cpp#m58",
+   "file": "include/am_graph.hpp",
+   "line": 49,
+   "desc": "++ → --",
+   "point": {
+    "tok": 317,
+    "line": 49,
+    "desc": "++ → --",
+    "new": "--"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "MatrixGraphTest.LocateVexTest"
+   ]
+  },
+  {
+   "id": "graph-cpp#m59",
+   "file": "include/stack.hpp",
+   "line": 88,
+   "desc": "== → !=",
+   "point": {
+    "tok": 272,
+    "line": 88,
+    "desc": "== → !=",
+    "new": "!="
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "GraphTest.TestDFSNoRecursionAdjacencyList",
+    "StackTest.IsEmptyOnInitialization",
+    "StackTest.Pop",
+    "StackTest.PushAndTop"
+   ]
+  }
+ ]
+}

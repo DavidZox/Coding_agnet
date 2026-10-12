@@ -1,0 +1,55 @@
+diff --git a/astropy/units/quantity.py b/astropy/units/quantity.py
+index ded609cbe..6811fa20a 100644
+--- a/astropy/units/quantity.py
++++ b/astropy/units/quantity.py
+@@ -377,7 +377,7 @@ class Quantity(np.ndarray, metaclass=InheritDocstrings):
+                             "Numpy numeric type.")
+ 
+         # by default, cast any integer, boolean, etc., to float
+-        if dtype is None and (not (np.can_cast(np.float32, value.dtype)
++        if dtype is None and (not (np.can_cast(value.dtype, np.float32)
+                                    or value.dtype.fields)
+                               or value.dtype.kind == 'O'):
+             value = value.astype(float)
+@@ -506,6 +506,8 @@ class Quantity(np.ndarray, metaclass=InheritDocstrings):
+ 
+         if out is None:
+             # View the result array as a Quantity with the proper unit.
++            if unit is not None and result.dtype == np.float64 and self.dtype == np.float16:
++                result = result.astype(np.float16)
+             return result if unit is None else self._new_view(result, unit)
+ 
+         # For given output, just set the unit. We know the unit is not None and
+diff --git a/astropy/units/tests/test_float16_issue.py b/astropy/units/tests/test_float16_issue.py
+new file mode 100644
+index 000000000..5e643519e
+--- /dev/null
++++ b/astropy/units/tests/test_float16_issue.py
+@@ -0,0 +1,27 @@
++import numpy as np
++import pytest
++import astropy.units as u
++
++def test_float16_upcasting():
++    """
++    Reproduce the issue where float16 quantities get upgraded to float64 automatically.
++    """
++    val = np.float16(1)
++    q = val * u.km
++    assert q.dtype == np.float16, f"Expected dtype float16, but got {q.dtype}"
++
++def test_float32_no_upcasting():
++    """
++    Verify that float32 does not get upgraded (to ensure we don't break existing behavior).
++    """
++    val = np.float32(1)
++    q = val * u.km
++    assert q.dtype == np.float32
++
++def test_float64_no_upcasting():
++    """
++    Verify that float64 does not get upgraded.
++    """
++    val = np.float64(1)
++    q = val * u.km
++    assert q.dtype == np.float64

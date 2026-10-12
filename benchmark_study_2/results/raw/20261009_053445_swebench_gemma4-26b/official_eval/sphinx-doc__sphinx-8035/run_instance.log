@@ -1,0 +1,47 @@
+2026-10-09 09:09:24,211 - INFO - Creating container for sphinx-doc__sphinx-8035...
+2026-10-09 09:09:25,223 - INFO - Container for sphinx-doc__sphinx-8035 created: 3abafc59c49448e704af4464897a11dfbadaf62a20db492293d7df0d5d60d145
+2026-10-09 09:09:26,061 - INFO - Container for sphinx-doc__sphinx-8035 started: 3abafc59c49448e704af4464897a11dfbadaf62a20db492293d7df0d5d60d145
+2026-10-09 09:09:26,061 - INFO - Intermediate patch for sphinx-doc__sphinx-8035 written to logs/run_evaluation/20261009_053445_swebench_gemma4-26b/gemma4-26b/sphinx-doc__sphinx-8035/patch.diff, now applying to container...
+2026-10-09 09:09:26,100 - INFO - Failed to apply patch to container: git apply --verbose
+2026-10-09 09:09:26,658 - INFO - >>>>> Applied Patch:
+/tmp/patch.diff:201: trailing whitespace.
+        
+/tmp/patch.diff:210: trailing whitespace.
+        
+/tmp/patch.diff:212: trailing whitespace.
+        
+/tmp/patch.diff:216: trailing whitespace.
+            
+/tmp/patch.diff:228: trailing whitespace.
+        
+Checking patch setup.py...
+Applied patch to 'setup.py' cleanly.
+Checking patch sphinx/ext/autodoc/__init__.py...
+Applied patch to 'sphinx/ext/autodoc/__init__.py' cleanly.
+Checking patch tests/test_autodoc_private_members.py...
+error: tests/test_autodoc_private_members.py: does not exist in index
+error: cannot read the current contents of 'tests/test_autodoc_private_members.py'
+Falling back to direct application...
+Checking patch tox.ini...
+Applied patch to 'tox.ini' cleanly.
+Applied patch setup.py cleanly.
+Applied patch sphinx/ext/autodoc/__init__.py cleanly.
+Applied patch tests/test_autodoc_private_members.py cleanly.
+Applied patch tox.ini cleanly.
+warning: squelched 9 whitespace errors
+warning: 14 lines add whitespace errors.
+
+2026-10-09 09:09:26,703 - INFO - Git diff before:
+
+2026-10-09 09:09:26,703 - INFO - Eval script for sphinx-doc__sphinx-8035 written to logs/run_evaluation/20261009_053445_swebench_gemma4-26b/gemma4-26b/sphinx-doc__sphinx-8035/eval.sh; copying to container...
+2026-10-09 09:09:28,875 - INFO - Test runtime: 2.15 seconds
+2026-10-09 09:09:28,876 - INFO - Test output for sphinx-doc__sphinx-8035 written to logs/run_evaluation/20261009_053445_swebench_gemma4-26b/gemma4-26b/sphinx-doc__sphinx-8035/test_output.txt
+2026-10-09 09:09:28,895 - INFO - Git diff after:
+
+2026-10-09 09:09:28,895 - INFO - Grading answer for sphinx-doc__sphinx-8035...
+2026-10-09 09:09:28,896 - INFO - report: {'sphinx-doc__sphinx-8035': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'infra_failure': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['tests/test_ext_autodoc_private_members.py::test_private_members']}, 'PASS_TO_PASS': {'success': ['tests/test_ext_autodoc_private_members.py::test_private_field', 'tests/test_ext_autodoc_private_members.py::test_private_field_and_private_members'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sphinx-doc__sphinx-8035: resolved: False
+2026-10-09 09:09:28,896 - INFO - Attempting to stop container sweb.eval.sphinx-doc__sphinx-8035.20261009_053445_swebench_gemma4-26b...
+2026-10-09 09:09:48,164 - INFO - Container sweb.eval.sphinx-doc__sphinx-8035.20261009_053445_swebench_gemma4-26b stopped successfully.
+2026-10-09 09:09:48,164 - INFO - Attempting to remove container sweb.eval.sphinx-doc__sphinx-8035.20261009_053445_swebench_gemma4-26b...
+2026-10-09 09:09:48,456 - INFO - Container sweb.eval.sphinx-doc__sphinx-8035.20261009_053445_swebench_gemma4-26b removed successfully.

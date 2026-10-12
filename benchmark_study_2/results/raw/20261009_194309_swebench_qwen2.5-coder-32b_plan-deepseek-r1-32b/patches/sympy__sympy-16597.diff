@@ -1,0 +1,27 @@
+diff --git a/sympy/core/assumptions.py b/sympy/core/assumptions.py
+index ce4dd30f2..eb4bf184a 100644
+--- a/sympy/core/assumptions.py
++++ b/sympy/core/assumptions.py
+@@ -186,6 +186,7 @@
+     'nonnegative    ==  real & !negative',
+ 
+     'zero           ->  even & finite',
++    'even           ->  finite',
+ 
+     'prime          ->  integer & positive',
+     'composite      ->  integer & positive & !prime',
+diff --git a/sympy/core/tests/test_symbol.py b/sympy/core/tests/test_symbol.py
+index 61f36df15..5659083bd 100644
+--- a/sympy/core/tests/test_symbol.py
++++ b/sympy/core/tests/test_symbol.py
+@@ -328,6 +328,10 @@ def test_symbols_become_functions_issue_3539():
+     raises(TypeError, lambda: alpha(2.5))
+     raises(TypeError, lambda: phi(t))
+ 
++def test_even_symbol_is_finite():
++    m = Symbol('m', even=True)
++    assert m.is_finite, "Even symbol should be finite"
++
+ 
+ def test_unicode():
+     xu = Symbol(u'x')

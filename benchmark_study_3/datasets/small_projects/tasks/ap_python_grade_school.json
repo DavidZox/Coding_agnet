@@ -1,0 +1,16 @@
+{
+ "id": "ap_python_grade_school",
+ "family": "ap",
+ "source": "aider_polyglot",
+ "repo": "grade-school",
+ "lang": "python",
+ "workspace": "workspaces/ap_python_grade_school",
+ "task": "請照 `.docs/instructions.md`、`.docs/instructions.append.md` 的說明完成 `grade_school.py`（目前只有空的骨架）。測試在 `grade_school_test.py`，要全部通過；測試是對的，不要修改測試。",
+ "impl_files": [
+  "grade_school.py"
+ ],
+ "test_files": [
+  "grade_school_test.py"
+ ],
+ "python": "devbench_venv"
+}

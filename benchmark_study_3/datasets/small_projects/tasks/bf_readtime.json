@@ -1,0 +1,39 @@
+{
+ "id": "bf_readtime",
+ "family": "bf",
+ "source": "devbench",
+ "repo": "readtime",
+ "lang": "python",
+ "workspace": "workspaces/bf_readtime",
+ "task": "這個專案（readtime）最近有幾個改動之後，單元測試（`python -m pytest -q unit_tests`）有 6 個失敗：\n- unit_tests.test_check_data.BaseTestCase::test_invalid_format\n- unit_tests.test_check_data.BaseTestCase::test_plain_text_empty\n- unit_tests.test_check_data.BaseTestCase::test_unsupported_format\n- unit_tests.test_custom_wpm.BaseTestCase::test_custom_wpm\n- unit_tests.test_custom_wpm.BaseTestCase::test_custom_wpm_markdown\n- unit_tests.test_transitions.BaseTestCase::test_transitions\n請找出原因並修正程式，讓測試全部通過。測試本身是對的，不要修改測試；問題可能不只一個、也可能不在同一個檔案。修完請說明每個問題在哪裡、怎麼修的。",
+ "test_dir": "unit_tests",
+ "injected": [
+  {
+   "id": "readtime#m54",
+   "file": "readtime/utils.py",
+   "line": 61,
+   "desc": "'Unsupported format: ' → ''"
+  },
+  {
+   "id": "readtime#m0",
+   "file": "readtime/api.py",
+   "line": 43,
+   "desc": "265 → 266"
+  },
+  {
+   "id": "readtime#m25",
+   "file": "readtime/result.py",
+   "line": 49,
+   "desc": "/ → *"
+  }
+ ],
+ "visible_failing": [
+  "unit_tests.test_check_data.BaseTestCase::test_invalid_format",
+  "unit_tests.test_check_data.BaseTestCase::test_plain_text_empty",
+  "unit_tests.test_check_data.BaseTestCase::test_unsupported_format",
+  "unit_tests.test_custom_wpm.BaseTestCase::test_custom_wpm",
+  "unit_tests.test_custom_wpm.BaseTestCase::test_custom_wpm_markdown",
+  "unit_tests.test_transitions.BaseTestCase::test_transitions"
+ ],
+ "python": "devbench_venv"
+}

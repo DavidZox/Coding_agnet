@@ -1,0 +1,34 @@
+{
+ "id": "bf_geotext",
+ "family": "bf",
+ "source": "devbench",
+ "repo": "geotext",
+ "lang": "python",
+ "workspace": "workspaces/bf_geotext",
+ "task": "這個專案（geotext）最近有幾個改動之後，單元測試（`python -m pytest -q unit_tests`）有 1 個失敗：\n- ::unit_tests.test_geotext\n請找出原因並修正程式，讓測試全部通過。測試本身是對的，不要修改測試；問題可能不只一個、也可能不在同一個檔案。修完請說明每個問題在哪裡、怎麼修的。",
+ "test_dir": "unit_tests",
+ "injected": [
+  {
+   "id": "geotext#m24",
+   "file": "geotext/geotext.py",
+   "line": 116,
+   "desc": "not in → in"
+  },
+  {
+   "id": "geotext#m7",
+   "file": "geotext/geotext.py",
+   "line": 84,
+   "desc": "'nationalities cities countries' → ''"
+  },
+  {
+   "id": "geotext#m15",
+   "file": "geotext/geotext.py",
+   "line": 75,
+   "desc": "'countryInfo.txt' → ''"
+  }
+ ],
+ "visible_failing": [
+  "::unit_tests.test_geotext"
+ ],
+ "python": "devbench_venv"
+}

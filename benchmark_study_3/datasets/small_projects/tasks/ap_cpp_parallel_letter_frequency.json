@@ -1,0 +1,18 @@
+{
+ "id": "ap_cpp_parallel_letter_frequency",
+ "family": "ap",
+ "source": "aider_polyglot",
+ "repo": "parallel-letter-frequency",
+ "lang": "cpp",
+ "workspace": "workspaces/ap_cpp_parallel_letter_frequency",
+ "task": "請照 `.docs/instructions.md`、`.docs/instructions.append.md` 的說明完成 `parallel_letter_frequency.h`、`parallel_letter_frequency.cpp`（目前只有空的骨架）。測試在 `parallel_letter_frequency_test.cpp`，要全部通過；測試是對的，不要修改測試。",
+ "impl_files": [
+  "parallel_letter_frequency.h",
+  "parallel_letter_frequency.cpp"
+ ],
+ "test_files": [
+  "parallel_letter_frequency_test.cpp",
+  "test"
+ ],
+ "python": "devbench_venv"
+}

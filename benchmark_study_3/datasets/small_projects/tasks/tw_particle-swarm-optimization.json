@@ -1,0 +1,20 @@
+{
+ "id": "tw_particle-swarm-optimization",
+ "family": "tw",
+ "source": "devbench",
+ "repo": "particle-swarm-optimization",
+ "lang": "python",
+ "workspace": "workspaces/tw_particle-swarm-optimization",
+ "task": "這個專案（particle-swarm-optimization）目前沒有單元測試，請幫我補上，最後我會看過才合併：\n1. 用 pytest 在 `unit_tests/` 寫單元測試，涵蓋 `pso/cost_functions.py`、`pso/pso_simple.py` 裡的公開類別與函式，包含正常情況、邊界條件與錯誤處理；文件（PRD、架構設計）可以參考，但以目前的程式為準。\n2. 測試要能在目前的程式上全部通過。不要修改正式程式；如果覺得程式本身有 bug，寫在回報裡就好。\n3. 完成後量測覆蓋率（行與分支），回報數字，並列出還沒涵蓋到、值得補測試的部分。",
+ "test_dir": "unit_tests",
+ "prod_files": [
+  "pso/cost_functions.py",
+  "pso/pso_simple.py"
+ ],
+ "cov_sources": [
+  "pso"
+ ],
+ "cov_filters": null,
+ "mutants": "mutants/particle-swarm-optimization.json",
+ "python": "devbench_venv"
+}

@@ -1,0 +1,382 @@
+2026-10-10 00:20:05,432 - INFO - Creating container for sympy__sympy-16597...
+2026-10-10 00:20:06,337 - INFO - Container for sympy__sympy-16597 created: a3bf39e65c04f8315a3542ba92ef33e74b2626f6d201319d76dde66425212628
+2026-10-10 00:20:06,995 - INFO - Container for sympy__sympy-16597 started: a3bf39e65c04f8315a3542ba92ef33e74b2626f6d201319d76dde66425212628
+2026-10-10 00:20:06,996 - INFO - Intermediate patch for sympy__sympy-16597 written to logs/run_evaluation/20261010_000803_swebench_gemma4-26b_v42/gemma4-26b_v42/sympy__sympy-16597/patch.diff, now applying to container...
+2026-10-10 00:20:07,035 - INFO - >>>>> Applied Patch:
+/tmp/patch.diff:12: trailing whitespace.
+    
+/tmp/patch.diff:16: trailing whitespace.
+    
+/tmp/patch.diff:20: trailing whitespace.
+    
+/tmp/patch.diff:23: trailing whitespace.
+    
+/tmp/patch.diff:37: trailing whitespace.
+    # We can't easily inject assumptions into a Symbol object's internal KB 
+Checking patch debug_handler.py...
+Checking patch diagnose_even.py...
+Checking patch diagnose_m.py...
+Checking patch sympy/assumptions/ask.py...
+Checking patch sympy/assumptions/handlers/calculus.py...
+Checking patch sympy/assumptions/handlers/ntheory.py...
+Checking patch sympy/core/tests/test_even_finite.py...
+Applied patch debug_handler.py cleanly.
+Applied patch diagnose_even.py cleanly.
+Applied patch diagnose_m.py cleanly.
+Applied patch sympy/assumptions/ask.py cleanly.
+Applied patch sympy/assumptions/handlers/calculus.py cleanly.
+Applied patch sympy/assumptions/handlers/ntheory.py cleanly.
+Applied patch sympy/core/tests/test_even_finite.py cleanly.
+warning: squelched 9 whitespace errors
+warning: 14 lines add whitespace errors.
+
+2026-10-10 00:20:07,189 - INFO - Git diff before:
+diff --git a/sympy/assumptions/ask.py b/sympy/assumptions/ask.py
+index 2f72e111e..9724d4286 100644
+--- a/sympy/assumptions/ask.py
++++ b/sympy/assumptions/ask.py
+@@ -1481,6 +1481,7 @@ def get_known_facts():
+         Equivalent(Q.extended_real, Q.real | Q.infinite),
+         Equivalent(Q.even | Q.odd, Q.integer),
+         Implies(Q.even, ~Q.odd),
++        Implies(Q.even, Q.finite),
+         Equivalent(Q.prime, Q.integer & Q.positive & ~Q.composite),
+         Implies(Q.integer, Q.rational),
+         Implies(Q.rational, Q.algebraic),
+diff --git a/sympy/assumptions/handlers/calculus.py b/sympy/assumptions/handlers/calculus.py
+index aa0d00aca..a3173d24c 100644
+--- a/sympy/assumptions/handlers/calculus.py
++++ b/sympy/assumptions/handlers/calculus.py
+@@ -50,6 +50,18 @@ def Symbol(expr, assumptions):
+             return expr.is_finite
+         if Q.finite(expr) in conjuncts(assumptions):
+             return True
++        try:
++            from sympy.assumptions.handlers.ntheory import AskEvenHandler
++            if AskEvenHandler._implies_finite(expr, assumptions):
++                return True
++        except ImportError:
++            pass
++        if expr.is_even is True:
++            return True
++        if ask(Q.even(expr), assumptions) is True:
++            return True
++        if ask(Q.finite(expr), assumptions) is True:
++            return True
+         return None
+ 
+     @staticmethod
+@@ -60,34 +72,38 @@ def Add(expr, assumptions):
+         Truth Table:
+ 
+         +-------+-----+-----------+-----------+
++        |       |     |     U     |     ?     |
+         |       |     |           |           |
+-        |       |  B  |     U     |     ?     |
+         |       |     |           |           |
+-        +-------+-----+---+---+---+---+---+---+
+-        |       |     |   |   |   |   |   |   |
++        +-------+-----+-----------+-----------+
+         |       |     |'+'|'-'|'x'|'+'|'-'|'x'|
+         |       |     |   |   |   |   |   |   |
+         +-------+-----+---+---+---+---+---+---+
+-        |       |     |           |           |
+         |   B   |  B  |     U     |     ?     |
+         |       |     |           |           |
+         +---+---+-----+---+---+---+---+---+---+
+-        |   |   |     |   |   |   |   |   |   |
+-        |   |'+'|     | U | ? | ? | U | ? | ? |
+-        |   |   |     |   |   |   |   |   |   |
+-        |   +---+-----+---+---+---+---+---+---+
+-        |   |   |     |   |   |   |   |   |   |
+-        | U |'-'|     | ? | U | ? | ? | U | ? |
+-        |   |   |     |   |   |   |   |   |   |
++        |   |   |     |'+'|     | U | ? | ? |
++        |   |   |     |   |     |   |   |   |
++        +---+---+-----+---+---+---+---+---+---+
++        |   |   |     |   |     |   |   |   |
+         |   +---+-----+---+---+---+---+---+---+
++        |   |   |     |   |     |   |   |   |
++        |   |   |     |   |     |   |   |   |
++        +---+---+-----+---+---+---+---+---+---+
++        |   |   |     |   |     |   |   |   |
++        |   |   +-----+---+---+---+---+---+---+
++        |   |   |     |   |     |   |   |   |
++        |   |   |     |   |     |   |   |   |
++        +---+---+-----+---+---+---+---+---+---+
++        |   |   |     |   |     |   |   |   |
++        |   |   |     |   |     |   |   |   |
++        |   |   +-----+---+---+---+---+---+---+
+         |   |   |     |           |           |
+-        |   |'x'|     |     ?     |     ?     |
+         |   |   |     |           |           |
+-        +---+---+-----+---+---+---+---+---+---+
+-        |       |     |           |           |
+-        |   ?   |     |           |     ?     |
++        +---+---+-----+-----------+-----------+
+         |       |     |           |           |
+-        +-------+-----+-----------+---+---+---+
++        |   ?   |     |           |           |
++        +-------+-----+-----------+-----------+
+ 
+             * 'B' = Bounded
+ 
+@@ -146,26 +162,31 @@ def Mul(expr, assumptions):
+         Truth Table:
+ 
+         +---+---+---+--------+
+-        |   |   |   |        |
+-        |   | B | U |   ?    |
+-        |   |   |   |        |
+-        +---+---+---+---+----+
++        |   |   | B | U |   ?    |
++        |   |   |   |   |        |
++        |   |   |   |   |        |
++        +---+---+---+--------+
++        | B | B | U |   ?    |
++        |   |   |   |   |    |
++        +---+---+---+--------+
++        | U |   | U | U | ?  |
+         |   |   |   |   |    |
+-        |   |   |   | s | /s |
++        +---+---+---+--------+
++        | ? |   | ?   |   |   ?    |
++        |   |   |   |   |   |    |
++        +---+---+---+--------+
++        |   |   | s | /s |
+         |   |   |   |   |    |
+-        +---+---+---+---+----+
+-        |   |   |   |        |
++        +---+---+---+--------+
+         | B | B | U |   ?    |
+-        |   |   |   |        |
+-        +---+---+---+---+----+
+         |   |   |   |   |    |
++        +---+---+---+--------+
+         | U |   | U | U | ?  |
+         |   |   |   |   |    |
+-        +---+---+---+---+----+
+-        |   |   |   |        |
+-        | ? |   |   |   ?    |
+-        |   |   |   |        |
+-        +---+---+---+---+----+
++        +---+---+---+--------+
++        | ? |   | ?   |   |   ?    |
++        |   |   |   |   |   |    |
++        +---+---+---+--------+
+ 
+             * B = Bounded
+ 
+diff --git a/sympy/assumptions/handlers/ntheory.py b/sympy/assumptions/handlers/ntheory.py
+index 91761bad0..a8857cf78 100644
+--- a/sympy/assumptions/handlers/ntheory.py
++++ b/sympy/assumptions/handlers/ntheory.py
+@@ -110,6 +110,12 @@ class AskEvenHandler(CommonHandler):
+     def Expr(expr, assumptions):
+         return expr.is_even
+ 
++    @staticmethod
++    def _implies_finite(expr, assumptions):
++        if expr.is_even:
++            return True
++        return None
++
+     @staticmethod
+     def _number(expr, assumptions):
+         # helper method
+@@ -228,6 +234,15 @@ def im(expr, assumptions):
+             return True
+ 
+ 
++class AskFiniteHandler(CommonHandler):
++    @staticmethod
++    def Expr(expr, assumptions):
++        if expr.is_even:
++            return True
++        if ask(Q.even(expr), assumptions):
++            return True
++        return expr.is_finite
++
+ class AskOddHandler(CommonHandler):
+     """
+     Handler for key 'odd'
+2026-10-10 00:20:07,189 - INFO - Eval script for sympy__sympy-16597 written to logs/run_evaluation/20261010_000803_swebench_gemma4-26b_v42/gemma4-26b_v42/sympy__sympy-16597/eval.sh; copying to container...
+2026-10-10 00:20:14,258 - INFO - Test runtime: 7.05 seconds
+2026-10-10 00:20:14,258 - INFO - Test output for sympy__sympy-16597 written to logs/run_evaluation/20261010_000803_swebench_gemma4-26b_v42/gemma4-26b_v42/sympy__sympy-16597/test_output.txt
+2026-10-10 00:20:14,279 - INFO - Git diff after:
+diff --git a/sympy/assumptions/ask.py b/sympy/assumptions/ask.py
+index 2f72e111e..9724d4286 100644
+--- a/sympy/assumptions/ask.py
++++ b/sympy/assumptions/ask.py
+@@ -1481,6 +1481,7 @@ def get_known_facts():
+         Equivalent(Q.extended_real, Q.real | Q.infinite),
+         Equivalent(Q.even | Q.odd, Q.integer),
+         Implies(Q.even, ~Q.odd),
++        Implies(Q.even, Q.finite),
+         Equivalent(Q.prime, Q.integer & Q.positive & ~Q.composite),
+         Implies(Q.integer, Q.rational),
+         Implies(Q.rational, Q.algebraic),
+diff --git a/sympy/assumptions/handlers/calculus.py b/sympy/assumptions/handlers/calculus.py
+index aa0d00aca..a3173d24c 100644
+--- a/sympy/assumptions/handlers/calculus.py
++++ b/sympy/assumptions/handlers/calculus.py
+@@ -50,6 +50,18 @@ def Symbol(expr, assumptions):
+             return expr.is_finite
+         if Q.finite(expr) in conjuncts(assumptions):
+             return True
++        try:
++            from sympy.assumptions.handlers.ntheory import AskEvenHandler
++            if AskEvenHandler._implies_finite(expr, assumptions):
++                return True
++        except ImportError:
++            pass
++        if expr.is_even is True:
++            return True
++        if ask(Q.even(expr), assumptions) is True:
++            return True
++        if ask(Q.finite(expr), assumptions) is True:
++            return True
+         return None
+ 
+     @staticmethod
+@@ -60,34 +72,38 @@ def Add(expr, assumptions):
+         Truth Table:
+ 
+         +-------+-----+-----------+-----------+
++        |       |     |     U     |     ?     |
+         |       |     |           |           |
+-        |       |  B  |     U     |     ?     |
+         |       |     |           |           |
+-        +-------+-----+---+---+---+---+---+---+
+-        |       |     |   |   |   |   |   |   |
++        +-------+-----+-----------+-----------+
+         |       |     |'+'|'-'|'x'|'+'|'-'|'x'|
+         |       |     |   |   |   |   |   |   |
+         +-------+-----+---+---+---+---+---+---+
+-        |       |     |           |           |
+         |   B   |  B  |     U     |     ?     |
+         |       |     |           |           |
+         +---+---+-----+---+---+---+---+---+---+
+-        |   |   |     |   |   |   |   |   |   |
+-        |   |'+'|     | U | ? | ? | U | ? | ? |
+-        |   |   |     |   |   |   |   |   |   |
+-        |   +---+-----+---+---+---+---+---+---+
+-        |   |   |     |   |   |   |   |   |   |
+-        | U |'-'|     | ? | U | ? | ? | U | ? |
+-        |   |   |     |   |   |   |   |   |   |
++        |   |   |     |'+'|     | U | ? | ? |
++        |   |   |     |   |     |   |   |   |
++        +---+---+-----+---+---+---+---+---+---+
++        |   |   |     |   |     |   |   |   |
+         |   +---+-----+---+---+---+---+---+---+
++        |   |   |     |   |     |   |   |   |
++        |   |   |     |   |     |   |   |   |
++        +---+---+-----+---+---+---+---+---+---+
++        |   |   |     |   |     |   |   |   |
++        |   |   +-----+---+---+---+---+---+---+
++        |   |   |     |   |     |   |   |   |
++        |   |   |     |   |     |   |   |   |
++        +---+---+-----+---+---+---+---+---+---+
++        |   |   |     |   |     |   |   |   |
++        |   |   |     |   |     |   |   |   |
++        |   |   +-----+---+---+---+---+---+---+
+         |   |   |     |           |           |
+-        |   |'x'|     |     ?     |     ?     |
+         |   |   |     |           |           |
+-        +---+---+-----+---+---+---+---+---+---+
+-        |       |     |           |           |
+-        |   ?   |     |           |     ?     |
++        +---+---+-----+-----------+-----------+
+         |       |     |           |           |
+-        +-------+-----+-----------+---+---+---+
++        |   ?   |     |           |           |
++        +-------+-----+-----------+-----------+
+ 
+             * 'B' = Bounded
+ 
+@@ -146,26 +162,31 @@ def Mul(expr, assumptions):
+         Truth Table:
+ 
+         +---+---+---+--------+
+-        |   |   |   |        |
+-        |   | B | U |   ?    |
+-        |   |   |   |        |
+-        +---+---+---+---+----+
++        |   |   | B | U |   ?    |
++        |   |   |   |   |        |
++        |   |   |   |   |        |
++        +---+---+---+--------+
++        | B | B | U |   ?    |
++        |   |   |   |   |    |
++        +---+---+---+--------+
++        | U |   | U | U | ?  |
+         |   |   |   |   |    |
+-        |   |   |   | s | /s |
++        +---+---+---+--------+
++        | ? |   | ?   |   |   ?    |
++        |   |   |   |   |   |    |
++        +---+---+---+--------+
++        |   |   | s | /s |
+         |   |   |   |   |    |
+-        +---+---+---+---+----+
+-        |   |   |   |        |
++        +---+---+---+--------+
+         | B | B | U |   ?    |
+-        |   |   |   |        |
+-        +---+---+---+---+----+
+         |   |   |   |   |    |
++        +---+---+---+--------+
+         | U |   | U | U | ?  |
+         |   |   |   |   |    |
+-        +---+---+---+---+----+
+-        |   |   |   |        |
+-        | ? |   |   |   ?    |
+-        |   |   |   |        |
+-        +---+---+---+---+----+
++        +---+---+---+--------+
++        | ? |   | ?   |   |   ?    |
++        |   |   |   |   |   |    |
++        +---+---+---+--------+
+ 
+             * B = Bounded
+ 
+diff --git a/sympy/assumptions/handlers/ntheory.py b/sympy/assumptions/handlers/ntheory.py
+index 91761bad0..a8857cf78 100644
+--- a/sympy/assumptions/handlers/ntheory.py
++++ b/sympy/assumptions/handlers/ntheory.py
+@@ -110,6 +110,12 @@ class AskEvenHandler(CommonHandler):
+     def Expr(expr, assumptions):
+         return expr.is_even
+ 
++    @staticmethod
++    def _implies_finite(expr, assumptions):
++        if expr.is_even:
++            return True
++        return None
++
+     @staticmethod
+     def _number(expr, assumptions):
+         # helper method
+@@ -228,6 +234,15 @@ def im(expr, assumptions):
+             return True
+ 
+ 
++class AskFiniteHandler(CommonHandler):
++    @staticmethod
++    def Expr(expr, assumptions):
++        if expr.is_even:
++            return True
++        if ask(Q.even(expr), assumptions):
++            return True
++        return expr.is_finite
++
+ class AskOddHandler(CommonHandler):
+     """
+     Handler for key 'odd'
+2026-10-10 00:20:14,279 - INFO - Grading answer for sympy__sympy-16597...
+2026-10-10 00:20:14,279 - INFO - report: {'sympy__sympy-16597': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'infra_failure': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['test_infinity', 'test_neg_infinity', 'test_other_symbol']}, 'PASS_TO_PASS': {'success': ['test_symbol_unset', 'test_zero', 'test_one', 'test_negativeone', 'test_zoo', 'test_nan', 'test_pos_rational', 'test_neg_rational', 'test_pi', 'test_E', 'test_I', 'test_symbol_real', 'test_symbol_imaginary', 'test_symbol_zero', 'test_symbol_positive', 'test_neg_symbol_positive', 'test_symbol_nonpositive', 'test_neg_symbol_nonpositive', 'test_symbol_falsepositive', 'test_symbol_falsepositive_mul', 'test_neg_symbol_falsepositive', 'test_neg_symbol_falsenegative', 'test_symbol_falsepositive_real', 'test_neg_symbol_falsepositive_real', 'test_symbol_falsenonnegative', 'test_symbol_falsenonnegative_real', 'test_neg_symbol_falsenonnegative_real', 'test_prime', 'test_composite', 'test_prime_symbol', 'test_symbol_noncommutative', 'test_issue_3825', 'test_issue_4822', 'test_hash_vs_typeinfo', 'test_hash_vs_typeinfo_2', 'test_hash_vs_eq', 'test_Add_is_pos_neg', 'test_Add_is_imaginary', 'test_Add_is_algebraic', 'test_Mul_is_algebraic', 'test_Pow_is_algebraic', 'test_Mul_is_prime_composite', 'test_Pow_is_pos_neg', 'test_Pow_is_prime_composite', 'test_Mul_is_infinite', 'test_special_is_rational', 'test_sanitize_assumptions', 'test_special_assumptions', 'test_inconsistent', 'test_issue_6631', 'test_issue_2730', 'test_issue_4149', 'test_issue_2920', 'test_issue_7899', 'test_issue_8075', 'test_issue_8642', 'test_issues_8632_8633_8638_8675_8992', 'test_issue_9115_9150', 'test_issue_9165', 'test_issue_10024', 'test_issue_10302', 'test_complex_reciprocal_imaginary', 'test_Min', 'test_Max', 'test_minmax_assumptions', 'test_issue_8413', 'test_root', 'test_real_root', 'test_rewrite_MaxMin_as_Heaviside', 'test_rewrite_MaxMin_as_Piecewise', 'test_issue_11099', 'test_issue_12638', 'test_instantiation_evaluation', 'test_rewrite_as_Abs'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sympy__sympy-16597: resolved: False
+2026-10-10 00:20:14,279 - INFO - Attempting to stop container sweb.eval.sympy__sympy-16597.20261010_000803_swebench_gemma4-26b_v42...
+2026-10-10 00:20:30,539 - INFO - Container sweb.eval.sympy__sympy-16597.20261010_000803_swebench_gemma4-26b_v42 stopped successfully.
+2026-10-10 00:20:30,539 - INFO - Attempting to remove container sweb.eval.sympy__sympy-16597.20261010_000803_swebench_gemma4-26b_v42...
+2026-10-10 00:20:30,802 - INFO - Container sweb.eval.sympy__sympy-16597.20261010_000803_swebench_gemma4-26b_v42 removed successfully.

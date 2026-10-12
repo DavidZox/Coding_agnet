@@ -1,0 +1,448 @@
+{
+ "repo": "chakin",
+ "seed": 20261010,
+ "official_tests": 1,
+ "mutants": [
+  {
+   "id": "chakin#m0",
+   "file": "chakin/downloader.py",
+   "line": 42,
+   "desc": "拿掉 not",
+   "point": {
+    "node": 69,
+    "kind": "not",
+    "line": 42,
+    "desc": "拿掉 not"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_downloader.TestDownloader::test_download_by_name"
+   ]
+  },
+  {
+   "id": "chakin#m1",
+   "file": "chakin/downloader.py",
+   "line": 22,
+   "desc": "> → >=",
+   "point": {
+    "node": 53,
+    "kind": "cmp",
+    "sub": 0,
+    "line": 22,
+    "desc": "> → >="
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "chakin#m2",
+   "file": "chakin/downloader.py",
+   "line": 25,
+   "desc": "== → !=",
+   "point": {
+    "node": 241,
+    "kind": "cmp",
+    "sub": 0,
+    "line": 25,
+    "desc": "== → !="
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "chakin#m3",
+   "file": "chakin/downloader.py",
+   "line": 22,
+   "desc": "條件取反",
+   "point": {
+    "node": 23,
+    "kind": "neg",
+    "line": 22,
+    "desc": "條件取反"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "chakin#m4",
+   "file": "chakin/downloader.py",
+   "line": 58,
+   "desc": "'Name' → ''",
+   "point": {
+    "node": 313,
+    "kind": "const",
+    "line": 58,
+    "desc": "'Name' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "chakin#m5",
+   "file": "chakin/downloader.py",
+   "line": 24,
+   "desc": "條件取反",
+   "point": {
+    "node": 55,
+    "kind": "neg",
+    "line": 24,
+    "desc": "條件取反"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_downloader.TestDownloader::test_download_by_name"
+   ]
+  },
+  {
+   "id": "chakin#m6",
+   "file": "chakin/downloader.py",
+   "line": 35,
+   "desc": "條件取反",
+   "point": {
+    "node": 65,
+    "kind": "neg",
+    "line": 35,
+    "desc": "條件取反"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "chakin#m7",
+   "file": "chakin/downloader.py",
+   "line": 57,
+   "desc": "== → !=",
+   "point": {
+    "node": 82,
+    "kind": "cmp",
+    "sub": 0,
+    "line": 57,
+    "desc": "== → !="
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "chakin#m8",
+   "file": "chakin/downloader.py",
+   "line": 61,
+   "desc": "'Name' → ''",
+   "point": {
+    "node": 325,
+    "kind": "const",
+    "line": 61,
+    "desc": "'Name' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "chakin#m9",
+   "file": "chakin/downloader.py",
+   "line": 25,
+   "desc": "'Name' → ''",
+   "point": {
+    "node": 336,
+    "kind": "const",
+    "line": 25,
+    "desc": "'Name' → ''"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_downloader.TestDownloader::test_download_by_name"
+   ]
+  },
+  {
+   "id": "chakin#m10",
+   "file": "chakin/downloader.py",
+   "line": 39,
+   "desc": "* → /",
+   "point": {
+    "node": 260,
+    "kind": "bin",
+    "line": 39,
+    "desc": "* → /"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "chakin#m11",
+   "file": "chakin/downloader.py",
+   "line": 57,
+   "desc": "條件取反",
+   "point": {
+    "node": 38,
+    "kind": "neg",
+    "line": 57,
+    "desc": "條件取反"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "chakin#m12",
+   "file": "chakin/downloader.py",
+   "line": 31,
+   "desc": "' ' → ''",
+   "point": {
+    "node": 113,
+    "kind": "const",
+    "line": 31,
+    "desc": "' ' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "chakin#m13",
+   "file": "chakin/downloader.py",
+   "line": 14,
+   "desc": "'./' → ''",
+   "point": {
+    "node": 49,
+    "kind": "const",
+    "line": 14,
+    "desc": "'./' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "chakin#m14",
+   "file": "chakin/downloader.py",
+   "line": 60,
+   "desc": "== → !=",
+   "point": {
+    "node": 225,
+    "kind": "cmp",
+    "sub": 0,
+    "line": 60,
+    "desc": "== → !="
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "chakin#m15",
+   "file": "chakin/downloader.py",
+   "line": 61,
+   "desc": "'Dimension' → ''",
+   "point": {
+    "node": 326,
+    "kind": "const",
+    "line": 61,
+    "desc": "'Dimension' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "chakin#m16",
+   "file": "chakin/downloader.py",
+   "line": 11,
+   "desc": "return … → return None",
+   "point": {
+    "node": 19,
+    "kind": "ret",
+    "line": 11,
+    "desc": "return … → return None"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_downloader.TestDownloader::test_download_by_name"
+   ]
+  },
+  {
+   "id": "chakin#m17",
+   "file": "chakin/downloader.py",
+   "line": 28,
+   "desc": "拿掉 not",
+   "point": {
+    "node": 58,
+    "kind": "not",
+    "line": 28,
+    "desc": "拿掉 not"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "chakin#m18",
+   "file": "chakin/downloader.py",
+   "line": 35,
+   "desc": "is → is not",
+   "point": {
+    "node": 126,
+    "kind": "cmp",
+    "sub": 0,
+    "line": 35,
+    "desc": "is → is not"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "chakin#m19",
+   "file": "chakin/downloader.py",
+   "line": 47,
+   "desc": "return … → return None",
+   "point": {
+    "node": 34,
+    "kind": "ret",
+    "line": 47,
+    "desc": "return … → return None"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_downloader.TestDownloader::test_download_by_name"
+   ]
+  },
+  {
+   "id": "chakin#m20",
+   "file": "chakin/downloader.py",
+   "line": 31,
+   "desc": "'Test: ' → ''",
+   "point": {
+    "node": 111,
+    "kind": "const",
+    "line": 31,
+    "desc": "'Test: ' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "chakin#m21",
+   "file": "chakin/downloader.py",
+   "line": 42,
+   "desc": "條件取反",
+   "point": {
+    "node": 30,
+    "kind": "neg",
+    "line": 42,
+    "desc": "條件取反"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_downloader.TestDownloader::test_download_by_name"
+   ]
+  },
+  {
+   "id": "chakin#m22",
+   "file": "chakin/downloader.py",
+   "line": 41,
+   "desc": "1 → 0",
+   "point": {
+    "node": 202,
+    "kind": "const",
+    "line": 41,
+    "desc": "1 → 0"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "chakin#m23",
+   "file": "chakin/downloader.py",
+   "line": 58,
+   "desc": "'Dimension' → ''",
+   "point": {
+    "node": 314,
+    "kind": "const",
+    "line": 58,
+    "desc": "'Dimension' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "chakin#m24",
+   "file": "chakin/downloader.py",
+   "line": 9,
+   "desc": "'datasets.csv' → ''",
+   "point": {
+    "node": 88,
+    "kind": "const",
+    "line": 9,
+    "desc": "'datasets.csv' → ''"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_downloader.TestDownloader::test_download_by_name"
+   ]
+  },
+  {
+   "id": "chakin#m25",
+   "file": "chakin/downloader.py",
+   "line": 14,
+   "desc": "1 → 0",
+   "point": {
+    "node": 94,
+    "kind": "const",
+    "line": 14,
+    "desc": "1 → 0"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "chakin#m26",
+   "file": "chakin/downloader.py",
+   "line": 28,
+   "desc": "條件取反",
+   "point": {
+    "node": 25,
+    "kind": "neg",
+    "line": 28,
+    "desc": "條件取反"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "chakin#m27",
+   "file": "chakin/downloader.py",
+   "line": 41,
+   "desc": "'/' → ''",
+   "point": {
+    "node": 200,
+    "kind": "const",
+    "line": 41,
+    "desc": "'/' → ''"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_downloader.TestDownloader::test_download_by_name"
+   ]
+  }
+ ]
+}

@@ -1,0 +1,62 @@
+2026-10-09 13:38:11,750 - INFO - Creating container for pydata__xarray-3677...
+2026-10-09 13:38:12,270 - INFO - Container for pydata__xarray-3677 created: 62a14646733b00f4db67a43eb7bb1cfa3d7a5d4013152b6103f84b505a807d20
+2026-10-09 13:38:12,804 - INFO - Container for pydata__xarray-3677 started: 62a14646733b00f4db67a43eb7bb1cfa3d7a5d4013152b6103f84b505a807d20
+2026-10-09 13:38:12,804 - INFO - Intermediate patch for pydata__xarray-3677 written to logs/run_evaluation/20261009_132618_swebench-bare_qwen2.5-coder-32b/bare_qwen2.5-coder-32b/pydata__xarray-3677/patch.diff, now applying to container...
+2026-10-09 13:38:12,842 - INFO - >>>>> Applied Patch:
+Checking patch xarray/core/merge.py...
+Applied patch xarray/core/merge.py cleanly.
+
+2026-10-09 13:38:12,880 - INFO - Git diff before:
+diff --git a/xarray/core/merge.py b/xarray/core/merge.py
+index 10c7804d..992aca16 100644
+--- a/xarray/core/merge.py
++++ b/xarray/core/merge.py
+@@ -391,10 +391,13 @@ def coerce_pandas_values(objects: Iterable["CoercibleMapping"]) -> List["Dataset
+             variables = {}
+             if isinstance(obj, PANDAS_TYPES):
+                 obj = dict(obj.iteritems())
+-            for k, v in obj.items():
+-                if isinstance(v, PANDAS_TYPES):
+-                    v = DataArray(v)
+-                variables[k] = v
++            if isinstance(obj, DataArray):
++                variables[obj.name] = obj
++            else:
++                for k, v in obj.items():
++                    if isinstance(v, PANDAS_TYPES):
++                        v = DataArray(v)
++                    variables[k] = v
+         out.append(variables)
+     return out
+2026-10-09 13:38:12,880 - INFO - Eval script for pydata__xarray-3677 written to logs/run_evaluation/20261009_132618_swebench-bare_qwen2.5-coder-32b/bare_qwen2.5-coder-32b/pydata__xarray-3677/eval.sh; copying to container...
+2026-10-09 13:38:21,731 - INFO - Test runtime: 8.83 seconds
+2026-10-09 13:38:21,731 - INFO - Test output for pydata__xarray-3677 written to logs/run_evaluation/20261009_132618_swebench-bare_qwen2.5-coder-32b/bare_qwen2.5-coder-32b/pydata__xarray-3677/test_output.txt
+2026-10-09 13:38:21,751 - INFO - Git diff after:
+diff --git a/xarray/core/merge.py b/xarray/core/merge.py
+index 10c7804d..992aca16 100644
+--- a/xarray/core/merge.py
++++ b/xarray/core/merge.py
+@@ -391,10 +391,13 @@ def coerce_pandas_values(objects: Iterable["CoercibleMapping"]) -> List["Dataset
+             variables = {}
+             if isinstance(obj, PANDAS_TYPES):
+                 obj = dict(obj.iteritems())
+-            for k, v in obj.items():
+-                if isinstance(v, PANDAS_TYPES):
+-                    v = DataArray(v)
+-                variables[k] = v
++            if isinstance(obj, DataArray):
++                variables[obj.name] = obj
++            else:
++                for k, v in obj.items():
++                    if isinstance(v, PANDAS_TYPES):
++                        v = DataArray(v)
++                    variables[k] = v
+         out.append(variables)
+     return out
+2026-10-09 13:38:21,751 - INFO - Grading answer for pydata__xarray-3677...
+2026-10-09 13:38:21,752 - INFO - report: {'pydata__xarray-3677': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'infra_failure': False, 'tests_status': {'FAIL_TO_PASS': {'success': ['xarray/tests/test_merge.py::TestMergeMethod::test_merge_dataarray'], 'failure': []}, 'PASS_TO_PASS': {'success': ['xarray/tests/test_merge.py::TestMergeInternals::test_broadcast_dimension_size', 'xarray/tests/test_merge.py::TestMergeFunction::test_merge_arrays', 'xarray/tests/test_merge.py::TestMergeFunction::test_merge_datasets', 'xarray/tests/test_merge.py::TestMergeFunction::test_merge_dataarray_unnamed', 'xarray/tests/test_merge.py::TestMergeFunction::test_merge_dicts_simple', 'xarray/tests/test_merge.py::TestMergeFunction::test_merge_dicts_dims', 'xarray/tests/test_merge.py::TestMergeFunction::test_merge_error', 'xarray/tests/test_merge.py::TestMergeFunction::test_merge_alignment_error', 'xarray/tests/test_merge.py::TestMergeFunction::test_merge_wrong_input_error', 'xarray/tests/test_merge.py::TestMergeFunction::test_merge_no_conflicts_single_var', 'xarray/tests/test_merge.py::TestMergeFunction::test_merge_no_conflicts_multi_var', 'xarray/tests/test_merge.py::TestMergeFunction::test_merge_no_conflicts_preserve_attrs', 'xarray/tests/test_merge.py::TestMergeFunction::test_merge_no_conflicts_broadcast', 'xarray/tests/test_merge.py::TestMergeMethod::test_merge', 'xarray/tests/test_merge.py::TestMergeMethod::test_merge_broadcast_equals', 'xarray/tests/test_merge.py::TestMergeMethod::test_merge_compat', 'xarray/tests/test_merge.py::TestMergeMethod::test_merge_auto_align', 'xarray/tests/test_merge.py::TestMergeMethod::test_merge_fill_value[fill_value0]', 'xarray/tests/test_merge.py::TestMergeMethod::test_merge_fill_value[2]', 'xarray/tests/test_merge.py::TestMergeMethod::test_merge_fill_value[2.0]', 'xarray/tests/test_merge.py::TestMergeMethod::test_merge_no_conflicts'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for pydata__xarray-3677: resolved: True
+2026-10-09 13:38:21,752 - INFO - Attempting to stop container sweb.eval.pydata__xarray-3677.20261009_132618_swebench-bare_qwen2.5-coder-32b...
+2026-10-09 13:38:37,422 - INFO - Container sweb.eval.pydata__xarray-3677.20261009_132618_swebench-bare_qwen2.5-coder-32b stopped successfully.
+2026-10-09 13:38:37,422 - INFO - Attempting to remove container sweb.eval.pydata__xarray-3677.20261009_132618_swebench-bare_qwen2.5-coder-32b...
+2026-10-09 13:38:37,633 - INFO - Container sweb.eval.pydata__xarray-3677.20261009_132618_swebench-bare_qwen2.5-coder-32b removed successfully.

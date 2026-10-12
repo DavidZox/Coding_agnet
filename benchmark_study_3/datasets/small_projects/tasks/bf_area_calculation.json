@@ -1,0 +1,36 @@
+{
+ "id": "bf_area_calculation",
+ "family": "bf",
+ "source": "devbench",
+ "repo": "area_calculation",
+ "lang": "cpp",
+ "workspace": "workspaces/bf_area_calculation",
+ "task": "這個專案（area_calculation）最近有幾個改動之後，單元測試（`make -f makefile_test test`）有 3 個失敗：\n- TestCircle.CalcArea\n- TestRectangle.CalcArea\n- TestSquare.CalcArea\n請找出原因並修正程式，讓測試全部通過。測試本身是對的，不要修改測試；問題可能不只一個、也可能不在同一個檔案。修完請說明每個問題在哪裡、怎麼修的。",
+ "test_dir": "unit_tests",
+ "injected": [
+  {
+   "id": "area_calculation#m3",
+   "file": "include/Circle.hpp",
+   "line": 33,
+   "desc": "* → /"
+  },
+  {
+   "id": "area_calculation#m4",
+   "file": "src/Rectangle.cpp",
+   "line": 4,
+   "desc": "0 → 1"
+  },
+  {
+   "id": "area_calculation#m1",
+   "file": "src/Rectangle.cpp",
+   "line": 18,
+   "desc": "* → /"
+  }
+ ],
+ "visible_failing": [
+  "TestCircle.CalcArea",
+  "TestRectangle.CalcArea",
+  "TestSquare.CalcArea"
+ ],
+ "python": "devbench_venv"
+}

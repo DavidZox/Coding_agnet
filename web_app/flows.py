@@ -1,0 +1,403 @@
+"""回合流程：run_turn（ask_ai → run_tool 迴圈）、工具結果的決策、Plan 模式、技能草稿、附圖的視覺 sub-session、狀態列。"""
+from vision import (
+    DEFAULT_MODEL as VISION_MODEL,
+    VisionError,
+    describe_sources,
+    extract as vision_extract,
+    index_hint as vision_index_hint,
+)
+from agent_core.config import (
+    KEEP_RECENT_TOKENS,
+    NUM_CTX,
+    SOFT_TOKEN_THRESHOLD,
+    TOKEN_THRESHOLD,
+    TOOL_RESULT_TOKEN_THRESHOLD,
+)
+from agent_core.protocol import action_text, is_exempt_result, tool_result_message
+from agent_core.turn import _append_discarded_tool_result, _content_for_context, context_kind, oversized_notice
+from .state import agent, clear_pending, pending, pending_skill_names, state, vision_session
+
+
+MAX_AUTO_ITERATIONS = 25  # 安全防護：避免 auto 模式下模型無限迴圈卡住伺服器
+
+
+# =========================================================
+# 核心流程：重用 agent_core.SkillAgent 的方法，改寫成
+# 「每次呼叫處理一小段、把過程逐筆推給前端」的形式。
+# 下面各函式的 events 參數實際上是 EventStream（見 HTTP Server 區塊），
+# 只用到 .append()，每 append 一筆就立刻串流送到瀏覽器。
+# =========================================================
+
+def current_mode_label():
+    if state["auto_mode"]:
+        return "auto"
+    if state["hybrid_mode"]:
+        return "hybrid"
+    return "manual"
+
+
+def build_stats():
+    return {
+        "mode": current_mode_label(),
+        "context_mode": agent.context_mode,   # harness／claude_code（/context_mode 切換）
+        "guard": agent.guard_enabled,          # 執行前關卡（/guard on|off）
+        "memory_dropped": agent.memory_dropped,
+        "tool_summary_mode": state["tool_summary_mode"],
+        "plan_mode": state["plan_mode"],
+        "current_plan": agent.current_plan or None,
+        "plan": agent.plan_stats(),   # 草稿／執行中的步驟與進度（/plan）
+        "current_cwd": agent.current_cwd,
+        "container_cwd": agent.container_cwd,
+        "target_container": agent.target_container,
+        "objective": agent.sticky_objective or None,
+        "total_user_tokens": agent.total_user_tokens,
+        "total_ai_tokens": agent.total_ai_tokens,
+        "total_tool_tokens": agent.total_tool_tokens,
+        "context_tokens": agent.context_tokens(),
+        "context_exact": agent.last_prompt_tokens is not None,
+        "token_threshold": TOKEN_THRESHOLD,
+        "soft_threshold": SOFT_TOKEN_THRESHOLD,
+        "keep_recent_tokens": KEEP_RECENT_TOKENS,
+        "num_ctx": NUM_CTX,
+        "chars_per_token": round(agent.chars_per_token, 2),
+        "attachments": vision_session.count(),
+        "pending_skills": pending_skill_names(),
+        "vision_model": VISION_MODEL,
+        "main_model": agent.model,             # 🧠 主對話的模型與 thinking（「🧠 模型」設定、/model、/think）
+        "main_think": bool(agent.main_think),
+        "summary_model": agent.summary_model,
+        "skill_model": agent.skill_model,
+        "skill_draft": agent.pending_skill_draft["name"] if agent.pending_skill_draft else None,
+        "parallel_cal": state["parallel_cal"],
+        "code_mode": state.get("code_mode", False),
+        "coding": _coding_header(),
+        "compressing": agent.compression_in_progress(),
+        "last_compression": agent.last_compression,
+        # 背景壓縮完成／失敗的通知：每次組 stats 時取走（stats 會隨每個事件與 /api/status 送到前端，
+        # 前端把它們渲染成系統訊息），同一則不會重複出現
+        "notices": agent.pop_notices(),
+    }
+
+
+def _coding_header():
+    from .coding import header_label   # coding.py 依賴 state 裡已建立的 orchestrator，延後匯入
+    return header_label()
+
+
+def _current_tool_action():
+    """剛執行完的工具是哪個 action：run_turn 與 apply_decision 的時間點，最後一則 assistant 都還是下這個工具的那一輪。"""
+    return (agent._last_assistant_step() or {}).get("action")
+
+
+def _emit_context_event(content, events, tool_tokens=None):
+    """每次工具結果決定好要餵給主對話什麼之後，都推一個「AI 實際收到的內容」事件到右欄，緊接在完整原文卡片之後：
+    summary（任務導向摘要）與 reduced（只有成功／失敗）整段顯示；raw／doc（完整原文、規格文件）只給一行提示，
+    因為上一張卡片就是同一份內容。使用者永遠同時看得到完整原文與 AI 收到的版本。"""
+    kind = context_kind(content, tool_tokens)
+    n = agent.count_tokens(content)
+    if kind in ("summary", "reduced"):
+        events.append({"channel": "summary", "kind": kind, "text": content, "tokens": n})
+    elif kind == "truncated":
+        events.append({"channel": "summary", "kind": kind, "tokens": n, "text": (
+            f"原文頭尾（≈{n} tokens）：中間省略的部分在存檔 #{agent.last_result_id}，要不要回查由 AI 自己決定"
+            f"（claude_code 模式）。頭尾與上方系統回傳卡片相同。")})
+    elif kind == "doc":
+        events.append({"channel": "summary", "kind": kind, "text": f"完整規格文件（≈{n} tokens，不受門檻限制），與上方卡片相同。", "tokens": n})
+    else:
+        events.append({"channel": "summary", "kind": kind, "text": f"完整原文（≈{n} tokens，未縮減），與上方系統回傳卡片相同。", "tokens": n})
+
+
+DEFAULT_VISION_PROMPT = "請描述這些影像的內容，並逐字列出可見的文字、數值、錯誤訊息與任何值得注意的異常。"
+# 視覺提取結果的長度提醒門檻（每張影像）：結構化提取（文字、畫面、個體、背景、線索）一張通常 400～700 tokens，
+# 套用工具回傳的 500 門檻幾乎每次附圖都會誤報；超過這個量才代表異常地長（例如整頁 log 都抄進來）。只影響 ⚠️ 提醒。
+VISION_WARN_TOKENS_PER_IMAGE = 600
+
+
+def _run_vision_subsession(message, items, events):
+    """📷 附圖的獨立視覺 sub-session（跟 SkillAgent.summarize_tool_result 同一種模式）：
+    影像 + 使用者訊息交給視覺模型得到文字，主對話只收到文字、不接觸影像 bytes，
+    所以 compress_context_to_file / count_tokens / _truncate_memory 全都不用改。
+    代價是主 Agent 看到的是描述而非原圖，追問時要重新附圖。
+    提取的順序與格式在 vision.extraction（文字 → 畫面 → 個體 → 背景、線索、重點）；使用者打的字是視覺模型的
+    關注方向與命名提示，只附圖沒打字時（DEFAULT_VISION_PROMPT）視覺模型拿到的是「沒有說明」，照順序完整提取。
+    分析成功時存成一份 #編號 存檔並記進工具使用檢索清單（agent.archive_vision_result）：之後不論訊息有沒有被壓縮、是不是
+    同一個 session，main session 與獨立 session 都能像工具回傳一樣從清單認出它、result_recall 取回；失敗（[ERROR]）不存。
+    items 是 VisionSession.take_all_items() 的影像項目（{"img", "source"}）。
+    回傳要放進主對話的完整使用者訊息內容（原文 + [vision result] 區塊）。"""
+    n = len(items)
+    events.append({"channel": "system", "text": f"🖼️ 視覺提取中（{n} 張影像，模型 {VISION_MODEL}）..."})
+    user_text = "" if message == DEFAULT_VISION_PROMPT else message
+    sources = describe_sources(items)
+    data, result_id = None, None
+    try:
+        result, data = vision_extract([it["img"] for it in items], user_text, sources)
+        if data is None:
+            events.append({"channel": "system", "text": "⚠️ 視覺模型沒有給出結構化的提取結果，以下是它的原文。"})
+        result_id = agent.archive_vision_result(result, vision_index_hint(data, user_text, result), sources,
+                                                answer=(data or {}).get("focus") or "")
+    except VisionError as e:
+        result = f"[ERROR] 視覺分析失敗：{e}"
+    tokens = agent.count_tokens(result)
+    agent.total_tool_tokens += tokens
+    # 不套用 TOOL_RESULT_TOKEN_THRESHOLD 的精簡：這段文字是影像唯一的表示，砍成成功／失敗
+    # 就沒有資訊了。超過門檻（依張數，VISION_WARN_TOKENS_PER_IMAGE）只標 ⚠️ 提醒使用者留意長度。
+    warn_tokens = VISION_WARN_TOKENS_PER_IMAGE * max(n, 1)
+    oversized = tokens > warn_tokens
+    events.append({"channel": "vision", "text": result, "tokens": tokens, "count": n, "oversized": oversized,
+                   "result_id": result_id})   # 📄 存檔編號；卡片顯示並可開啟 /api/results/<id>
+    if oversized:
+        events.append({
+            "channel": "system",
+            "text": (
+                f"⚠️ 視覺分析結果約 {tokens} tokens，超過門檻 {warn_tokens}（每張 {VISION_WARN_TOKENS_PER_IMAGE}），已標記待人工確認；"
+                f"因為它是影像唯一的文字表示，內容仍會完整交給主 Agent。"
+            ),
+        })
+    # 這段接在使用者訊息尾端、以 user 角色送進主對話，模型容易把它當成「使用者寫的」而回覆
+    # 「你提供的視覺分析」。這裡明確標示來源是系統的視覺模型；AGENT.md「Harness Messages」也有對應說明。
+    # 有結構化結果時再告訴主 Agent 怎麼用：照抄的文字與線索可以直接當技能參數、〔使用者說明〕的名稱不是影像裡讀到的、
+    # 影像只是某一刻的畫面——這幾句只在真的附圖時才出現在上下文（2.9：影像相關的稱呼不寫進 AGENT.md）。
+    usage = (
+        "「文字」與「線索」是照畫面原文抄的，名稱、編號、路徑、錯誤訊息可以直接當技能的參數（不要改寫）；"
+        "標〔使用者說明〕的名稱是使用者告訴系統的，不是影像裡讀到的；「無法判斷」的不要自己補。"
+        "影像只是某一刻的畫面，使用者要的是系統現在的狀態時，用技能重新查詢。"
+    ) if data is not None else ""
+    # 存檔編號跟工具回傳的「完整原文存檔 #編號」同一個用意：之後這則訊息被壓縮掉，清單上的同一個編號還找得到它
+    archived = f"這份分析存檔為 #{result_id}（工具使用檢索清單標〔附圖分析〕）。" if result_id else ""
+    return (
+        f"{message}\n\n"
+        f"[vision result]\n"
+        f"【系統影像分析】使用者只提供了 {n} 張影像，沒有寫下面這段文字；以下由系統的視覺模型（{VISION_MODEL}）"
+        f"依使用者的訊息從影像提取。你看不到原圖，請把它當作系統回傳的分析結果來回應或決定下一步，"
+        f"回覆時稱「影像分析結果」，不要說成使用者提供的分析。{archived}{usage}\n{result}"
+    )
+
+
+def _emit_reply_meta(parsed, events):
+    """回覆協議的附帶資訊：💭 思考推到右欄；不是合法 JSON 時先推一則降級警告（放在正文之前，最後一筆仍是正文）。"""
+    if agent.last_reply_retry:
+        events.append({"channel": "system", "text": agent.last_reply_retry})
+    if not parsed["valid"]:
+        events.append({"channel": "system", "text": "⚠️ 模型輸出不是合法的 JSON 回覆，已降級為純文字顯示，本輪不執行任何指令。"})
+    if agent.last_thinking:   # thinking 模式（或關不掉思考的模型）時模型的思考內容：只給人看，不進對話
+        events.append({"channel": "thinking", "text": agent.last_thinking})
+    if parsed["thought"]:
+        events.append({"channel": "thought", "text": parsed["thought"]})
+
+
+def start_plan_flow(user_task, events):
+    """/plan 模式：一次性的規劃 session 產生第一版草稿（agent_core/plan.py；不進主對話），推到前端等使用者核准或修改。"""
+    events.append({"channel": "system", "text": "📝 規劃中（一次性的規劃 session，不進主對話）…"})
+    events.append({"channel": "plan", "text": agent.plan_start_draft(user_task)})
+
+
+def handle_plan_response(text, events):
+    """草稿等待核准時使用者的輸入（y／n／/plan 指令／用說的改，規則在 SkillAgent.plan_handle_input，與 CLI 共用）。
+
+    安全設計跟 CLI 版一致：這個函式從頭到尾不會呼叫 agent.run_tool()，確認關卡不依賴 AI 是否遵守「先別執行」的指示。
+    回傳 "approved" / "rejected" / "edited"。
+    """
+    outcome, msg = agent.plan_handle_input(text)
+    if outcome == "approved":
+        events.append({"channel": "system", "text": msg})
+        # 核准即退出 Plan 模式：Plan 模式的意義是「下一個新任務先規劃」，規劃階段到此結束。
+        if state["plan_mode"]:
+            state["plan_mode"] = False
+            events.append({"channel": "system", "text": (
+                "📝 已自動退出 Plan 模式：這個任務依計畫執行；下一個新任務將直接執行（要再規劃請重新 /plan on）。")})
+    elif outcome == "rejected":
+        events.append({"channel": "system", "text": msg})
+    else:
+        events.append({"channel": "plan", "text": msg})
+    return outcome
+
+
+def handle_skill_draft_response(text, events):
+    """處理使用者對待決定技能草稿的回應（比照計畫核准）：y 核准並註冊、n／空白取消、其他文字＝修改意見重擬。
+    狀態在 agent.pending_skill_draft（與 CLI 共用）。回傳 "registered" / "cancelled" / "revised" / "failed"
+    （失敗時草稿仍待決定，例如草稿還引用了不存在的腳本）。"""
+    choice = text.strip()
+    lower = choice.lower()
+    if lower == "y":
+        ok, msg = agent.approve_skill_draft()
+        events.append({"channel": "system", "text": msg})
+        return "registered" if ok else "failed"
+    if choice == "" or lower in ("n", "no"):
+        events.append({"channel": "system", "text": agent.cancel_skill_draft()})
+        return "cancelled"
+    events.append({"channel": "system", "text": "🧩 依修改意見重新草擬技能…"})
+    draft, err = agent.revise_skill_draft(choice)
+    if err:
+        events.append({"channel": "system", "text": f"⚠️ {err}（上一版草稿仍待決定）"})
+        return "failed"
+    events.append({"channel": "skilldraft", "name": draft["name"], "text": agent.skill_draft_preview(draft)})
+    return "revised"
+
+
+def _handle_tool_result(result, events):
+    """run_tool 之後的共用處理（run_turn 與執行前關卡核准後的 apply_decision 都走這裡）：推卡片、超過門檻的提醒，
+    再依模式決定結果怎麼進主對話。回傳 "end"（沒有工具結果，回合結束）／"continue"（auto：已加入，接著問 AI）
+    ／"await"（hybrid／manual：暫停等使用者對這次工具結果做決策）。"""
+    tool_tokens = 0
+    if result:
+        tool_tokens = agent.count_tokens(result)
+        agent.total_tool_tokens += tool_tokens
+        # 規格文件載入不受門檻限制（_content_for_context 會完整放行），不標 ⚠️
+        oversized = tool_tokens > TOOL_RESULT_TOKEN_THRESHOLD and not is_exempt_result(result, tool_tokens)
+        events.append({
+            "channel": "tool",
+            "text": result,
+            "tokens": tool_tokens,
+            "oversized": oversized,
+            "result_id": agent.last_result_id,      # 📄 存檔編號（規格載入時為 None）；卡片顯示並可開啟 /api/results/<id>
+            "result_file": agent.last_result_file,
+        })
+        if oversized:
+            events.append({"channel": "system", "text": (
+                oversized_notice(agent, tool_tokens, state["tool_summary_mode"])
+                + "（已標記待人工確認；🧠 卡片會顯示 AI 實際收到的內容）"
+            )})
+    else:
+        events.append({"channel": "system", "text": "✅ 無工具需要執行"})
+
+    # 硬水位的壓縮檢查統一在 ask_ai() 呼叫前（ensure_context_budget，UI 會收到 📦 事件），
+    # 軟水位在回合結束後（after_turn_compression，見 ConsoleHandler._finish_turn）。
+    # 舊版這裡壓縮後 continue，會跳過下面「把工具結果加入上下文」的步驟直接再問一次 AI，
+    # AI 拿不到剛執行的結果而重複下同一個指令；result 為 None 時也會多問一輪而不是結束回合。已移除。
+    if not result:
+        return "end"
+
+    if state["auto_mode"]:
+        content = _content_for_context(
+            result, tool_tokens, agent=agent, use_summary=state["tool_summary_mode"]
+        )
+        _emit_context_event(content, events, tool_tokens)
+        agent.messages.append({'role': 'user', 'content': tool_result_message(content, _current_tool_action())})
+        events.append({"channel": "system", "text": "♻️ Auto Continue 中..."})
+        return "continue"
+
+    # hybrid / manual 都需要暫停，等待使用者對這次工具結果做決策
+    pending["result"] = result
+    pending["mode"] = "hybrid" if state["hybrid_mode"] else "manual"
+    pending["tokens"] = tool_tokens
+    return "await"
+
+
+def run_turn(events):
+    """反覆執行 ask_ai -> run_tool，直到這一回合自然結束（沒有工具需要執行），或需要使用者決策為止：
+    hybrid／manual 模式對工具結果的決策，或 🛡️ 執行前關卡（會改變系統狀態的技能，執行前先問，任何模式都一樣）。
+
+    回傳 True 代表目前正在等待使用者決策（awaiting_decision；pending["mode"] 是 hybrid／manual／guard）。
+    """
+    for _ in range(MAX_AUTO_ITERATIONS):
+        ai_msg = agent.ask_ai()
+        ai_tokens = agent.last_ai_tokens(ai_msg)
+        agent.total_ai_tokens += ai_tokens
+        if agent.auto_cleared:
+            events.append({"channel": "system", "text": (
+                f"🧹 上下文超過門檻，呼叫前先把 {agent.auto_cleared['results']} 則舊的工具回傳清成存檔編號"
+                f"（騰出約 {agent.auto_cleared['tokens']} tokens，原文仍在存檔、AI 可取回）。")})
+        if agent.auto_compressed:
+            events.append({"channel": "system", "text": "📦 上下文超過門檻，呼叫前已自動壓縮並歸檔。"})
+        agent.messages.append({'role': 'assistant', 'content': ai_msg})
+        parsed = agent.parse_reply(ai_msg)  # 回覆協議：左欄顯示 reply，執行只看 action，reply 裡的指令文字不會被執行
+        _emit_reply_meta(parsed, events)
+        events.append({
+            "channel": "chat", "role": "assistant", "tokens": ai_tokens,
+            "text": parsed["reply"] or ("（本輪沒有文字回覆）" if parsed["action"] else "（空白回覆）"),
+            "action": action_text(parsed["action"]) if parsed["action"] else None,
+        })
+
+        # 🛡️ 執行前關卡：先暫停，等使用者按「同意執行／拒絕」（apply_decision 的 guard 分支）才繼續
+        guard = agent.guard_check(parsed)
+        if guard:
+            pending.update(mode="guard", parsed=parsed, guard=guard)
+            events.append({"channel": "guard", "text": agent.guard_prompt_text(guard),
+                           "skill": guard["skill"], "command": guard["command"]})
+            return True
+
+        outcome = _handle_tool_result(agent.run_tool(parsed), events)
+        for notice in agent.pop_notices():   # 計畫換下一步、連續失敗退出、⛔ 卡住等
+            events.append({"channel": "system", "text": notice})
+        if outcome == "continue" and agent.stuck:
+            return False                     # 同樣的動作 3 次得到同樣的結果：停下來交回使用者（turn_guard.py）
+        if outcome == "end":
+            # 這一回合沒有執行任何工具、回覆卻說「已經做了」：提醒一次（要做就執行，沒做就照實說）
+            claim = agent.claim_without_action(parsed)
+            for notice in agent.pop_notices():
+                events.append({"channel": "system", "text": notice})
+            if claim:
+                agent.messages.append({'role': 'user', 'content': claim})
+                continue
+            # /plan 執行中：剩下的都是不需技能的步驟就算完成；/plan_exec_guard on 時還有步驟沒做就自動提醒 AI 繼續
+            nudge = agent.plan_after_reply(parsed)
+            for notice in agent.pop_notices():
+                events.append({"channel": "system", "text": notice})
+            if nudge:
+                events.append({"channel": "system", "text": "📝 計畫還沒做完，自動提醒 AI 繼續下一步。"})
+                agent.messages.append({'role': 'user', 'content': nudge})
+                continue
+            return False
+        if outcome == "await":
+            return True
+
+    events.append({"channel": "system", "text": "⚠️ 已達安全上限（連續執行過多輪工具），本回合自動中止。"})
+    return False
+
+
+def apply_decision(action, events):
+    """套用使用者對待決策事項的決定。回傳 "continue"（接著跑 run_turn）／"await"（又在等下一個決策）／"stop"（回合結束）。
+    - guard（執行前關卡）：y＝以 approved=True 執行、之後照一般工具結果處理；其他＝拒絕，告訴 AI 沒有執行，回合結束等使用者說明。
+    - hybrid／manual：對已執行的工具結果決定要不要加入上下文。"""
+    mode = pending["mode"]
+    result, tool_tokens = pending["result"], pending["tokens"] or 0
+    parsed, guard = pending.get("parsed"), pending.get("guard")
+    clear_pending()
+
+    if mode == "guard":
+        if action == "y":
+            events.append({"channel": "system", "text": f"✅ 你已同意執行 {guard['skill']}。"})
+            outcome = _handle_tool_result(agent.run_tool(parsed, approved=True), events)
+            return "stop" if outcome == "end" else outcome
+        agent.messages.append({'role': 'user', 'content': tool_result_message(agent.guard_denied_text(guard), parsed["action"])})
+        events.append({"channel": "system", "text": f"🚫 已拒絕執行 {guard['skill']}，這個動作沒有執行；請告訴 AI 要怎麼調整。"})
+        return "stop"
+
+    # 只有真的要把結果加入上下文時才計算 content——若是摘要模式，這會觸發
+    # 一次獨立的 ollama 呼叫，使用者選擇「捨棄」時就不需要浪費這次呼叫。
+    if mode == "hybrid":
+        if action == "y":
+            content = _content_for_context(
+                result, tool_tokens, agent=agent, use_summary=state["tool_summary_mode"]
+            )
+            _emit_context_event(content, events, tool_tokens)
+            agent.messages.append({'role': 'user', 'content': tool_result_message(content, _current_tool_action())})
+        else:
+            _append_discarded_tool_result(agent)
+        return "continue"  # hybrid 不論加入或捨棄，都會讓 AI 接續推論
+
+    # manual 模式
+    if action == "y":
+        content = _content_for_context(
+            result, tool_tokens, agent=agent, use_summary=state["tool_summary_mode"]
+        )
+        _emit_context_event(content, events, tool_tokens)
+        agent.messages.append({'role': 'user', 'content': tool_result_message(content, _current_tool_action())})
+        return "continue"
+    if action == "stop":
+        return "stop"
+    _append_discarded_tool_result(agent)
+    return "stop"
+
+
+def clear_plan_for_new_task(events):
+    """新任務送出時，把上一個已核准的計畫從 system prompt 清掉（見 SkillAgent.end_plan_for_new_task，
+    與 CLI 共用）。
+
+    計畫的生命週期 = 核准後那個任務的執行期間：期間所有工具決策（manual／hybrid 的 y/n）、
+    auto 迴圈、自動壓縮都不會清掉它；使用者再打字送出一句新訊息（非 slash 指令、非計畫回應、
+    非工具決策）就視為新任務。舊版要求手動 /plan done，實際上容易忘記，舊計畫會殘留在
+    system prompt 干擾之後的每個任務。要提早清除仍可用 /plan done。"""
+    note = agent.end_plan_for_new_task()
+    if note:
+        events.append({"channel": "system", "text": note})

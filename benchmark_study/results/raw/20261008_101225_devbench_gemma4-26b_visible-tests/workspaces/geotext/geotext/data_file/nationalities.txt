@@ -1,0 +1,11 @@
+German:DE
+Japanese:JP
+French:FR
+Chinese:CN
+Russian:RU
+American:US
+Brazilian:BR
+Irish:IE
+Italian:IT
+Peruvian:PE
+Andorran:AD

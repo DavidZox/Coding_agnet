@@ -1,0 +1,51 @@
+diff --git a/include/fmt/printf.h b/include/fmt/printf.h
+index 6d014fcd..a0c5dcdb 100644
+--- a/include/fmt/printf.h
++++ b/include/fmt/printf.h
+@@ -252,13 +252,20 @@ class printf_arg_formatter : public detail::arg_formatter_base<Range> {
+       fmt_specs.type = 0;
+       this->write(value != 0);
+     } else if (std::is_same<T, char_type>::value) {
+-      format_specs& fmt_specs = *this->specs();
+-      if (fmt_specs.type && fmt_specs.type != 'c')
++      if (this->specs()->type && this->specs()->type != 'c')
+         return (*this)(static_cast<int>(value));
+-      fmt_specs.sign = sign::none;
+-      fmt_specs.alt = false;
+-      fmt_specs.align = align::right;
+-      return base::operator()(value);
++      auto out = this->out();
++      unsigned width = this->specs()->width;
++      if (this->specs()->align == align::left) {
++        *out++ = value;
++        for (unsigned i = 1; i < width; ++i)
++          *out++ = this->specs()->fill[0];
++      } else {
++        for (unsigned i = 0; i < width; ++i)
++          *out++ = this->specs()->fill[0];
++        *out++ = value;
++      }
++      return out;
+     } else {
+       return base::operator()(value);
+     }
+diff --git a/test/printf-test.cc b/test/printf-test.cc
+index 5a586797..4071a97d 100644
+--- a/test/printf-test.cc
++++ b/test/printf-test.cc
+@@ -156,6 +156,7 @@ TEST(PrintfTest, PlusFlag) {
+ TEST(PrintfTest, MinusFlag) {
+   EXPECT_PRINTF("abc  ", "%-5s", "abc");
+   EXPECT_PRINTF("abc  ", "%0--5s", "abc");
++  EXPECT_PRINTF("a    ", "%-5c", 'a');
+ }
+ 
+ TEST(PrintfTest, SpaceFlag) {
+@@ -436,6 +437,7 @@ TEST(PrintfTest, Char) {
+   // EXPECT_PRINTF("x", "%lc", L'x');
+   EXPECT_PRINTF(L"x", L"%c", L'x');
+   EXPECT_PRINTF(fmt::format(L"{}", static_cast<wchar_t>(max)), L"%c", max);
++  EXPECT_PRINTF("a    ", "%-5c", 'a');
+ }
+ 
+ TEST(PrintfTest, String) {

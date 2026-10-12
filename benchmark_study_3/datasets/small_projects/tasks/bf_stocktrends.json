@@ -1,0 +1,37 @@
+{
+ "id": "bf_stocktrends",
+ "family": "bf",
+ "source": "devbench",
+ "repo": "stocktrends",
+ "lang": "python",
+ "workspace": "workspaces/bf_stocktrends",
+ "task": "這個專案（stocktrends）最近有幾個改動之後，單元測試（`python -m pytest -q unit_tests`）有 4 個失敗：\n- unit_tests.test_pnf::test_get_bar_ohlc_data_close\n- unit_tests.test_pnf::test_get_bar_ohlc_data_hl\n- unit_tests.test_pnf::test_get_ohlc_data_close\n- unit_tests.test_renko::test_Renko_box_periodic_close\n請找出原因並修正程式，讓測試全部通過。測試本身是對的，不要修改測試；問題可能不只一個、也可能不在同一個檔案。修完請說明每個問題在哪裡、怎麼修的。",
+ "test_dir": "unit_tests",
+ "injected": [
+  {
+   "id": "stocktrends#m47",
+   "file": "stocktrends/indicators.py",
+   "line": 332,
+   "desc": "- → +"
+  },
+  {
+   "id": "stocktrends#m39",
+   "file": "stocktrends/indicators.py",
+   "line": 99,
+   "desc": "+ → -"
+  },
+  {
+   "id": "stocktrends#m4",
+   "file": "stocktrends/indicators.py",
+   "line": 57,
+   "desc": "return … → return None"
+  }
+ ],
+ "visible_failing": [
+  "unit_tests.test_pnf::test_get_bar_ohlc_data_close",
+  "unit_tests.test_pnf::test_get_bar_ohlc_data_hl",
+  "unit_tests.test_pnf::test_get_ohlc_data_close",
+  "unit_tests.test_renko::test_Renko_box_periodic_close"
+ ],
+ "python": "devbench_venv"
+}

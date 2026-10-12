@@ -1,0 +1,46 @@
+2026-10-09 21:51:30,655 - INFO - Creating container for pytest-dev__pytest-10051...
+2026-10-09 21:51:31,607 - INFO - Container for pytest-dev__pytest-10051 created: f887906386afca367622dd7c9fb8ec5c655168e9376776497f4bd25ea89081c0
+2026-10-09 21:51:32,683 - INFO - Container for pytest-dev__pytest-10051 started: f887906386afca367622dd7c9fb8ec5c655168e9376776497f4bd25ea89081c0
+2026-10-09 21:51:32,684 - INFO - Intermediate patch for pytest-dev__pytest-10051 written to logs/run_evaluation/20261009_194309_swebench_qwen2.5-coder-32b_plan-deepseek-r1-32b/qwen2.5-coder-32b_plan-deepseek-r1-32b/pytest-dev__pytest-10051/patch.diff, now applying to container...
+2026-10-09 21:51:32,721 - INFO - >>>>> Applied Patch:
+Checking patch src/_pytest/logging.py...
+Checking patch tests/test_logging.py...
+Applied patch src/_pytest/logging.py cleanly.
+Applied patch tests/test_logging.py cleanly.
+
+2026-10-09 21:51:32,767 - INFO - Git diff before:
+diff --git a/src/_pytest/logging.py b/src/_pytest/logging.py
+index a4f4214b1..25e43b5a4 100644
+--- a/src/_pytest/logging.py
++++ b/src/_pytest/logging.py
+@@ -441,6 +441,7 @@ class LogCaptureFixture:
+     def clear(self) -> None:
+         """Reset the list of log records and the captured log text."""
+         self.handler.reset()
++        self._item.stash[caplog_records_key] = {"setup": [], "call": [], "teardown": []}
+ 
+     def set_level(self, level: Union[int, str], logger: Optional[str] = None) -> None:
+         """Set the level of a logger for the duration of a test.
+2026-10-09 21:51:32,767 - INFO - Eval script for pytest-dev__pytest-10051 written to logs/run_evaluation/20261009_194309_swebench_qwen2.5-coder-32b_plan-deepseek-r1-32b/qwen2.5-coder-32b_plan-deepseek-r1-32b/pytest-dev__pytest-10051/eval.sh; copying to container...
+2026-10-09 21:51:39,807 - INFO - Test runtime: 7.02 seconds
+2026-10-09 21:51:39,807 - INFO - Test output for pytest-dev__pytest-10051 written to logs/run_evaluation/20261009_194309_swebench_qwen2.5-coder-32b_plan-deepseek-r1-32b/qwen2.5-coder-32b_plan-deepseek-r1-32b/pytest-dev__pytest-10051/test_output.txt
+2026-10-09 21:51:39,827 - INFO - Git diff after:
+diff --git a/src/_pytest/logging.py b/src/_pytest/logging.py
+index a4f4214b1..25e43b5a4 100644
+--- a/src/_pytest/logging.py
++++ b/src/_pytest/logging.py
+@@ -441,6 +441,7 @@ class LogCaptureFixture:
+     def clear(self) -> None:
+         """Reset the list of log records and the captured log text."""
+         self.handler.reset()
++        self._item.stash[caplog_records_key] = {"setup": [], "call": [], "teardown": []}
+ 
+     def set_level(self, level: Union[int, str], logger: Optional[str] = None) -> None:
+         """Set the level of a logger for the duration of a test.
+2026-10-09 21:51:39,827 - INFO - Grading answer for pytest-dev__pytest-10051...
+2026-10-09 21:51:39,827 - INFO - report: {'pytest-dev__pytest-10051': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'infra_failure': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['testing/logging/test_fixture.py::test_clear_for_call_stage']}, 'PASS_TO_PASS': {'success': ['testing/logging/test_fixture.py::test_change_level', 'testing/logging/test_fixture.py::test_with_statement', 'testing/logging/test_fixture.py::test_log_access', 'testing/logging/test_fixture.py::test_messages', 'testing/logging/test_fixture.py::test_record_tuples', 'testing/logging/test_fixture.py::test_unicode', 'testing/logging/test_fixture.py::test_clear', 'testing/logging/test_fixture.py::test_caplog_captures_for_all_stages', 'testing/logging/test_fixture.py::test_fixture_help', 'testing/logging/test_fixture.py::test_change_level_undo', 'testing/logging/test_fixture.py::test_change_level_undos_handler_level', 'testing/logging/test_fixture.py::test_ini_controls_global_log_level', 'testing/logging/test_fixture.py::test_caplog_can_override_global_log_level', 'testing/logging/test_fixture.py::test_caplog_captures_despite_exception', 'testing/logging/test_fixture.py::test_log_report_captures_according_to_config_option_upon_failure'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for pytest-dev__pytest-10051: resolved: False
+2026-10-09 21:51:39,827 - INFO - Attempting to stop container sweb.eval.pytest-dev__pytest-10051.20261009_194309_swebench_qwen2.5-coder-32b_plan-deepseek-r1-32b...
+2026-10-09 21:51:57,489 - INFO - Container sweb.eval.pytest-dev__pytest-10051.20261009_194309_swebench_qwen2.5-coder-32b_plan-deepseek-r1-32b stopped successfully.
+2026-10-09 21:51:57,489 - INFO - Attempting to remove container sweb.eval.pytest-dev__pytest-10051.20261009_194309_swebench_qwen2.5-coder-32b_plan-deepseek-r1-32b...
+2026-10-09 21:51:57,760 - INFO - Container sweb.eval.pytest-dev__pytest-10051.20261009_194309_swebench_qwen2.5-coder-32b_plan-deepseek-r1-32b removed successfully.

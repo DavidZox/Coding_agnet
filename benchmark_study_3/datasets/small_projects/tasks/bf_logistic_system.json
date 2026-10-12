@@ -1,0 +1,37 @@
+{
+ "id": "bf_logistic_system",
+ "family": "bf",
+ "source": "devbench",
+ "repo": "logistic_system",
+ "lang": "cpp",
+ "workspace": "workspaces/bf_logistic_system",
+ "task": "這個專案（logistic_system）最近有幾個改動之後，單元測試（`make -f makefile_test test`）有 4 個失敗：\n- AccountNodeTest.OutputOperatorTest\n- ExpressageNodeTest.Sign\n- LogisticSysTest.AddMoneyTest\n- LogisticSysTest.SignExpressageTest\n請找出原因並修正程式，讓測試全部通過。測試本身是對的，不要修改測試；問題可能不只一個、也可能不在同一個檔案。修完請說明每個問題在哪裡、怎麼修的。",
+ "test_dir": "unit_tests",
+ "injected": [
+  {
+   "id": "logistic_system#m6",
+   "file": "src/account.cpp",
+   "line": 48,
+   "desc": "== → !="
+  },
+  {
+   "id": "logistic_system#m7",
+   "file": "src/expressage.cpp",
+   "line": 41,
+   "desc": "true → false"
+  },
+  {
+   "id": "logistic_system#m43",
+   "file": "src/logistics.cpp",
+   "line": 138,
+   "desc": "1 → 0"
+  }
+ ],
+ "visible_failing": [
+  "AccountNodeTest.OutputOperatorTest",
+  "ExpressageNodeTest.Sign",
+  "LogisticSysTest.AddMoneyTest",
+  "LogisticSysTest.SignExpressageTest"
+ ],
+ "python": "devbench_venv"
+}

@@ -1,0 +1,312 @@
+[
+ {
+  "model": "deepseek-r1:32b",
+  "think": true,
+  "prompt": "17 乘以 23 等於多少？只回答數字。",
+  "seconds": 72.7,
+  "thinking_chars": 120,
+  "eval_tokens": 112,
+  "answer": "They are equal.",
+  "correct": false,
+  "error": null
+ },
+ {
+  "model": "deepseek-r1:32b",
+  "think": true,
+  "prompt": "Python 的 list.sort() 回傳什麼？只回答一個詞。",
+  "seconds": 14.4,
+  "thinking_chars": 1207,
+  "eval_tokens": 626,
+  "answer": "None",
+  "correct": true,
+  "error": null
+ },
+ {
+  "model": "deepseek-r1:32b",
+  "think": true,
+  "prompt": "一個有 7 個節點的完全圖有幾條邊？只回答數字。",
+  "seconds": 12.0,
+  "thinking_chars": 718,
+  "eval_tokens": 527,
+  "answer": "\n一個有 7 個節點的完全圖有 21 條邊。",
+  "correct": true,
+  "error": null
+ },
+ {
+  "model": "deepseek-r1:32b",
+  "think": true,
+  "prompt": "C++ 裡 std::vector 的 size() 回傳的型別名稱是什麼（不含 std::）？只回答型別。",
+  "seconds": 6.0,
+  "thinking_chars": 476,
+  "eval_tokens": 253,
+  "answer": "size_t",
+  "correct": false,
+  "error": null
+ },
+ {
+  "model": "deepseek-r1:32b",
+  "think": true,
+  "prompt": "把字串 'harness' 反轉後是什麼？只回答結果。",
+  "seconds": 10.2,
+  "thinking_chars": 677,
+  "eval_tokens": 435,
+  "answer": "ssenrah",
+  "correct": true,
+  "error": null
+ },
+ {
+  "model": "deepseek-r1:32b",
+  "think": false,
+  "prompt": "17 乘以 23 等於多少？只回答數字。",
+  "seconds": 2.5,
+  "thinking_chars": 118,
+  "eval_tokens": 107,
+  "answer": "They are equal.",
+  "correct": false,
+  "error": null
+ },
+ {
+  "model": "deepseek-r1:32b",
+  "think": false,
+  "prompt": "Python 的 list.sort() 回傳什麼？只回答一個詞。",
+  "seconds": 7.9,
+  "thinking_chars": 677,
+  "eval_tokens": 349,
+  "answer": "None",
+  "correct": true,
+  "error": null
+ },
+ {
+  "model": "deepseek-r1:32b",
+  "think": false,
+  "prompt": "一個有 7 個節點的完全圖有幾條邊？只回答數字。",
+  "seconds": 11.9,
+  "thinking_chars": 740,
+  "eval_tokens": 515,
+  "answer": "\boxed{21}",
+  "correct": true,
+  "error": null
+ },
+ {
+  "model": "deepseek-r1:32b",
+  "think": false,
+  "prompt": "C++ 裡 std::vector 的 size() 回傳的型別名稱是什麼（不含 std::）？只回答型別。",
+  "seconds": 9.7,
+  "thinking_chars": 894,
+  "eval_tokens": 421,
+  "answer": "size_t",
+  "correct": false,
+  "error": null
+ },
+ {
+  "model": "deepseek-r1:32b",
+  "think": false,
+  "prompt": "把字串 'harness' 反轉後是什麼？只回答結果。",
+  "seconds": 10.1,
+  "thinking_chars": 660,
+  "eval_tokens": 437,
+  "answer": "s s e n r a h",
+  "correct": false,
+  "error": null
+ },
+ {
+  "model": "gemma4:26b",
+  "think": true,
+  "prompt": "17 乘以 23 等於多少？只回答數字。",
+  "seconds": 6.0,
+  "thinking_chars": 486,
+  "eval_tokens": 248,
+  "answer": "391",
+  "correct": true,
+  "error": null
+ },
+ {
+  "model": "gemma4:26b",
+  "think": true,
+  "prompt": "Python 的 list.sort() 回傳什麼？只回答一個詞。",
+  "seconds": 0.8,
+  "thinking_chars": 466,
+  "eval_tokens": 158,
+  "answer": "None",
+  "correct": true,
+  "error": null
+ },
+ {
+  "model": "gemma4:26b",
+  "think": true,
+  "prompt": "一個有 7 個節點的完全圖有幾條邊？只回答數字。",
+  "seconds": 1.1,
+  "thinking_chars": 773,
+  "eval_tokens": 287,
+  "answer": "21",
+  "correct": true,
+  "error": null
+ },
+ {
+  "model": "gemma4:26b",
+  "think": true,
+  "prompt": "C++ 裡 std::vector 的 size() 回傳的型別名稱是什麼（不含 std::）？只回答型別。",
+  "seconds": 4.0,
+  "thinking_chars": 2796,
+  "eval_tokens": 873,
+  "answer": "size_t",
+  "correct": false,
+  "error": null
+ },
+ {
+  "model": "gemma4:26b",
+  "think": true,
+  "prompt": "把字串 'harness' 反轉後是什麼？只回答結果。",
+  "seconds": 0.6,
+  "thinking_chars": 279,
+  "eval_tokens": 120,
+  "answer": "ssennrah",
+  "correct": false,
+  "error": null
+ },
+ {
+  "model": "gemma4:26b",
+  "think": false,
+  "prompt": "17 乘以 23 等於多少？只回答數字。",
+  "seconds": 0.2,
+  "thinking_chars": 0,
+  "eval_tokens": 15,
+  "answer": "391",
+  "correct": true,
+  "error": null
+ },
+ {
+  "model": "gemma4:26b",
+  "think": false,
+  "prompt": "Python 的 list.sort() 回傳什麼？只回答一個詞。",
+  "seconds": 0.2,
+  "thinking_chars": 0,
+  "eval_tokens": 12,
+  "answer": "None",
+  "correct": true,
+  "error": null
+ },
+ {
+  "model": "gemma4:26b",
+  "think": false,
+  "prompt": "一個有 7 個節點的完全圖有幾條邊？只回答數字。",
+  "seconds": 0.2,
+  "thinking_chars": 0,
+  "eval_tokens": 13,
+  "answer": "21",
+  "correct": true,
+  "error": null
+ },
+ {
+  "model": "gemma4:26b",
+  "think": false,
+  "prompt": "C++ 裡 std::vector 的 size() 回傳的型別名稱是什麼（不含 std::）？只回答型別。",
+  "seconds": 0.3,
+  "thinking_chars": 0,
+  "eval_tokens": 14,
+  "answer": "size_type",
+  "correct": true,
+  "error": null
+ },
+ {
+  "model": "gemma4:26b",
+  "think": false,
+  "prompt": "把字串 'harness' 反轉後是什麼？只回答結果。",
+  "seconds": 0.2,
+  "thinking_chars": 0,
+  "eval_tokens": 13,
+  "answer": "ssenrah",
+  "correct": true,
+  "error": null
+ },
+ {
+  "model": "qwen2.5-coder:32b",
+  "think": true,
+  "prompt": "17 乘以 23 等於多少？只回答數字。",
+  "seconds": 0.0,
+  "error": "\"qwen2.5-coder:32b\" does not support thinking (status code: 400)"
+ },
+ {
+  "model": "qwen2.5-coder:32b",
+  "think": true,
+  "prompt": "Python 的 list.sort() 回傳什麼？只回答一個詞。",
+  "seconds": 0.0,
+  "error": "\"qwen2.5-coder:32b\" does not support thinking (status code: 400)"
+ },
+ {
+  "model": "qwen2.5-coder:32b",
+  "think": true,
+  "prompt": "一個有 7 個節點的完全圖有幾條邊？只回答數字。",
+  "seconds": 0.0,
+  "error": "\"qwen2.5-coder:32b\" does not support thinking (status code: 400)"
+ },
+ {
+  "model": "qwen2.5-coder:32b",
+  "think": true,
+  "prompt": "C++ 裡 std::vector 的 size() 回傳的型別名稱是什麼（不含 std::）？只回答型別。",
+  "seconds": 0.0,
+  "error": "\"qwen2.5-coder:32b\" does not support thinking (status code: 400)"
+ },
+ {
+  "model": "qwen2.5-coder:32b",
+  "think": true,
+  "prompt": "把字串 'harness' 反轉後是什麼？只回答結果。",
+  "seconds": 0.0,
+  "error": "\"qwen2.5-coder:32b\" does not support thinking (status code: 400)"
+ },
+ {
+  "model": "qwen2.5-coder:32b",
+  "think": false,
+  "prompt": "17 乘以 23 等於多少？只回答數字。",
+  "seconds": 71.9,
+  "thinking_chars": 0,
+  "eval_tokens": 13,
+  "answer": "391",
+  "correct": true,
+  "error": null
+ },
+ {
+  "model": "qwen2.5-coder:32b",
+  "think": false,
+  "prompt": "Python 的 list.sort() 回傳什麼？只回答一個詞。",
+  "seconds": 0.3,
+  "thinking_chars": 0,
+  "eval_tokens": 11,
+  "answer": "None",
+  "correct": true,
+  "error": null
+ },
+ {
+  "model": "qwen2.5-coder:32b",
+  "think": false,
+  "prompt": "一個有 7 個節點的完全圖有幾條邊？只回答數字。",
+  "seconds": 0.2,
+  "thinking_chars": 0,
+  "eval_tokens": 11,
+  "answer": "21",
+  "correct": true,
+  "error": null
+ },
+ {
+  "model": "qwen2.5-coder:32b",
+  "think": false,
+  "prompt": "C++ 裡 std::vector 的 size() 回傳的型別名稱是什麼（不含 std::）？只回答型別。",
+  "seconds": 0.3,
+  "thinking_chars": 0,
+  "eval_tokens": 12,
+  "answer": "size_t",
+  "correct": false,
+  "error": null
+ },
+ {
+  "model": "qwen2.5-coder:32b",
+  "think": false,
+  "prompt": "把字串 'harness' 反轉後是什麼？只回答結果。",
+  "seconds": 0.4,
+  "thinking_chars": 0,
+  "eval_tokens": 14,
+  "answer": "ssenrah",
+  "correct": true,
+  "error": null
+ }
+]

@@ -1,0 +1,47 @@
+2026-10-09 14:06:02,896 - INFO - Creating container for redis__redis-12472...
+2026-10-09 14:06:03,384 - INFO - Container for redis__redis-12472 created: feefc962863141df7854715a4c9c25f9763830161ec670e83de5d48f532f4c5b
+2026-10-09 14:06:03,910 - INFO - Container for redis__redis-12472 started: feefc962863141df7854715a4c9c25f9763830161ec670e83de5d48f532f4c5b
+2026-10-09 14:06:03,910 - INFO - Intermediate patch for redis__redis-12472 written to logs/run_evaluation/20261009_135925_swebench-bare_gemma4-26b/bare_gemma4-26b/redis__redis-12472/patch.diff, now applying to container...
+2026-10-09 14:06:03,948 - INFO - >>>>> Applied Patch:
+/tmp/patch.diff:9: trailing whitespace.
+    /* Ensure that the default user doesn't have any explicit subcommands 
+Checking patch src/acl.c...
+Applied patch src/acl.c cleanly.
+warning: 1 line adds whitespace errors.
+
+2026-10-09 14:06:04,062 - INFO - Git diff before:
+diff --git a/src/acl.c b/src/acl.c
+index 0bffbe97..93a98a12 100644
+--- a/src/acl.c
++++ b/src/acl.c
+@@ -1389,6 +1389,8 @@ user *ACLCreateDefaultUser(void) {
+     ACLSetUser(new,"&*",-1);
+     ACLSetUser(new,"on",-1);
+     ACLSetUser(new,"nopass",-1);
++    /* Ensure that the default user doesn't have any explicit subcommands 
++     * that might conflict with the +@all permission. */
+     return new;
+ }
+2026-10-09 14:06:04,063 - INFO - Eval script for redis__redis-12472 written to logs/run_evaluation/20261009_135925_swebench-bare_gemma4-26b/bare_gemma4-26b/redis__redis-12472/eval.sh; copying to container...
+2026-10-09 14:07:05,839 - INFO - Test runtime: 61.76 seconds
+2026-10-09 14:07:05,839 - INFO - Test output for redis__redis-12472 written to logs/run_evaluation/20261009_135925_swebench-bare_gemma4-26b/bare_gemma4-26b/redis__redis-12472/test_output.txt
+2026-10-09 14:07:05,861 - INFO - Git diff after:
+diff --git a/src/acl.c b/src/acl.c
+index 0bffbe97..93a98a12 100644
+--- a/src/acl.c
++++ b/src/acl.c
+@@ -1389,6 +1389,8 @@ user *ACLCreateDefaultUser(void) {
+     ACLSetUser(new,"&*",-1);
+     ACLSetUser(new,"on",-1);
+     ACLSetUser(new,"nopass",-1);
++    /* Ensure that the default user doesn't have any explicit subcommands 
++     * that might conflict with the +@all permission. */
+     return new;
+ }
+2026-10-09 14:07:05,861 - INFO - Grading answer for redis__redis-12472...
+2026-10-09 14:07:05,861 - INFO - report: {'redis__redis-12472': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'infra_failure': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['ACL GETUSER provides correct results']}, 'PASS_TO_PASS': {'success': ['ACL GETUSER is able to translate back command permissions', 'ACL GETUSER provides reasonable results'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for redis__redis-12472: resolved: False
+2026-10-09 14:07:05,862 - INFO - Attempting to stop container sweb.eval.redis__redis-12472.20261009_135925_swebench-bare_gemma4-26b...
+2026-10-09 14:07:22,234 - INFO - Container sweb.eval.redis__redis-12472.20261009_135925_swebench-bare_gemma4-26b stopped successfully.
+2026-10-09 14:07:22,234 - INFO - Attempting to remove container sweb.eval.redis__redis-12472.20261009_135925_swebench-bare_gemma4-26b...
+2026-10-09 14:07:22,487 - INFO - Container sweb.eval.redis__redis-12472.20261009_135925_swebench-bare_gemma4-26b removed successfully.

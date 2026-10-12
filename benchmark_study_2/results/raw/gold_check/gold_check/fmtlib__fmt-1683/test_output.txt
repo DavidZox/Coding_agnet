@@ -1,0 +1,209 @@
++ cd /testbed
++ git config --global --add safe.directory /testbed
++ git status
+On branch main
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   include/fmt/printf.h
+
+no changes added to commit (use "git add" and/or "git commit -a")
++ git show
+commit 981b517ccf2d91bf3bf52c518ac43710b57b5e17
+Author: Kevin Puetz <puetzk@puetzk.org>
+Date:   Wed May 13 19:20:05 2020 -0500
+
+    nested replacement fields may omit arg_id (#1681)
+    
+    syntax.html already has examples like `fmt::format("{:.{}f}", 3.14, 1)` using this,
+    and https://en.cppreference.com/w/cpp/utility/format/formatter#width_and_precision shows that this is the case for the C++20 std::format
+    
+    The Format Specification Mini-Language grammar seems to be the only one not showing this; update it to match.
+
+diff --git a/doc/syntax.rst b/doc/syntax.rst
+index bf2f1b6b..8265f702 100644
+--- a/doc/syntax.rst
++++ b/doc/syntax.rst
+@@ -79,8 +79,8 @@ The general form of a *standard format specifier* is:
+    fill: <a character other than '{' or '}'>
+    align: "<" | ">" | "^"
+    sign: "+" | "-" | " "
+-   width: `integer` | "{" `arg_id` "}"
+-   precision: `integer` | "{" `arg_id` "}"
++   width: `integer` | "{" [`arg_id`] "}"
++   precision: `integer` | "{" [`arg_id`] "}"
+    type: `int_type` | "a" | "A" | "c" | "e" | "E" | "f" | "F" | "g" | "G" | "L" | "p" | "s"
+    int_type: "b" | "B" | "d" | "o" | "x" | "X"
+ 
++ git -c core.fileMode=false diff 981b517ccf2d91bf3bf52c518ac43710b57b5e17
+diff --git a/include/fmt/printf.h b/include/fmt/printf.h
+index 6d014fcd..951825ed 100644
+--- a/include/fmt/printf.h
++++ b/include/fmt/printf.h
+@@ -257,7 +257,10 @@ class printf_arg_formatter : public detail::arg_formatter_base<Range> {
+         return (*this)(static_cast<int>(value));
+       fmt_specs.sign = sign::none;
+       fmt_specs.alt = false;
+-      fmt_specs.align = align::right;
++      // align::numeric needs to be overwritten here since the '0' flag is
++      // ignored for non-numeric types
++      if (fmt_specs.align == align::none || fmt_specs.align == align::numeric)
++        fmt_specs.align = align::right;
+       return base::operator()(value);
+     } else {
+       return base::operator()(value);
++ git checkout 981b517ccf2d91bf3bf52c518ac43710b57b5e17 test/printf-test.cc
+Updated 0 paths from 8ccd12ea
++ git apply -v -
+Checking patch test/printf-test.cc...
+Applied patch test/printf-test.cc cleanly.
++ mkdir -p build
++ cmake -B build -S .
+-- CMake version: 3.22.1
+-- Version: 6.2.2
+-- Build type: Release
+-- CXX_STANDARD: 11
+-- Required features: cxx_variadic_templates
+-- Target 'doc' disabled (requires doxygen)
+-- FMT_PEDANTIC: OFF
+-- Configuring done
+-- Generating done
+-- Build files have been written to: /testbed/build
+++ nproc
++ cmake --build build --parallel 32 --target printf-test
+Consolidate compiler generated dependencies of target gmock
+Consolidate compiler generated dependencies of target fmt
+[ 27%] Built target fmt
+[ 45%] Built target gmock
+Consolidate compiler generated dependencies of target test-main
+[ 81%] Built target test-main
+Consolidate compiler generated dependencies of target printf-test
+[ 90%] Building CXX object test/CMakeFiles/printf-test.dir/printf-test.cc.o
+[100%] Linking CXX executable ../bin/printf-test
+[100%] Built target printf-test
++ : '>>>>> Start Test Output'
++ cat
++ ctest --test-dir build -V -R printf-test
+Internal ctest changing into directory: /testbed/build
+UpdateCTestConfiguration  from :/testbed/build/DartConfiguration.tcl
+UpdateCTestConfiguration  from :/testbed/build/DartConfiguration.tcl
+Test project /testbed/build
+Constructing a list of tests
+Done constructing a list of tests
+Updating test list for fixtures
+Added 0 tests to meet fixture requirements
+Checking test dependency graph...
+Checking test dependency graph end
+test 12
+    Start 12: printf-test
+
+12: Test command: /testbed/build/bin/printf-test
+12: Test timeout computed to be: 10000000
+12: [==========] Running 43 tests from 1 test case.
+12: [----------] Global test environment set-up.
+12: [----------] 43 tests from PrintfTest
+12: [ RUN      ] PrintfTest.NoArgs
+12: [       OK ] PrintfTest.NoArgs (0 ms)
+12: [ RUN      ] PrintfTest.Escape
+12: [       OK ] PrintfTest.Escape (0 ms)
+12: [ RUN      ] PrintfTest.PositionalArgs
+12: [       OK ] PrintfTest.PositionalArgs (0 ms)
+12: [ RUN      ] PrintfTest.AutomaticArgIndexing
+12: [       OK ] PrintfTest.AutomaticArgIndexing (0 ms)
+12: [ RUN      ] PrintfTest.NumberIsTooBigInArgIndex
+12: [       OK ] PrintfTest.NumberIsTooBigInArgIndex (0 ms)
+12: [ RUN      ] PrintfTest.SwitchArgIndexing
+12: [       OK ] PrintfTest.SwitchArgIndexing (0 ms)
+12: [ RUN      ] PrintfTest.InvalidArgIndex
+12: [       OK ] PrintfTest.InvalidArgIndex (0 ms)
+12: [ RUN      ] PrintfTest.DefaultAlignRight
+12: [       OK ] PrintfTest.DefaultAlignRight (0 ms)
+12: [ RUN      ] PrintfTest.ZeroFlag
+12: [       OK ] PrintfTest.ZeroFlag (0 ms)
+12: [ RUN      ] PrintfTest.PlusFlag
+12: [       OK ] PrintfTest.PlusFlag (0 ms)
+12: [ RUN      ] PrintfTest.MinusFlag
+12: [       OK ] PrintfTest.MinusFlag (0 ms)
+12: [ RUN      ] PrintfTest.SpaceFlag
+12: [       OK ] PrintfTest.SpaceFlag (0 ms)
+12: [ RUN      ] PrintfTest.HashFlag
+12: [       OK ] PrintfTest.HashFlag (0 ms)
+12: [ RUN      ] PrintfTest.Width
+12: [       OK ] PrintfTest.Width (0 ms)
+12: [ RUN      ] PrintfTest.DynamicWidth
+12: [       OK ] PrintfTest.DynamicWidth (0 ms)
+12: [ RUN      ] PrintfTest.IntPrecision
+12: [       OK ] PrintfTest.IntPrecision (0 ms)
+12: [ RUN      ] PrintfTest.FloatPrecision
+12: [       OK ] PrintfTest.FloatPrecision (0 ms)
+12: [ RUN      ] PrintfTest.StringPrecision
+12: [       OK ] PrintfTest.StringPrecision (0 ms)
+12: [ RUN      ] PrintfTest.IgnorePrecisionForNonNumericArg
+12: [       OK ] PrintfTest.IgnorePrecisionForNonNumericArg (0 ms)
+12: [ RUN      ] PrintfTest.DynamicPrecision
+12: [       OK ] PrintfTest.DynamicPrecision (0 ms)
+12: [ RUN      ] PrintfTest.Length
+12: [       OK ] PrintfTest.Length (1 ms)
+12: [ RUN      ] PrintfTest.Bool
+12: [       OK ] PrintfTest.Bool (0 ms)
+12: [ RUN      ] PrintfTest.Int
+12: [       OK ] PrintfTest.Int (0 ms)
+12: [ RUN      ] PrintfTest.long_long
++ SWEBENCH_TEST_EXIT_CODE=0
++ : '>>>>> End Test Output'
++ echo '>>>>> Test Exit Code: 0'
++ git checkout 981b517ccf2d91bf3bf52c518ac43710b57b5e17 test/printf-test.cc
+12: [       OK ] PrintfTest.long_long (0 ms)
+12: [ RUN      ] PrintfTest.Float
+12: [       OK ] PrintfTest.Float (0 ms)
+12: [ RUN      ] PrintfTest.Inf
+12: [       OK ] PrintfTest.Inf (0 ms)
+12: [ RUN      ] PrintfTest.Char
+12: [       OK ] PrintfTest.Char (0 ms)
+12: [ RUN      ] PrintfTest.String
+12: [       OK ] PrintfTest.String (0 ms)
+12: [ RUN      ] PrintfTest.UCharString
+12: [       OK ] PrintfTest.UCharString (0 ms)
+12: [ RUN      ] PrintfTest.Pointer
+12: [       OK ] PrintfTest.Pointer (0 ms)
+12: [ RUN      ] PrintfTest.Location
+12: [       OK ] PrintfTest.Location (0 ms)
+12: [ RUN      ] PrintfTest.Enum
+12: [       OK ] PrintfTest.Enum (0 ms)
+12: [ RUN      ] PrintfTest.Examples
+12: [       OK ] PrintfTest.Examples (0 ms)
+12: [ RUN      ] PrintfTest.PrintfError
+12: [       OK ] PrintfTest.PrintfError (0 ms)
+12: [ RUN      ] PrintfTest.WideString
+12: [       OK ] PrintfTest.WideString (0 ms)
+12: [ RUN      ] PrintfTest.PrintfCustom
+12: [       OK ] PrintfTest.PrintfCustom (0 ms)
+12: [ RUN      ] PrintfTest.OStream
+12: [       OK ] PrintfTest.OStream (0 ms)
+12: [ RUN      ] PrintfTest.VPrintf
+12: [       OK ] PrintfTest.VPrintf (0 ms)
+12: [ RUN      ] PrintfTest.CheckFormatStringRegression
+12: [       OK ] PrintfTest.CheckFormatStringRegression (0 ms)
+12: [ RUN      ] PrintfTest.FixedLargeExponent
+12: [       OK ] PrintfTest.FixedLargeExponent (0 ms)
+12: [ RUN      ] PrintfTest.VSPrintfMakeArgsExample
+12: [       OK ] PrintfTest.VSPrintfMakeArgsExample (0 ms)
+12: [ RUN      ] PrintfTest.VSPrintfMakeWArgsExample
+12: [       OK ] PrintfTest.VSPrintfMakeWArgsExample (0 ms)
+12: [ RUN      ] PrintfTest.CustomFormat
+12: [       OK ] PrintfTest.CustomFormat (0 ms)
+12: [----------] 43 tests from PrintfTest (1 ms total)
+12: 
+12: [----------] Global test environment tear-down
+12: [==========] 43 tests from 1 test case ran. (1 ms total)
+12: [  PASSED  ] 43 tests.
+1/1 Test #12: printf-test ......................   Passed    0.00 sec
+
+The following tests passed:
+	printf-test
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   0.00 sec
+>>>>> Test Exit Code: 0
+Updated 1 path from 8ccd12ea

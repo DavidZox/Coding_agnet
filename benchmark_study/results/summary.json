@@ -1,0 +1,3049 @@
+{
+ "devbench_runs": [
+  {
+   "run_dir": "20261008_145629_devbench-bare_gemma4-26b",
+   "exp": "E2",
+   "version": "v4",
+   "model": "gemma4:26b",
+   "condition": "bare",
+   "visible": false,
+   "unit": 5,
+   "unit_total": 116,
+   "unit_rate": 0.04310344827586207,
+   "unit_ci": [
+    0.0,
+    0.1724137931034483
+   ],
+   "acceptance": 9,
+   "acceptance_total": 51,
+   "acceptance_rate": 0.17647058823529413,
+   "acceptance_ci": [
+    0.020833333333333332,
+    0.40350877192982454
+   ],
+   "weighted_unit": 0.036577400391900716,
+   "weighted_acceptance": 0.21930473909572537,
+   "macro_unit": 0.08333333333333333,
+   "macro_acceptance": 0.2138888888888889,
+   "minutes": 2.5,
+   "per_repo": {
+    "readtime": [
+     0,
+     8,
+     0,
+     4
+    ],
+    "particle-swarm-optimization": [
+     5,
+     5,
+     1,
+     1
+    ],
+    "chakin": [
+     0,
+     1,
+     0,
+     1
+    ],
+    "stocktrends": [
+     0,
+     7,
+     0,
+     2
+    ],
+    "geotext": [
+     0,
+     4,
+     0,
+     5
+    ],
+    "hone": [
+     0,
+     7,
+     2,
+     5
+    ],
+    "lice": [
+     0,
+     25,
+     1,
+     6
+    ],
+    "area_calculation": [
+     0,
+     3,
+     0,
+     3
+    ],
+    "graph-cpp": [
+     0,
+     22,
+     5,
+     5
+    ],
+    "logistic_system": [
+     0,
+     17,
+     0,
+     7
+    ],
+    "people_management": [
+     0,
+     9,
+     0,
+     7
+    ],
+    "xlsx2csv": [
+     0,
+     8,
+     0,
+     5
+    ]
+   }
+  },
+  {
+   "run_dir": "20261008_000705_devbench_gemma4-26b",
+   "exp": "E1",
+   "version": "v1",
+   "model": "gemma4:26b",
+   "condition": "harness",
+   "visible": false,
+   "unit": 14,
+   "unit_total": 116,
+   "unit_rate": 0.1206896551724138,
+   "unit_ci": [
+    0.025,
+    0.30526315789473685
+   ],
+   "acceptance": 18,
+   "acceptance_total": 51,
+   "acceptance_rate": 0.35294117647058826,
+   "acceptance_ci": [
+    0.14634146341463414,
+    0.627906976744186
+   ],
+   "weighted_unit": 0.12323100370128456,
+   "weighted_acceptance": 0.3835422433724197,
+   "macro_unit": 0.23214285714285712,
+   "macro_acceptance": 0.39246031746031745,
+   "minutes": 147.2,
+   "per_repo": {
+    "readtime": [
+     4,
+     8,
+     0,
+     4
+    ],
+    "particle-swarm-optimization": [
+     5,
+     5,
+     1,
+     1
+    ],
+    "chakin": [
+     0,
+     1,
+     0,
+     1
+    ],
+    "stocktrends": [
+     1,
+     7,
+     0,
+     2
+    ],
+    "geotext": [
+     0,
+     4,
+     1,
+     5
+    ],
+    "hone": [
+     1,
+     7,
+     1,
+     5
+    ],
+    "lice": [
+     0,
+     25,
+     1,
+     6
+    ],
+    "area_calculation": [
+     3,
+     3,
+     3,
+     3
+    ],
+    "graph-cpp": [
+     0,
+     22,
+     5,
+     5
+    ],
+    "logistic_system": [
+     0,
+     17,
+     0,
+     7
+    ],
+    "people_management": [
+     0,
+     9,
+     1,
+     7
+    ],
+    "xlsx2csv": [
+     0,
+     8,
+     5,
+     5
+    ]
+   }
+  },
+  {
+   "run_dir": "20261008_084341_devbench_gemma4-26b",
+   "exp": "E1",
+   "version": "v2",
+   "model": "gemma4:26b",
+   "condition": "harness",
+   "visible": false,
+   "unit": 11,
+   "unit_total": 116,
+   "unit_rate": 0.09482758620689655,
+   "unit_ci": [
+    0.013605442176870748,
+    0.2602739726027397
+   ],
+   "acceptance": 11,
+   "acceptance_total": 51,
+   "acceptance_rate": 0.21568627450980393,
+   "acceptance_ci": [
+    0.06666666666666667,
+    0.4222222222222222
+   ],
+   "weighted_unit": 0.09925041211781904,
+   "weighted_acceptance": 0.1999274257928732,
+   "macro_unit": 0.1994047619047619,
+   "macro_acceptance": 0.2757936507936508,
+   "minutes": 88.5,
+   "per_repo": {
+    "readtime": [
+     2,
+     8,
+     0,
+     4
+    ],
+    "particle-swarm-optimization": [
+     5,
+     5,
+     1,
+     1
+    ],
+    "chakin": [
+     0,
+     1,
+     0,
+     1
+    ],
+    "stocktrends": [
+     1,
+     7,
+     0,
+     2
+    ],
+    "geotext": [
+     0,
+     4,
+     0,
+     5
+    ],
+    "hone": [
+     0,
+     7,
+     1,
+     5
+    ],
+    "lice": [
+     0,
+     25,
+     1,
+     6
+    ],
+    "area_calculation": [
+     3,
+     3,
+     3,
+     3
+    ],
+    "graph-cpp": [
+     0,
+     22,
+     0,
+     5
+    ],
+    "logistic_system": [
+     0,
+     17,
+     1,
+     7
+    ],
+    "people_management": [
+     0,
+     9,
+     0,
+     7
+    ],
+    "xlsx2csv": [
+     0,
+     8,
+     4,
+     5
+    ]
+   }
+  },
+  {
+   "run_dir": "20261008_145908_devbench_gemma4-26b",
+   "exp": "E1",
+   "version": "v4",
+   "model": "gemma4:26b",
+   "condition": "harness",
+   "visible": false,
+   "unit": 28,
+   "unit_total": 116,
+   "unit_rate": 0.2413793103448276,
+   "unit_ci": [
+    0.08287292817679558,
+    0.44761904761904764
+   ],
+   "acceptance": 14,
+   "acceptance_total": 51,
+   "acceptance_rate": 0.27450980392156865,
+   "acceptance_ci": [
+    0.13043478260869565,
+    0.4666666666666667
+   ],
+   "weighted_unit": 0.24721555387786606,
+   "weighted_acceptance": 0.24912029693218457,
+   "macro_unit": 0.30802068302068303,
+   "macro_acceptance": 0.32103174603174606,
+   "minutes": 43.9,
+   "per_repo": {
+    "readtime": [
+     2,
+     8,
+     0,
+     4
+    ],
+    "particle-swarm-optimization": [
+     5,
+     5,
+     1,
+     1
+    ],
+    "chakin": [
+     0,
+     1,
+     0,
+     1
+    ],
+    "stocktrends": [
+     1,
+     7,
+     0,
+     2
+    ],
+    "geotext": [
+     1,
+     4,
+     1,
+     5
+    ],
+    "hone": [
+     2,
+     7,
+     2,
+     5
+    ],
+    "lice": [
+     0,
+     25,
+     1,
+     6
+    ],
+    "area_calculation": [
+     3,
+     3,
+     3,
+     3
+    ],
+    "graph-cpp": [
+     12,
+     22,
+     0,
+     5
+    ],
+    "logistic_system": [
+     0,
+     17,
+     1,
+     7
+    ],
+    "people_management": [
+     2,
+     9,
+     1,
+     7
+    ],
+    "xlsx2csv": [
+     0,
+     8,
+     4,
+     5
+    ]
+   }
+  },
+  {
+   "run_dir": "20261008_155035_devbench_gemma4-26b",
+   "exp": "E1",
+   "version": "v4",
+   "model": "gemma4:26b",
+   "condition": "harness",
+   "visible": false,
+   "unit": 12,
+   "unit_total": 116,
+   "unit_rate": 0.10344827586206896,
+   "unit_ci": [
+    0.020618556701030927,
+    0.27586206896551724
+   ],
+   "acceptance": 14,
+   "acceptance_total": 51,
+   "acceptance_rate": 0.27450980392156865,
+   "acceptance_ci": [
+    0.09615384615384616,
+    0.5084745762711864
+   ],
+   "weighted_unit": 0.12483282013001151,
+   "weighted_acceptance": 0.3303432759997097,
+   "macro_unit": 0.22023809523809523,
+   "macro_acceptance": 0.2924603174603175,
+   "minutes": 34.5,
+   "per_repo": {
+    "readtime": [
+     2,
+     8,
+     0,
+     4
+    ],
+    "particle-swarm-optimization": [
+     5,
+     5,
+     1,
+     1
+    ],
+    "chakin": [
+     0,
+     1,
+     0,
+     1
+    ],
+    "stocktrends": [
+     1,
+     7,
+     0,
+     2
+    ],
+    "geotext": [
+     1,
+     4,
+     1,
+     5
+    ],
+    "hone": [
+     0,
+     7,
+     1,
+     5
+    ],
+    "lice": [
+     0,
+     25,
+     1,
+     6
+    ],
+    "area_calculation": [
+     3,
+     3,
+     0,
+     3
+    ],
+    "graph-cpp": [
+     0,
+     22,
+     5,
+     5
+    ],
+    "logistic_system": [
+     0,
+     17,
+     1,
+     7
+    ],
+    "people_management": [
+     0,
+     9,
+     0,
+     7
+    ],
+    "xlsx2csv": [
+     0,
+     8,
+     4,
+     5
+    ]
+   }
+  },
+  {
+   "run_dir": "20261008_154319_devbench-bare_gemma4-e4b",
+   "exp": "E2",
+   "version": "v4",
+   "model": "gemma4:e4b",
+   "condition": "bare",
+   "visible": false,
+   "unit": 1,
+   "unit_total": 116,
+   "unit_rate": 0.008620689655172414,
+   "unit_ci": [
+    0.0,
+    0.03225806451612903
+   ],
+   "acceptance": 7,
+   "acceptance_total": 51,
+   "acceptance_rate": 0.13725490196078433,
+   "acceptance_ci": [
+    0.0,
+    0.3617021276595745
+   ],
+   "weighted_unit": 0.011943640944294112,
+   "weighted_acceptance": 0.16908338776398868,
+   "macro_unit": 0.011904761904761904,
+   "macro_acceptance": 0.11666666666666665,
+   "minutes": 3.4,
+   "per_repo": {
+    "readtime": [
+     0,
+     8,
+     0,
+     4
+    ],
+    "particle-swarm-optimization": [
+     0,
+     5,
+     0,
+     1
+    ],
+    "chakin": [
+     0,
+     1,
+     0,
+     1
+    ],
+    "stocktrends": [
+     1,
+     7,
+     0,
+     2
+    ],
+    "geotext": [
+     0,
+     4,
+     0,
+     5
+    ],
+    "hone": [
+     0,
+     7,
+     2,
+     5
+    ],
+    "lice": [
+     0,
+     25,
+     0,
+     6
+    ],
+    "area_calculation": [
+     0,
+     3,
+     0,
+     3
+    ],
+    "graph-cpp": [
+     0,
+     22,
+     5,
+     5
+    ],
+    "logistic_system": [
+     0,
+     17,
+     0,
+     7
+    ],
+    "people_management": [
+     0,
+     9,
+     0,
+     7
+    ],
+    "xlsx2csv": [
+     0,
+     8,
+     0,
+     5
+    ]
+   }
+  },
+  {
+   "run_dir": "20261008_023431_devbench_gemma4-e4b",
+   "exp": "E1",
+   "version": "v1",
+   "model": "gemma4:e4b",
+   "condition": "harness",
+   "visible": false,
+   "unit": 22,
+   "unit_total": 116,
+   "unit_rate": 0.1896551724137931,
+   "unit_ci": [
+    0.0,
+    0.46060606060606063
+   ],
+   "acceptance": 0,
+   "acceptance_total": 51,
+   "acceptance_rate": 0.0,
+   "acceptance_ci": [
+    0.0,
+    0.0
+   ],
+   "weighted_unit": 0.1480790926904578,
+   "weighted_acceptance": 0.0,
+   "macro_unit": 0.13484848484848486,
+   "macro_acceptance": 0.0,
+   "minutes": 187.3,
+   "per_repo": {
+    "readtime": [
+     0,
+     8,
+     0,
+     4
+    ],
+    "particle-swarm-optimization": [
+     4,
+     5,
+     0,
+     1
+    ],
+    "chakin": [
+     0,
+     1,
+     0,
+     1
+    ],
+    "stocktrends": [
+     0,
+     7,
+     0,
+     2
+    ],
+    "geotext": [
+     0,
+     4,
+     0,
+     5
+    ],
+    "hone": [
+     0,
+     7,
+     0,
+     5
+    ],
+    "lice": [
+     0,
+     25,
+     0,
+     6
+    ],
+    "area_calculation": [
+     0,
+     3,
+     0,
+     3
+    ],
+    "graph-cpp": [
+     18,
+     22,
+     0,
+     5
+    ],
+    "logistic_system": [
+     0,
+     17,
+     0,
+     7
+    ],
+    "people_management": [
+     0,
+     9,
+     0,
+     7
+    ],
+    "xlsx2csv": [
+     0,
+     8,
+     0,
+     5
+    ]
+   }
+  },
+  {
+   "run_dir": "20261008_062246_devbench_gemma4-e4b",
+   "exp": "E1",
+   "version": "v2",
+   "model": "gemma4:e4b",
+   "condition": "harness",
+   "visible": false,
+   "unit": 9,
+   "unit_total": 116,
+   "unit_rate": 0.07758620689655173,
+   "unit_ci": [
+    0.0,
+    0.23595505617977527
+   ],
+   "acceptance": 8,
+   "acceptance_total": 51,
+   "acceptance_rate": 0.1568627450980392,
+   "acceptance_ci": [
+    0.0,
+    0.38636363636363635
+   ],
+   "weighted_unit": 0.08379210599981338,
+   "weighted_acceptance": 0.2056607881558894,
+   "macro_unit": 0.17857142857142858,
+   "macro_acceptance": 0.19999999999999998,
+   "minutes": 140.7,
+   "per_repo": {
+    "readtime": [
+     0,
+     8,
+     0,
+     4
+    ],
+    "particle-swarm-optimization": [
+     5,
+     5,
+     1,
+     1
+    ],
+    "chakin": [
+     0,
+     1,
+     0,
+     1
+    ],
+    "stocktrends": [
+     1,
+     7,
+     0,
+     2
+    ],
+    "geotext": [
+     0,
+     4,
+     0,
+     5
+    ],
+    "hone": [
+     0,
+     7,
+     2,
+     5
+    ],
+    "lice": [
+     0,
+     25,
+     0,
+     6
+    ],
+    "area_calculation": [
+     3,
+     3,
+     0,
+     3
+    ],
+    "graph-cpp": [
+     0,
+     22,
+     5,
+     5
+    ],
+    "logistic_system": [
+     0,
+     17,
+     0,
+     7
+    ],
+    "people_management": [
+     0,
+     9,
+     0,
+     7
+    ],
+    "xlsx2csv": [
+     0,
+     8,
+     0,
+     5
+    ]
+   }
+  },
+  {
+   "run_dir": "20261008_154649_devbench-bare_gemma4-26b_visible-tests",
+   "exp": "E3",
+   "version": "v4",
+   "model": "gemma4:26b",
+   "condition": "bare",
+   "visible": true,
+   "unit": 43,
+   "unit_total": 116,
+   "unit_rate": 0.3706896551724138,
+   "unit_ci": [
+    0.09259259259259259,
+    0.6166666666666667
+   ],
+   "acceptance": 16,
+   "acceptance_total": 51,
+   "acceptance_rate": 0.3137254901960784,
+   "acceptance_ci": [
+    0.08771929824561403,
+    0.5789473684210527
+   ],
+   "weighted_unit": 0.26214341517142453,
+   "weighted_acceptance": 0.3275854561288918,
+   "macro_unit": 0.3249754901960784,
+   "macro_acceptance": 0.3119047619047619,
+   "minutes": 3.6,
+   "per_repo": {
+    "readtime": [
+     3,
+     8,
+     0,
+     4
+    ],
+    "particle-swarm-optimization": [
+     5,
+     5,
+     1,
+     1
+    ],
+    "chakin": [
+     0,
+     1,
+     0,
+     1
+    ],
+    "stocktrends": [
+     0,
+     7,
+     0,
+     2
+    ],
+    "geotext": [
+     0,
+     4,
+     1,
+     5
+    ],
+    "hone": [
+     0,
+     7,
+     2,
+     5
+    ],
+    "lice": [
+     19,
+     25,
+     6,
+     6
+    ],
+    "area_calculation": [
+     3,
+     3,
+     0,
+     3
+    ],
+    "graph-cpp": [
+     0,
+     22,
+     5,
+     5
+    ],
+    "logistic_system": [
+     13,
+     17,
+     1,
+     7
+    ],
+    "people_management": [
+     0,
+     9,
+     0,
+     7
+    ],
+    "xlsx2csv": [
+     0,
+     8,
+     0,
+     5
+    ]
+   }
+  },
+  {
+   "run_dir": "20261008_101225_devbench_gemma4-26b_visible-tests",
+   "exp": "E3",
+   "version": "v2",
+   "model": "gemma4:26b",
+   "condition": "harness",
+   "visible": true,
+   "unit": 84,
+   "unit_total": 116,
+   "unit_rate": 0.7241379310344828,
+   "unit_ci": [
+    0.4791666666666667,
+    0.8805970149253731
+   ],
+   "acceptance": 18,
+   "acceptance_total": 51,
+   "acceptance_rate": 0.35294117647058826,
+   "acceptance_ci": [
+    0.15555555555555556,
+    0.5945945945945946
+   ],
+   "weighted_unit": 0.6740273312578995,
+   "weighted_acceptance": 0.3671674286958415,
+   "macro_unit": 0.6773232323232322,
+   "macro_acceptance": 0.41190476190476194,
+   "minutes": 92.4,
+   "per_repo": {
+    "readtime": [
+     0,
+     8,
+     0,
+     4
+    ],
+    "particle-swarm-optimization": [
+     5,
+     5,
+     1,
+     1
+    ],
+    "chakin": [
+     1,
+     1,
+     1,
+     1
+    ],
+    "stocktrends": [
+     6,
+     7,
+     0,
+     2
+    ],
+    "geotext": [
+     2,
+     4,
+     2,
+     5
+    ],
+    "hone": [
+     1,
+     7,
+     1,
+     5
+    ],
+    "lice": [
+     21,
+     25,
+     6,
+     6
+    ],
+    "area_calculation": [
+     3,
+     3,
+     0,
+     3
+    ],
+    "graph-cpp": [
+     21,
+     22,
+     2,
+     5
+    ],
+    "logistic_system": [
+     17,
+     17,
+     1,
+     7
+    ],
+    "people_management": [
+     3,
+     9,
+     0,
+     7
+    ],
+    "xlsx2csv": [
+     4,
+     8,
+     4,
+     5
+    ]
+   }
+  },
+  {
+   "run_dir": "20261008_162522_devbench_gemma4-26b_visible-tests",
+   "exp": "E3",
+   "version": "v4",
+   "model": "gemma4:26b",
+   "condition": "harness",
+   "visible": true,
+   "unit": 86,
+   "unit_total": 116,
+   "unit_rate": 0.7413793103448276,
+   "unit_ci": [
+    0.4691358024691358,
+    0.8961038961038961
+   ],
+   "acceptance": 21,
+   "acceptance_total": 51,
+   "acceptance_rate": 0.4117647058823529,
+   "acceptance_ci": [
+    0.21153846153846154,
+    0.66
+   ],
+   "weighted_unit": 0.6384869126084018,
+   "weighted_acceptance": 0.4073030387857299,
+   "macro_unit": 0.6631830206830207,
+   "macro_acceptance": 0.4904761904761905,
+   "minutes": 117.6,
+   "per_repo": {
+    "readtime": [
+     5,
+     8,
+     0,
+     4
+    ],
+    "particle-swarm-optimization": [
+     5,
+     5,
+     1,
+     1
+    ],
+    "chakin": [
+     1,
+     1,
+     1,
+     1
+    ],
+    "stocktrends": [
+     4,
+     7,
+     0,
+     2
+    ],
+    "geotext": [
+     1,
+     4,
+     2,
+     5
+    ],
+    "hone": [
+     0,
+     7,
+     0,
+     5
+    ],
+    "lice": [
+     24,
+     25,
+     6,
+     6
+    ],
+    "area_calculation": [
+     3,
+     3,
+     3,
+     3
+    ],
+    "graph-cpp": [
+     21,
+     22,
+     2,
+     5
+    ],
+    "logistic_system": [
+     17,
+     17,
+     1,
+     7
+    ],
+    "people_management": [
+     2,
+     9,
+     1,
+     7
+    ],
+    "xlsx2csv": [
+     3,
+     8,
+     4,
+     5
+    ]
+   }
+  }
+ ],
+ "devbench_harness_vs_bare": [
+  {
+   "model": "gemma4:26b",
+   "visible": false,
+   "harness_run": "20261008_145908_devbench_gemma4-26b",
+   "harness_version": "v4",
+   "bare_run": "20261008_145629_devbench-bare_gemma4-26b",
+   "unit": {
+    "diff": 0.19827586206896552,
+    "ci": [
+     0.05660377358490565,
+     0.3786407766990291
+    ],
+    "wins": 7,
+    "losses": 0,
+    "ties": 5,
+    "sign_p": 0.015625
+   },
+   "acceptance": {
+    "diff": 0.09803921568627452,
+    "ci": [
+     -0.19642857142857145,
+     0.36585365853658536
+    ],
+    "wins": 5,
+    "losses": 1,
+    "ties": 6,
+    "sign_p": 0.21875
+   }
+  },
+  {
+   "model": "gemma4:26b",
+   "visible": false,
+   "harness_run": "20261008_155035_devbench_gemma4-26b",
+   "harness_version": "v4",
+   "bare_run": "20261008_145629_devbench-bare_gemma4-26b",
+   "unit": {
+    "diff": 0.06034482758620689,
+    "ci": [
+     0.008,
+     0.16279069767441862
+    ],
+    "wins": 4,
+    "losses": 0,
+    "ties": 8,
+    "sign_p": 0.125
+   },
+   "acceptance": {
+    "diff": 0.09803921568627452,
+    "ci": [
+     -0.02702702702702703,
+     0.27586206896551724
+    ],
+    "wins": 3,
+    "losses": 1,
+    "ties": 8,
+    "sign_p": 0.625
+   }
+  },
+  {
+   "model": "gemma4:26b",
+   "visible": true,
+   "harness_run": "20261008_162522_devbench_gemma4-26b_visible-tests",
+   "harness_version": "v4",
+   "bare_run": "20261008_154649_devbench-bare_gemma4-26b_visible-tests",
+   "unit": {
+    "diff": 0.3706896551724138,
+    "ci": [
+     0.18253968253968256,
+     0.6153846153846154
+    ],
+    "wins": 9,
+    "losses": 0,
+    "ties": 3,
+    "sign_p": 0.00390625
+   },
+   "acceptance": {
+    "diff": 0.0980392156862745,
+    "ci": [
+     -0.13461538461538458,
+     0.3673469387755102
+    ],
+    "wins": 5,
+    "losses": 2,
+    "ties": 5,
+    "sign_p": 0.453125
+   }
+  },
+  {
+   "model": "gemma4:e4b",
+   "visible": false,
+   "harness_run": "20261008_062246_devbench_gemma4-e4b",
+   "harness_version": "v2",
+   "bare_run": "20261008_154319_devbench-bare_gemma4-e4b",
+   "unit": {
+    "diff": 0.06896551724137931,
+    "ci": [
+     0.0,
+     0.22580645161290325
+    ],
+    "wins": 2,
+    "losses": 0,
+    "ties": 10,
+    "sign_p": 0.5
+   },
+   "acceptance": {
+    "diff": 0.019607843137254888,
+    "ci": [
+     0.0,
+     0.07692307692307693
+    ],
+    "wins": 1,
+    "losses": 0,
+    "ties": 11,
+    "sign_p": 1.0
+   }
+  }
+ ],
+ "devbench_run_pairs": [
+  {
+   "model": "gemma4:26b",
+   "condition": "harness",
+   "visible": false,
+   "a": "20261008_000705_devbench_gemma4-26b",
+   "a_version": "v1",
+   "b": "20261008_084341_devbench_gemma4-26b",
+   "b_version": "v2",
+   "same_version": false,
+   "unit": {
+    "diff": -0.02586206896551725,
+    "ci": [
+     -0.0761904761904762,
+     0.0
+    ],
+    "repos_changed": 2
+   },
+   "acceptance": {
+    "diff": -0.13725490196078433,
+    "ci": [
+     -0.3559322033898305,
+     0.018181818181818188
+    ],
+    "repos_changed": 5
+   }
+  },
+  {
+   "model": "gemma4:26b",
+   "condition": "harness",
+   "visible": false,
+   "a": "20261008_000705_devbench_gemma4-26b",
+   "a_version": "v1",
+   "b": "20261008_145908_devbench_gemma4-26b",
+   "b_version": "v4",
+   "same_version": false,
+   "unit": {
+    "diff": 0.1206896551724138,
+    "ci": [
+     -0.023255813953488358,
+     0.3058823529411765
+    ],
+    "repos_changed": 5
+   },
+   "acceptance": {
+    "diff": -0.0784313725490196,
+    "ci": [
+     -0.3111111111111111,
+     0.0727272727272727
+    ],
+    "repos_changed": 4
+   }
+  },
+  {
+   "model": "gemma4:26b",
+   "condition": "harness",
+   "visible": false,
+   "a": "20261008_000705_devbench_gemma4-26b",
+   "a_version": "v1",
+   "b": "20261008_155035_devbench_gemma4-26b",
+   "b_version": "v4",
+   "same_version": false,
+   "unit": {
+    "diff": -0.017241379310344834,
+    "ci": [
+     -0.06862745098039215,
+     0.02105263157894738
+    ],
+    "repos_changed": 3
+   },
+   "acceptance": {
+    "diff": -0.0784313725490196,
+    "ci": [
+     -0.23076923076923073,
+     0.025641025641025605
+    ],
+    "repos_changed": 4
+   }
+  },
+  {
+   "model": "gemma4:26b",
+   "condition": "harness",
+   "visible": false,
+   "a": "20261008_084341_devbench_gemma4-26b",
+   "a_version": "v2",
+   "b": "20261008_145908_devbench_gemma4-26b",
+   "b_version": "v4",
+   "same_version": false,
+   "unit": {
+    "diff": 0.14655172413793105,
+    "ci": [
+     0.016,
+     0.32275132275132273
+    ],
+    "repos_changed": 4
+   },
+   "acceptance": {
+    "diff": 0.05882352941176472,
+    "ci": [
+     0.0,
+     0.11363636363636365
+    ],
+    "repos_changed": 3
+   }
+  },
+  {
+   "model": "gemma4:26b",
+   "condition": "harness",
+   "visible": false,
+   "a": "20261008_084341_devbench_gemma4-26b",
+   "a_version": "v2",
+   "b": "20261008_155035_devbench_gemma4-26b",
+   "b_version": "v4",
+   "same_version": false,
+   "unit": {
+    "diff": 0.008620689655172417,
+    "ci": [
+     0.0,
+     0.03508771929824561
+    ],
+    "repos_changed": 1
+   },
+   "acceptance": {
+    "diff": 0.05882352941176472,
+    "ci": [
+     -0.1568627450980392,
+     0.30000000000000004
+    ],
+    "repos_changed": 3
+   }
+  },
+  {
+   "model": "gemma4:26b",
+   "condition": "harness",
+   "visible": false,
+   "a": "20261008_145908_devbench_gemma4-26b",
+   "a_version": "v4",
+   "b": "20261008_155035_devbench_gemma4-26b",
+   "b_version": "v4",
+   "same_version": true,
+   "unit": {
+    "diff": -0.13793103448275862,
+    "ci": [
+     -0.31343283582089554,
+     0.0
+    ],
+    "repos_changed": 3
+   },
+   "acceptance": {
+    "diff": 0.0,
+    "ci": [
+     -0.2142857142857143,
+     0.25490196078431376
+    ],
+    "repos_changed": 4
+   }
+  },
+  {
+   "model": "gemma4:26b",
+   "condition": "harness",
+   "visible": true,
+   "a": "20261008_101225_devbench_gemma4-26b_visible-tests",
+   "a_version": "v2",
+   "b": "20261008_162522_devbench_gemma4-26b_visible-tests",
+   "b_version": "v4",
+   "same_version": false,
+   "unit": {
+    "diff": 0.017241379310344862,
+    "ci": [
+     -0.101123595505618,
+     0.13076923076923075
+    ],
+    "repos_changed": 7
+   },
+   "acceptance": {
+    "diff": 0.05882352941176466,
+    "ci": [
+     -0.04255319148936171,
+     0.20833333333333331
+    ],
+    "repos_changed": 3
+   }
+  },
+  {
+   "model": "gemma4:e4b",
+   "condition": "harness",
+   "visible": false,
+   "a": "20261008_023431_devbench_gemma4-e4b",
+   "a_version": "v1",
+   "b": "20261008_062246_devbench_gemma4-e4b",
+   "b_version": "v2",
+   "same_version": false,
+   "unit": {
+    "diff": -0.11206896551724137,
+    "ci": [
+     -0.39097744360902253,
+     0.12499999999999999
+    ],
+    "repos_changed": 4
+   },
+   "acceptance": {
+    "diff": 0.1568627450980392,
+    "ci": [
+     0.0,
+     0.3888888888888889
+    ],
+    "repos_changed": 3
+   }
+  }
+ ],
+ "devbench_unit_failure_modes": {
+  "26b harness": {
+   "介面不符": 33,
+   "全部通過": 8,
+   "邏輯錯誤（斷言失敗）": 6,
+   "依賴或資料缺少": 1
+  },
+  "e4b harness": {
+   "介面不符": 14,
+   "邏輯錯誤（斷言失敗）": 4,
+   "其他執行錯誤": 1,
+   "缺實作（連結失敗）": 1,
+   "實作編譯失敗": 2,
+   "全部通過": 2
+  },
+  "26b harness・測試可見": {
+   "介面不符": 1,
+   "全部通過": 8,
+   "邏輯錯誤（斷言失敗）": 10,
+   "依賴或資料缺少": 4,
+   "其他執行錯誤": 1
+  },
+  "26b 不用 harness": {
+   "介面不符": 7,
+   "全部通過": 1,
+   "依賴或資料缺少": 2,
+   "缺實作（連結失敗）": 1,
+   "實作編譯失敗": 1
+  },
+  "e4b 不用 harness": {
+   "介面不符": 6,
+   "其他執行錯誤": 1,
+   "依賴或資料缺少": 2,
+   "缺實作（連結失敗）": 1,
+   "實作編譯失敗": 2
+  },
+  "26b 不用 harness・測試可見": {
+   "介面不符": 4,
+   "全部通過": 2,
+   "依賴或資料缺少": 1,
+   "其他執行錯誤": 3,
+   "邏輯錯誤（斷言失敗）": 2
+  }
+ },
+ "coding_groups": [
+  {
+   "model": "gemma4:26b",
+   "condition": "bare",
+   "version": "v4",
+   "passed": 23,
+   "n": 28,
+   "rate": 0.8214285714285714,
+   "ci": [
+    0.644082084514089,
+    0.9212161417056989
+   ],
+   "hidden_passed": 24,
+   "hidden_n": 26,
+   "hidden_ci": [
+    0.7585805251948495,
+    0.9786453608166245
+   ],
+   "mean_seconds": 5.307142857142857,
+   "mean_calls": null
+  },
+  {
+   "model": "gemma4:26b",
+   "condition": "harness",
+   "version": "v0",
+   "passed": 12,
+   "n": 12,
+   "rate": 1.0,
+   "ci": [
+    0.7574992425007574,
+    1.0
+   ],
+   "hidden_passed": 10,
+   "hidden_n": 10,
+   "hidden_ci": [
+    0.7224598312333834,
+    1.0
+   ],
+   "mean_seconds": 68.875,
+   "mean_calls": 17.833333333333332
+  },
+  {
+   "model": "gemma4:26b",
+   "condition": "harness",
+   "version": "v1",
+   "passed": 10,
+   "n": 11,
+   "rate": 0.9090909090909091,
+   "ci": [
+    0.6226353745137962,
+    0.9837682477371741
+   ],
+   "hidden_passed": 9,
+   "hidden_n": 10,
+   "hidden_ci": [
+    0.5958436145024278,
+    0.9821242504842788
+   ],
+   "mean_seconds": 60.5,
+   "mean_calls": 15.454545454545455
+  },
+  {
+   "model": "gemma4:26b",
+   "condition": "harness",
+   "version": "v2",
+   "passed": 5,
+   "n": 5,
+   "rate": 1.0,
+   "ci": [
+    0.5655085052479191,
+    1.0
+   ],
+   "hidden_passed": 5,
+   "hidden_n": 5,
+   "hidden_ci": [
+    0.5655085052479191,
+    1.0
+   ],
+   "mean_seconds": 23.8,
+   "mean_calls": 19.0
+  },
+  {
+   "model": "gemma4:26b",
+   "condition": "harness",
+   "version": "v4",
+   "passed": 17,
+   "n": 17,
+   "rate": 1.0,
+   "ci": [
+    0.8156763396284354,
+    1.0
+   ],
+   "hidden_passed": 16,
+   "hidden_n": 16,
+   "hidden_ci": [
+    0.8063865817272802,
+    1.0
+   ],
+   "mean_seconds": 27.0,
+   "mean_calls": 18.705882352941178
+  },
+  {
+   "model": "gemma4:26b",
+   "condition": "harness",
+   "version": "v4-",
+   "passed": 3,
+   "n": 3,
+   "rate": 1.0,
+   "ci": [
+    0.43849391955098227,
+    1.0
+   ],
+   "hidden_passed": 3,
+   "hidden_n": 3,
+   "hidden_ci": [
+    0.43849391955098227,
+    1.0
+   ],
+   "mean_seconds": 21.5,
+   "mean_calls": 13.666666666666666
+  },
+  {
+   "model": "gemma4:e4b",
+   "condition": "bare",
+   "version": "v4",
+   "passed": 20,
+   "n": 28,
+   "rate": 0.7142857142857143,
+   "ci": [
+    0.529403642629825,
+    0.8474618415167003
+   ],
+   "hidden_passed": 25,
+   "hidden_n": 26,
+   "hidden_ci": [
+    0.811068230080416,
+    0.9931781910230102
+   ],
+   "mean_seconds": 4.9678571428571425,
+   "mean_calls": null
+  },
+  {
+   "model": "gemma4:e4b",
+   "condition": "harness",
+   "version": "v0",
+   "passed": 18,
+   "n": 22,
+   "rate": 0.8181818181818182,
+   "ci": [
+    0.6148297802336213,
+    0.9269323397589488
+   ],
+   "hidden_passed": 16,
+   "hidden_n": 18,
+   "hidden_ci": [
+    0.6719975513339578,
+    0.9689811315464172
+   ],
+   "mean_seconds": 116.00454545454545,
+   "mean_calls": 22.90909090909091
+  },
+  {
+   "model": "gemma4:e4b",
+   "condition": "harness",
+   "version": "v1",
+   "passed": 20,
+   "n": 25,
+   "rate": 0.8,
+   "ci": [
+    0.6086866446346177,
+    0.9113954589934752
+   ],
+   "hidden_passed": 18,
+   "hidden_n": 22,
+   "hidden_ci": [
+    0.6148297802336213,
+    0.9269323397589488
+   ],
+   "mean_seconds": 123.88799999999999,
+   "mean_calls": 26.52
+  },
+  {
+   "model": "gemma4:e4b",
+   "condition": "harness",
+   "version": "v2",
+   "passed": 5,
+   "n": 5,
+   "rate": 1.0,
+   "ci": [
+    0.5655085052479191,
+    1.0
+   ],
+   "hidden_passed": 5,
+   "hidden_n": 5,
+   "hidden_ci": [
+    0.5655085052479191,
+    1.0
+   ],
+   "mean_seconds": 23.4,
+   "mean_calls": 18.6
+  },
+  {
+   "model": "gemma4:e4b",
+   "condition": "harness",
+   "version": "v3",
+   "passed": 1,
+   "n": 1,
+   "rate": 1.0,
+   "ci": [
+    0.20654329147389294,
+    1.0
+   ],
+   "hidden_passed": 0,
+   "hidden_n": 0,
+   "hidden_ci": null,
+   "mean_seconds": 9.0,
+   "mean_calls": 6.0
+  },
+  {
+   "model": "gemma4:e4b",
+   "condition": "harness",
+   "version": "v4",
+   "passed": 20,
+   "n": 20,
+   "rate": 1.0,
+   "ci": [
+    0.8388698745050667,
+    1.0
+   ],
+   "hidden_passed": 19,
+   "hidden_n": 19,
+   "hidden_ci": [
+    0.8318156346315496,
+    1.0
+   ],
+   "mean_seconds": 32.925,
+   "mean_calls": 25.45
+  },
+  {
+   "model": "gemma4:e4b",
+   "condition": "harness",
+   "version": "v4-",
+   "passed": 12,
+   "n": 14,
+   "rate": 0.8571428571428571,
+   "ci": [
+    0.600580922361363,
+    0.9599069262620787
+   ],
+   "hidden_passed": 13,
+   "hidden_n": 13,
+   "hidden_ci": [
+    0.7718981569447083,
+    1.0
+   ],
+   "mean_seconds": 28.0,
+   "mean_calls": 23.642857142857142
+  }
+ ],
+ "coding_harness_vs_bare": [
+  {
+   "model": "gemma4:26b",
+   "scenarios": 14,
+   "harness": [
+    17,
+    17
+   ],
+   "bare": [
+    23,
+    28
+   ],
+   "wins": 3,
+   "losses": 0,
+   "ties": 11,
+   "sign_p": 0.25,
+   "per_scenario": {
+    "bugfix_textstats": {
+     "harness": [
+      1
+     ],
+     "bare": [
+      1,
+      1
+     ]
+    },
+    "c_bugfix_mean": {
+     "harness": [
+      1
+     ],
+     "bare": [
+      1,
+      1
+     ]
+    },
+    "c_ringbuf_api": {
+     "harness": [
+      1
+     ],
+     "bare": [
+      1,
+      1
+     ]
+    },
+    "cpp_bugfix_total": {
+     "harness": [
+      1
+     ],
+     "bare": [
+      0,
+      0
+     ]
+    },
+    "cpp_perimeter": {
+     "harness": [
+      1
+     ],
+     "bare": [
+      1,
+      1
+     ]
+    },
+    "cpp_triangle": {
+     "harness": [
+      1
+     ],
+     "bare": [
+      1,
+      1
+     ]
+    },
+    "feature_csv_export": {
+     "harness": [
+      1
+     ],
+     "bare": [
+      1,
+      1
+     ]
+    },
+    "feature_restock": {
+     "harness": [
+      1
+     ],
+     "bare": [
+      1,
+      1
+     ]
+    },
+    "long_category_feature": {
+     "harness": [
+      1
+     ],
+     "bare": [
+      1,
+      1
+     ]
+    },
+    "new_module": {
+     "harness": [
+      1
+     ],
+     "bare": [
+      0,
+      0
+     ]
+    },
+    "rename_cross_file": {
+     "harness": [
+      1
+     ],
+     "bare": [
+      1,
+      1
+     ]
+    },
+    "ros2_cpp_bugfix_angle": {
+     "harness": [
+      1,
+      1
+     ],
+     "bare": [
+      1,
+      1
+     ]
+    },
+    "ros2_cpp_compose": {
+     "harness": [
+      1,
+      1
+     ],
+     "bare": [
+      1,
+      1
+     ]
+    },
+    "ros2_py_battery": {
+     "harness": [
+      1,
+      1
+     ],
+     "bare": [
+      0,
+      1
+     ]
+    }
+   }
+  },
+  {
+   "model": "gemma4:e4b",
+   "scenarios": 14,
+   "harness": [
+    20,
+    20
+   ],
+   "bare": [
+    20,
+    28
+   ],
+   "wins": 6,
+   "losses": 0,
+   "ties": 8,
+   "sign_p": 0.03125,
+   "per_scenario": {
+    "bugfix_textstats": {
+     "harness": [
+      1
+     ],
+     "bare": [
+      1,
+      1
+     ]
+    },
+    "c_bugfix_mean": {
+     "harness": [
+      1
+     ],
+     "bare": [
+      1,
+      1
+     ]
+    },
+    "c_ringbuf_api": {
+     "harness": [
+      1
+     ],
+     "bare": [
+      1,
+      1
+     ]
+    },
+    "cpp_bugfix_total": {
+     "harness": [
+      1
+     ],
+     "bare": [
+      1,
+      1
+     ]
+    },
+    "cpp_perimeter": {
+     "harness": [
+      1
+     ],
+     "bare": [
+      1,
+      1
+     ]
+    },
+    "cpp_triangle": {
+     "harness": [
+      1
+     ],
+     "bare": [
+      0,
+      1
+     ]
+    },
+    "feature_csv_export": {
+     "harness": [
+      1
+     ],
+     "bare": [
+      0,
+      1
+     ]
+    },
+    "feature_restock": {
+     "harness": [
+      1
+     ],
+     "bare": [
+      0,
+      1
+     ]
+    },
+    "long_category_feature": {
+     "harness": [
+      1
+     ],
+     "bare": [
+      0,
+      0
+     ]
+    },
+    "new_module": {
+     "harness": [
+      1
+     ],
+     "bare": [
+      1,
+      1
+     ]
+    },
+    "rename_cross_file": {
+     "harness": [
+      1
+     ],
+     "bare": [
+      1,
+      1
+     ]
+    },
+    "ros2_cpp_bugfix_angle": {
+     "harness": [
+      1,
+      1,
+      1
+     ],
+     "bare": [
+      1,
+      1
+     ]
+    },
+    "ros2_cpp_compose": {
+     "harness": [
+      1,
+      1,
+      1
+     ],
+     "bare": [
+      0,
+      0
+     ]
+    },
+    "ros2_py_battery": {
+     "harness": [
+      1,
+      1,
+      1
+     ],
+     "bare": [
+      1,
+      0
+     ]
+    }
+   }
+  }
+ ],
+ "coding_bare_failures": {
+  "gemma4:e4b": {
+   "hidden_fail": 1,
+   "own_tests_fail_only": 7,
+   "other": 0
+  },
+  "gemma4:26b": {
+   "hidden_fail": 2,
+   "own_tests_fail_only": 3,
+   "other": 0
+  }
+ },
+ "main_groups": [
+  {
+   "suite": "main",
+   "version": "AI_agent_harness",
+   "condition": "guards-n/a",
+   "mode": "claude_code",
+   "model": "gemma4:26b",
+   "passed": 39,
+   "n": 42,
+   "rate": 0.9285714285714286,
+   "ci": [
+    0.8099028671147483,
+    0.9754100364488272
+   ],
+   "main_calls_mean": 4.642857142857143,
+   "tool_calls_mean": 2.4285714285714284,
+   "repeats": 0,
+   "step_limit": 0,
+   "stuck_stops": 0,
+   "claim_nudges": 0
+  },
+  {
+   "suite": "main",
+   "version": "AI_agent_harness",
+   "condition": "guards-n/a",
+   "mode": "claude_code",
+   "model": "gemma4:e4b",
+   "passed": 70,
+   "n": 96,
+   "rate": 0.7291666666666666,
+   "ci": [
+    0.632734651676977,
+    0.807963414059149
+   ],
+   "main_calls_mean": 4.729166666666667,
+   "tool_calls_mean": 2.0625,
+   "repeats": 13,
+   "step_limit": 0,
+   "stuck_stops": 0,
+   "claim_nudges": 0
+  },
+  {
+   "suite": "main",
+   "version": "AI_agent_harness",
+   "condition": "guards-n/a",
+   "mode": "harness",
+   "model": "gemma4:26b",
+   "passed": 39,
+   "n": 42,
+   "rate": 0.9285714285714286,
+   "ci": [
+    0.8099028671147483,
+    0.9754100364488272
+   ],
+   "main_calls_mean": 3.8333333333333335,
+   "tool_calls_mean": 1.619047619047619,
+   "repeats": 1,
+   "step_limit": 0,
+   "stuck_stops": 0,
+   "claim_nudges": 0
+  },
+  {
+   "suite": "main",
+   "version": "AI_agent_harness",
+   "condition": "guards-n/a",
+   "mode": "harness",
+   "model": "gemma4:e4b",
+   "passed": 83,
+   "n": 84,
+   "rate": 0.9880952380952381,
+   "ci": [
+    0.9356030079821146,
+    0.9978954710984119
+   ],
+   "main_calls_mean": 4.119047619047619,
+   "tool_calls_mean": 1.6785714285714286,
+   "repeats": 5,
+   "step_limit": 0,
+   "stuck_stops": 0,
+   "claim_nudges": 0
+  },
+  {
+   "suite": "main",
+   "version": "v0",
+   "condition": "guards-n/a",
+   "mode": "harness",
+   "model": "gemma4:e4b",
+   "passed": 20,
+   "n": 20,
+   "rate": 1.0,
+   "ci": [
+    0.8388698745050667,
+    1.0
+   ],
+   "main_calls_mean": 3.4,
+   "tool_calls_mean": 1.25,
+   "repeats": 0,
+   "step_limit": 0,
+   "stuck_stops": 0,
+   "claim_nudges": 0
+  },
+  {
+   "suite": "main",
+   "version": "v1",
+   "condition": "guards-on",
+   "mode": "harness",
+   "model": "gemma4:e4b",
+   "passed": 14,
+   "n": 14,
+   "rate": 1.0,
+   "ci": [
+    0.7846829880728186,
+    1.0
+   ],
+   "main_calls_mean": 3.5,
+   "tool_calls_mean": 1.2857142857142858,
+   "repeats": 0,
+   "step_limit": 0,
+   "stuck_stops": 0,
+   "claim_nudges": 0
+  },
+  {
+   "suite": "main",
+   "version": "v4",
+   "condition": "guards-on",
+   "mode": "harness",
+   "model": "gemma4:e4b",
+   "passed": 42,
+   "n": 42,
+   "rate": 1.0,
+   "ci": [
+    0.9161983874908382,
+    1.0
+   ],
+   "main_calls_mean": 3.619047619047619,
+   "tool_calls_mean": 1.3571428571428572,
+   "repeats": 0,
+   "step_limit": 0,
+   "stuck_stops": 0,
+   "claim_nudges": 0
+  },
+  {
+   "suite": "main",
+   "version": "v4.1",
+   "condition": "guards-on",
+   "mode": "harness",
+   "model": "gemma4:e4b",
+   "passed": 27,
+   "n": 28,
+   "rate": 0.9642857142857143,
+   "ci": [
+    0.8228742388150135,
+    0.9936676435024582
+   ],
+   "main_calls_mean": 3.5,
+   "tool_calls_mean": 1.3214285714285714,
+   "repeats": 0,
+   "step_limit": 0,
+   "stuck_stops": 0,
+   "claim_nudges": 0
+  },
+  {
+   "suite": "robust",
+   "version": "v4",
+   "condition": "guards-off",
+   "mode": "harness",
+   "model": "gemma4:e4b",
+   "passed": 13,
+   "n": 15,
+   "rate": 0.8666666666666667,
+   "ci": [
+    0.6211750079348376,
+    0.9626395301086407
+   ],
+   "main_calls_mean": 7.466666666666667,
+   "tool_calls_mean": 4.6,
+   "repeats": 5,
+   "step_limit": 0,
+   "stuck_stops": 0,
+   "claim_nudges": 0
+  },
+  {
+   "suite": "robust",
+   "version": "v4",
+   "condition": "guards-on",
+   "mode": "harness",
+   "model": "gemma4:e4b",
+   "passed": 11,
+   "n": 15,
+   "rate": 0.7333333333333333,
+   "ci": [
+    0.4804911034231324,
+    0.8910272389681718
+   ],
+   "main_calls_mean": 5.266666666666667,
+   "tool_calls_mean": 2.6666666666666665,
+   "repeats": 0,
+   "step_limit": 0,
+   "stuck_stops": 1,
+   "claim_nudges": 0
+  },
+  {
+   "suite": "robust",
+   "version": "v4.1",
+   "condition": "v4 的規則（對照）",
+   "mode": "harness",
+   "model": "gemma4:e4b",
+   "passed": 37,
+   "n": 50,
+   "rate": 0.74,
+   "ci": [
+    0.6044657801100008,
+    0.8412862034863262
+   ],
+   "main_calls_mean": 5.82,
+   "tool_calls_mean": 3.02,
+   "repeats": 2,
+   "step_limit": 0,
+   "stuck_stops": 1,
+   "claim_nudges": 0
+  },
+  {
+   "suite": "robust",
+   "version": "v4.1",
+   "condition": "v4.1 把關開啟",
+   "mode": "harness",
+   "model": "gemma4:e4b",
+   "passed": 39,
+   "n": 50,
+   "rate": 0.78,
+   "ci": [
+    0.6475818431054045,
+    0.8724621377569771
+   ],
+   "main_calls_mean": 6.3,
+   "tool_calls_mean": 3.24,
+   "repeats": 4,
+   "step_limit": 0,
+   "stuck_stops": 0,
+   "claim_nudges": 0
+  },
+  {
+   "suite": "robust",
+   "version": "v4.1",
+   "condition": "把關全部關閉",
+   "mode": "harness",
+   "model": "gemma4:e4b",
+   "passed": 37,
+   "n": 50,
+   "rate": 0.74,
+   "ci": [
+    0.6044657801100008,
+    0.8412862034863262
+   ],
+   "main_calls_mean": 7.12,
+   "tool_calls_mean": 4.34,
+   "repeats": 20,
+   "step_limit": 0,
+   "stuck_stops": 0,
+   "claim_nudges": 0
+  }
+ ],
+ "robust": {
+  "E6": {
+   "robust_claim": {
+    "guards-on": {
+     "passed": 1,
+     "n": 3,
+     "ci": [
+      0.0614903152761605,
+      0.7923450448735121
+     ],
+     "checks": {
+      "tools_any": [
+       1,
+       3
+      ],
+      "no_step_limit": [
+       3,
+       3
+      ]
+     },
+     "main_calls_mean": 8.666666666666666,
+     "repeats": 0,
+     "step_limit": 0,
+     "stuck_stops": 1
+    },
+    "guards-off": {
+     "passed": 2,
+     "n": 3,
+     "ci": [
+      0.2076549551264879,
+      0.9385096847238394
+     ],
+     "checks": {
+      "tools_any": [
+       2,
+       3
+      ],
+      "no_step_limit": [
+       3,
+       3
+      ]
+     },
+     "main_calls_mean": 11.0,
+     "repeats": 0,
+     "step_limit": 0,
+     "stuck_stops": 0
+    }
+   },
+   "robust_quoting": {
+    "guards-on": {
+     "passed": 3,
+     "n": 3,
+     "ci": [
+      0.43849391955098227,
+      1.0
+     ],
+     "checks": {
+      "reply_any": [
+       3,
+       3
+      ],
+      "tools_any": [
+       3,
+       3
+      ]
+     },
+     "main_calls_mean": 3.0,
+     "repeats": 0,
+     "step_limit": 0,
+     "stuck_stops": 0
+    },
+    "guards-off": {
+     "passed": 2,
+     "n": 3,
+     "ci": [
+      0.2076549551264879,
+      0.9385096847238394
+     ],
+     "checks": {
+      "reply_any": [
+       2,
+       3
+      ],
+      "tools_any": [
+       3,
+       3
+      ]
+     },
+     "main_calls_mean": 4.666666666666667,
+     "repeats": 4,
+     "step_limit": 0,
+     "stuck_stops": 0
+    }
+   },
+   "robust_stuck_error": {
+    "guards-on": {
+     "passed": 3,
+     "n": 3,
+     "ci": [
+      0.43849391955098227,
+      1.0
+     ],
+     "checks": {
+      "reply_any": [
+       3,
+       3
+      ],
+      "no_step_limit": [
+       3,
+       3
+      ]
+     },
+     "main_calls_mean": 6.333333333333333,
+     "repeats": 0,
+     "step_limit": 0,
+     "stuck_stops": 0
+    },
+    "guards-off": {
+     "passed": 3,
+     "n": 3,
+     "ci": [
+      0.43849391955098227,
+      1.0
+     ],
+     "checks": {
+      "reply_any": [
+       3,
+       3
+      ],
+      "no_step_limit": [
+       3,
+       3
+      ]
+     },
+     "main_calls_mean": 7.333333333333333,
+     "repeats": 1,
+     "step_limit": 0,
+     "stuck_stops": 0
+    }
+   },
+   "robust_typo_dir": {
+    "guards-on": {
+     "passed": 3,
+     "n": 3,
+     "ci": [
+      0.43849391955098227,
+      1.0
+     ],
+     "checks": {
+      "reply_any": [
+       3,
+       3
+      ],
+      "args_any": [
+       3,
+       3
+      ]
+     },
+     "main_calls_mean": 4.333333333333333,
+     "repeats": 0,
+     "step_limit": 0,
+     "stuck_stops": 0
+    },
+    "guards-off": {
+     "passed": 3,
+     "n": 3,
+     "ci": [
+      0.43849391955098227,
+      1.0
+     ],
+     "checks": {
+      "reply_any": [
+       3,
+       3
+      ],
+      "args_any": [
+       3,
+       3
+      ]
+     },
+     "main_calls_mean": 7.0,
+     "repeats": 0,
+     "step_limit": 0,
+     "stuck_stops": 0
+    }
+   },
+   "robust_typo_file": {
+    "guards-on": {
+     "passed": 1,
+     "n": 3,
+     "ci": [
+      0.0614903152761605,
+      0.7923450448735121
+     ],
+     "checks": {
+      "reply_any": [
+       1,
+       3
+      ],
+      "tools_any": [
+       1,
+       3
+      ]
+     },
+     "main_calls_mean": 4.0,
+     "repeats": 0,
+     "step_limit": 0,
+     "stuck_stops": 0
+    },
+    "guards-off": {
+     "passed": 3,
+     "n": 3,
+     "ci": [
+      0.43849391955098227,
+      1.0
+     ],
+     "checks": {
+      "reply_any": [
+       3,
+       3
+      ],
+      "tools_any": [
+       3,
+       3
+      ]
+     },
+     "main_calls_mean": 7.333333333333333,
+     "repeats": 0,
+     "step_limit": 0,
+     "stuck_stops": 0
+    }
+   },
+   "合計": {
+    "guards-on": {
+     "passed": 11,
+     "n": 15,
+     "ci": [
+      0.4804911034231324,
+      0.8910272389681718
+     ],
+     "checks": {
+      "reply_any": [
+       10,
+       12
+      ],
+      "tools_any": [
+       5,
+       9
+      ],
+      "args_any": [
+       3,
+       3
+      ],
+      "no_step_limit": [
+       6,
+       6
+      ]
+     },
+     "main_calls_mean": 5.266666666666667,
+     "repeats": 0,
+     "step_limit": 0,
+     "stuck_stops": 1
+    },
+    "guards-off": {
+     "passed": 13,
+     "n": 15,
+     "ci": [
+      0.6211750079348376,
+      0.9626395301086407
+     ],
+     "checks": {
+      "reply_any": [
+       11,
+       12
+      ],
+      "tools_any": [
+       8,
+       9
+      ],
+      "args_any": [
+       3,
+       3
+      ],
+      "no_step_limit": [
+       6,
+       6
+      ]
+     },
+     "main_calls_mean": 7.466666666666667,
+     "repeats": 5,
+     "step_limit": 0,
+     "stuck_stops": 0
+    }
+   }
+  },
+  "E7": {
+   "robust_claim": {
+    "v4.1 把關開啟": {
+     "passed": 9,
+     "n": 10,
+     "ci": [
+      0.5958436145024278,
+      0.9821242504842788
+     ],
+     "checks": {
+      "tools_any": [
+       9,
+       10
+      ],
+      "no_step_limit": [
+       10,
+       10
+      ]
+     },
+     "main_calls_mean": 11.1,
+     "repeats": 0,
+     "step_limit": 0,
+     "stuck_stops": 0
+    },
+    "v4 的規則（對照）": {
+     "passed": 5,
+     "n": 10,
+     "ci": [
+      0.23658959361548731,
+      0.7634104063845126
+     ],
+     "checks": {
+      "tools_any": [
+       5,
+       10
+      ],
+      "no_step_limit": [
+       10,
+       10
+      ]
+     },
+     "main_calls_mean": 10.3,
+     "repeats": 0,
+     "step_limit": 0,
+     "stuck_stops": 1
+    },
+    "把關全部關閉": {
+     "passed": 6,
+     "n": 10,
+     "ci": [
+      0.3126695474501864,
+      0.8318224187964902
+     ],
+     "checks": {
+      "tools_any": [
+       6,
+       10
+      ],
+      "no_step_limit": [
+       10,
+       10
+      ]
+     },
+     "main_calls_mean": 10.5,
+     "repeats": 2,
+     "step_limit": 0,
+     "stuck_stops": 0
+    }
+   },
+   "robust_quoting": {
+    "v4.1 把關開啟": {
+     "passed": 10,
+     "n": 10,
+     "ci": [
+      0.7224598312333834,
+      1.0
+     ],
+     "checks": {
+      "reply_any": [
+       10,
+       10
+      ],
+      "tools_any": [
+       10,
+       10
+      ]
+     },
+     "main_calls_mean": 3.8,
+     "repeats": 3,
+     "step_limit": 0,
+     "stuck_stops": 0
+    },
+    "v4 的規則（對照）": {
+     "passed": 10,
+     "n": 10,
+     "ci": [
+      0.7224598312333834,
+      1.0
+     ],
+     "checks": {
+      "reply_any": [
+       10,
+       10
+      ],
+      "tools_any": [
+       10,
+       10
+      ]
+     },
+     "main_calls_mean": 3.4,
+     "repeats": 1,
+     "step_limit": 0,
+     "stuck_stops": 0
+    },
+    "把關全部關閉": {
+     "passed": 9,
+     "n": 10,
+     "ci": [
+      0.5958436145024278,
+      0.9821242504842788
+     ],
+     "checks": {
+      "reply_any": [
+       9,
+       10
+      ],
+      "tools_any": [
+       10,
+       10
+      ]
+     },
+     "main_calls_mean": 6.7,
+     "repeats": 15,
+     "step_limit": 0,
+     "stuck_stops": 0
+    }
+   },
+   "robust_stuck_error": {
+    "v4.1 把關開啟": {
+     "passed": 10,
+     "n": 10,
+     "ci": [
+      0.7224598312333834,
+      1.0
+     ],
+     "checks": {
+      "reply_any": [
+       10,
+       10
+      ],
+      "no_step_limit": [
+       10,
+       10
+      ]
+     },
+     "main_calls_mean": 6.6,
+     "repeats": 1,
+     "step_limit": 0,
+     "stuck_stops": 0
+    },
+    "v4 的規則（對照）": {
+     "passed": 10,
+     "n": 10,
+     "ci": [
+      0.7224598312333834,
+      1.0
+     ],
+     "checks": {
+      "reply_any": [
+       10,
+       10
+      ],
+      "no_step_limit": [
+       10,
+       10
+      ]
+     },
+     "main_calls_mean": 6.1,
+     "repeats": 1,
+     "step_limit": 0,
+     "stuck_stops": 0
+    },
+    "把關全部關閉": {
+     "passed": 10,
+     "n": 10,
+     "ci": [
+      0.7224598312333834,
+      1.0
+     ],
+     "checks": {
+      "reply_any": [
+       10,
+       10
+      ],
+      "no_step_limit": [
+       10,
+       10
+      ]
+     },
+     "main_calls_mean": 5.9,
+     "repeats": 3,
+     "step_limit": 0,
+     "stuck_stops": 0
+    }
+   },
+   "robust_typo_dir": {
+    "v4.1 把關開啟": {
+     "passed": 5,
+     "n": 10,
+     "ci": [
+      0.23658959361548731,
+      0.7634104063845126
+     ],
+     "checks": {
+      "reply_any": [
+       6,
+       10
+      ],
+      "args_any": [
+       8,
+       10
+      ]
+     },
+     "main_calls_mean": 4.7,
+     "repeats": 0,
+     "step_limit": 0,
+     "stuck_stops": 0
+    },
+    "v4 的規則（對照）": {
+     "passed": 7,
+     "n": 10,
+     "ci": [
+      0.39677321997956516,
+      0.892210712513788
+     ],
+     "checks": {
+      "reply_any": [
+       8,
+       10
+      ],
+      "args_any": [
+       8,
+       10
+      ]
+     },
+     "main_calls_mean": 4.6,
+     "repeats": 0,
+     "step_limit": 0,
+     "stuck_stops": 0
+    },
+    "把關全部關閉": {
+     "passed": 4,
+     "n": 10,
+     "ci": [
+      0.16817758120350967,
+      0.6873304525498135
+     ],
+     "checks": {
+      "reply_any": [
+       6,
+       10
+      ],
+      "args_any": [
+       5,
+       10
+      ]
+     },
+     "main_calls_mean": 6.3,
+     "repeats": 0,
+     "step_limit": 0,
+     "stuck_stops": 0
+    }
+   },
+   "robust_typo_file": {
+    "v4.1 把關開啟": {
+     "passed": 5,
+     "n": 10,
+     "ci": [
+      0.23658959361548731,
+      0.7634104063845126
+     ],
+     "checks": {
+      "reply_any": [
+       5,
+       10
+      ],
+      "tools_any": [
+       5,
+       10
+      ]
+     },
+     "main_calls_mean": 5.3,
+     "repeats": 0,
+     "step_limit": 0,
+     "stuck_stops": 0
+    },
+    "v4 的規則（對照）": {
+     "passed": 5,
+     "n": 10,
+     "ci": [
+      0.23658959361548731,
+      0.7634104063845126
+     ],
+     "checks": {
+      "reply_any": [
+       5,
+       10
+      ],
+      "tools_any": [
+       6,
+       10
+      ]
+     },
+     "main_calls_mean": 4.7,
+     "repeats": 0,
+     "step_limit": 0,
+     "stuck_stops": 0
+    },
+    "把關全部關閉": {
+     "passed": 8,
+     "n": 10,
+     "ci": [
+      0.49015684672072335,
+      0.9433190520193067
+     ],
+     "checks": {
+      "reply_any": [
+       8,
+       10
+      ],
+      "tools_any": [
+       8,
+       10
+      ]
+     },
+     "main_calls_mean": 6.2,
+     "repeats": 0,
+     "step_limit": 0,
+     "stuck_stops": 0
+    }
+   },
+   "合計": {
+    "v4.1 把關開啟": {
+     "passed": 39,
+     "n": 50,
+     "ci": [
+      0.6475818431054045,
+      0.8724621377569771
+     ],
+     "checks": {
+      "reply_any": [
+       31,
+       40
+      ],
+      "tools_any": [
+       24,
+       30
+      ],
+      "args_any": [
+       8,
+       10
+      ],
+      "no_step_limit": [
+       20,
+       20
+      ]
+     },
+     "main_calls_mean": 6.3,
+     "repeats": 4,
+     "step_limit": 0,
+     "stuck_stops": 0
+    },
+    "v4 的規則（對照）": {
+     "passed": 37,
+     "n": 50,
+     "ci": [
+      0.6044657801100008,
+      0.8412862034863262
+     ],
+     "checks": {
+      "reply_any": [
+       33,
+       40
+      ],
+      "tools_any": [
+       21,
+       30
+      ],
+      "args_any": [
+       8,
+       10
+      ],
+      "no_step_limit": [
+       20,
+       20
+      ]
+     },
+     "main_calls_mean": 5.82,
+     "repeats": 2,
+     "step_limit": 0,
+     "stuck_stops": 1
+    },
+    "把關全部關閉": {
+     "passed": 37,
+     "n": 50,
+     "ci": [
+      0.6044657801100008,
+      0.8412862034863262
+     ],
+     "checks": {
+      "reply_any": [
+       33,
+       40
+      ],
+      "tools_any": [
+       24,
+       30
+      ],
+      "args_any": [
+       5,
+       10
+      ],
+      "no_step_limit": [
+       20,
+       20
+      ]
+     },
+     "main_calls_mean": 7.12,
+     "repeats": 20,
+     "step_limit": 0,
+     "stuck_stops": 0
+    }
+   }
+  }
+ }
+}

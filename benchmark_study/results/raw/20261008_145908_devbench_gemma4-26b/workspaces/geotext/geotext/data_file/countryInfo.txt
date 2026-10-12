@@ -1,0 +1,5 @@
+AD	AND	020	AN	Andorra	Andorra la Vella	468	84000	EU	.ad	EUR	Euro	376	AD###	^(?:AD)*(\d{3})$	ca	3041565	ES,FR
+TW	TWN	158	TW	Taiwan	Taipei	23400	23500000	AS	.tw	TWD	New Taiwan Dollar	886	TW###	^(?:TW)*(\d{3})$	zh,en	1696482	CN,JP,PH
+US	USA	840	US	United States	Washington	3800000	331000000	NA	.us	USD	US Dollar	1	US###	^(?:US)*(\d{3})$	en	13281971	CA,MX
+CN	CHN	156	CN	China	Beijing	9600000	1412000000	AS	.cn	CNY	Chinese Yuan	86	CN###	^(?:CN)*(\d{3})$	zh	7830741	KP,RU,IN
+JP	JPN	392	JP	Japan	Tokyo	12325	125700000	AS	.jp	JPY	Japanese Yen	81	JP###	^(?:JP)*(\d{3})$	ja	18501872	KR,CN

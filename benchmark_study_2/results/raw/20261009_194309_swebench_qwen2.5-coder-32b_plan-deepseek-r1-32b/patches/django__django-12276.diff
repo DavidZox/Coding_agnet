@@ -1,0 +1,23 @@
+diff --git a/django/forms/widgets.py b/django/forms/widgets.py
+index 338d54d72f..d5163c069b 100644
+--- a/django/forms/widgets.py
++++ b/django/forms/widgets.py
+@@ -376,6 +376,9 @@ class FileInput(Input):
+     needs_multipart_form = True
+     template_name = 'django/forms/widgets/file.html'
+ 
++    def use_required_attribute(self, initial):
++        return super().use_required_attribute(initial) and not initial
++
+     def format_value(self, value):
+         """File input never renders a value."""
+         return
+@@ -452,7 +455,7 @@ class ClearableFileInput(FileInput):
+         return upload
+ 
+     def use_required_attribute(self, initial):
+-        return super().use_required_attribute(initial) and not initial
++        return super().use_required_attribute(initial)
+ 
+     def value_omitted_from_data(self, data, files, name):
+         return (

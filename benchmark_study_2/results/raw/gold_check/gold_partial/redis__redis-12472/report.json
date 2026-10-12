@@ -1,0 +1,32 @@
+{
+    "redis__redis-12472": {
+        "patch_is_None": false,
+        "patch_exists": true,
+        "patch_successfully_applied": true,
+        "resolved": true,
+        "infra_failure": false,
+        "tests_status": {
+            "FAIL_TO_PASS": {
+                "success": [
+                    "ACL GETUSER provides correct results"
+                ],
+                "failure": []
+            },
+            "PASS_TO_PASS": {
+                "success": [
+                    "ACL GETUSER is able to translate back command permissions",
+                    "ACL GETUSER provides reasonable results"
+                ],
+                "failure": []
+            },
+            "FAIL_TO_FAIL": {
+                "success": [],
+                "failure": []
+            },
+            "PASS_TO_FAIL": {
+                "success": [],
+                "failure": []
+            }
+        }
+    }
+}

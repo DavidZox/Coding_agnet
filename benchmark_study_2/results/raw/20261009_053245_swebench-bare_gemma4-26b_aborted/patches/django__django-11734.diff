@@ -1,0 +1,16 @@
+diff --git a/django/db/models/sql/query.py b/django/db/models/sql/query.py
+index 35f3c5e1ea..a2eec3ce69 100644
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -1707,6 +1707,11 @@ class Query(BaseExpression):
+         # Generate the inner query.
+         query = Query(self.model)
+         query._filtered_relations = self._filtered_relations
++        # If filter_expr is a Q object, it might contain OuterRef.
++        # We need to resolve it against the current query to ensure
++        # it's treated as a subquery.
++        if isinstance(filter_expr, Q):
++            filter_expr = filter_expr.resolve_expression(query)
+         query.add_filter(filter_expr)
+         query.clear_ordering(True)
+         # Try to have as simple as possible subquery -> trim leading joins from

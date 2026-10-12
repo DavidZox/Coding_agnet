@@ -1,0 +1,23 @@
+{
+ "id": "fe_people_management",
+ "family": "fe",
+ "source": "devbench",
+ "repo": "people_management",
+ "lang": "cpp",
+ "workspace": "workspaces/fe_people_management",
+ "task": "請補上導師（mentorship）功能：命令列 `./UMM mentor assign -student <學生ID> -mentor <導師ID>` 與 `./UMM mentor lookup -student <學生ID>`（或 `-mentor <導師ID>`）。\n\n1. 資料表：建立新資料庫時，除了 people 與 school，也要執行 `sql/mentorship.sql` 建立 `mentorship` 表（檔案已經在 `sql/` 裡；路徑常數請比照 `people_sql_name` 加在 `include/common.h`）。\n2. `validate_options(subcommand, target)`：`subcommand` 是 `mentor` 時，target 只能是 `assign` 或 `lookup`；其他 target 在 stderr 印出說明並回傳 `false`。\n3. `handle_options(...)`：`mentor` 子命令呼叫 `people_management.mentor(target, options)`；回傳值不是 0 時在 stderr 印出錯誤並回傳 `FAILURE`，否則回傳 `SUCCESS`。\n4. 新增 `int PeopleManagement::mentor(const std::string& target, const std::map<std::string, std::string>& options) const`（宣告在 `include/people_management.h`），回傳 `common.h` 的狀態碼：\n   - 不論 target 為何，先檢查：有給 `-student` 且值不是空字串時，該 ID 必須是 people 表中 type = 1（學生）的人；有給 `-mentor` 且值不是空字串時，必須是 type = 2（導師）的人；不符合就回傳 `RECORD_NOT_EXISTS`。值是空字串的選項視同沒給。\n   - `assign`：學生與導師都要給，否則回傳 `NOT_ENOUGH_OPTIONS`。該學生已經有導師就改成新的導師，否則新增一筆 `(student, mentor)`；成功回傳 `SUCCESS`，SQL 執行失敗回傳 `SQL_EXECUTION_ERROR`。\n   - 其他 target（`lookup`）：學生與導師都給 → `INVALID_OPTION`；都沒給 → `NOT_ENOUGH_OPTIONS`；只給學生 → 列出這個學生的導師；只給導師 → 列出這位導師的所有學生。先輸出表頭 `student\\t\\tname\\t\\tmentor\\t\\tname`，每筆輸出學生 ID、學生姓名、導師 ID、導師姓名（用現有 `search_callback` 的格式）；成功回傳 `SUCCESS`。\n\n要求：照這個專案現有的寫法與檔案結構實作（可能要改好幾個檔案）；同時在 `tests/` 補上這個功能的單元測試。既有的測試（`make -f makefile_test test`）要維持全部通過，不要修改既有的測試。",
+ "test_dir": "tests",
+ "feature": "導師關係管理（mentor assign／lookup）",
+ "expected_files": [
+  "include/common.h",
+  "include/people_management.h",
+  "src/people_management.cpp"
+ ],
+ "ref_files": [
+  "include/common.h",
+  "include/people_management.h",
+  "src/people_management.cpp",
+  "tests/unit_testing.cpp"
+ ],
+ "python": "devbench_venv"
+}

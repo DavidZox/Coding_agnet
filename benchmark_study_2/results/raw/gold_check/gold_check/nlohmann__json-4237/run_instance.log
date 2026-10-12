@@ -1,0 +1,76 @@
+2026-10-09 06:36:23,910 - INFO - Creating container for nlohmann__json-4237...
+2026-10-09 06:36:24,459 - INFO - Container for nlohmann__json-4237 created: d92db1601902be0d197557b87be441a696dac9f1b298b04dcd20e97c177e5372
+2026-10-09 06:36:25,175 - INFO - Container for nlohmann__json-4237 started: d92db1601902be0d197557b87be441a696dac9f1b298b04dcd20e97c177e5372
+2026-10-09 06:36:25,175 - INFO - Intermediate patch for nlohmann__json-4237 written to logs/run_evaluation/gold_check/gold/nlohmann__json-4237/patch.diff, now applying to container...
+2026-10-09 06:36:25,320 - INFO - >>>>> Applied Patch:
+Checking patch include/nlohmann/detail/conversions/to_json.hpp...
+Checking patch single_include/nlohmann/json.hpp...
+Applied patch include/nlohmann/detail/conversions/to_json.hpp cleanly.
+Applied patch single_include/nlohmann/json.hpp cleanly.
+
+2026-10-09 06:36:25,930 - INFO - Git diff before:
+diff --git a/include/nlohmann/detail/conversions/to_json.hpp b/include/nlohmann/detail/conversions/to_json.hpp
+index e39b7797..562089c3 100644
+--- a/include/nlohmann/detail/conversions/to_json.hpp
++++ b/include/nlohmann/detail/conversions/to_json.hpp
+@@ -320,7 +320,8 @@ template<typename BasicJsonType, typename EnumType,
+ inline void to_json(BasicJsonType& j, EnumType e) noexcept
+ {
+     using underlying_type = typename std::underlying_type<EnumType>::type;
+-    external_constructor<value_t::number_integer>::construct(j, static_cast<underlying_type>(e));
++    static constexpr value_t integral_value_t = std::is_unsigned<underlying_type>::value ? value_t::number_unsigned : value_t::number_integer;
++    external_constructor<integral_value_t>::construct(j, static_cast<underlying_type>(e));
+ }
+ #endif  // JSON_DISABLE_ENUM_SERIALIZATION
+ 
+diff --git a/single_include/nlohmann/json.hpp b/single_include/nlohmann/json.hpp
+index 8b72ea65..b191bb91 100644
+--- a/single_include/nlohmann/json.hpp
++++ b/single_include/nlohmann/json.hpp
+@@ -5697,7 +5697,8 @@ template<typename BasicJsonType, typename EnumType,
+ inline void to_json(BasicJsonType& j, EnumType e) noexcept
+ {
+     using underlying_type = typename std::underlying_type<EnumType>::type;
+-    external_constructor<value_t::number_integer>::construct(j, static_cast<underlying_type>(e));
++    static constexpr value_t integral_value_t = std::is_unsigned<underlying_type>::value ? value_t::number_unsigned : value_t::number_integer;
++    external_constructor<integral_value_t>::construct(j, static_cast<underlying_type>(e));
+ }
+ #endif  // JSON_DISABLE_ENUM_SERIALIZATION
+2026-10-09 06:36:25,930 - INFO - Eval script for nlohmann__json-4237 written to logs/run_evaluation/gold_check/gold/nlohmann__json-4237/eval.sh; copying to container...
+2026-10-09 06:36:29,462 - INFO - Test runtime: 3.50 seconds
+2026-10-09 06:36:29,463 - INFO - Test output for nlohmann__json-4237 written to logs/run_evaluation/gold_check/gold/nlohmann__json-4237/test_output.txt
+2026-10-09 06:36:29,513 - INFO - Git diff after:
+diff --git a/include/nlohmann/detail/conversions/to_json.hpp b/include/nlohmann/detail/conversions/to_json.hpp
+index e39b7797..562089c3 100644
+--- a/include/nlohmann/detail/conversions/to_json.hpp
++++ b/include/nlohmann/detail/conversions/to_json.hpp
+@@ -320,7 +320,8 @@ template<typename BasicJsonType, typename EnumType,
+ inline void to_json(BasicJsonType& j, EnumType e) noexcept
+ {
+     using underlying_type = typename std::underlying_type<EnumType>::type;
+-    external_constructor<value_t::number_integer>::construct(j, static_cast<underlying_type>(e));
++    static constexpr value_t integral_value_t = std::is_unsigned<underlying_type>::value ? value_t::number_unsigned : value_t::number_integer;
++    external_constructor<integral_value_t>::construct(j, static_cast<underlying_type>(e));
+ }
+ #endif  // JSON_DISABLE_ENUM_SERIALIZATION
+ 
+diff --git a/single_include/nlohmann/json.hpp b/single_include/nlohmann/json.hpp
+index 8b72ea65..b191bb91 100644
+--- a/single_include/nlohmann/json.hpp
++++ b/single_include/nlohmann/json.hpp
+@@ -5697,7 +5697,8 @@ template<typename BasicJsonType, typename EnumType,
+ inline void to_json(BasicJsonType& j, EnumType e) noexcept
+ {
+     using underlying_type = typename std::underlying_type<EnumType>::type;
+-    external_constructor<value_t::number_integer>::construct(j, static_cast<underlying_type>(e));
++    static constexpr value_t integral_value_t = std::is_unsigned<underlying_type>::value ? value_t::number_unsigned : value_t::number_integer;
++    external_constructor<integral_value_t>::construct(j, static_cast<underlying_type>(e));
+ }
+ #endif  // JSON_DISABLE_ENUM_SERIALIZATION
+2026-10-09 06:36:29,513 - INFO - Grading answer for nlohmann__json-4237...
+2026-10-09 06:36:29,514 - INFO - report: {'nlohmann__json-4237': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'infra_failure': False, 'tests_status': {'FAIL_TO_PASS': {'success': ['basic usage > conversion to json via free-functions'], 'failure': []}, 'PASS_TO_PASS': {'success': ['basic usage > conversion from json via free-functions', 'basic usage > via explicit calls to get', 'basic usage > via explicit calls to get_to', 'basic usage > implicit conversions', 'adl_serializer specialization > partial specialization', 'adl_serializer specialization > to_json', 'adl_serializer specialization > from_json', 'adl_serializer specialization > total specialization', 'Non-copyable types > to_json', 'Non-copyable types > from_json', 'different basic_json types conversions > null', 'different basic_json types conversions > boolean', 'different basic_json types conversions > discarded', 'different basic_json types conversions > array', 'different basic_json types conversions > integer', 'different basic_json types conversions > float', 'different basic_json types conversions > unsigned', 'different basic_json types conversions > string', 'different basic_json types conversions > binary', 'different basic_json types conversions > object', 'different basic_json types conversions > get<custom_json>'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for nlohmann__json-4237: resolved: True
+2026-10-09 06:36:29,514 - INFO - Attempting to stop container sweb.eval.nlohmann__json-4237.gold_check...
+2026-10-09 06:36:45,578 - INFO - Container sweb.eval.nlohmann__json-4237.gold_check stopped successfully.
+2026-10-09 06:36:45,578 - INFO - Attempting to remove container sweb.eval.nlohmann__json-4237.gold_check...
+2026-10-09 06:36:45,884 - INFO - Container sweb.eval.nlohmann__json-4237.gold_check removed successfully.

@@ -1,0 +1,227 @@
+diff --git a/lib/matplotlib/colors.py b/lib/matplotlib/colors.py
+index e0c42c5b6..1dfe9fae1 100644
+--- a/lib/matplotlib/colors.py
++++ b/lib/matplotlib/colors.py
+@@ -1471,14 +1471,35 @@ def _make_norm_from_scale(scale_cls, base_norm_cls=None, *, init=None):
+                 clip = self.clip
+             if clip:
+                 value = np.clip(value, self.vmin, self.vmax)
++            # Ensure vmin and vmax are valid after clipping
++            valid_mask = ~np.ma.getmaskarray(value)
++            if not valid_mask.any():
++                raise ValueError("No valid data to autoscale")
++            value = value[valid_mask]
++            self.vmin = np.min(value)
++            self.vmax = np.max(value)
+             t_value = self._trf.transform(value).reshape(np.shape(value))
+             t_vmin, t_vmax = self._trf.transform([self.vmin, self.vmax])
++            if not np.isfinite(t_vmin):
++                t_vmin = 1e-324
++            if not np.isfinite(t_vmax):
++                t_vmax = 1e+324
++            if not np.isfinite(t_vmin):
++                self.vmin = 1e-324
++            if not np.isfinite(t_vmax):
++                self.vmax = 1e+324
+             if not np.isfinite([t_vmin, t_vmax]).all():
+-                raise ValueError("Invalid vmin or vmax")
+-            t_value -= t_vmin
+-            t_value /= (t_vmax - t_vmin)
+-            t_value = np.ma.masked_invalid(t_value, copy=False)
+-            return t_value[0] if is_scalar else t_value
++                if not np.isfinite(t_vmin):
++                    self.vmin = 1e-324
++                    t_vmin = 1e-324
++                if not np.isfinite(t_vmax):
++                    self.vmax = 1e+324
++                    t_vmax = 1e+324
++                t_vmin, t_vmax = self._trf.transform([self.vmin, self.vmax])
++                t_value -= t_vmin
++                t_value /= (t_vmax - t_vmin)
++                t_value = np.ma.masked_invalid(t_value, copy=False)
++                return t_value[0] if is_scalar else t_value
+ 
+         def inverse(self, value):
+             if not self.scaled():
+diff --git a/lib/matplotlib/tests/test_image.py b/lib/matplotlib/tests/test_image.py
+index 69fb89bcd..0413e980f 100644
+--- a/lib/matplotlib/tests/test_image.py
++++ b/lib/matplotlib/tests/test_image.py
+@@ -798,6 +798,177 @@ def test_image_preserve_size2():
+     ax.set_axis_off()
+     fig.add_axes(ax)
+     ax.imshow(data, interpolation='nearest', origin='lower', aspect='auto')
++
++def test_huge_range_log_fixed():
++    np.random.seed(0)
++    data = np.logspace(1, 1000, 1000).reshape(10, 100)
++    norm = colors.LogNorm(vmin=1, vmax=1000)
++    fig, ax = plt.subplots()
++    ax.imshow(data, norm=norm)
++    fig.canvas.draw()
++    assert not np.isnan(ax.images[0].get_array()).any()
++
++def test_huge_range_log_fixed():
++    data = np.logspace(1, 1000, num=1000)
++    norm = colors.LogNorm(vmin=data.min(), vmax=data.max())
++    fig, ax = plt.subplots()
++    im = ax.imshow(data, norm=norm)
++    fig.colorbar(im)
++    plt.close(fig)
++
++def test_huge_range_log_fixed():
++    np.random.seed(0)
++    data = np.logspace(1, 1000, num=10000).reshape(100, 100)
++    fig, ax = plt.subplots()
++    norm = colors.LogNorm(vmin=data.min(), vmax=data.max())
++    im = ax.imshow(data, norm=norm)
++    fig.colorbar(im)
++    plt.close(fig)
++
++def test_huge_range_log_fixed():
++    np.random.seed(0)
++    data = np.logspace(-10, 10, num=1000)
++    norm = colors.LogNorm(vmin=data.min(), vmax=data.max())
++    fig, ax = plt.subplots()
++    im = ax.imshow(data, norm=norm, cmap='viridis')
++    plt.colorbar(im)
++    fig.canvas.draw()
++    assert not np.isnan(im.get_array()).any()
++
++def test_huge_range_log_fixed():
++    data = np.logspace(1, 1000, 1000)
++    norm = colors.LogNorm(vmin=data.min(), vmax=data.max())
++    fig, ax = plt.subplots()
++    im = ax.imshow(data, norm=norm)
++    fig.canvas.draw()
++    assert not np.isnan(im.get_array()).any()
++
++def test_huge_range_log_fixed():
++    data = np.logspace(1, 1000, num=1000)
++    norm = colors.LogNorm(vmin=data.min(), vmax=data.max())
++    fig, ax = plt.subplots()
++    im = ax.imshow(data, norm=norm)
++    fig.canvas.draw()
++    assert not np.isnan(im.get_array()).any()
++
++def test_huge_range_log_fixed():
++    data = np.logspace(1, 1000, 1000)
++    norm = colors.LogNorm(vmin=data.min(), vmax=data.max())
++    fig, ax = plt.subplots()
++    ax.imshow(data, norm=norm)
++    plt.colorbar(ax.images[0], ax=ax)
++    plt.close(fig)
++
++def test_huge_range_log_fixed():
++    data = np.logspace(1, 1000, num=1000)
++    norm = colors.LogNorm(vmin=data.min(), vmax=data.max())
++    fig, ax = plt.subplots()
++    ax.imshow(data, norm=norm, cmap='viridis')
++    plt.colorbar(ax.images[0], ax=ax)
++
++def test_huge_range_log_fixed():
++    np.random.seed(0)
++    data = np.logspace(-10, 10, 1000)
++    norm = colors.LogNorm(vmin=data.min(), vmax=data.max())
++    fig, ax = plt.subplots()
++    im = ax.imshow(data, norm=norm)
++    fig.canvas.draw()
++    assert not np.isnan(im.get_array()).any()
++
++def test_huge_range_log_fixed():
++    np.random.seed(0)
++    data = np.logspace(-10, 10, num=1000).reshape(10, 100)
++
++    fig, ax = plt.subplots()
++    im = ax.imshow(data, norm=colors.LogNorm(), interpolation='none')
++    fig.canvas.draw()
++    assert not np.isnan(im.get_array()).any()
++
++def test_huge_range_log_fixed():
++    np.random.seed(0)
++    data = np.logspace(-10, 10, num=1000).reshape(10, 100)
++
++    fig, ax = plt.subplots()
++    im = ax.imshow(data, norm=colors.LogNorm(), interpolation='none')
++    fig.canvas.draw()
++    assert not np.isnan(im.get_array()).any()
++
++def test_huge_range_log_fixed():
++    np.random.seed(0)
++    data = np.logspace(-10, 10, num=1000).reshape(10, 100)
++    fig, ax = plt.subplots()
++    norm = colors.LogNorm(vmin=data.min(), vmax=data.max())
++    im = ax.imshow(data, norm=norm, interpolation='nearest')
++    fig.colorbar(im)
++    plt.close(fig)
++
++def test_huge_range_log_fixed():
++    np.random.seed(0)
++    data = np.logspace(-10, 10, 1000)
++    norm = colors.LogNorm(vmin=data.min(), vmax=data.max())
++    fig, ax = plt.subplots()
++    im = ax.imshow(data, norm=norm, cmap='viridis')
++    fig.colorbar(im)
++    plt.close(fig)
++
++def test_huge_range_log_fixed():
++    np.random.seed(0)
++    data = np.logspace(-10, 10, num=10000).reshape(100, 100)
++    fig, ax = plt.subplots()
++    im = ax.imshow(data, norm=colors.LogNorm(vmin=1e-10, vmax=1e10), interpolation='none')
++    fig.canvas.draw()
++    assert not np.isnan(im.get_array()).any()
++
++def test_huge_range_log():
++    np.random.seed(0)
++    data = np.logspace(-10, 10, num=10000).reshape(100, 100)
++    fig, ax = plt.subplots()
++    im = ax.imshow(data, norm=colors.LogNorm(vmin=1e-10, vmax=1e10), interpolation='none')
++    fig.canvas.draw()
++    assert not np.isnan(im.get_array()).any()
++
++def test_huge_range_log_fixed():
++    np.random.seed(0)
++    data = np.logspace(-10, 10, num=1000).reshape(10, 100)
++
++    fig, ax = plt.subplots()
++    im = ax.imshow(data, norm=colors.LogNorm(), interpolation='none')
++    fig.canvas.draw()
++    assert not np.isnan(im.get_array()).any()
++
++def test_huge_range_log_fixed():
++    data = np.logspace(1, 1000, num=1000)
++    norm = colors.LogNorm(vmin=data.min(), vmax=data.max())
++    fig, ax = plt.subplots()
++    im = ax.imshow(data, norm=norm)
++    fig.colorbar(im)
++    plt.close(fig)
++
++def test_huge_range_log_fixed():
++    np.random.seed(0)
++    data = np.logspace(-10, 10, num=1000).reshape(10, 100)
++    norm = colors.LogNorm(vmin=data.min(), vmax=data.max())
++    fig, ax = plt.subplots()
++    im = ax.imshow(data, norm=norm, interpolation='nearest')
++    fig.colorbar(im)
++    plt.close(fig)
++
++def test_huge_range_log_fixed():
++    data = np.logspace(-10, 10, num=1000)
++    norm = colors.LogNorm(vmin=data.min(), vmax=data.max())
++    fig, ax = plt.subplots()
++    ax.imshow(data, norm=norm, cmap='viridis')
++    plt.colorbar(ax.images[0], ax=ax)
++    plt.close(fig)
++
++def test_huge_range_log_fixed():
++    np.random.seed(0)
++    data = np.logspace(-10, 10, num=100).reshape(10, 10)
++    norm = colors.LogNorm(vmin=1e-10, vmax=1e10)
++    fig, ax = plt.subplots()
++    ax.imshow(data, norm=norm, interpolation='nearest')
++    fig.canvas.draw()
++    assert not np.isnan(ax.images[0].get_array()).any()
+     buff = io.BytesIO()
+     fig.savefig(buff, dpi=1)
+ 

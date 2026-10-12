@@ -1,0 +1,505 @@
++ cd /testbed
++ git config --global --add safe.directory /testbed
++ git status
+On branch main
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   CMakeLists.txt
+	modified:   include/fmt/printf.h
+	modified:   test/printf-test.cc
+
+no changes added to commit (use "git add" and/or "git commit -a")
++ git show
+commit 981b517ccf2d91bf3bf52c518ac43710b57b5e17
+Author: Kevin Puetz <puetzk@puetzk.org>
+Date:   Wed May 13 19:20:05 2020 -0500
+
+    nested replacement fields may omit arg_id (#1681)
+    
+    syntax.html already has examples like `fmt::format("{:.{}f}", 3.14, 1)` using this,
+    and https://en.cppreference.com/w/cpp/utility/format/formatter#width_and_precision shows that this is the case for the C++20 std::format
+    
+    The Format Specification Mini-Language grammar seems to be the only one not showing this; update it to match.
+
+diff --git a/doc/syntax.rst b/doc/syntax.rst
+index bf2f1b6b..8265f702 100644
+--- a/doc/syntax.rst
++++ b/doc/syntax.rst
+@@ -79,8 +79,8 @@ The general form of a *standard format specifier* is:
+    fill: <a character other than '{' or '}'>
+    align: "<" | ">" | "^"
+    sign: "+" | "-" | " "
+-   width: `integer` | "{" `arg_id` "}"
+-   precision: `integer` | "{" `arg_id` "}"
++   width: `integer` | "{" [`arg_id`] "}"
++   precision: `integer` | "{" [`arg_id`] "}"
+    type: `int_type` | "a" | "A" | "c" | "e" | "E" | "f" | "F" | "g" | "G" | "L" | "p" | "s"
+    int_type: "b" | "B" | "d" | "o" | "x" | "X"
+ 
++ git -c core.fileMode=false diff 981b517ccf2d91bf3bf52c518ac43710b57b5e17
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 3a487ce7..a6a9c68c 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -44,6 +44,17 @@ if (MASTER_PROJECT AND NOT CMAKE_BUILD_TYPE)
+               "CMAKE_C_FLAGS used) Debug Release RelWithDebInfo MinSizeRel.")
+ endif ()
+ 
++if(NOT CMAKE_MAKE_PROGRAM)
++  find_program(CMAKE_MAKE_PROGRAM NAMES ninja make)
++  if(NOT CMAKE_MAKE_PROGRAM)
++    message(FATAL_ERROR "Could not find a suitable build program (ninja or make).")
++  endif()
++endif()
++
++if(NOT CMAKE_CXX_COMPILER)
++  set(CMAKE_CXX_COMPILER "g++")
++endif()
++
+ option(FMT_PEDANTIC "Enable extra warnings and expensive tests." OFF)
+ option(FMT_WERROR "Halt the compilation with an error on compiler warnings."
+        OFF)
+diff --git a/include/fmt/printf.h b/include/fmt/printf.h
+index 6d014fcd..98bc4fc8 100644
+--- a/include/fmt/printf.h
++++ b/include/fmt/printf.h
+@@ -257,8 +257,18 @@ class printf_arg_formatter : public detail::arg_formatter_base<Range> {
+         return (*this)(static_cast<int>(value));
+       fmt_specs.sign = sign::none;
+       fmt_specs.alt = false;
+-      fmt_specs.align = align::right;
+-      return base::operator()(value);
++      if (fmt_specs.width > 1) {
++        auto padding = fmt_specs.width - 1;
++        if (fmt_specs.align == align::left) {
++          base::operator()(value);
++          this->write_padded(fmt_specs.width, padding, ' ');
++        } else {
++          this->write_padded(fmt_specs.width, padding, ' ');
++          base::operator()(value);
++        }
++      } else {
++        base::operator()(value);
++      }
+     } else {
+       return base::operator()(value);
+     }
+diff --git a/test/printf-test.cc b/test/printf-test.cc
+index 5a586797..9a49009a 100644
+--- a/test/printf-test.cc
++++ b/test/printf-test.cc
+@@ -156,6 +156,18 @@ TEST(PrintfTest, PlusFlag) {
+ TEST(PrintfTest, MinusFlag) {
+   EXPECT_PRINTF("abc  ", "%-5s", "abc");
+   EXPECT_PRINTF("abc  ", "%0--5s", "abc");
++  EXPECT_PRINTF("a    ", "%-5c", 'a');
++  EXPECT_PRINTF("a    ", "%-5lc", L'a');
++}
++
++TEST(PrintfTest, CharMinusFlag) {
++  EXPECT_PRINTF("a    ", "%-5c", 'a');
++  EXPECT_PRINTF("a    ", "%-5lc", L'a');
++}
++
++TEST(PrintfTest, CharMinusFlag) {
++  EXPECT_PRINTF("a    ", "%-5c", 'a');
++  EXPECT_PRINTF("a    ", "%-5lc", L'a');
+ }
+ 
+ TEST(PrintfTest, SpaceFlag) {
+@@ -603,7 +615,11 @@ class custom_printf_arg_formatter : public formatter_t {
+   return formatter_t::operator()(value);
+ }
+ }
+-;
++
++TEST(PrintfTest, CharMinusFlag) {
++  EXPECT_PRINTF("a    ", "%-5c", 'a');
++  EXPECT_PRINTF("a    ", "%-5lc", L'a');
++}
+ 
+ typedef fmt::basic_format_args<context_t> format_args_t;
+ 
+@@ -619,9 +635,39 @@ std::string custom_format(const char* format_str, const Args&... args) {
+   return custom_vformat(format_str, {va});
+ }
+ 
++TEST(PrintfTest, CharMinusFlag) {
++  EXPECT_PRINTF("a    ", "%-5c", 'a');
++  EXPECT_PRINTF("a    ", "%-5lc", L'a');
++}
++
++TEST(PrintfTest, CharMinusFlagWithMinus) {
++  EXPECT_PRINTF("a    ", "%-5c", 'a');
++  EXPECT_PRINTF("a    ", "%-5lc", L'a');
++}
++
+ TEST(PrintfTest, CustomFormat) {
+   EXPECT_EQ("0.00", custom_format("%.2f", -.00001));
+   EXPECT_EQ("0.00", custom_format("%.2f", .00001));
+   EXPECT_EQ("1.00", custom_format("%.2f", 1.00001));
+   EXPECT_EQ("-1.00", custom_format("%.2f", -1.00001));
+ }
++
++TEST(PrintfTest, CharMinusFlagWithMinus) {
++  EXPECT_PRINTF("a    ", "%-5c", 'a');
++  EXPECT_PRINTF("a    ", "%-5lc", L'a');
++}
++
++TEST(PrintfTest, CharMinusFlag) {
++  EXPECT_PRINTF("a    ", "%-5c", 'a');
++  EXPECT_PRINTF("a    ", "%-5lc", L'a');
++}
++
++TEST(PrintfTest, CharMinusFlag) {
++  EXPECT_PRINTF("a    ", "%-5c", 'a');
++  EXPECT_PRINTF("a    ", "%-5lc", L'a');
++}
++
++TEST(PrintfTest, CharMinusFlagWithMinus) {
++  EXPECT_PRINTF("a    ", "%-5c", 'a');
++  EXPECT_PRINTF("a    ", "%-5lc", L'a');
++}
++ git checkout 981b517ccf2d91bf3bf52c518ac43710b57b5e17 test/printf-test.cc
+Updated 1 path from 8ccd12ea
++ git apply -v -
+Checking patch test/printf-test.cc...
+Applied patch test/printf-test.cc cleanly.
++ mkdir -p build
++ cmake -B build -S .
+-- CMake version: 3.22.1
+-- Version: 6.2.2
+-- Build type: Release
+-- CXX_STANDARD: 11
+-- Required features: cxx_variadic_templates
+-- Target 'doc' disabled (requires doxygen)
+-- FMT_PEDANTIC: OFF
+-- Configuring done
+-- Generating done
+-- Build files have been written to: /testbed/build
+++ nproc
++ cmake --build build --parallel 32 --target printf-test
+Consolidate compiler generated dependencies of target gmock
+Consolidate compiler generated dependencies of target fmt
+[ 18%] Built target gmock
+[ 45%] Built target fmt
+Consolidate compiler generated dependencies of target test-main
+[ 81%] Built target test-main
+Consolidate compiler generated dependencies of target printf-test
+[ 90%] Building CXX object test/CMakeFiles/printf-test.dir/printf-test.cc.o
+In file included from /testbed/test/printf-test.cc:8:
+/testbed/include/fmt/printf.h: In instantiation of 'fmt::v6::printf_arg_formatter<Range>::iterator fmt::v6::printf_arg_formatter<Range>::operator()(T) [with T = int; typename std::enable_if<fmt::v6::detail::is_integral<T>::value, int>::type <anonymous> = 0; Range = fmt::v6::buffer_range<char>; fmt::v6::printf_arg_formatter<Range>::iterator = std::back_insert_iterator<fmt::v6::detail::buffer<char> >]':
+/testbed/include/fmt/core.h:1167:15:   required from 'decltype (vis(0)) fmt::v6::visit_format_arg(Visitor&&, const fmt::v6::basic_format_arg<Context>&) [with Visitor = custom_printf_arg_formatter; Context = fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<char> >, char>; decltype (vis(0)) = std::back_insert_iterator<fmt::v6::detail::buffer<char> >]'
+/testbed/include/fmt/printf.h:594:21:   required from 'OutputIt fmt::v6::basic_printf_context<OutputIt, Char>::format() [with ArgFormatter = custom_printf_arg_formatter; OutputIt = std::back_insert_iterator<fmt::v6::detail::buffer<char> >; Char = char]'
+/testbed/include/fmt/printf.h:729:64:   required from 'typename ArgFormatter::iterator fmt::v6::vprintf(fmt::v6::detail::buffer<Char>&, fmt::v6::basic_string_view<Char>, fmt::v6::basic_format_args<typename fmt::v6::type_identity<Char>::type>) [with ArgFormatter = custom_printf_arg_formatter; Char = char; Context = fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<char> >, char>; typename ArgFormatter::iterator = std::back_insert_iterator<fmt::v6::detail::buffer<char> >; typename fmt::v6::type_identity<Char>::type = fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<char> >, char>]'
+/testbed/test/printf-test.cc:616:44:   required from here
+/testbed/include/fmt/printf.h:264:17: error: 'class fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<char> >' has no member named 'write_padded'
+  264 |           this->write_padded(fmt_specs.width, padding, ' ');
+      |           ~~~~~~^~~~~~~~~~~~
+/testbed/include/fmt/printf.h:266:17: error: 'class fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<char> >' has no member named 'write_padded'
+  266 |           this->write_padded(fmt_specs.width, padding, ' ');
+      |           ~~~~~~^~~~~~~~~~~~
+/testbed/include/fmt/printf.h: In instantiation of 'fmt::v6::printf_arg_formatter<Range>::iterator fmt::v6::printf_arg_formatter<Range>::operator()(T) [with T = unsigned int; typename std::enable_if<fmt::v6::detail::is_integral<T>::value, int>::type <anonymous> = 0; Range = fmt::v6::buffer_range<char>; fmt::v6::printf_arg_formatter<Range>::iterator = std::back_insert_iterator<fmt::v6::detail::buffer<char> >]':
+/testbed/include/fmt/core.h:1169:15:   required from 'decltype (vis(0)) fmt::v6::visit_format_arg(Visitor&&, const fmt::v6::basic_format_arg<Context>&) [with Visitor = custom_printf_arg_formatter; Context = fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<char> >, char>; decltype (vis(0)) = std::back_insert_iterator<fmt::v6::detail::buffer<char> >]'
+/testbed/include/fmt/printf.h:594:21:   required from 'OutputIt fmt::v6::basic_printf_context<OutputIt, Char>::format() [with ArgFormatter = custom_printf_arg_formatter; OutputIt = std::back_insert_iterator<fmt::v6::detail::buffer<char> >; Char = char]'
+/testbed/include/fmt/printf.h:729:64:   required from 'typename ArgFormatter::iterator fmt::v6::vprintf(fmt::v6::detail::buffer<Char>&, fmt::v6::basic_string_view<Char>, fmt::v6::basic_format_args<typename fmt::v6::type_identity<Char>::type>) [with ArgFormatter = custom_printf_arg_formatter; Char = char; Context = fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<char> >, char>; typename ArgFormatter::iterator = std::back_insert_iterator<fmt::v6::detail::buffer<char> >; typename fmt::v6::type_identity<Char>::type = fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<char> >, char>]'
+/testbed/test/printf-test.cc:616:44:   required from here
+/testbed/include/fmt/printf.h:264:17: error: 'class fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<char> >' has no member named 'write_padded'
+  264 |           this->write_padded(fmt_specs.width, padding, ' ');
+      |           ~~~~~~^~~~~~~~~~~~
+/testbed/include/fmt/printf.h:266:17: error: 'class fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<char> >' has no member named 'write_padded'
+  266 |           this->write_padded(fmt_specs.width, padding, ' ');
+      |           ~~~~~~^~~~~~~~~~~~
+/testbed/include/fmt/printf.h: In instantiation of 'fmt::v6::printf_arg_formatter<Range>::iterator fmt::v6::printf_arg_formatter<Range>::operator()(T) [with T = long long int; typename std::enable_if<fmt::v6::detail::is_integral<T>::value, int>::type <anonymous> = 0; Range = fmt::v6::buffer_range<char>; fmt::v6::printf_arg_formatter<Range>::iterator = std::back_insert_iterator<fmt::v6::detail::buffer<char> >]':
+/testbed/include/fmt/core.h:1171:15:   required from 'decltype (vis(0)) fmt::v6::visit_format_arg(Visitor&&, const fmt::v6::basic_format_arg<Context>&) [with Visitor = custom_printf_arg_formatter; Context = fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<char> >, char>; decltype (vis(0)) = std::back_insert_iterator<fmt::v6::detail::buffer<char> >]'
+/testbed/include/fmt/printf.h:594:21:   required from 'OutputIt fmt::v6::basic_printf_context<OutputIt, Char>::format() [with ArgFormatter = custom_printf_arg_formatter; OutputIt = std::back_insert_iterator<fmt::v6::detail::buffer<char> >; Char = char]'
+/testbed/include/fmt/printf.h:729:64:   required from 'typename ArgFormatter::iterator fmt::v6::vprintf(fmt::v6::detail::buffer<Char>&, fmt::v6::basic_string_view<Char>, fmt::v6::basic_format_args<typename fmt::v6::type_identity<Char>::type>) [with ArgFormatter = custom_printf_arg_formatter; Char = char; Context = fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<char> >, char>; typename ArgFormatter::iterator = std::back_insert_iterator<fmt::v6::detail::buffer<char> >; typename fmt::v6::type_identity<Char>::type = fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<char> >, char>]'
+/testbed/test/printf-test.cc:616:44:   required from here
+/testbed/include/fmt/printf.h:264:17: error: 'class fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<char> >' has no member named 'write_padded'
+  264 |           this->write_padded(fmt_specs.width, padding, ' ');
+      |           ~~~~~~^~~~~~~~~~~~
+/testbed/include/fmt/printf.h:266:17: error: 'class fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<char> >' has no member named 'write_padded'
+  266 |           this->write_padded(fmt_specs.width, padding, ' ');
+      |           ~~~~~~^~~~~~~~~~~~
+/testbed/include/fmt/printf.h: In instantiation of 'fmt::v6::printf_arg_formatter<Range>::iterator fmt::v6::printf_arg_formatter<Range>::operator()(T) [with T = long long unsigned int; typename std::enable_if<fmt::v6::detail::is_integral<T>::value, int>::type <anonymous> = 0; Range = fmt::v6::buffer_range<char>; fmt::v6::printf_arg_formatter<Range>::iterator = std::back_insert_iterator<fmt::v6::detail::buffer<char> >]':
+/testbed/include/fmt/core.h:1173:15:   required from 'decltype (vis(0)) fmt::v6::visit_format_arg(Visitor&&, const fmt::v6::basic_format_arg<Context>&) [with Visitor = custom_printf_arg_formatter; Context = fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<char> >, char>; decltype (vis(0)) = std::back_insert_iterator<fmt::v6::detail::buffer<char> >]'
+/testbed/include/fmt/printf.h:594:21:   required from 'OutputIt fmt::v6::basic_printf_context<OutputIt, Char>::format() [with ArgFormatter = custom_printf_arg_formatter; OutputIt = std::back_insert_iterator<fmt::v6::detail::buffer<char> >; Char = char]'
+/testbed/include/fmt/printf.h:729:64:   required from 'typename ArgFormatter::iterator fmt::v6::vprintf(fmt::v6::detail::buffer<Char>&, fmt::v6::basic_string_view<Char>, fmt::v6::basic_format_args<typename fmt::v6::type_identity<Char>::type>) [with ArgFormatter = custom_printf_arg_formatter; Char = char; Context = fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<char> >, char>; typename ArgFormatter::iterator = std::back_insert_iterator<fmt::v6::detail::buffer<char> >; typename fmt::v6::type_identity<Char>::type = fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<char> >, char>]'
+/testbed/test/printf-test.cc:616:44:   required from here
+/testbed/include/fmt/printf.h:264:17: error: 'class fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<char> >' has no member named 'write_padded'
+  264 |           this->write_padded(fmt_specs.width, padding, ' ');
+      |           ~~~~~~^~~~~~~~~~~~
+/testbed/include/fmt/printf.h:266:17: error: 'class fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<char> >' has no member named 'write_padded'
+  266 |           this->write_padded(fmt_specs.width, padding, ' ');
+      |           ~~~~~~^~~~~~~~~~~~
+/testbed/include/fmt/printf.h: In instantiation of 'fmt::v6::printf_arg_formatter<Range>::iterator fmt::v6::printf_arg_formatter<Range>::operator()(T) [with T = __int128; typename std::enable_if<fmt::v6::detail::is_integral<T>::value, int>::type <anonymous> = 0; Range = fmt::v6::buffer_range<char>; fmt::v6::printf_arg_formatter<Range>::iterator = std::back_insert_iterator<fmt::v6::detail::buffer<char> >]':
+/testbed/include/fmt/core.h:1176:15:   required from 'decltype (vis(0)) fmt::v6::visit_format_arg(Visitor&&, const fmt::v6::basic_format_arg<Context>&) [with Visitor = custom_printf_arg_formatter; Context = fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<char> >, char>; decltype (vis(0)) = std::back_insert_iterator<fmt::v6::detail::buffer<char> >]'
+/testbed/include/fmt/printf.h:594:21:   required from 'OutputIt fmt::v6::basic_printf_context<OutputIt, Char>::format() [with ArgFormatter = custom_printf_arg_formatter; OutputIt = std::back_insert_iterator<fmt::v6::detail::buffer<char> >; Char = char]'
+/testbed/include/fmt/printf.h:729:64:   required from 'typename ArgFormatter::iterator fmt::v6::vprintf(fmt::v6::detail::buffer<Char>&, fmt::v6::basic_string_view<Char>, fmt::v6::basic_format_args<typename fmt::v6::type_identity<Char>::type>) [with ArgFormatter = custom_printf_arg_formatter; Char = char; Context = fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<char> >, char>; typename ArgFormatter::iterator = std::back_insert_iterator<fmt::v6::detail::buffer<char> >; typename fmt::v6::type_identity<Char>::type = fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<char> >, char>]'
+/testbed/test/printf-test.cc:616:44:   required from here
+/testbed/include/fmt/printf.h:264:17: error: 'class fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<char> >' has no member named 'write_padded'
+  264 |           this->write_padded(fmt_specs.width, padding, ' ');
+      |           ~~~~~~^~~~~~~~~~~~
+/testbed/include/fmt/printf.h:266:17: error: 'class fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<char> >' has no member named 'write_padded'
+  266 |           this->write_padded(fmt_specs.width, padding, ' ');
+      |           ~~~~~~^~~~~~~~~~~~
+/testbed/include/fmt/printf.h: In instantiation of 'fmt::v6::printf_arg_formatter<Range>::iterator fmt::v6::printf_arg_formatter<Range>::operator()(T) [with T = __int128 unsigned; typename std::enable_if<fmt::v6::detail::is_integral<T>::value, int>::type <anonymous> = 0; Range = fmt::v6::buffer_range<char>; fmt::v6::printf_arg_formatter<Range>::iterator = std::back_insert_iterator<fmt::v6::detail::buffer<char> >]':
+/testbed/include/fmt/core.h:1178:15:   required from 'decltype (vis(0)) fmt::v6::visit_format_arg(Visitor&&, const fmt::v6::basic_format_arg<Context>&) [with Visitor = custom_printf_arg_formatter; Context = fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<char> >, char>; decltype (vis(0)) = std::back_insert_iterator<fmt::v6::detail::buffer<char> >]'
+/testbed/include/fmt/printf.h:594:21:   required from 'OutputIt fmt::v6::basic_printf_context<OutputIt, Char>::format() [with ArgFormatter = custom_printf_arg_formatter; OutputIt = std::back_insert_iterator<fmt::v6::detail::buffer<char> >; Char = char]'
+/testbed/include/fmt/printf.h:729:64:   required from 'typename ArgFormatter::iterator fmt::v6::vprintf(fmt::v6::detail::buffer<Char>&, fmt::v6::basic_string_view<Char>, fmt::v6::basic_format_args<typename fmt::v6::type_identity<Char>::type>) [with ArgFormatter = custom_printf_arg_formatter; Char = char; Context = fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<char> >, char>; typename ArgFormatter::iterator = std::back_insert_iterator<fmt::v6::detail::buffer<char> >; typename fmt::v6::type_identity<Char>::type = fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<char> >, char>]'
+/testbed/test/printf-test.cc:616:44:   required from here
+/testbed/include/fmt/printf.h:264:17: error: 'class fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<char> >' has no member named 'write_padded'
+  264 |           this->write_padded(fmt_specs.width, padding, ' ');
+      |           ~~~~~~^~~~~~~~~~~~
+/testbed/include/fmt/printf.h:266:17: error: 'class fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<char> >' has no member named 'write_padded'
+  266 |           this->write_padded(fmt_specs.width, padding, ' ');
+      |           ~~~~~~^~~~~~~~~~~~
+/testbed/include/fmt/printf.h: In instantiation of 'fmt::v6::printf_arg_formatter<Range>::iterator fmt::v6::printf_arg_formatter<Range>::operator()(T) [with T = bool; typename std::enable_if<fmt::v6::detail::is_integral<T>::value, int>::type <anonymous> = 0; Range = fmt::v6::buffer_range<char>; fmt::v6::printf_arg_formatter<Range>::iterator = std::back_insert_iterator<fmt::v6::detail::buffer<char> >]':
+/testbed/include/fmt/core.h:1185:15:   required from 'decltype (vis(0)) fmt::v6::visit_format_arg(Visitor&&, const fmt::v6::basic_format_arg<Context>&) [with Visitor = custom_printf_arg_formatter; Context = fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<char> >, char>; decltype (vis(0)) = std::back_insert_iterator<fmt::v6::detail::buffer<char> >]'
+/testbed/include/fmt/printf.h:594:21:   required from 'OutputIt fmt::v6::basic_printf_context<OutputIt, Char>::format() [with ArgFormatter = custom_printf_arg_formatter; OutputIt = std::back_insert_iterator<fmt::v6::detail::buffer<char> >; Char = char]'
+/testbed/include/fmt/printf.h:729:64:   required from 'typename ArgFormatter::iterator fmt::v6::vprintf(fmt::v6::detail::buffer<Char>&, fmt::v6::basic_string_view<Char>, fmt::v6::basic_format_args<typename fmt::v6::type_identity<Char>::type>) [with ArgFormatter = custom_printf_arg_formatter; Char = char; Context = fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<char> >, char>; typename ArgFormatter::iterator = std::back_insert_iterator<fmt::v6::detail::buffer<char> >; typename fmt::v6::type_identity<Char>::type = fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<char> >, char>]'
+/testbed/test/printf-test.cc:616:44:   required from here
+/testbed/include/fmt/printf.h:264:17: error: 'class fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<char> >' has no member named 'write_padded'
+  264 |           this->write_padded(fmt_specs.width, padding, ' ');
+      |           ~~~~~~^~~~~~~~~~~~
+/testbed/include/fmt/printf.h:266:17: error: 'class fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<char> >' has no member named 'write_padded'
+  266 |           this->write_padded(fmt_specs.width, padding, ' ');
+      |           ~~~~~~^~~~~~~~~~~~
+/testbed/include/fmt/printf.h: In instantiation of 'fmt::v6::printf_arg_formatter<Range>::iterator fmt::v6::printf_arg_formatter<Range>::operator()(T) [with T = char; typename std::enable_if<fmt::v6::detail::is_integral<T>::value, int>::type <anonymous> = 0; Range = fmt::v6::buffer_range<char>; fmt::v6::printf_arg_formatter<Range>::iterator = std::back_insert_iterator<fmt::v6::detail::buffer<char> >]':
+/testbed/include/fmt/core.h:1187:15:   required from 'decltype (vis(0)) fmt::v6::visit_format_arg(Visitor&&, const fmt::v6::basic_format_arg<Context>&) [with Visitor = custom_printf_arg_formatter; Context = fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<char> >, char>; decltype (vis(0)) = std::back_insert_iterator<fmt::v6::detail::buffer<char> >]'
+/testbed/include/fmt/printf.h:594:21:   required from 'OutputIt fmt::v6::basic_printf_context<OutputIt, Char>::format() [with ArgFormatter = custom_printf_arg_formatter; OutputIt = std::back_insert_iterator<fmt::v6::detail::buffer<char> >; Char = char]'
+/testbed/include/fmt/printf.h:729:64:   required from 'typename ArgFormatter::iterator fmt::v6::vprintf(fmt::v6::detail::buffer<Char>&, fmt::v6::basic_string_view<Char>, fmt::v6::basic_format_args<typename fmt::v6::type_identity<Char>::type>) [with ArgFormatter = custom_printf_arg_formatter; Char = char; Context = fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<char> >, char>; typename ArgFormatter::iterator = std::back_insert_iterator<fmt::v6::detail::buffer<char> >; typename fmt::v6::type_identity<Char>::type = fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<char> >, char>]'
+/testbed/test/printf-test.cc:616:44:   required from here
+/testbed/include/fmt/printf.h:264:17: error: 'class fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<char> >' has no member named 'write_padded'
+  264 |           this->write_padded(fmt_specs.width, padding, ' ');
+      |           ~~~~~~^~~~~~~~~~~~
+/testbed/include/fmt/printf.h:266:17: error: 'class fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<char> >' has no member named 'write_padded'
+  266 |           this->write_padded(fmt_specs.width, padding, ' ');
+      |           ~~~~~~^~~~~~~~~~~~
+/testbed/include/fmt/printf.h: In instantiation of 'fmt::v6::printf_arg_formatter<Range>::iterator fmt::v6::printf_arg_formatter<Range>::operator()(T) [with T = int; typename std::enable_if<fmt::v6::detail::is_integral<T>::value, int>::type <anonymous> = 0; Range = fmt::v6::buffer_range<wchar_t>; fmt::v6::printf_arg_formatter<Range>::iterator = std::back_insert_iterator<fmt::v6::detail::buffer<wchar_t> >]':
+/testbed/include/fmt/core.h:1167:15:   required from 'decltype (vis(0)) fmt::v6::visit_format_arg(Visitor&&, const fmt::v6::basic_format_arg<Context>&) [with Visitor = fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<wchar_t> >; Context = fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<wchar_t> >, wchar_t>; decltype (vis(0)) = std::back_insert_iterator<fmt::v6::detail::buffer<wchar_t> >]'
+/testbed/include/fmt/printf.h:594:21:   required from 'OutputIt fmt::v6::basic_printf_context<OutputIt, Char>::format() [with ArgFormatter = fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<wchar_t> >; OutputIt = std::back_insert_iterator<fmt::v6::detail::buffer<wchar_t> >; Char = wchar_t]'
+/testbed/include/fmt/printf.h:184:56:   required from 'void fmt::v6::detail::vprintf(fmt::v6::detail::buffer<Char>&, fmt::v6::basic_string_view<Char>, fmt::v6::basic_format_args<Context>) [with Char = wchar_t; Context = fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<wchar_t> >, wchar_t>]'
+/testbed/include/fmt/printf.h:638:10:   required from 'std::__cxx11::basic_string<Char> fmt::v6::vsprintf(const S&, fmt::v6::basic_format_args<fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<typename fmt::v6::type_identity<Char>::type> >, typename fmt::v6::type_identity<Char>::type> >) [with S = wchar_t [17]; Char = wchar_t; typename fmt::v6::type_identity<Char>::type = wchar_t]'
+/testbed/test/printf-test.cc:570:3:   required from here
+/testbed/include/fmt/printf.h:264:17: error: 'class fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<wchar_t> >' has no member named 'write_padded'
+  264 |           this->write_padded(fmt_specs.width, padding, ' ');
+      |           ~~~~~~^~~~~~~~~~~~
+/testbed/include/fmt/printf.h:266:17: error: 'class fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<wchar_t> >' has no member named 'write_padded'
+  266 |           this->write_padded(fmt_specs.width, padding, ' ');
+      |           ~~~~~~^~~~~~~~~~~~
+/testbed/include/fmt/printf.h: In instantiation of 'fmt::v6::printf_arg_formatter<Range>::iterator fmt::v6::printf_arg_formatter<Range>::operator()(T) [with T = unsigned int; typename std::enable_if<fmt::v6::detail::is_integral<T>::value, int>::type <anonymous> = 0; Range = fmt::v6::buffer_range<wchar_t>; fmt::v6::printf_arg_formatter<Range>::iterator = std::back_insert_iterator<fmt::v6::detail::buffer<wchar_t> >]':
+/testbed/include/fmt/core.h:1169:15:   required from 'decltype (vis(0)) fmt::v6::visit_format_arg(Visitor&&, const fmt::v6::basic_format_arg<Context>&) [with Visitor = fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<wchar_t> >; Context = fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<wchar_t> >, wchar_t>; decltype (vis(0)) = std::back_insert_iterator<fmt::v6::detail::buffer<wchar_t> >]'
+/testbed/include/fmt/printf.h:594:21:   required from 'OutputIt fmt::v6::basic_printf_context<OutputIt, Char>::format() [with ArgFormatter = fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<wchar_t> >; OutputIt = std::back_insert_iterator<fmt::v6::detail::buffer<wchar_t> >; Char = wchar_t]'
+/testbed/include/fmt/printf.h:184:56:   required from 'void fmt::v6::detail::vprintf(fmt::v6::detail::buffer<Char>&, fmt::v6::basic_string_view<Char>, fmt::v6::basic_format_args<Context>) [with Char = wchar_t; Context = fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<wchar_t> >, wchar_t>]'
+/testbed/include/fmt/printf.h:638:10:   required from 'std::__cxx11::basic_string<Char> fmt::v6::vsprintf(const S&, fmt::v6::basic_format_args<fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<typename fmt::v6::type_identity<Char>::type> >, typename fmt::v6::type_identity<Char>::type> >) [with S = wchar_t [17]; Char = wchar_t; typename fmt::v6::type_identity<Char>::type = wchar_t]'
+/testbed/test/printf-test.cc:570:3:   required from here
+/testbed/include/fmt/printf.h:264:17: error: 'class fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<wchar_t> >' has no member named 'write_padded'
+  264 |           this->write_padded(fmt_specs.width, padding, ' ');
+      |           ~~~~~~^~~~~~~~~~~~
+/testbed/include/fmt/printf.h:266:17: error: 'class fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<wchar_t> >' has no member named 'write_padded'
+  266 |           this->write_padded(fmt_specs.width, padding, ' ');
+      |           ~~~~~~^~~~~~~~~~~~
+/testbed/include/fmt/printf.h: In instantiation of 'fmt::v6::printf_arg_formatter<Range>::iterator fmt::v6::printf_arg_formatter<Range>::operator()(T) [with T = long long int; typename std::enable_if<fmt::v6::detail::is_integral<T>::value, int>::type <anonymous> = 0; Range = fmt::v6::buffer_range<wchar_t>; fmt::v6::printf_arg_formatter<Range>::iterator = std::back_insert_iterator<fmt::v6::detail::buffer<wchar_t> >]':
+/testbed/include/fmt/core.h:1171:15:   required from 'decltype (vis(0)) fmt::v6::visit_format_arg(Visitor&&, const fmt::v6::basic_format_arg<Context>&) [with Visitor = fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<wchar_t> >; Context = fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<wchar_t> >, wchar_t>; decltype (vis(0)) = std::back_insert_iterator<fmt::v6::detail::buffer<wchar_t> >]'
+/testbed/include/fmt/printf.h:594:21:   required from 'OutputIt fmt::v6::basic_printf_context<OutputIt, Char>::format() [with ArgFormatter = fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<wchar_t> >; OutputIt = std::back_insert_iterator<fmt::v6::detail::buffer<wchar_t> >; Char = wchar_t]'
+/testbed/include/fmt/printf.h:184:56:   required from 'void fmt::v6::detail::vprintf(fmt::v6::detail::buffer<Char>&, fmt::v6::basic_string_view<Char>, fmt::v6::basic_format_args<Context>) [with Char = wchar_t; Context = fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<wchar_t> >, wchar_t>]'
+/testbed/include/fmt/printf.h:638:10:   required from 'std::__cxx11::basic_string<Char> fmt::v6::vsprintf(const S&, fmt::v6::basic_format_args<fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<typename fmt::v6::type_identity<Char>::type> >, typename fmt::v6::type_identity<Char>::type> >) [with S = wchar_t [17]; Char = wchar_t; typename fmt::v6::type_identity<Char>::type = wchar_t]'
+/testbed/test/printf-test.cc:570:3:   required from here
+/testbed/include/fmt/printf.h:264:17: error: 'class fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<wchar_t> >' has no member named 'write_padded'
+  264 |           this->write_padded(fmt_specs.width, padding, ' ');
+      |           ~~~~~~^~~~~~~~~~~~
+/testbed/include/fmt/printf.h:266:17: error: 'class fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<wchar_t> >' has no member named 'write_padded'
+  266 |           this->write_padded(fmt_specs.width, padding, ' ');
+      |           ~~~~~~^~~~~~~~~~~~
+/testbed/include/fmt/printf.h: In instantiation of 'fmt::v6::printf_arg_formatter<Range>::iterator fmt::v6::printf_arg_formatter<Range>::operator()(T) [with T = long long unsigned int; typename std::enable_if<fmt::v6::detail::is_integral<T>::value, int>::type <anonymous> = 0; Range = fmt::v6::buffer_range<wchar_t>; fmt::v6::printf_arg_formatter<Range>::iterator = std::back_insert_iterator<fmt::v6::detail::buffer<wchar_t> >]':
+/testbed/include/fmt/core.h:1173:15:   required from 'decltype (vis(0)) fmt::v6::visit_format_arg(Visitor&&, const fmt::v6::basic_format_arg<Context>&) [with Visitor = fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<wchar_t> >; Context = fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<wchar_t> >, wchar_t>; decltype (vis(0)) = std::back_insert_iterator<fmt::v6::detail::buffer<wchar_t> >]'
+/testbed/include/fmt/printf.h:594:21:   required from 'OutputIt fmt::v6::basic_printf_context<OutputIt, Char>::format() [with ArgFormatter = fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<wchar_t> >; OutputIt = std::back_insert_iterator<fmt::v6::detail::buffer<wchar_t> >; Char = wchar_t]'
+/testbed/include/fmt/printf.h:184:56:   required from 'void fmt::v6::detail::vprintf(fmt::v6::detail::buffer<Char>&, fmt::v6::basic_string_view<Char>, fmt::v6::basic_format_args<Context>) [with Char = wchar_t; Context = fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<wchar_t> >, wchar_t>]'
+/testbed/include/fmt/printf.h:638:10:   required from 'std::__cxx11::basic_string<Char> fmt::v6::vsprintf(const S&, fmt::v6::basic_format_args<fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<typename fmt::v6::type_identity<Char>::type> >, typename fmt::v6::type_identity<Char>::type> >) [with S = wchar_t [17]; Char = wchar_t; typename fmt::v6::type_identity<Char>::type = wchar_t]'
+/testbed/test/printf-test.cc:570:3:   required from here
+/testbed/include/fmt/printf.h:264:17: error: 'class fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<wchar_t> >' has no member named 'write_padded'
+  264 |           this->write_padded(fmt_specs.width, padding, ' ');
+      |           ~~~~~~^~~~~~~~~~~~
+/testbed/include/fmt/printf.h:266:17: error: 'class fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<wchar_t> >' has no member named 'write_padded'
+  266 |           this->write_padded(fmt_specs.width, padding, ' ');
+      |           ~~~~~~^~~~~~~~~~~~
+/testbed/include/fmt/printf.h: In instantiation of 'fmt::v6::printf_arg_formatter<Range>::iterator fmt::v6::printf_arg_formatter<Range>::operator()(T) [with T = __int128; typename std::enable_if<fmt::v6::detail::is_integral<T>::value, int>::type <anonymous> = 0; Range = fmt::v6::buffer_range<wchar_t>; fmt::v6::printf_arg_formatter<Range>::iterator = std::back_insert_iterator<fmt::v6::detail::buffer<wchar_t> >]':
+/testbed/include/fmt/core.h:1176:15:   required from 'decltype (vis(0)) fmt::v6::visit_format_arg(Visitor&&, const fmt::v6::basic_format_arg<Context>&) [with Visitor = fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<wchar_t> >; Context = fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<wchar_t> >, wchar_t>; decltype (vis(0)) = std::back_insert_iterator<fmt::v6::detail::buffer<wchar_t> >]'
+/testbed/include/fmt/printf.h:594:21:   required from 'OutputIt fmt::v6::basic_printf_context<OutputIt, Char>::format() [with ArgFormatter = fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<wchar_t> >; OutputIt = std::back_insert_iterator<fmt::v6::detail::buffer<wchar_t> >; Char = wchar_t]'
+/testbed/include/fmt/printf.h:184:56:   required from 'void fmt::v6::detail::vprintf(fmt::v6::detail::buffer<Char>&, fmt::v6::basic_string_view<Char>, fmt::v6::basic_format_args<Context>) [with Char = wchar_t; Context = fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<wchar_t> >, wchar_t>]'
+/testbed/include/fmt/printf.h:638:10:   required from 'std::__cxx11::basic_string<Char> fmt::v6::vsprintf(const S&, fmt::v6::basic_format_args<fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<typename fmt::v6::type_identity<Char>::type> >, typename fmt::v6::type_identity<Char>::type> >) [with S = wchar_t [17]; Char = wchar_t; typename fmt::v6::type_identity<Char>::type = wchar_t]'
+/testbed/test/printf-test.cc:570:3:   required from here
+/testbed/include/fmt/printf.h:264:17: error: 'class fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<wchar_t> >' has no member named 'write_padded'
+  264 |           this->write_padded(fmt_specs.width, padding, ' ');
+      |           ~~~~~~^~~~~~~~~~~~
+/testbed/include/fmt/printf.h:266:17: error: 'class fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<wchar_t> >' has no member named 'write_padded'
+  266 |           this->write_padded(fmt_specs.width, padding, ' ');
+      |           ~~~~~~^~~~~~~~~~~~
+/testbed/include/fmt/printf.h: In instantiation of 'fmt::v6::printf_arg_formatter<Range>::iterator fmt::v6::printf_arg_formatter<Range>::operator()(T) [with T = __int128 unsigned; typename std::enable_if<fmt::v6::detail::is_integral<T>::value, int>::type <anonymous> = 0; Range = fmt::v6::buffer_range<wchar_t>; fmt::v6::printf_arg_formatter<Range>::iterator = std::back_insert_iterator<fmt::v6::detail::buffer<wchar_t> >]':
+/testbed/include/fmt/core.h:1178:15:   required from 'decltype (vis(0)) fmt::v6::visit_format_arg(Visitor&&, const fmt::v6::basic_format_arg<Context>&) [with Visitor = fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<wchar_t> >; Context = fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<wchar_t> >, wchar_t>; decltype (vis(0)) = std::back_insert_iterator<fmt::v6::detail::buffer<wchar_t> >]'
+/testbed/include/fmt/printf.h:594:21:   required from 'OutputIt fmt::v6::basic_printf_context<OutputIt, Char>::format() [with ArgFormatter = fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<wchar_t> >; OutputIt = std::back_insert_iterator<fmt::v6::detail::buffer<wchar_t> >; Char = wchar_t]'
+/testbed/include/fmt/printf.h:184:56:   required from 'void fmt::v6::detail::vprintf(fmt::v6::detail::buffer<Char>&, fmt::v6::basic_string_view<Char>, fmt::v6::basic_format_args<Context>) [with Char = wchar_t; Context = fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<wchar_t> >, wchar_t>]'
+/testbed/include/fmt/printf.h:638:10:   required from 'std::__cxx11::basic_string<Char> fmt::v6::vsprintf(const S&, fmt::v6::basic_format_args<fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<typename fmt::v6::type_identity<Char>::type> >, typename fmt::v6::type_identity<Char>::type> >) [with S = wchar_t [17]; Char = wchar_t; typename fmt::v6::type_identity<Char>::type = wchar_t]'
+/testbed/test/printf-test.cc:570:3:   required from here
+/testbed/include/fmt/printf.h:264:17: error: 'class fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<wchar_t> >' has no member named 'write_padded'
+  264 |           this->write_padded(fmt_specs.width, padding, ' ');
+      |           ~~~~~~^~~~~~~~~~~~
+/testbed/include/fmt/printf.h:266:17: error: 'class fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<wchar_t> >' has no member named 'write_padded'
+  266 |           this->write_padded(fmt_specs.width, padding, ' ');
+      |           ~~~~~~^~~~~~~~~~~~
+/testbed/include/fmt/printf.h: In instantiation of 'fmt::v6::printf_arg_formatter<Range>::iterator fmt::v6::printf_arg_formatter<Range>::operator()(T) [with T = bool; typename std::enable_if<fmt::v6::detail::is_integral<T>::value, int>::type <anonymous> = 0; Range = fmt::v6::buffer_range<wchar_t>; fmt::v6::printf_arg_formatter<Range>::iterator = std::back_insert_iterator<fmt::v6::detail::buffer<wchar_t> >]':
+/testbed/include/fmt/core.h:1185:15:   required from 'decltype (vis(0)) fmt::v6::visit_format_arg(Visitor&&, const fmt::v6::basic_format_arg<Context>&) [with Visitor = fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<wchar_t> >; Context = fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<wchar_t> >, wchar_t>; decltype (vis(0)) = std::back_insert_iterator<fmt::v6::detail::buffer<wchar_t> >]'
+/testbed/include/fmt/printf.h:594:21:   required from 'OutputIt fmt::v6::basic_printf_context<OutputIt, Char>::format() [with ArgFormatter = fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<wchar_t> >; OutputIt = std::back_insert_iterator<fmt::v6::detail::buffer<wchar_t> >; Char = wchar_t]'
+/testbed/include/fmt/printf.h:184:56:   required from 'void fmt::v6::detail::vprintf(fmt::v6::detail::buffer<Char>&, fmt::v6::basic_string_view<Char>, fmt::v6::basic_format_args<Context>) [with Char = wchar_t; Context = fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<wchar_t> >, wchar_t>]'
+/testbed/include/fmt/printf.h:638:10:   required from 'std::__cxx11::basic_string<Char> fmt::v6::vsprintf(const S&, fmt::v6::basic_format_args<fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<typename fmt::v6::type_identity<Char>::type> >, typename fmt::v6::type_identity<Char>::type> >) [with S = wchar_t [17]; Char = wchar_t; typename fmt::v6::type_identity<Char>::type = wchar_t]'
+/testbed/test/printf-test.cc:570:3:   required from here
+/testbed/include/fmt/printf.h:264:17: error: 'class fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<wchar_t> >' has no member named 'write_padded'
+  264 |           this->write_padded(fmt_specs.width, padding, ' ');
+      |           ~~~~~~^~~~~~~~~~~~
+/testbed/include/fmt/printf.h:266:17: error: 'class fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<wchar_t> >' has no member named 'write_padded'
+  266 |           this->write_padded(fmt_specs.width, padding, ' ');
+      |           ~~~~~~^~~~~~~~~~~~
+/testbed/include/fmt/printf.h: In instantiation of 'fmt::v6::printf_arg_formatter<Range>::iterator fmt::v6::printf_arg_formatter<Range>::operator()(T) [with T = wchar_t; typename std::enable_if<fmt::v6::detail::is_integral<T>::value, int>::type <anonymous> = 0; Range = fmt::v6::buffer_range<wchar_t>; fmt::v6::printf_arg_formatter<Range>::iterator = std::back_insert_iterator<fmt::v6::detail::buffer<wchar_t> >]':
+/testbed/include/fmt/core.h:1187:15:   required from 'decltype (vis(0)) fmt::v6::visit_format_arg(Visitor&&, const fmt::v6::basic_format_arg<Context>&) [with Visitor = fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<wchar_t> >; Context = fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<wchar_t> >, wchar_t>; decltype (vis(0)) = std::back_insert_iterator<fmt::v6::detail::buffer<wchar_t> >]'
+/testbed/include/fmt/printf.h:594:21:   required from 'OutputIt fmt::v6::basic_printf_context<OutputIt, Char>::format() [with ArgFormatter = fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<wchar_t> >; OutputIt = std::back_insert_iterator<fmt::v6::detail::buffer<wchar_t> >; Char = wchar_t]'
+/testbed/include/fmt/printf.h:184:56:   required from 'void fmt::v6::detail::vprintf(fmt::v6::detail::buffer<Char>&, fmt::v6::basic_string_view<Char>, fmt::v6::basic_format_args<Context>) [with Char = wchar_t; Context = fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<wchar_t> >, wchar_t>]'
+/testbed/include/fmt/printf.h:638:10:   required from 'std::__cxx11::basic_string<Char> fmt::v6::vsprintf(const S&, fmt::v6::basic_format_args<fmt::v6::basic_printf_context<std::back_insert_iterator<fmt::v6::detail::buffer<typename fmt::v6::type_identity<Char>::type> >, typename fmt::v6::type_identity<Char>::type> >) [with S = wchar_t [17]; Char = wchar_t; typename fmt::v6::type_identity<Char>::type = wchar_t]'
+/testbed/test/printf-test.cc:570:3:   required from here
+/testbed/include/fmt/printf.h:264:17: error: 'class fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<wchar_t> >' has no member named 'write_padded'
+  264 |           this->write_padded(fmt_specs.width, padding, ' ');
+      |           ~~~~~~^~~~~~~~~~~~
+/testbed/include/fmt/printf.h:266:17: error: 'class fmt::v6::printf_arg_formatter<fmt::v6::buffer_range<wchar_t> >' has no member named 'write_padded'
+  266 |           this->write_padded(fmt_specs.width, padding, ' ');
+      |           ~~~~~~^~~~~~~~~~~~
+gmake[3]: *** [test/CMakeFiles/printf-test.dir/build.make:76: test/CMakeFiles/printf-test.dir/printf-test.cc.o] Error 1
+gmake[2]: *** [CMakeFiles/Makefile2:545: test/CMakeFiles/printf-test.dir/all] Error 2
+gmake[1]: *** [CMakeFiles/Makefile2:552: test/CMakeFiles/printf-test.dir/rule] Error 2
+gmake: *** [Makefile:381: printf-test] Error 2
++ : '>>>>> Start Test Output'
++ ctest --test-dir build -V -R printf-test
++ cat
+Internal ctest changing into directory: /testbed/build
+UpdateCTestConfiguration  from :/testbed/build/DartConfiguration.tcl
+UpdateCTestConfiguration  from :/testbed/build/DartConfiguration.tcl
+Test project /testbed/build
+Constructing a list of tests
+Done constructing a list of tests
+Updating test list for fixtures
+Added 0 tests to meet fixture requirements
+Checking test dependency graph...
+Checking test dependency graph end
+test 12
+    Start 12: printf-test
+
+12: Test command: /testbed/build/bin/printf-test
+12: Test timeout computed to be: 10000000
+12: [==========] Running 43 tests from 1 test case.
+12: [----------] Global test environment set-up.
+12: [----------] 43 tests from PrintfTest
+12: [ RUN      ] PrintfTest.NoArgs
+12: [       OK ] PrintfTest.NoArgs (0 ms)
+12: [ RUN      ] PrintfTest.Escape
+12: [       OK ] PrintfTest.Escape (0 ms)
+12: [ RUN      ] PrintfTest.PositionalArgs
+12: [       OK ] PrintfTest.PositionalArgs (0 ms)
+12: [ RUN      ] PrintfTest.AutomaticArgIndexing
+12: [       OK ] PrintfTest.AutomaticArgIndexing (0 ms)
+12: [ RUN      ] PrintfTest.NumberIsTooBigInArgIndex
+12: [       OK ] PrintfTest.NumberIsTooBigInArgIndex (0 ms)
+12: [ RUN      ] PrintfTest.SwitchArgIndexing
+12: [       OK ] PrintfTest.SwitchArgIndexing (0 ms)
+12: [ RUN      ] PrintfTest.InvalidArgIndex
+12: [       OK ] PrintfTest.InvalidArgIndex (0 ms)
+12: [ RUN      ] PrintfTest.DefaultAlignRight
+12: [       OK ] PrintfTest.DefaultAlignRight (0 ms)
+12: [ RUN      ] PrintfTest.ZeroFlag
+12: [       OK ] PrintfTest.ZeroFlag (0 ms)
+12: [ RUN      ] PrintfTest.PlusFlag
+12: [       OK ] PrintfTest.PlusFlag (0 ms)
+12: [ RUN      ] PrintfTest.MinusFlag
+12: [       OK ] PrintfTest.MinusFlag (0 ms)
+12: [ RUN      ] PrintfTest.SpaceFlag
+12: [       OK ] PrintfTest.SpaceFlag (0 ms)
+12: [ RUN      ] PrintfTest.HashFlag
+12: [       OK ] PrintfTest.HashFlag (0 ms)
+12: [ RUN      ] PrintfTest.Width
+12: [       OK ] PrintfTest.Width (0 ms)
+12: [ RUN      ] PrintfTest.DynamicWidth
+12: [       OK ] PrintfTest.DynamicWidth (0 ms)
+12: [ RUN      ] PrintfTest.IntPrecision
+12: [       OK ] PrintfTest.IntPrecision (0 ms)
+12: [ RUN      ] PrintfTest.FloatPrecision
+12: [       OK ] PrintfTest.FloatPrecision (0 ms)
+12: [ RUN      ] PrintfTest.StringPrecision
+12: [       OK ] PrintfTest.StringPrecision (0 ms)
+12: [ RUN      ] PrintfTest.IgnorePrecisionForNonNumericArg
+12: [       OK ] PrintfTest.IgnorePrecisionForNonNumericArg (0 ms)
+12: [ RUN      ] PrintfTest.DynamicPrecision
+12: [       OK ] PrintfTest.DynamicPrecision (0 ms)
+12: [ RUN      ] PrintfTest.Length
+12: [       OK ] PrintfTest.Length (0 ms)
+12: [ RUN      ] PrintfTest.Bool
+12: [       OK ] PrintfTest.Bool (0 ms)
+12: [ RUN      ] PrintfTest.Int
+12: [       OK ] PrintfTest.Int (0 ms)
+12: [ RUN      ] PrintfTest.long_long
+12: [       OK ] PrintfTest.long_long (0 ms)
+12: [ RUN      ] PrintfTest.Float
+12: [       OK ] PrintfTest.Float (0 ms)
+12: [ RUN      ] PrintfTest.Inf
+12: [       OK ] PrintfTest.Inf (0 ms)
+12: [ RUN      ] PrintfTest.Char
+12: [       OK ] PrintfTest.Char (0 ms)
+12: [ RUN      ] PrintfTest.String
+12: [       OK ] PrintfTest.String (0 ms)
+12: [ RUN      ] PrintfTest.UCharString
+12: [       OK ] PrintfTest.UCharString (0 ms)
+12: [ RUN      ] PrintfTest.Pointer
+12: [       OK ] PrintfTest.Pointer (0 ms)
+12: [ RUN      ] PrintfTest.Location
+12: [       OK ] PrintfTest.Location (0 ms)
+12: [ RUN      ] PrintfTest.Enum
+12: [       OK ] PrintfTest.Enum (0 ms)
+12: [ RUN      ] PrintfTest.Examples
+12: [       OK ] PrintfTest.Examples (0 ms)
+12: [ RUN      ] PrintfTest.PrintfError
+12: [       OK ] PrintfTest.PrintfError (0 ms)
+12: [ RUN      ] PrintfTest.WideString
+12: [       OK ] PrintfTest.WideString (0 ms)
+12: [ RUN      ] PrintfTest.PrintfCustom
+12: [       OK ] PrintfTest.PrintfCustom (0 ms)
+12: [ RUN      ] PrintfTest.OStream
+12: [       OK ] PrintfTest.OStream (0 ms)
+12: [ RUN      ] PrintfTest.VPrintf
+12: [       OK ] PrintfTest.VPrintf (0 ms)
+12: [ RUN      ] PrintfTest.CheckFormatStringRegression
+12: [       OK ] PrintfTest.CheckFormatStringRegression (0 ms)
+12: [ RUN      ] PrintfTest.FixedLargeExponent
+12: [       OK ] PrintfTest.FixedLargeExponent (0 ms)
+12: [ RUN      ] PrintfTest.VSPrintfMakeArgsExample
+12: [       OK ] PrintfTest.VSPrintfMakeArgsExample (0 ms)
+12: [ RUN      ] PrintfTest.VSPrintfMakeWArgsExample
+12: [       OK ] PrintfTest.VSPrintfMakeWArgsExample (0 ms)
+12: [ RUN      ] PrintfTest.CustomFormat
+12: [       OK ] PrintfTest.CustomFormat (0 ms)
+12: [----------] 43 tests from PrintfTest (0 ms total)
+12: 
+12: [----------] Global test environment tear-down
+12: [==========] 43 tests from 1 test case ran. (0 ms total)
+12: [  PASSED  ] 43 tests.
+1/1 Test #12: printf-test ......................   Passed    0.00 sec
+
+The following tests passed:
+	printf-test
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   0.00 sec
+>>>>> Test Exit Code: 0
++ SWEBENCH_TEST_EXIT_CODE=0
++ : '>>>>> End Test Output'
++ echo '>>>>> Test Exit Code: 0'
++ git checkout 981b517ccf2d91bf3bf52c518ac43710b57b5e17 test/printf-test.cc
+Updated 1 path from 8ccd12ea

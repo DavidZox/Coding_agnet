@@ -1,0 +1,24 @@
+diff --git a/include/fmt/printf.h b/include/fmt/printf.h
+index 6d014fcd..a83b783c 100644
+--- a/include/fmt/printf.h
++++ b/include/fmt/printf.h
+@@ -133,8 +133,17 @@ template <typename Context> class char_converter {
+ 
+   template <typename T, FMT_ENABLE_IF(std::is_integral<T>::value)>
+   void operator()(T value) {
+-    arg_ = detail::make_arg<Context>(
+-        static_cast<typename Context::char_type>(value));
++    // For char types, we must convert to int to ensure that the minus flag
++    // (left alignment) is correctly applied by the underlying formatter.
++    // If we pass it as a char, the formatter might treat it as a single
++    // character and ignore width/alignment.
++    if constexpr (std::is_same_v<std::remove_cv_t<T>, char> ||
++                  std::is_same_v<std::remove_cv_t<T>, signed char>) {
++      arg_ = detail::make_arg<Context>(static_cast<int>(value));
++    } else {
++      arg_ = detail::make_arg<Context>(
++          static_cast<typename Context::char_type>(value));
++    }
+   }
+ 
+   template <typename T, FMT_ENABLE_IF(!std::is_integral<T>::value)>

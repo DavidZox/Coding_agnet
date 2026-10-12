@@ -1,0 +1,835 @@
+{
+ "repo": "particle-swarm-optimization",
+ "seed": 20261010,
+ "official_tests": 3,
+ "mutants": [
+  {
+   "id": "particle-swarm-optimization#m0",
+   "file": "pso/cost_functions.py",
+   "line": 16,
+   "desc": "== → !=",
+   "point": {
+    "node": 8,
+    "kind": "cmp",
+    "sub": 0,
+    "line": 16,
+    "desc": "== → !="
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "::unit_tests.test_cost_functions"
+   ]
+  },
+  {
+   "id": "particle-swarm-optimization#m1",
+   "file": "pso/pso_simple.py",
+   "line": 27,
+   "desc": "0 → 1",
+   "point": {
+    "node": 186,
+    "kind": "const",
+    "line": 27,
+    "desc": "0 → 1"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_pso_simple.TestPSO::test_evaluate"
+   ]
+  },
+  {
+   "id": "particle-swarm-optimization#m2",
+   "file": "pso/cost_functions.py",
+   "line": 14,
+   "desc": "return … → return None",
+   "point": {
+    "node": 7,
+    "kind": "ret",
+    "line": 14,
+    "desc": "return … → return None"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_cost_functions.TestCostFunctions::test_sphere"
+   ]
+  },
+  {
+   "id": "particle-swarm-optimization#m3",
+   "file": "pso/pso_simple.py",
+   "line": 69,
+   "desc": "+ → -",
+   "point": {
+    "node": 217,
+    "kind": "bin",
+    "line": 69,
+    "desc": "+ → -"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "particle-swarm-optimization#m4",
+   "file": "pso/cost_functions.py",
+   "line": 16,
+   "desc": "條件取反",
+   "point": {
+    "node": 2,
+    "kind": "neg",
+    "line": 16,
+    "desc": "條件取反"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "::unit_tests.test_cost_functions"
+   ]
+  },
+  {
+   "id": "particle-swarm-optimization#m5",
+   "file": "pso/pso_simple.py",
+   "line": 24,
+   "desc": "1 → 0",
+   "point": {
+    "node": 180,
+    "kind": "const",
+    "line": 24,
+    "desc": "1 → 0"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "particle-swarm-optimization#m6",
+   "file": "pso/cost_functions.py",
+   "line": 13,
+   "desc": "2 → 3",
+   "point": {
+    "node": 38,
+    "kind": "const",
+    "line": 13,
+    "desc": "2 → 3"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_cost_functions.TestCostFunctions::test_sphere"
+   ]
+  },
+  {
+   "id": "particle-swarm-optimization#m7",
+   "file": "pso/pso_simple.py",
+   "line": 63,
+   "desc": "0 → 1",
+   "point": {
+    "node": 206,
+    "kind": "const",
+    "line": 63,
+    "desc": "0 → 1"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "particle-swarm-optimization#m8",
+   "file": "pso/cost_functions.py",
+   "line": 13,
+   "desc": "+= → -=",
+   "point": {
+    "node": 16,
+    "kind": "aug",
+    "line": 13,
+    "desc": "+= → -="
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_cost_functions.TestCostFunctions::test_sphere"
+   ]
+  },
+  {
+   "id": "particle-swarm-optimization#m9",
+   "file": "pso/pso_simple.py",
+   "line": 117,
+   "desc": "0 → 1",
+   "point": {
+    "node": 137,
+    "kind": "const",
+    "line": 117,
+    "desc": "0 → 1"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_pso_simple.TestPSO::test_minimize"
+   ]
+  },
+  {
+   "id": "particle-swarm-optimization#m10",
+   "file": "pso/cost_functions.py",
+   "line": 11,
+   "desc": "0 → 1",
+   "point": {
+    "node": 13,
+    "kind": "const",
+    "line": 11,
+    "desc": "0 → 1"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_cost_functions.TestCostFunctions::test_sphere"
+   ]
+  },
+  {
+   "id": "particle-swarm-optimization#m11",
+   "file": "pso/pso_simple.py",
+   "line": 28,
+   "desc": "1 → 0",
+   "point": {
+    "node": 364,
+    "kind": "const",
+    "line": 28,
+    "desc": "1 → 0"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "particle-swarm-optimization#m12",
+   "file": "pso/pso_simple.py",
+   "line": 60,
+   "desc": "1 → 0",
+   "point": {
+    "node": 107,
+    "kind": "const",
+    "line": 60,
+    "desc": "1 → 0"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "particle-swarm-optimization#m13",
+   "file": "pso/pso_simple.py",
+   "line": 59,
+   "desc": "0.5 → 1.5",
+   "point": {
+    "node": 105,
+    "kind": "const",
+    "line": 59,
+    "desc": "0.5 → 1.5"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "particle-swarm-optimization#m14",
+   "file": "pso/pso_simple.py",
+   "line": 124,
+   "desc": "', best solution: ' → ''",
+   "point": {
+    "node": 444,
+    "kind": "const",
+    "line": 124,
+    "desc": "', best solution: ' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "particle-swarm-optimization#m15",
+   "file": "pso/pso_simple.py",
+   "line": 89,
+   "desc": "< → <=",
+   "point": {
+    "node": 226,
+    "kind": "cmp",
+    "sub": 0,
+    "line": 89,
+    "desc": "< → <="
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "particle-swarm-optimization#m16",
+   "file": "pso/pso_simple.py",
+   "line": 122,
+   "desc": "條件取反",
+   "point": {
+    "node": 20,
+    "kind": "neg",
+    "line": 122,
+    "desc": "條件取反"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "particle-swarm-optimization#m17",
+   "file": "pso/pso_simple.py",
+   "line": 136,
+   "desc": "0 → 1",
+   "point": {
+    "node": 248,
+    "kind": "const",
+    "line": 136,
+    "desc": "0 → 1"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "particle-swarm-optimization#m18",
+   "file": "pso/pso_simple.py",
+   "line": 139,
+   "desc": "1 → 0",
+   "point": {
+    "node": 156,
+    "kind": "const",
+    "line": 139,
+    "desc": "1 → 0"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "particle-swarm-optimization#m19",
+   "file": "pso/pso_simple.py",
+   "line": 124,
+   "desc": "'iter: ' → ''",
+   "point": {
+    "node": 442,
+    "kind": "const",
+    "line": 124,
+    "desc": "'iter: ' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "particle-swarm-optimization#m20",
+   "file": "pso/pso_simple.py",
+   "line": 85,
+   "desc": "> → >=",
+   "point": {
+    "node": 224,
+    "kind": "cmp",
+    "sub": 0,
+    "line": 85,
+    "desc": "> → >="
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "particle-swarm-optimization#m21",
+   "file": "pso/pso_simple.py",
+   "line": 23,
+   "desc": "1 → 0",
+   "point": {
+    "node": 176,
+    "kind": "const",
+    "line": 23,
+    "desc": "1 → 0"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_pso_simple.TestPSO::test_evaluate"
+   ]
+  },
+  {
+   "id": "particle-swarm-optimization#m22",
+   "file": "pso/pso_simple.py",
+   "line": 144,
+   "desc": "'   > ' → ''",
+   "point": {
+    "node": 354,
+    "kind": "const",
+    "line": 144,
+    "desc": "'   > ' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "particle-swarm-optimization#m23",
+   "file": "pso/pso_simple.py",
+   "line": 121,
+   "desc": "0 → 1",
+   "point": {
+    "node": 64,
+    "kind": "const",
+    "line": 121,
+    "desc": "0 → 1"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "particle-swarm-optimization#m24",
+   "file": "pso/pso_simple.py",
+   "line": 122,
+   "desc": "< → <=",
+   "point": {
+    "node": 65,
+    "kind": "cmp",
+    "sub": 0,
+    "line": 122,
+    "desc": "< → <="
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "particle-swarm-optimization#m25",
+   "file": "pso/pso_simple.py",
+   "line": 145,
+   "desc": "'\\n' → ''",
+   "point": {
+    "node": 359,
+    "kind": "const",
+    "line": 145,
+    "desc": "'\\n' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "particle-swarm-optimization#m26",
+   "file": "pso/pso_simple.py",
+   "line": 44,
+   "desc": "and ↔ or",
+   "point": {
+    "node": 98,
+    "kind": "bool",
+    "line": 44,
+    "desc": "and ↔ or"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_pso_simple.TestPSO::test_evaluate"
+   ]
+  },
+  {
+   "id": "particle-swarm-optimization#m27",
+   "file": "pso/pso_simple.py",
+   "line": 69,
+   "desc": "+ → -",
+   "point": {
+    "node": 308,
+    "kind": "bin",
+    "line": 69,
+    "desc": "+ → -"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "particle-swarm-optimization#m28",
+   "file": "pso/pso_simple.py",
+   "line": 44,
+   "desc": "條件取反",
+   "point": {
+    "node": 34,
+    "kind": "neg",
+    "line": 44,
+    "desc": "條件取反"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_pso_simple.TestPSO::test_evaluate"
+   ]
+  },
+  {
+   "id": "particle-swarm-optimization#m29",
+   "file": "pso/pso_simple.py",
+   "line": 147,
+   "desc": "return … → return None",
+   "point": {
+    "node": 22,
+    "kind": "ret",
+    "line": 147,
+    "desc": "return … → return None"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_pso_simple.TestPSO::test_minimize"
+   ]
+  },
+  {
+   "id": "particle-swarm-optimization#m30",
+   "file": "pso/pso_simple.py",
+   "line": 28,
+   "desc": "1 → 0",
+   "point": {
+    "node": 473,
+    "kind": "const",
+    "line": 28,
+    "desc": "1 → 0"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "particle-swarm-optimization#m31",
+   "file": "pso/pso_simple.py",
+   "line": 142,
+   "desc": "條件取反",
+   "point": {
+    "node": 21,
+    "kind": "neg",
+    "line": 142,
+    "desc": "條件取反"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "particle-swarm-optimization#m32",
+   "file": "pso/pso_simple.py",
+   "line": 90,
+   "desc": "0 → 1",
+   "point": {
+    "node": 436,
+    "kind": "const",
+    "line": 90,
+    "desc": "0 → 1"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "particle-swarm-optimization#m33",
+   "file": "pso/pso_simple.py",
+   "line": 139,
+   "desc": "+= → -=",
+   "point": {
+    "node": 69,
+    "kind": "aug",
+    "line": 139,
+    "desc": "+= → -="
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "particle-swarm-optimization#m34",
+   "file": "pso/pso_simple.py",
+   "line": 145,
+   "desc": "'   > ' → ''",
+   "point": {
+    "node": 357,
+    "kind": "const",
+    "line": 145,
+    "desc": "'   > ' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "particle-swarm-optimization#m35",
+   "file": "pso/pso_simple.py",
+   "line": 61,
+   "desc": "2 → 3",
+   "point": {
+    "node": 109,
+    "kind": "const",
+    "line": 61,
+    "desc": "2 → 3"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "particle-swarm-optimization#m36",
+   "file": "pso/pso_simple.py",
+   "line": 68,
+   "desc": "* → /",
+   "point": {
+    "node": 215,
+    "kind": "bin",
+    "line": 68,
+    "desc": "* → /"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_pso_simple.TestPSO::test_minimize"
+   ]
+  },
+  {
+   "id": "particle-swarm-optimization#m37",
+   "file": "pso/pso_simple.py",
+   "line": 131,
+   "desc": "條件取反",
+   "point": {
+    "node": 149,
+    "kind": "neg",
+    "line": 131,
+    "desc": "條件取反"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_pso_simple.TestPSO::test_minimize"
+   ]
+  },
+  {
+   "id": "particle-swarm-optimization#m38",
+   "file": "pso/pso_simple.py",
+   "line": 68,
+   "desc": "* → /",
+   "point": {
+    "node": 302,
+    "kind": "bin",
+    "line": 68,
+    "desc": "* → /"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "particle-swarm-optimization#m39",
+   "file": "pso/pso_simple.py",
+   "line": 123,
+   "desc": "條件取反",
+   "point": {
+    "node": 66,
+    "kind": "neg",
+    "line": 123,
+    "desc": "條件取反"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "particle-swarm-optimization#m40",
+   "file": "pso/pso_simple.py",
+   "line": 82,
+   "desc": "+ → -",
+   "point": {
+    "node": 223,
+    "kind": "bin",
+    "line": 82,
+    "desc": "+ → -"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_pso_simple.TestPSO::test_update_position"
+   ]
+  },
+  {
+   "id": "particle-swarm-optimization#m41",
+   "file": "pso/pso_simple.py",
+   "line": 127,
+   "desc": "0 → 1",
+   "point": {
+    "node": 240,
+    "kind": "const",
+    "line": 127,
+    "desc": "0 → 1"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_pso_simple.TestPSO::test_minimize"
+   ]
+  },
+  {
+   "id": "particle-swarm-optimization#m42",
+   "file": "pso/pso_simple.py",
+   "line": 81,
+   "desc": "0 → 1",
+   "point": {
+    "node": 220,
+    "kind": "const",
+    "line": 81,
+    "desc": "0 → 1"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_pso_simple.TestPSO::test_update_position"
+   ]
+  },
+  {
+   "id": "particle-swarm-optimization#m43",
+   "file": "pso/pso_simple.py",
+   "line": 143,
+   "desc": "'\\nFINAL SOLUTION:' → ''",
+   "point": {
+    "node": 254,
+    "kind": "const",
+    "line": 143,
+    "desc": "'\\nFINAL SOLUTION:' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "particle-swarm-optimization#m44",
+   "file": "pso/pso_simple.py",
+   "line": 85,
+   "desc": "條件取反",
+   "point": {
+    "node": 123,
+    "kind": "neg",
+    "line": 85,
+    "desc": "條件取反"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_pso_simple.TestPSO::test_minimize"
+   ]
+  },
+  {
+   "id": "particle-swarm-optimization#m45",
+   "file": "pso/pso_simple.py",
+   "line": 93,
+   "desc": "False → True",
+   "point": {
+    "node": 50,
+    "kind": "const",
+    "line": 93,
+    "desc": "False → True"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "particle-swarm-optimization#m46",
+   "file": "pso/pso_simple.py",
+   "line": 67,
+   "desc": "* → /",
+   "point": {
+    "node": 213,
+    "kind": "bin",
+    "line": 67,
+    "desc": "* → /"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_pso_simple.TestPSO::test_minimize"
+   ]
+  },
+  {
+   "id": "particle-swarm-optimization#m47",
+   "file": "pso/pso_simple.py",
+   "line": 67,
+   "desc": "* → /",
+   "point": {
+    "node": 298,
+    "kind": "bin",
+    "line": 67,
+    "desc": "* → /"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "particle-swarm-optimization#m48",
+   "file": "pso/pso_simple.py",
+   "line": 112,
+   "desc": "1 → 0",
+   "point": {
+    "node": 130,
+    "kind": "const",
+    "line": 112,
+    "desc": "1 → 0"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_pso_simple.TestPSO::test_minimize"
+   ]
+  },
+  {
+   "id": "particle-swarm-optimization#m49",
+   "file": "pso/pso_simple.py",
+   "line": 86,
+   "desc": "1 → 0",
+   "point": {
+    "node": 424,
+    "kind": "const",
+    "line": 86,
+    "desc": "1 → 0"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "particle-swarm-optimization#m50",
+   "file": "pso/pso_simple.py",
+   "line": 131,
+   "desc": "and ↔ or",
+   "point": {
+    "node": 243,
+    "kind": "bool",
+    "line": 131,
+    "desc": "and ↔ or"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_pso_simple.TestPSO::test_minimize"
+   ]
+  },
+  {
+   "id": "particle-swarm-optimization#m51",
+   "file": "pso/pso_simple.py",
+   "line": 89,
+   "desc": "條件取反",
+   "point": {
+    "node": 124,
+    "kind": "neg",
+    "line": 89,
+    "desc": "條件取反"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_pso_simple.TestPSO::test_minimize"
+   ]
+  }
+ ]
+}

@@ -1,0 +1,4 @@
+progressbar2
+numpy
+pandas
+requests

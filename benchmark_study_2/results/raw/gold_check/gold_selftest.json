@@ -1,0 +1,12 @@
+{
+ "redis__redis-13115": {
+  "resolved": true,
+  "applied": true,
+  "f2p_pass": 1,
+  "f2p_fail": 0,
+  "p2p_pass": 183,
+  "p2p_fail": 0,
+  "log_dir": "/home/amr-base/cah_eval/swe/eval/logs/run_evaluation/gold_selftest/gold/redis__redis-13115",
+  "eval_seconds": 95.5
+ }
+}

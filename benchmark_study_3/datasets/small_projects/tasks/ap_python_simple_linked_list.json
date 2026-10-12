@@ -1,0 +1,16 @@
+{
+ "id": "ap_python_simple_linked_list",
+ "family": "ap",
+ "source": "aider_polyglot",
+ "repo": "simple-linked-list",
+ "lang": "python",
+ "workspace": "workspaces/ap_python_simple_linked_list",
+ "task": "請照 `.docs/introduction.md`、`.docs/instructions.md`、`.docs/instructions.append.md` 的說明完成 `simple_linked_list.py`（目前只有空的骨架）。測試在 `simple_linked_list_test.py`，要全部通過；測試是對的，不要修改測試。",
+ "impl_files": [
+  "simple_linked_list.py"
+ ],
+ "test_files": [
+  "simple_linked_list_test.py"
+ ],
+ "python": "devbench_venv"
+}

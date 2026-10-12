@@ -1,0 +1,18 @@
+{
+ "id": "ap_cpp_dnd_character",
+ "family": "ap",
+ "source": "aider_polyglot",
+ "repo": "dnd-character",
+ "lang": "cpp",
+ "workspace": "workspaces/ap_cpp_dnd_character",
+ "task": "請照 `.docs/introduction.md`、`.docs/instructions.md` 的說明完成 `dnd_character.h`、`dnd_character.cpp`（目前只有空的骨架）。測試在 `dnd_character_test.cpp`，要全部通過；測試是對的，不要修改測試。",
+ "impl_files": [
+  "dnd_character.h",
+  "dnd_character.cpp"
+ ],
+ "test_files": [
+  "dnd_character_test.cpp",
+  "test"
+ ],
+ "python": "devbench_venv"
+}

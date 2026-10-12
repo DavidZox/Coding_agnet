@@ -1,0 +1,102 @@
+diff --git a/django/forms/widgets.py b/django/forms/widgets.py
+index 338d54d72f..59f740bd0a 100644
+--- a/django/forms/widgets.py
++++ b/django/forms/widgets.py
+@@ -376,6 +376,11 @@ class FileInput(Input):
+     needs_multipart_form = True
+     template_name = 'django/forms/widgets/file.html'
+ 
++    def use_required_attribute(self, initial):
++        if initial:
++            return False
++        return super().use_required_attribute(initial)
++
+     def format_value(self, value):
+         """File input never renders a value."""
+         return
+@@ -451,9 +456,6 @@ class ClearableFileInput(FileInput):
+             return False
+         return upload
+ 
+-    def use_required_attribute(self, initial):
+-        return super().use_required_attribute(initial) and not initial
+-
+     def value_omitted_from_data(self, data, files, name):
+         return (
+             super().value_omitted_from_data(data, files, name) and
+diff --git a/tests/forms/test_widgets_issue.py b/tests/forms/test_widgets_issue.py
+new file mode 100644
+index 0000000000..b11e18a186
+--- /dev/null
++++ b/tests/forms/test_widgets_issue.py
+@@ -0,0 +1,70 @@
++import io
++from django.core.files import File
++from django.forms import Form, Field, ClearableFileInput, FileInput, BoundField
++from django.test import TestCase
++
++class MockFile(File):
++    def __init__(self, name):
++        super().__init__(io.BytesIO(b"content"), name=name)
++
++class WidgetRequiredAttributeIssueTest(TestCase):
++    def test_file_input_should_not_have_required_attribute_when_initial_exists(self):
++        """
++        Test that FileInput (and ClearableFileInput) does not include the 'required' 
++        attribute in the HTML when initial data is present.
++        """
++        class FileForm(Form):
++            file_field = Field(widget=ClearableFileInput())
++
++        # Case 1: No initial data - should have 'required'
++        form_no_initial = FileForm(initial={'file_field': None})
++        # Note: In Django, if the field is required (default), 
++        # the widget's get_context will include 'required' if use_required_attribute returns True.
++        
++        # We check the rendered HTML or the context attributes.
++        # Since we want to test the logic of use_required_attribute via BoundField:
++        
++        # Case 2: With initial data - should NOT have 'required'
++        initial_file = MockFile("test.txt")
++        form_with_initial = FileForm(initial={'file_field': initial_file})
++        
++        bound_field = BoundField(form_with_initial, form_with_initial.fields['file_field'], 'file_field')
++        
++        # The widget's get_context is called during rendering. 
++        # We can inspect the widget's attributes through the bound field's widget.
++        # However, the 'required' attribute is added during get_context in the template 
++        # or via build_widget_attrs.
++        
++        # Let's check the rendered HTML directly to see if 'required' is present.
++        rendered_html = bound_field.as_widget()
++        
++        self.assertNotIn('required', rendered_html, 
++                        "ClearableFileInput should not have 'required' attribute when initial data exists.")
++
++    def test_file_input_without_initial_has_required(self):
++        """
++        Test that FileInput DOES have 'required' attribute when no initial data is present.
++        """
++        class FileForm(Form):
++            file_field = Field(widget=FileInput())
++
++        form = FileForm()
++        bound_field = BoundField(form, form.fields['file_field'], 'file_field')
++        rendered_html = bound_field.as_widget()
++        
++        self.assertIn('required', rendered_html, 
++                      "FileInput should have 'required' attribute when no initial data exists.")
++
++    def test_clearable_file_input_without_initial_has_required(self):
++        """
++        Test that ClearableFileInput DOES have 'required' attribute when no initial data is present.
++        """
++        class FileForm(Form):
++            file_field = Field(widget=ClearableFileInput())
++
++        form = FileForm()
++        bound_field = BoundField(form, form.fields['file_field'], 'file_field')
++        rendered_html = bound_field.as_widget()
++        
++        self.assertIn('required', rendered_html, 
++                      "ClearableFileInput should have 'required' attribute when no initial data exists.")

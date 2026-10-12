@@ -1,0 +1,188 @@
+diff --git a/src/acl.c b/src/acl.c
+index 0bffbe97..cccef8cf 100644
+--- a/src/acl.c
++++ b/src/acl.c
+@@ -595,6 +595,64 @@ void ACLUpdateCommandRules(aclSelector *selector, const char *rule, int allow) {
+     sds new_rule = sdsnew(rule);
+     sdstolower(new_rule);
+ 
++    /* If we are allowing a command, we must ensure that any existing 
++     * negative rules for this command or its subcommands are removed. */
++    if (allow) {
++        int argc = 0;
++        sds *argv = sdssplitargs(selector->command_rules, &argc);
++        if (argv) {
++            /* Collect rules to remove first to avoid invalidating argv pointers */
++            sds *to_remove = zmalloc(sizeof(sds) * argc);
++            int to_remove_count = 0;
++
++            for (int i = 0; i < argc; i++) {
++                /* If the rule is a negative rule (starts with '-') */
++                if (argv[i][0] == '-') {
++                    /* We want to see if this negative rule is for the command 
++                     * we are currently allowing. We check if the command name 
++                     * (after '-') matches the beginning of new_rule. */
++                    sds rule_name = sdsnew(argv[i] + 1);
++                    size_t rule_name_len = sdslen(rule_name);
++                    size_t new_rule_len = sdslen(new_rule);
++
++                    /* Check if rule_name is the command or a subcommand of the command.
++                     * e.g., if new_rule is 'config', rule_name could be 'config|set'.
++                     * Or if new_rule is 'config|set', rule_name could be 'config'.
++                     * The requirement is: if we allow 'config', remove '-config|set'.
++                     */
++                    int match = 0;
++                    if (rule_name_len >= new_rule_len) {
++                        /* rule_name is longer or equal: e.g., rule_name='config|set', new_rule='config' */
++                        if (strncmp(rule_name, new_rule, new_rule_len) == 0 &&
++                            (rule_name_len == new_rule_len || rule_name[new_rule_len] == '|')) {
++                            match = 1;
++                        }
++                    } else {
++                        /* rule_name is shorter: e.g., rule_name='config', new_rule='config|set' */
++                        if (strncmp(new_rule, rule_name, rule_name_len) == 0 &&
++                            (new_rule_len == rule_name_len || new_rule[rule_name_len] == '|')) {
++                            match = 1;
++                        }
++                    }
++
++                    if (match) {
++                        to_remove[to_remove_count++] = rule_name;
++                    } else {
++                        sdsfree(rule_name);
++                    }
++                }
++            }
++
++            /* Now perform the removals */
++            for (int i = 0; i < to_remove_count; i++) {
++                ACLSelectorRemoveCommandRule(selector, to_remove[i]);
++                sdsfree(to_remove[i]);
++            }
++            zfree(to_remove);
++            sdsfreesplitres(argv, argc);
++        }
++    }
++
+     ACLSelectorRemoveCommandRule(selector, new_rule);
+     if (sdslen(selector->command_rules)) selector->command_rules = sdscat(selector->command_rules, " ");
+     selector->command_rules = sdscatfmt(selector->command_rules, allow ? "+%S" : "-%S", new_rule);
+@@ -1135,13 +1193,9 @@ int ACLSetSelector(aclSelector *selector, const char* op, size_t oplen) {
+ 
+             if (cmd->subcommands_dict) {
+                 /* If user is trying to allow a valid subcommand we can just add its unique ID */
+-                cmd = ACLLookupCommand(op+1);
+-                if (cmd == NULL) {
+-                    zfree(copy);
+-                    errno = ENOENT;
+-                    return C_ERR;
+-                }
+-                ACLChangeSelectorPerm(selector,cmd,1);
++                /* We use op+1 to ensure we keep the command|subcommand format for the rule string */
++                ACLChangeSelectorPerm(selector, cmd, 1);
++                ACLUpdateCommandRules(selector, op+1, 1);
+             } else {
+                 /* If user is trying to use the ACL mech to block SELECT except SELECT 0 or
+                  * block DEBUG except DEBUG OBJECT (DEBUG subcommands are not considered
+@@ -1157,13 +1211,24 @@ int ACLSetSelector(aclSelector *selector, const char* op, size_t oplen) {
+             zfree(copy);
+         }
+     } else if (op[0] == '-' && op[1] != '@') {
+-        struct redisCommand *cmd = ACLLookupCommand(op+1);
+-        if (cmd == NULL) {
+-            errno = ENOENT;
+-            return C_ERR;
++        if (strrchr(op,'|') == NULL) {
++            struct redisCommand *cmd = ACLLookupCommand(op+1);
++            if (cmd == NULL) {
++                errno = ENOENT;
++                return C_ERR;
++            }
++            ACLChangeSelectorPerm(selector,cmd,0);
++            ACLUpdateCommandRules(selector,cmd->fullname,0);
++        } else {
++            /* For subcommands, we must use the full op+1 string to ensure the rule is recorded correctly */
++            struct redisCommand *cmd = ACLLookupCommand(op+1);
++            if (cmd == NULL) {
++                errno = ENOENT;
++                return C_ERR;
++            }
++            ACLChangeSelectorPerm(selector,cmd,0);
++            ACLUpdateCommandRules(selector,op+1,0);
+         }
+-        ACLChangeSelectorPerm(selector,cmd,0);
+-        ACLUpdateCommandRules(selector,cmd->fullname,0);
+     } else if ((op[0] == '+' || op[0] == '-') && op[1] == '@') {
+         int bitval = op[0] == '+' ? 1 : 0;
+         if (ACLSetSelectorCategory(selector,op+1,bitval) == C_ERR) {
+diff --git a/tests/unit/acl/test_acl_list_bug.py b/tests/unit/acl/test_acl_list_bug.py
+new file mode 100644
+index 00000000..8ef80194
+--- /dev/null
++++ b/tests/unit/acl/test_acl_list_bug.py
+@@ -0,0 +1,65 @@
++import subprocess
++import time
++import unittest
++
++class TestACLListBug(unittest.TestCase):
++    def setUp(self):
++        # Start redis-server in the background
++        self.server_process = subprocess.Popen(
++            ["./src/redis-server", "--port", "12345", "--protected-mode", "no"],
++            stdout=subprocess.PIPE,
++            stderr=subprocess.PIPE
++        )
++        # Wait for server to be ready
++        time.sleep(1)
++
++    def tearDown(self):
++        # Kill redis-server
++        self.server_process.terminate()
++        self.server_process.wait()
++
++    def run_redis_cmd(self, cmd):
++        # Use redis-cli to execute commands
++        # Note: We use shlex-like splitting or just pass the command string to redis-cli
++        # redis-cli can take the command as arguments. 
++        # To handle complex commands like ACL SETUSER with spaces, we pass them as a single string to the shell or use list.
++        # However, redis-cli's standard way is: redis-cli [options] command [args]
++        # For complex commands, we'll split the command string to pass as arguments.
++        import shlex
++        args = ["./src/redis-cli", "-p", "12345"] + shlex.split(cmd)
++        
++        process = subprocess.Popen(
++            args,
++            stdout=subprocess.PIPE,
++            stderr=subprocess.PIPE,
++            text=True
++        )
++        stdout, stderr = process.communicate()
++        return stdout.strip(), stderr.strip()
++
++    def test_acl_redundant_rules(self):
++        # 1. ACL SETUSER user1 on >123 +config|get -config|set
++        out, err = self.run_redis_cmd("ACL SETUSER user1 on >123 +config|get -config|set")
++        self.assertEqual(out, "OK", f"Step 1 failed: {err}")
++
++        # 2. ACL SETUSER user1 +config
++        out, err = self.run_redis_cmd("ACL SETUSER user1 +config")
++        self.assertEqual(out, "OK", f"Step 2 failed: {err}")
++
++        # 3. ACL LIST
++        out, err = self.run_redis_cmd("ACL LIST")
++        
++        # The issue states that -config|set should not show in the rule
++        # Expected rule part: "... +config" (without "-config|set")
++        # We check if "-config|set" is present in the output for user1
++        self.assertNotIn("-config|set", out, f"Redundant rule '-config|set' found in ACL LIST output: {out}")
++        
++        # Verify user1 can actually execute CONFIG SET
++        auth_out, auth_err = self.run_redis_cmd("AUTH user1 123")
++        self.assertEqual(auth_out, "OK", f"Auth failed: {auth_err}")
++        
++        config_out, config_err = self.run_redis_cmd("CONFIG SET slowlog-max-len 100")
++        self.assertEqual(config_out, "OK", f"Failed to execute CONFIG SET: {config_err}")
++
++if __name__ == "__main__":
++    unittest.main()

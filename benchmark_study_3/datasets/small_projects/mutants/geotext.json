@@ -1,0 +1,516 @@
+{
+ "repo": "geotext",
+ "seed": 20261010,
+ "official_tests": 1,
+ "mutants": [
+  {
+   "id": "geotext#m0",
+   "file": "geotext/geotext.py",
+   "line": 117,
+   "desc": "is not → is",
+   "point": {
+    "node": 165,
+    "kind": "cmp",
+    "sub": 0,
+    "line": 117,
+    "desc": "is not → is"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_geotext.TestGeotext::test_cities"
+   ]
+  },
+  {
+   "id": "geotext#m1",
+   "file": "geotext/geotext.py",
+   "line": 117,
+   "desc": "條件取反",
+   "point": {
+    "node": 86,
+    "kind": "neg",
+    "line": 117,
+    "desc": "條件取反"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_geotext.TestGeotext::test_cities"
+   ]
+  },
+  {
+   "id": "geotext#m2",
+   "file": "geotext/geotext.py",
+   "line": 78,
+   "desc": "1 → 0",
+   "point": {
+    "node": 312,
+    "kind": "const",
+    "line": 78,
+    "desc": "1 → 0"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_geotext.TestGeotext::test_cities"
+   ]
+  },
+  {
+   "id": "geotext#m3",
+   "file": "geotext/geotext.py",
+   "line": 114,
+   "desc": "in → not in",
+   "point": {
+    "node": 395,
+    "kind": "cmp",
+    "sub": 0,
+    "line": 114,
+    "desc": "in → not in"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_geotext.TestGeotext::test_cities"
+   ]
+  },
+  {
+   "id": "geotext#m4",
+   "file": "geotext/geotext.py",
+   "line": 12,
+   "desc": "return … → return None",
+   "point": {
+    "node": 20,
+    "kind": "ret",
+    "line": 12,
+    "desc": "return … → return None"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "::unit_tests.test_geotext"
+   ]
+  },
+  {
+   "id": "geotext#m5",
+   "file": "geotext/geotext.py",
+   "line": 114,
+   "desc": "and ↔ or",
+   "point": {
+    "node": 333,
+    "kind": "bool",
+    "line": 114,
+    "desc": "and ↔ or"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_geotext.TestGeotext::test_cities"
+   ]
+  },
+  {
+   "id": "geotext#m6",
+   "file": "geotext/geotext.py",
+   "line": 12,
+   "desc": "'data_file' → ''",
+   "point": {
+    "node": 102,
+    "kind": "const",
+    "line": 12,
+    "desc": "'data_file' → ''"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "::unit_tests.test_geotext"
+   ]
+  },
+  {
+   "id": "geotext#m7",
+   "file": "geotext/geotext.py",
+   "line": 84,
+   "desc": "'nationalities cities countries' → ''",
+   "point": {
+    "node": 144,
+    "kind": "const",
+    "line": 84,
+    "desc": "'nationalities cities countries' → ''"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "::unit_tests.test_geotext"
+   ]
+  },
+  {
+   "id": "geotext#m8",
+   "file": "geotext/geotext.py",
+   "line": 46,
+   "desc": "'r' → ''",
+   "point": {
+    "node": 189,
+    "kind": "const",
+    "line": 46,
+    "desc": "'r' → ''"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "::unit_tests.test_geotext"
+   ]
+  },
+  {
+   "id": "geotext#m9",
+   "file": "geotext/geotext.py",
+   "line": 112,
+   "desc": "in → not in",
+   "point": {
+    "node": 328,
+    "kind": "cmp",
+    "sub": 0,
+    "line": 112,
+    "desc": "in → not in"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_geotext.TestGeotext::test_cities"
+   ]
+  },
+  {
+   "id": "geotext#m10",
+   "file": "geotext/geotext.py",
+   "line": 58,
+   "desc": "1 → 0",
+   "point": {
+    "node": 488,
+    "kind": "const",
+    "line": 58,
+    "desc": "1 → 0"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_geotext.TestGeotext::test_cities"
+   ]
+  },
+  {
+   "id": "geotext#m11",
+   "file": "geotext/geotext.py",
+   "line": 121,
+   "desc": "in → not in",
+   "point": {
+    "node": 343,
+    "kind": "cmp",
+    "sub": 0,
+    "line": 121,
+    "desc": "in → not in"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_geotext.TestGeotext::test_cities"
+   ]
+  },
+  {
+   "id": "geotext#m12",
+   "file": "geotext/geotext.py",
+   "line": 15,
+   "desc": "'\\t' → ''",
+   "point": {
+    "node": 52,
+    "kind": "const",
+    "line": 15,
+    "desc": "'\\t' → ''"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "::unit_tests.test_geotext"
+   ]
+  },
+  {
+   "id": "geotext#m13",
+   "file": "geotext/geotext.py",
+   "line": 78,
+   "desc": "'cities15000.txt' → ''",
+   "point": {
+    "node": 222,
+    "kind": "const",
+    "line": 78,
+    "desc": "'cities15000.txt' → ''"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "::unit_tests.test_geotext"
+   ]
+  },
+  {
+   "id": "geotext#m14",
+   "file": "geotext/geotext.py",
+   "line": 118,
+   "desc": "== → !=",
+   "point": {
+    "node": 401,
+    "kind": "cmp",
+    "sub": 0,
+    "line": 118,
+    "desc": "== → !="
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_geotext.TestGeotext::test_cities"
+   ]
+  },
+  {
+   "id": "geotext#m15",
+   "file": "geotext/geotext.py",
+   "line": 75,
+   "desc": "'countryInfo.txt' → ''",
+   "point": {
+    "node": 217,
+    "kind": "const",
+    "line": 75,
+    "desc": "'countryInfo.txt' → ''"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "::unit_tests.test_geotext"
+   ]
+  },
+  {
+   "id": "geotext#m16",
+   "file": "geotext/geotext.py",
+   "line": 57,
+   "desc": "0 → 1",
+   "point": {
+    "node": 484,
+    "kind": "const",
+    "line": 57,
+    "desc": "0 → 1"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_geotext.TestGeotext::test_cities"
+   ]
+  },
+  {
+   "id": "geotext#m17",
+   "file": "geotext/geotext.py",
+   "line": 133,
+   "desc": "條件取反",
+   "point": {
+    "node": 10,
+    "kind": "neg",
+    "line": 133,
+    "desc": "條件取反"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "geotext#m18",
+   "file": "geotext/geotext.py",
+   "line": 84,
+   "desc": "'Index' → ''",
+   "point": {
+    "node": 143,
+    "kind": "const",
+    "line": 84,
+    "desc": "'Index' → ''"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "::unit_tests.test_geotext"
+   ]
+  },
+  {
+   "id": "geotext#m19",
+   "file": "geotext/geotext.py",
+   "line": 81,
+   "desc": "'citypatches.txt' → ''",
+   "point": {
+    "node": 226,
+    "kind": "const",
+    "line": 81,
+    "desc": "'citypatches.txt' → ''"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "::unit_tests.test_geotext"
+   ]
+  },
+  {
+   "id": "geotext#m20",
+   "file": "geotext/geotext.py",
+   "line": 133,
+   "desc": "== → !=",
+   "point": {
+    "node": 38,
+    "kind": "cmp",
+    "sub": 0,
+    "line": 133,
+    "desc": "== → !="
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "geotext#m21",
+   "file": "geotext/geotext.py",
+   "line": 75,
+   "desc": "1 → 0",
+   "point": {
+    "node": 219,
+    "kind": "const",
+    "line": 75,
+    "desc": "1 → 0"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "geotext#m22",
+   "file": "geotext/geotext.py",
+   "line": 71,
+   "desc": "'nationalities.txt' → ''",
+   "point": {
+    "node": 213,
+    "kind": "const",
+    "line": 71,
+    "desc": "'nationalities.txt' → ''"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "::unit_tests.test_geotext"
+   ]
+  },
+  {
+   "id": "geotext#m23",
+   "file": "geotext/geotext.py",
+   "line": 52,
+   "desc": "拿掉 not",
+   "point": {
+    "node": 292,
+    "kind": "not",
+    "line": 52,
+    "desc": "拿掉 not"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "::unit_tests.test_geotext"
+   ]
+  },
+  {
+   "id": "geotext#m24",
+   "file": "geotext/geotext.py",
+   "line": 116,
+   "desc": "not in → in",
+   "point": {
+    "node": 396,
+    "kind": "cmp",
+    "sub": 0,
+    "line": 116,
+    "desc": "not in → in"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_geotext.TestGeotext::test_cities"
+   ]
+  },
+  {
+   "id": "geotext#m25",
+   "file": "geotext/geotext.py",
+   "line": 58,
+   "desc": "'\\n' → ''",
+   "point": {
+    "node": 301,
+    "kind": "const",
+    "line": 58,
+    "desc": "'\\n' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "geotext#m26",
+   "file": "geotext/geotext.py",
+   "line": 60,
+   "desc": "return … → return None",
+   "point": {
+    "node": 24,
+    "kind": "ret",
+    "line": 60,
+    "desc": "return … → return None"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "::unit_tests.test_geotext"
+   ]
+  },
+  {
+   "id": "geotext#m27",
+   "file": "geotext/geotext.py",
+   "line": 15,
+   "desc": "'#' → ''",
+   "point": {
+    "node": 53,
+    "kind": "const",
+    "line": 15,
+    "desc": "'#' → ''"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_geotext.TestGeotext::test_cities"
+   ]
+  },
+  {
+   "id": "geotext#m28",
+   "file": "geotext/geotext.py",
+   "line": 85,
+   "desc": "return … → return None",
+   "point": {
+    "node": 33,
+    "kind": "ret",
+    "line": 85,
+    "desc": "return … → return None"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_geotext.TestGeotext::test_cities"
+   ]
+  },
+  {
+   "id": "geotext#m29",
+   "file": "geotext/geotext.py",
+   "line": 71,
+   "desc": "':' → ''",
+   "point": {
+    "node": 214,
+    "kind": "const",
+    "line": 71,
+    "desc": "':' → ''"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "::unit_tests.test_geotext"
+   ]
+  }
+ ]
+}

@@ -1,0 +1,61 @@
+diff --git a/include/fmt/format.h b/include/fmt/format.h
+index a4a07899..2de0d6e5 100644
+--- a/include/fmt/format.h
++++ b/include/fmt/format.h
+@@ -1119,6 +1119,20 @@ using uint32_or_64_or_128_t =
+ template <typename T>
+ using uint64_or_128_t = conditional_t<num_bits<T>() <= 64, uint64_t, uint128_t>;
+ 
++// Correct way to handle negative integers for group_digits
++template <typename T>
++FMT_CONSTEXPR auto to_unsigned_for_group_digits(T value) -> uint64_or_128_t<T> {
++  if constexpr (is_signed<T>::value) {
++    if (value < 0) {
++      // Use signed version of the target unsigned type to safely negate
++      using UInt = uint64_or_128_t<T>;
++      using SignedUInt = std::make_signed_t<UInt>;
++      return static_cast<UInt>(static_cast<SignedUInt>(-value));
++    }
++  }
++  return static_cast<uint64_or_128_t<T>>(value);
++}
++
+ #define FMT_POWERS_OF_10(factor)                                  \
+   factor * 10, (factor) * 100, (factor) * 1000, (factor) * 10000, \
+       (factor) * 100000, (factor) * 1000000, (factor) * 10000000, \
+@@ -4130,9 +4144,19 @@ template <typename T> struct formatter<group_digits_view<T>> : formatter<T> {
+                                                        specs.width_ref, ctx);
+     detail::handle_dynamic_spec<detail::precision_checker>(
+         specs.precision, specs.precision_ref, ctx);
+-    return detail::write_int(ctx.out(),
+-                             static_cast<detail::uint64_or_128_t<T>>(t.value),
+-                             0, specs, detail::digit_grouping<char>("\3", ","));
++    if constexpr (std::is_signed_v<T>) {
++      using UInt = detail::uint64_or_128_t<T>;
++      UInt abs_value = (t.value < 0) ? static_cast<UInt>(-(static_cast<std::make_signed_t<UInt>>(t.value))) : static_cast<UInt>(t.value);
++      return detail::write_int(ctx.out(),
++                               abs_value,
++                               t.value < 0 ? sign_t::minus
++                                           : sign_t::plus,
++                               0, specs, detail::digit_grouping<char>("\3", ","));
++    } else {
++      return detail::write_int(ctx.out(),
++                               static_cast<detail::uint64_or_128_t<T>>(t.value),
++                               0, specs, detail::digit_grouping<char>("\3", ","));
++    }
+   }
+ };
+ 
+diff --git a/test/format-test.cc b/test/format-test.cc
+index 70624e83..0680cc67 100644
+--- a/test/format-test.cc
++++ b/test/format-test.cc
+@@ -1837,6 +1837,8 @@ TEST(format_test, bytes) {
+ TEST(format_test, group_digits_view) {
+   EXPECT_EQ(fmt::format("{}", fmt::group_digits(10000000)), "10,000,000");
+   EXPECT_EQ(fmt::format("{:8}", fmt::group_digits(1000)), "   1,000");
++  EXPECT_EQ(fmt::format("{}", fmt::group_digits(-12345)), "-12,345");
++  EXPECT_EQ(fmt::format("{}", fmt::group_digits(-1234567)), "-1,234,567");
+ }
+ 
+ #ifdef __cpp_generic_lambdas

@@ -1,0 +1,76 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 8fd42c14..b03628da 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -138,6 +138,24 @@ if (FMT_MASTER_PROJECT AND NOT DEFINED CMAKE_CXX_VISIBILITY_PRESET)
+                hidden default)
+ endif ()
+ 
++if (NOT CMAKE_MAKE_PROGRAM)
++  find_program(CMAKE_MAKE_PROGRAM NAMES ninja make gmake)
++  if (NOT CMAKE_MAKE_PROGRAM)
++    set(CMAKE_MAKE_PROGRAM ninja)
++  endif ()
++endif ()
++
++if (NOT CMAKE_GENERATOR)
++  set(CMAKE_GENERATOR "Ninja")
++endif ()
++
++if (NOT CMAKE_CXX_COMPILER)
++  find_program(CMAKE_CXX_COMPILER NAMES clang++ g++)
++  if (NOT CMAKE_CXX_COMPILER)
++    set(CMAKE_CXX_COMPILER clang++)
++  endif ()
++endif ()
++
+ if (FMT_MASTER_PROJECT AND NOT DEFINED CMAKE_VISIBILITY_INLINES_HIDDEN)
+   set_verbose(CMAKE_VISIBILITY_INLINES_HIDDEN ON CACHE BOOL
+               "Whether to add a compile flag to hide symbols of inline functions")
+diff --git a/include/fmt/format-inl.h b/include/fmt/format-inl.h
+index a3eaa361..aa8de611 100644
+--- a/include/fmt/format-inl.h
++++ b/include/fmt/format-inl.h
+@@ -230,7 +230,24 @@ class fp {
+       biased_e = 1;  // Subnormals use biased exponent 1 (min exponent).
+     e = biased_e - exponent_bias - float_significand_size;
+     return is_predecessor_closer;
+-  }
++}
++
++void format_float(buffer<char>& buf, double value, const format_specs& specs) {
++    if (std::isnan(value)) {
++      buf.append("nan");
++      return;
++    }
++    if (std::isinf(value)) {
++      buf.append(value < 0 ? "-inf" : "inf");
++      return;
++    }
++    fp fp_value(value);
++    if (specs.fill() == '0' && (std::isnan(value) || std::isinf(value))) {
++      // Do not apply zero fill for inf/nan
++    } else {
++      format_float(buf, fp_value.f, specs);
++    }
++}
+ 
+   template <typename Float, FMT_ENABLE_IF(!is_supported_float<Float>::value)>
+   bool assign(Float) {
+diff --git a/test/format-test.cc b/test/format-test.cc
+index cbed4984..24a678af 100644
+--- a/test/format-test.cc
++++ b/test/format-test.cc
+@@ -733,6 +733,12 @@ TEST(format_test, width) {
+   EXPECT_EQ("   42", fmt::format("{0:5}", 42u));
+   EXPECT_EQ("   -42", fmt::format("{0:6}", -42l));
+   EXPECT_EQ("     42", fmt::format("{0:7}", 42ul));
++  EXPECT_EQ("+nan", fmt::format("{:+6}", NAN));
++  EXPECT_EQ("+inf", fmt::format("{:+6}", INFINITY));
++  EXPECT_EQ("-inf", fmt::format("{:+6}", -INFINITY));
++  EXPECT_EQ("  nan", fmt::format("{:06}", NAN));
++  EXPECT_EQ("  inf", fmt::format("{:06}", INFINITY));
++  EXPECT_EQ(" -inf", fmt::format("{:06}", -INFINITY));
+   EXPECT_EQ("   -42", fmt::format("{0:6}", -42ll));
+   EXPECT_EQ("     42", fmt::format("{0:7}", 42ull));
+   EXPECT_EQ("   -1.23", fmt::format("{0:8}", -1.23));

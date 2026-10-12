@@ -1,0 +1,177 @@
+diff --git a/src/object.c b/src/object.c
+index ee3564657..7bee922c2 100644
+--- a/src/object.c
++++ b/src/object.c
+@@ -606,13 +606,23 @@ int isSdsRepresentableAsLongLong(sds s, long long *llval) {
+ int isObjectRepresentableAsLongLong(robj *o, long long *llval) {
+     serverAssertWithInfo(NULL,o,o->type == OBJ_STRING);
+     if (o->encoding == OBJ_ENCODING_INT) {
+-        if (llval) *llval = (long) o->ptr;
++        if (llval) *llval = (long long) o->ptr;
+         return C_OK;
+     } else {
+         return isSdsRepresentableAsLongLong(o->ptr,llval);
+     }
+ }
+ 
++int getLongLongFromObject(robj *o, long long *target) {
++    serverAssertWithInfo(NULL,o,o->type == OBJ_STRING);
++    if (o->encoding == OBJ_ENCODING_INT) {
++        if (target) *target = (long long) o->ptr;
++        return C_OK;
++    } else {
++        return isSdsRepresentableAsLongLong(o->ptr,target);
++    }
++}
++
+ /* Optimize the SDS string inside the string object to require little space,
+  * in case there is more than 10% of free space at the end of the SDS. */
+ void trimStringObjectIfNeeded(robj *o, int trim_small_values) {
+@@ -723,6 +733,12 @@ robj *getDecodedObject(robj *o) {
+         ll2string(buf,32,(long)o->ptr);
+         dec = createStringObject(buf,strlen(buf));
+         return dec;
++    } else if (o->type == OBJ_STRING && o->encoding == OBJ_ENCODING_INT) {
++        dec = createObject(OBJ_STRING, NULL);
++        dec->encoding = OBJ_ENCODING_INT;
++        dec->ptr = o->ptr;
++        incrRefCount(dec);
++        return dec;
+     } else {
+         serverPanic("Unknown encoding type");
+     }
+@@ -897,6 +913,9 @@ int getLongLongFromObjectOrReply(client *c, robj *o, long long *target, const ch
+     if (getLongLongFromObject(o, &value) != C_OK) {
+         if (msg != NULL) {
+             addReplyError(c,(char*)msg);
++        } else if (c->executing_client && c->executing_client->flags & CLIENT_SCRIPT) {
++            /* In Lua, we don't want to return an error immediately if msg is NULL,
++             * because the caller might want to try another conversion (e.g. long double). */
+         } else {
+             addReplyError(c,"value is not an integer or out of range");
+         }
+diff --git a/src/t_hash.c b/src/t_hash.c
+index ff8746384..70e681a16 100644
+--- a/src/t_hash.c
++++ b/src/t_hash.c
+@@ -635,8 +635,17 @@ void hincrbyCommand(client *c) {
+     sds new;
+     unsigned char *vstr;
+     unsigned int vlen;
++    long double ldincr;
++
++    if (getLongLongFromObjectOrReply(c,c->argv[3],&incr,NULL) != C_OK) {
++        if (getLongDoubleFromObjectOrReply(c,c->argv[3],&ldincr,NULL) != C_OK) return;
++        if (ldincr != (long double)((long long)ldincr)) {
++            addReplyError(c,"ERR value is not an integer or out of range");
++            return;
++        }
++        incr = (long long)ldincr;
++    }
+ 
+-    if (getLongLongFromObjectOrReply(c,c->argv[3],&incr,NULL) != C_OK) return;
+     if ((o = hashTypeLookupWriteOrCreate(c,c->argv[1])) == NULL) return;
+     if (hashTypeGetValue(o,c->argv[2]->ptr,&vstr,&vlen,&value) == C_OK) {
+         if (vstr) {
+diff --git a/test.c b/test.c
+new file mode 100644
+index 000000000..2c99a5277
+--- /dev/null
++++ b/test.c
+@@ -0,0 +1 @@
++int main(){return 0;}
+diff --git a/tests/unit/type/incr.tcl b/tests/unit/type/incr.tcl
+index 4bc130bcb..5c78a7a1c 100644
+--- a/tests/unit/type/incr.tcl
++++ b/tests/unit/type/incr.tcl
+@@ -194,6 +194,21 @@ start_server {tags {"incr"}} {
+         assert_error "*value is not a valid float*" {r incrbyfloat mykeyincr v}
+     }
+ 
++    test {HINCRBY via Lua with numeric values like n * 100,000,000} {
++        r hset myhash field 0
++        # The issue is that tonumber(ARGV[1]) in Lua might return a float 
++        # representation that HINCRBY fails to parse as an integer.
++        # We test with 1,000,000,000 (10^9)
++        r eval "return redis.call('HINCRBY', 'myhash', 'field', tonumber('1000000000'))"
++        r hget myhash field
++    } {1000000000}
++
++    test {HINCRBY via Lua with string ARGV[1]} {
++        r hset myhash field 0
++        r eval "return redis.call('HINCRBY', 'myhash', 'field', '1000000000')"
++        r hget myhash field
++    } {1000000000}
++
+     foreach cmd {"incr" "decr" "incrby" "decrby"} {
+         test "$cmd operation should update encoding from raw to int" {
+             set res {}
+diff --git a/tests/unit/type/incr_lua.tcl b/tests/unit/type/incr_lua.tcl
+new file mode 100644
+index 000000000..ec4165cf9
+--- /dev/null
++++ b/tests/unit/type/incr_lua.tcl
+@@ -0,0 +1,63 @@
++start_server {tags {unit,type}} {
++    user_script_key "lua_incr_test_key"
++    user_script_key_str "lua_incr_test_key_str"
++
++    test {HINCRBY via Lua with large numbers} {
++        set key $user_script_key
++        set field "field1"
++        
++        # Test values that are multiples of 100,000,000
++        # These are known to cause issues in Redis 7.2 when using tonumber() in Lua
++        set values {1000000000}
++        
++        foreach val $values {
++            # Use tonumber() in Lua as described in the issue
++            # The issue describes: redis.call("HINCRBY", "hash", "field", tonumber(ARGV[1]))
++            # In our EVAL: KEYS[1] is key, ARGV[1] is field, ARGV[2] is the number
++            set script "return redis.call('HINCRBY', KEYS[1], ARGV[1], tonumber(ARGV[2]))"
++            
++            # First, set the field to 0 to make increment predictable
++            redisCommand HSET $key $field 0
++            
++            # Execute the script
++            set result [redisCommand EVAL $script 1 $key $field $val]
++            
++            assert_equal $val $result
++        }
++        
++        redisCommand DEL $key
++    }
++
++    test {HINCRBY via Lua with string arguments (no tonumber)} {
++        set key $user_script_key_str
++        set field "field1"
++        
++        set values {1000000000 1100000000 1200000000}
++        
++        foreach val $values {
++            # Use the value directly as a string (no tonumber)
++            set script "return redis.call('HINCRBY', KEYS[1], ARGV[1], ARGV[2])"
++            
++            redisCommand HSET $key $field 0
++            
++            set result [redisCommand EVAL $script 1 $key $field $val]
++            
++            assert_equal $val $result
++        }
++        
++        redisCommand DEL $key
++    }
++
++    test {Direct HINCRBY with large numbers} {
++        set key "direct_incr_key"
++        set field "field1"
++        set val 1000000000
++        
++        redisCommand HSET $key $field 0
++        redisCommand HINCRBY $key $field $val
++        set result [redisCommand HGET $key $field]
++        assert_equal $val $result
++        
++        redisCommand DEL $key
++    }
++}

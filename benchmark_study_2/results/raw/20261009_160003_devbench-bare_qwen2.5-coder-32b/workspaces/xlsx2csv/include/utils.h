@@ -1,0 +1,16 @@
+#ifndef UTILS_H
+#define UTILS_H
+
+#include <string>
+#include <utility>
+#include <cstdint>
+
+namespace xlsx2csv {
+
+std::uint32_t string_to_idx(const std::string& r_string);
+std::pair<std::uint32_t, std::uint32_t> string_to_row_column(const std::string& row_column_string);
+std::string strip(std::string raw_string);
+
+} // namespace xlsx2csv
+
+#endif // UTILS_H

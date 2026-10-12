@@ -1,0 +1,16 @@
+{
+ "id": "ap_python_transpose",
+ "family": "ap",
+ "source": "aider_polyglot",
+ "repo": "transpose",
+ "lang": "python",
+ "workspace": "workspaces/ap_python_transpose",
+ "task": "請照 `.docs/instructions.md` 的說明完成 `transpose.py`（目前只有空的骨架）。測試在 `transpose_test.py`，要全部通過；測試是對的，不要修改測試。",
+ "impl_files": [
+  "transpose.py"
+ ],
+ "test_files": [
+  "transpose_test.py"
+ ],
+ "python": "devbench_venv"
+}

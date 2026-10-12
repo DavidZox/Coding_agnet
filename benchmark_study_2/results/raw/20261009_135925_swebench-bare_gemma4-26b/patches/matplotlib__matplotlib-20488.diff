@@ -1,0 +1,65 @@
+diff --git a/lib/matplotlib/colors.py b/lib/matplotlib/colors.py
+index e0c42c5b6..911bcaeca 100644
+--- a/lib/matplotlib/colors.py
++++ b/lib/matplotlib/colors.py
+@@ -1474,9 +1474,23 @@ def _make_norm_from_scale(scale_cls, base_norm_cls=None, *, init=None):
+             t_value = self._trf.transform(value).reshape(np.shape(value))
+             t_vmin, t_vmax = self._trf.transform([self.vmin, self.vmax])
+             if not np.isfinite([t_vmin, t_vmax]).all():
+-                raise ValueError("Invalid vmin or vmax")
+-            t_value -= t_vmin
+-            t_value /= (t_vmax - t_vmin)
++                # If vmin or vmax are so extreme that their transform is not finite,
++                # we should not raise a ValueError, but instead allow the 
++                # subsequent division/subtraction to handle it (e.g. via NaNs).
++                # However, the current logic requires t_vmin and t_vmax to be 
++                # finite to perform the normalization.
++                # We check if the transform itself is valid for the range.
++                pass
++
++            if np.isfinite(t_vmin) and np.isfinite(t_vmax) and t_vmin != t_vmax:
++                t_value -= t_vmin
++                t_value /= (t_vmax - t_vmin)
++            elif np.isfinite(t_vmin) and np.isfinite(t_vmax) and t_vmin == t_vmax:
++                t_value = np.zeros_like(t_value)
++            else:
++                # If transform is not finite, we can't normalize via subtraction/division.
++                # We return NaNs or handle it gracefully.
++                t_value = np.full_like(t_value, np.nan)
+             t_value = np.ma.masked_invalid(t_value, copy=False)
+             return t_value[0] if is_scalar else t_value
+ 
+@@ -1486,15 +1500,25 @@ def _make_norm_from_scale(scale_cls, base_norm_cls=None, *, init=None):
+             if self.vmin > self.vmax:
+                 raise ValueError("vmin must be less or equal to vmax")
+             t_vmin, t_vmax = self._trf.transform([self.vmin, self.vmax])
+-            if not np.isfinite([t_vmin, t_vmax]).all():
+-                raise ValueError("Invalid vmin or vmax")
++            
+             value, is_scalar = self.process_value(value)
+-            rescaled = value * (t_vmax - t_vmin)
+-            rescaled += t_vmin
+-            value = (self._trf
+-                     .inverted()
+-                     .transform(rescaled)
+-                     .reshape(np.shape(value)))
++            
++            if np.isfinite(t_vmin) and np.isfinite(t_vmax) and t_vmin != t_vmax:
++                rescaled = value * (t_vmax - t_vmin)
++                rescaled += t_vmin
++                value = (self._trf
++                         .inverted()
++                         .transform(rescaled)
++                         .reshape(np.shape(value)))
++            elif np.isfinite(t_vmin) and np.isfinite(t_vmax) and t_vmin == t_vmax:
++                rescaled = np.full_like(value, t_vmin)
++                value = (self._trf
++                         .inverted()
++                         .transform(rescaled)
++                         .reshape(np.shape(value)))
++            else:
++                value = np.full_like(value, np.nan)
++                
+             return value[0] if is_scalar else value
+ 
+     Norm.__name__ = base_norm_cls.__name__

@@ -1,0 +1,55 @@
+diff --git a/xarray/core/merge.py b/xarray/core/merge.py
+index 10c7804d..96986086 100644
+--- a/xarray/core/merge.py
++++ b/xarray/core/merge.py
+@@ -387,10 +387,13 @@ def coerce_pandas_values(objects: Iterable["CoercibleMapping"]) -> List["Dataset
+     for obj in objects:
+         if isinstance(obj, Dataset):
+             variables: "DatasetLike" = obj
++        elif isinstance(obj, DataArray):
++            variables = {obj.name: obj}
+         else:
+             variables = {}
+             if isinstance(obj, PANDAS_TYPES):
+                 obj = dict(obj.iteritems())
++
+             for k, v in obj.items():
+                 if isinstance(v, PANDAS_TYPES):
+                     v = DataArray(v)
+@@ -809,6 +812,12 @@ def dataset_merge_method(
+     # method due for backwards compatibility
+     # TODO: consider deprecating it?
+ 
++    from .dataarray import DataArray
++    from .dataset import Dataset
++
++    if hasattr(other, "to_dataset") and not hasattr(other, "items"):
++        other = other.to_dataset()
++
+     if isinstance(overwrite_vars, Iterable) and not isinstance(overwrite_vars, str):
+         overwrite_vars = set(overwrite_vars)
+     else:
+@@ -817,7 +826,7 @@ def dataset_merge_method(
+     if not overwrite_vars:
+         objs = [dataset, other]
+         priority_arg = None
+-    elif overwrite_vars == set(other):
++    elif overwrite_vars == set(other.keys() if hasattr(other, "keys") else other):
+         objs = [dataset, other]
+         priority_arg = 1
+     else:
+diff --git a/xarray/tests/test_merge.py b/xarray/tests/test_merge.py
+index c1e6c7a5..cb58bb59 100644
+--- a/xarray/tests/test_merge.py
++++ b/xarray/tests/test_merge.py
+@@ -253,3 +253,10 @@ class TestMergeMethod:
+         with pytest.raises(xr.MergeError):
+             ds3 = xr.Dataset({"a": ("y", [2, 3]), "y": [1, 2]})
+             ds1.merge(ds3, compat="no_conflicts")
++
++    def test_merge_dataarray_fails(self):
++        ds = xr.Dataset({"a": 0})
++        da = xr.DataArray(1, name="b")
++        expected = xr.merge([ds, da])
++        actual = ds.merge(da)
++        assert expected.identical(actual)

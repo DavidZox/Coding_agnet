@@ -1,0 +1,990 @@
+{
+ "repo": "hone",
+ "seed": 20261010,
+ "official_tests": 7,
+ "mutants": [
+  {
+   "id": "hone#m0",
+   "file": "hone/hone.py",
+   "line": 72,
+   "desc": "條件取反",
+   "point": {
+    "node": 343,
+    "kind": "neg",
+    "line": 72,
+    "desc": "條件取反"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_csv_utils.AcceptanceTestCSVtoJSON::test_full_conversion_quotes_test"
+   ]
+  },
+  {
+   "id": "hone#m1",
+   "file": "hone/utils/csv_utils.py",
+   "line": 30,
+   "desc": "'r' → ''",
+   "point": {
+    "node": 44,
+    "kind": "const",
+    "line": 30,
+    "desc": "'r' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "hone#m2",
+   "file": "hone/utils/json_utils.py",
+   "line": 18,
+   "desc": "True → False",
+   "point": {
+    "node": 58,
+    "kind": "const",
+    "line": 18,
+    "desc": "True → False"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "hone#m3",
+   "file": "hone/hone.py",
+   "line": 140,
+   "desc": "-= → +=",
+   "point": {
+    "node": 221,
+    "kind": "aug",
+    "line": 140,
+    "desc": "-= → +="
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_csv_utils.AcceptanceTestCSVtoJSON::test_full_conversion_comma_test"
+   ]
+  },
+  {
+   "id": "hone#m4",
+   "file": "hone/utils/csv_utils.py",
+   "line": 31,
+   "desc": "'utf-8-sig' → ''",
+   "point": {
+    "node": 123,
+    "kind": "const",
+    "line": 31,
+    "desc": "'utf-8-sig' → ''"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_csv_utils.AcceptanceTestCSVtoJSON::test_full_conversion_comma_test"
+   ]
+  },
+  {
+   "id": "hone#m5",
+   "file": "hone/utils/json_utils.py",
+   "line": 14,
+   "desc": "and ↔ or",
+   "point": {
+    "node": 16,
+    "kind": "bool",
+    "line": 14,
+    "desc": "and ↔ or"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "hone#m6",
+   "file": "hone/hone.py",
+   "line": 125,
+   "desc": "\"']\" → ''",
+   "point": {
+    "node": 773,
+    "kind": "const",
+    "line": 125,
+    "desc": "\"']\" → ''"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_csv_utils.AcceptanceTestCSVtoJSON::test_full_conversion_comma_test"
+   ]
+  },
+  {
+   "id": "hone#m7",
+   "file": "hone/utils/csv_utils.py",
+   "line": 18,
+   "desc": "return … → return None",
+   "point": {
+    "node": 18,
+    "kind": "ret",
+    "line": 18,
+    "desc": "return … → return None"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_csv_utils.AcceptanceTestCSVtoJSON::test_full_conversion_comma_test"
+   ]
+  },
+  {
+   "id": "hone#m8",
+   "file": "hone/utils/json_utils.py",
+   "line": 14,
+   "desc": "條件取反",
+   "point": {
+    "node": 13,
+    "kind": "neg",
+    "line": 14,
+    "desc": "條件取反"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "hone#m9",
+   "file": "hone/hone.py",
+   "line": 83,
+   "desc": "return … → return None",
+   "point": {
+    "node": 68,
+    "kind": "ret",
+    "line": 83,
+    "desc": "return … → return None"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_csv_utils.AcceptanceTestCSVtoJSON::test_full_conversion_comma_test"
+   ]
+  },
+  {
+   "id": "hone#m10",
+   "file": "hone/utils/csv_utils.py",
+   "line": 25,
+   "desc": "1 → 0",
+   "point": {
+    "node": 118,
+    "kind": "const",
+    "line": 25,
+    "desc": "1 → 0"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_csv_utils.AcceptanceTestCSVtoJSON::test_full_conversion_comma_test"
+   ]
+  },
+  {
+   "id": "hone#m11",
+   "file": "hone/utils/json_utils.py",
+   "line": 18,
+   "desc": "2 → 3",
+   "point": {
+    "node": 57,
+    "kind": "const",
+    "line": 18,
+    "desc": "2 → 3"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "hone#m12",
+   "file": "hone/hone.py",
+   "line": 152,
+   "desc": "條件取反",
+   "point": {
+    "node": 233,
+    "kind": "neg",
+    "line": 152,
+    "desc": "條件取反"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "hone#m13",
+   "file": "hone/utils/csv_utils.py",
+   "line": 26,
+   "desc": "return … → return None",
+   "point": {
+    "node": 21,
+    "kind": "ret",
+    "line": 26,
+    "desc": "return … → return None"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_csv_utils.AcceptanceTestCSVtoJSON::test_full_conversion_comma_test"
+   ]
+  },
+  {
+   "id": "hone#m14",
+   "file": "hone/utils/json_utils.py",
+   "line": 17,
+   "desc": "'w' → ''",
+   "point": {
+    "node": 41,
+    "kind": "const",
+    "line": 17,
+    "desc": "'w' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "hone#m15",
+   "file": "hone/hone.py",
+   "line": 42,
+   "desc": "+= → -=",
+   "point": {
+    "node": 312,
+    "kind": "aug",
+    "line": 42,
+    "desc": "+= → -="
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_csv_utils.AcceptanceTestCSVtoJSON::test_full_conversion_comma_test"
+   ]
+  },
+  {
+   "id": "hone#m16",
+   "file": "hone/hone.py",
+   "line": 121,
+   "desc": "is → is not",
+   "point": {
+    "node": 381,
+    "kind": "cmp",
+    "sub": 0,
+    "line": 121,
+    "desc": "is → is not"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_csv_utils.AcceptanceTestCSVtoJSON::test_full_conversion_comma_test"
+   ]
+  },
+  {
+   "id": "hone#m17",
+   "file": "hone/hone.py",
+   "line": 36,
+   "desc": "< → <=",
+   "point": {
+    "node": 306,
+    "kind": "cmp",
+    "sub": 0,
+    "line": 36,
+    "desc": "< → <="
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_csv_utils.AcceptanceTestCSVtoJSON::test_full_conversion_comma_test"
+   ]
+  },
+  {
+   "id": "hone#m18",
+   "file": "hone/hone.py",
+   "line": 77,
+   "desc": "條件取反",
+   "point": {
+    "node": 345,
+    "kind": "neg",
+    "line": 77,
+    "desc": "條件取反"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_csv_utils.AcceptanceTestCSVtoJSON::test_full_conversion_comma_test"
+   ]
+  },
+  {
+   "id": "hone#m19",
+   "file": "hone/hone.py",
+   "line": 148,
+   "desc": "1 → 0",
+   "point": {
+    "node": 791,
+    "kind": "const",
+    "line": 148,
+    "desc": "1 → 0"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "hone#m20",
+   "file": "hone/hone.py",
+   "line": 81,
+   "desc": "條件取反",
+   "point": {
+    "node": 182,
+    "kind": "neg",
+    "line": 81,
+    "desc": "條件取反"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_csv_utils.AcceptanceTestCSVtoJSON::test_full_conversion_comma_test"
+   ]
+  },
+  {
+   "id": "hone#m21",
+   "file": "hone/hone.py",
+   "line": 67,
+   "desc": "條件取反",
+   "point": {
+    "node": 179,
+    "kind": "neg",
+    "line": 67,
+    "desc": "條件取反"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_csv_utils.AcceptanceTestCSVtoJSON::test_full_conversion_comma_test"
+   ]
+  },
+  {
+   "id": "hone#m22",
+   "file": "hone/hone.py",
+   "line": 108,
+   "desc": "not in → in",
+   "point": {
+    "node": 370,
+    "kind": "cmp",
+    "sub": 0,
+    "line": 108,
+    "desc": "not in → in"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_csv_utils.AcceptanceTestCSVtoJSON::test_full_conversion_quotes_test"
+   ]
+  },
+  {
+   "id": "hone#m23",
+   "file": "hone/hone.py",
+   "line": 162,
+   "desc": "1 → 0",
+   "point": {
+    "node": 424,
+    "kind": "const",
+    "line": 162,
+    "desc": "1 → 0"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_csv_utils.AcceptanceTestCSVtoJSON::test_full_conversion_comma_test"
+   ]
+  },
+  {
+   "id": "hone#m24",
+   "file": "hone/hone.py",
+   "line": 20,
+   "desc": "條件取反",
+   "point": {
+    "node": 44,
+    "kind": "neg",
+    "line": 20,
+    "desc": "條件取反"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_csv_utils.AcceptanceTestCSVtoJSON::test_full_conversion_comma_test"
+   ]
+  },
+  {
+   "id": "hone#m25",
+   "file": "hone/hone.py",
+   "line": 93,
+   "desc": "True → False",
+   "point": {
+    "node": 548,
+    "kind": "const",
+    "line": 93,
+    "desc": "True → False"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "hone#m26",
+   "file": "hone/hone.py",
+   "line": 191,
+   "desc": "\"'\" → ''",
+   "point": {
+    "node": 450,
+    "kind": "const",
+    "line": 191,
+    "desc": "\"'\" → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "hone#m27",
+   "file": "hone/hone.py",
+   "line": 167,
+   "desc": "-= → +=",
+   "point": {
+    "node": 243,
+    "kind": "aug",
+    "line": 167,
+    "desc": "-= → +="
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "hone#m28",
+   "file": "hone/hone.py",
+   "line": 103,
+   "desc": "and ↔ or",
+   "point": {
+    "node": 737,
+    "kind": "bool",
+    "line": 103,
+    "desc": "and ↔ or"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "hone#m29",
+   "file": "hone/hone.py",
+   "line": 153,
+   "desc": "return … → return None",
+   "point": {
+    "node": 416,
+    "kind": "ret",
+    "line": 153,
+    "desc": "return … → return None"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_csv_utils.AcceptanceTestCSVtoJSON::test_full_conversion_quotes_test"
+   ]
+  },
+  {
+   "id": "hone#m30",
+   "file": "hone/hone.py",
+   "line": 40,
+   "desc": "'json_row' → ''",
+   "point": {
+    "node": 674,
+    "kind": "const",
+    "line": 40,
+    "desc": "'json_row' → ''"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_csv_utils.AcceptanceTestCSVtoJSON::test_full_conversion_comma_test"
+   ]
+  },
+  {
+   "id": "hone#m31",
+   "file": "hone/hone.py",
+   "line": 108,
+   "desc": "條件取反",
+   "point": {
+    "node": 198,
+    "kind": "neg",
+    "line": 108,
+    "desc": "條件取反"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_csv_utils.AcceptanceTestCSVtoJSON::test_full_conversion_quotes_test"
+   ]
+  },
+  {
+   "id": "hone#m32",
+   "file": "hone/hone.py",
+   "line": 138,
+   "desc": "0 → 1",
+   "point": {
+    "node": 999,
+    "kind": "const",
+    "line": 138,
+    "desc": "0 → 1"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_csv_utils.AcceptanceTestCSVtoJSON::test_full_conversion_quotes_test"
+   ]
+  },
+  {
+   "id": "hone#m33",
+   "file": "hone/hone.py",
+   "line": 103,
+   "desc": "條件取反",
+   "point": {
+    "node": 563,
+    "kind": "neg",
+    "line": 103,
+    "desc": "條件取反"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "hone#m34",
+   "file": "hone/hone.py",
+   "line": 176,
+   "desc": "條件取反",
+   "point": {
+    "node": 249,
+    "kind": "neg",
+    "line": 176,
+    "desc": "條件取反"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_csv_utils.AcceptanceTestCSVtoJSON::test_full_conversion_quotes_test"
+   ]
+  },
+  {
+   "id": "hone#m35",
+   "file": "hone/hone.py",
+   "line": 168,
+   "desc": "return … → return None",
+   "point": {
+    "node": 97,
+    "kind": "ret",
+    "line": 168,
+    "desc": "return … → return None"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_csv_utils.AcceptanceTestCSVtoJSON::test_full_conversion_comma_test"
+   ]
+  },
+  {
+   "id": "hone#m36",
+   "file": "hone/hone.py",
+   "line": 155,
+   "desc": "return … → return None",
+   "point": {
+    "node": 92,
+    "kind": "ret",
+    "line": 155,
+    "desc": "return … → return None"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "hone#m37",
+   "file": "hone/hone.py",
+   "line": 67,
+   "desc": "in → not in",
+   "point": {
+    "node": 336,
+    "kind": "cmp",
+    "sub": 0,
+    "line": 67,
+    "desc": "in → not in"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_csv_utils.AcceptanceTestCSVtoJSON::test_full_conversion_comma_test"
+   ]
+  },
+  {
+   "id": "hone#m38",
+   "file": "hone/hone.py",
+   "line": 46,
+   "desc": "'\\n    Get generated JSON schema.\\n    ' → ''",
+   "point": {
+    "node": 54,
+    "kind": "const",
+    "line": 46,
+    "desc": "'\\n    Get generated JSON schema.\\n    ' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "hone#m39",
+   "file": "hone/hone.py",
+   "line": 122,
+   "desc": "\"['\" → ''",
+   "point": {
+    "node": 898,
+    "kind": "const",
+    "line": 122,
+    "desc": "\"['\" → ''"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_csv_utils.AcceptanceTestCSVtoJSON::test_full_conversion_quotes_test"
+   ]
+  },
+  {
+   "id": "hone#m40",
+   "file": "hone/hone.py",
+   "line": 5,
+   "desc": "',' → ''",
+   "point": {
+    "node": 112,
+    "kind": "const",
+    "line": 5,
+    "desc": "',' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "hone#m41",
+   "file": "hone/hone.py",
+   "line": 36,
+   "desc": "條件取反",
+   "point": {
+    "node": 155,
+    "kind": "neg",
+    "line": 36,
+    "desc": "條件取反"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_csv_utils.AcceptanceTestCSVtoJSON::test_full_conversion_comma_test"
+   ]
+  },
+  {
+   "id": "hone#m42",
+   "file": "hone/hone.py",
+   "line": 75,
+   "desc": "條件取反",
+   "point": {
+    "node": 534,
+    "kind": "neg",
+    "line": 75,
+    "desc": "條件取反"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_csv_utils.AcceptanceTestCSVtoJSON::test_full_conversion_quotes_test"
+   ]
+  },
+  {
+   "id": "hone#m43",
+   "file": "hone/hone.py",
+   "line": 152,
+   "desc": "not in → in",
+   "point": {
+    "node": 415,
+    "kind": "cmp",
+    "sub": 0,
+    "line": 152,
+    "desc": "not in → in"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "hone#m44",
+   "file": "hone/hone.py",
+   "line": 121,
+   "desc": "條件取反",
+   "point": {
+    "node": 210,
+    "kind": "neg",
+    "line": 121,
+    "desc": "條件取反"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_csv_utils.AcceptanceTestCSVtoJSON::test_full_conversion_comma_test"
+   ]
+  },
+  {
+   "id": "hone#m45",
+   "file": "hone/hone.py",
+   "line": 5,
+   "desc": "'_' → ''",
+   "point": {
+    "node": 113,
+    "kind": "const",
+    "line": 5,
+    "desc": "'_' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "hone#m46",
+   "file": "hone/hone.py",
+   "line": 176,
+   "desc": "in → not in",
+   "point": {
+    "node": 438,
+    "kind": "cmp",
+    "sub": 0,
+    "line": 176,
+    "desc": "in → not in"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_csv_utils.AcceptanceTestCSVtoJSON::test_full_conversion_quotes_test"
+   ]
+  },
+  {
+   "id": "hone#m47",
+   "file": "hone/hone.py",
+   "line": 167,
+   "desc": "1 → 0",
+   "point": {
+    "node": 434,
+    "kind": "const",
+    "line": 167,
+    "desc": "1 → 0"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "hone#m48",
+   "file": "hone/hone.py",
+   "line": 166,
+   "desc": "0 → 1",
+   "point": {
+    "node": 927,
+    "kind": "const",
+    "line": 166,
+    "desc": "0 → 1"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_csv_utils.AcceptanceTestCSVtoJSON::test_full_conversion_quotes_test"
+   ]
+  },
+  {
+   "id": "hone#m49",
+   "file": "hone/hone.py",
+   "line": 42,
+   "desc": "1 → 0",
+   "point": {
+    "node": 502,
+    "kind": "const",
+    "line": 42,
+    "desc": "1 → 0"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "hone#m50",
+   "file": "hone/hone.py",
+   "line": 135,
+   "desc": "條件取反",
+   "point": {
+    "node": 85,
+    "kind": "neg",
+    "line": 135,
+    "desc": "條件取反"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_csv_utils.AcceptanceTestCSVtoJSON::test_full_conversion_quotes_test"
+   ]
+  },
+  {
+   "id": "hone#m51",
+   "file": "hone/hone.py",
+   "line": 95,
+   "desc": "in → not in",
+   "point": {
+    "node": 360,
+    "kind": "cmp",
+    "sub": 0,
+    "line": 95,
+    "desc": "in → not in"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_csv_utils.AcceptanceTestCSVtoJSON::test_full_conversion_quotes_test"
+   ]
+  },
+  {
+   "id": "hone#m52",
+   "file": "hone/hone.py",
+   "line": 154,
+   "desc": "1 → 0",
+   "point": {
+    "node": 419,
+    "kind": "const",
+    "line": 154,
+    "desc": "1 → 0"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "hone#m53",
+   "file": "hone/hone.py",
+   "line": 163,
+   "desc": ">= → >",
+   "point": {
+    "node": 240,
+    "kind": "cmp",
+    "sub": 0,
+    "line": 163,
+    "desc": ">= → >"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "hone#m54",
+   "file": "hone/hone.py",
+   "line": 162,
+   "desc": "- → +",
+   "point": {
+    "node": 239,
+    "kind": "bin",
+    "line": 162,
+    "desc": "- → +"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_csv_utils.AcceptanceTestCSVtoJSON::test_full_conversion_comma_test"
+   ]
+  },
+  {
+   "id": "hone#m55",
+   "file": "hone/hone.py",
+   "line": 44,
+   "desc": "return … → return None",
+   "point": {
+    "node": 53,
+    "kind": "ret",
+    "line": 44,
+    "desc": "return … → return None"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_csv_utils.AcceptanceTestCSVtoJSON::test_full_conversion_comma_test"
+   ]
+  },
+  {
+   "id": "hone#m56",
+   "file": "hone/hone.py",
+   "line": 75,
+   "desc": "and ↔ or",
+   "point": {
+    "node": 706,
+    "kind": "bool",
+    "line": 75,
+    "desc": "and ↔ or"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_csv_utils.AcceptanceTestCSVtoJSON::test_full_conversion_comma_test"
+   ]
+  },
+  {
+   "id": "hone#m57",
+   "file": "hone/hone.py",
+   "line": 134,
+   "desc": "- → +",
+   "point": {
+    "node": 217,
+    "kind": "bin",
+    "line": 134,
+    "desc": "- → +"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_csv_utils.AcceptanceTestCSVtoJSON::test_full_conversion_comma_test"
+   ]
+  },
+  {
+   "id": "hone#m58",
+   "file": "hone/hone.py",
+   "line": 177,
+   "desc": "return … → return None",
+   "point": {
+    "node": 439,
+    "kind": "ret",
+    "line": 177,
+    "desc": "return … → return None"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_csv_utils.AcceptanceTestCSVtoJSON::test_full_conversion_quotes_test"
+   ]
+  },
+  {
+   "id": "hone#m59",
+   "file": "hone/hone.py",
+   "line": 100,
+   "desc": "in → not in",
+   "point": {
+    "node": 559,
+    "kind": "cmp",
+    "sub": 0,
+    "line": 100,
+    "desc": "in → not in"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  }
+ ]
+}

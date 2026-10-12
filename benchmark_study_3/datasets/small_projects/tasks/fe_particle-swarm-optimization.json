@@ -1,0 +1,19 @@
+{
+ "id": "fe_particle-swarm-optimization",
+ "family": "fe",
+ "source": "devbench",
+ "repo": "particle-swarm-optimization",
+ "lang": "python",
+ "workspace": "workspaces/fe_particle-swarm-optimization",
+ "task": "目前 `pso/pso_simple.py` 的 `minimize()` 每一輪只會評估粒子、更新最佳解，粒子本身完全不會移動，所以最佳化沒有任何進展。請補上粒子的移動：\n\n1. `Particle.update_velocity(pos_best_g)`：依標準 PSO 公式就地更新每一維的速度：`v = w*v + c1*r1*(個體最佳位置 - 目前位置) + c2*r2*(全域最佳位置 - 目前位置)`，慣性權重 `w = 0.5`、認知常數 `c1 = 1`、社會常數 `c2 = 2`，`r1`、`r2` 是每一維各自抽的 [0, 1) 均勻亂數。速度、目前位置、個體最佳位置分別是 `self.velocity_i`、`self.position_i`、`self.pos_best_i`（都是 list），`pos_best_g` 是全域最佳位置。\n2. `Particle.update_position(bounds)`：每一維 `位置 += 速度`，然後夾回邊界內：`bounds` 是每一維一個 `(最小值, 最大值)`，超過最大值就設成最大值、低於最小值就設成最小值。例：位置 `[2, 3]`、速度 `[0.5, 0.5]`、邊界 `[(-10, 10), (-10, 10)]`，更新後位置是 `[2.5, 3.5]`。\n3. `minimize()`：每一輪在所有粒子都評估完、全域最佳更新之後，對每個粒子先呼叫 `update_velocity(pos_best_g)`、再呼叫 `update_position(bounds)`。\n\n這兩個方法要能直接在 `Particle` 物件上呼叫（不必先跑過 `minimize`；維度數就是位置的長度）。完成後 `minimize(sphere, [5, 5], [(-10, 10), (-10, 10)], num_particles=15, maxiter=30)` 找到的解應該明顯比起點好。\n\n要求：照這個專案現有的寫法與檔案結構實作（可能要改好幾個檔案）；同時在 `unit_tests/` 補上這個功能的單元測試。既有的測試（`python -m pytest -q unit_tests`）要維持全部通過，不要修改既有的測試。",
+ "test_dir": "unit_tests",
+ "feature": "粒子移動：速度與位置更新",
+ "expected_files": [
+  "pso/pso_simple.py"
+ ],
+ "ref_files": [
+  "pso/pso_simple.py",
+  "unit_tests/test_pso_simple.py"
+ ],
+ "python": "devbench_venv"
+}

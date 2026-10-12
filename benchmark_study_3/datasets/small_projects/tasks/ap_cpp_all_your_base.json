@@ -1,0 +1,18 @@
+{
+ "id": "ap_cpp_all_your_base",
+ "family": "ap",
+ "source": "aider_polyglot",
+ "repo": "all-your-base",
+ "lang": "cpp",
+ "workspace": "workspaces/ap_cpp_all_your_base",
+ "task": "請照 `.docs/introduction.md`、`.docs/instructions.md` 的說明完成 `all_your_base.h`、`all_your_base.cpp`（目前只有空的骨架）。測試在 `all_your_base_test.cpp`，要全部通過；測試是對的，不要修改測試。",
+ "impl_files": [
+  "all_your_base.h",
+  "all_your_base.cpp"
+ ],
+ "test_files": [
+  "all_your_base_test.cpp",
+  "test"
+ ],
+ "python": "devbench_venv"
+}

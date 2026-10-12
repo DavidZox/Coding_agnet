@@ -1,0 +1,977 @@
+{
+ "repo": "readtime",
+ "seed": 20261010,
+ "official_tests": 8,
+ "mutants": [
+  {
+   "id": "readtime#m0",
+   "file": "readtime/api.py",
+   "line": 43,
+   "desc": "265 → 266",
+   "point": {
+    "node": 29,
+    "kind": "const",
+    "line": 43,
+    "desc": "265 → 266"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_custom_wpm.BaseTestCase::test_custom_wpm_markdown"
+   ]
+  },
+  {
+   "id": "readtime#m1",
+   "file": "readtime/result.py",
+   "line": 61,
+   "desc": "' min' → ''",
+   "point": {
+    "node": 120,
+    "kind": "const",
+    "line": 61,
+    "desc": "' min' → ''"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_check_data.BaseTestCase::test_plain_text_empty"
+   ]
+  },
+  {
+   "id": "readtime#m2",
+   "file": "readtime/utils.py",
+   "line": 49,
+   "desc": "== → !=",
+   "point": {
+    "node": 108,
+    "kind": "cmp",
+    "sub": 0,
+    "line": 49,
+    "desc": "== → !="
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_check_data.BaseTestCase::test_invalid_format"
+   ]
+  },
+  {
+   "id": "readtime#m3",
+   "file": "readtime/api.py",
+   "line": 15,
+   "desc": "265 → 266",
+   "point": {
+    "node": 19,
+    "kind": "const",
+    "line": 15,
+    "desc": "265 → 266"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_custom_wpm.BaseTestCase::test_custom_wpm"
+   ]
+  },
+  {
+   "id": "readtime#m4",
+   "file": "readtime/result.py",
+   "line": 97,
+   "desc": "return … → return None",
+   "point": {
+    "node": 95,
+    "kind": "ret",
+    "line": 97,
+    "desc": "return … → return None"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "readtime#m5",
+   "file": "readtime/utils.py",
+   "line": 55,
+   "desc": "條件取反",
+   "point": {
+    "node": 113,
+    "kind": "neg",
+    "line": 55,
+    "desc": "條件取反"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_check_data.BaseTestCase::test_invalid_format"
+   ]
+  },
+  {
+   "id": "readtime#m6",
+   "file": "readtime/api.py",
+   "line": 54,
+   "desc": "'markdown' → ''",
+   "point": {
+    "node": 57,
+    "kind": "const",
+    "line": 54,
+    "desc": "'markdown' → ''"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_custom_wpm.BaseTestCase::test_custom_wpm_markdown"
+   ]
+  },
+  {
+   "id": "readtime#m7",
+   "file": "readtime/result.py",
+   "line": 99,
+   "desc": "return … → return None",
+   "point": {
+    "node": 50,
+    "kind": "ret",
+    "line": 99,
+    "desc": "return … → return None"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "readtime#m8",
+   "file": "readtime/utils.py",
+   "line": 26,
+   "desc": "265 → 266",
+   "point": {
+    "node": 53,
+    "kind": "const",
+    "line": 26,
+    "desc": "265 → 266"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "readtime#m9",
+   "file": "readtime/api.py",
+   "line": 26,
+   "desc": "return … → return None",
+   "point": {
+    "node": 10,
+    "kind": "ret",
+    "line": 26,
+    "desc": "return … → return None"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_check_data.BaseTestCase::test_plain_text_empty"
+   ]
+  },
+  {
+   "id": "readtime#m10",
+   "file": "readtime/result.py",
+   "line": 39,
+   "desc": "return … → return None",
+   "point": {
+    "node": 31,
+    "kind": "ret",
+    "line": 39,
+    "desc": "return … → return None"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_check_data.BaseTestCase::test_plain_text_empty"
+   ]
+  },
+  {
+   "id": "readtime#m11",
+   "file": "readtime/utils.py",
+   "line": 23,
+   "desc": "'\\\\W+' → ''",
+   "point": {
+    "node": 48,
+    "kind": "const",
+    "line": 23,
+    "desc": "'\\\\W+' → ''"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_custom_wpm.BaseTestCase::test_custom_wpm"
+   ]
+  },
+  {
+   "id": "readtime#m12",
+   "file": "readtime/api.py",
+   "line": 54,
+   "desc": "return … → return None",
+   "point": {
+    "node": 16,
+    "kind": "ret",
+    "line": 54,
+    "desc": "return … → return None"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_custom_wpm.BaseTestCase::test_custom_wpm_markdown"
+   ]
+  },
+  {
+   "id": "readtime#m13",
+   "file": "readtime/result.py",
+   "line": 26,
+   "desc": "+ → -",
+   "point": {
+    "node": 63,
+    "kind": "bin",
+    "line": 26,
+    "desc": "+ → -"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_check_data.BaseTestCase::test_plain_text_empty"
+   ]
+  },
+  {
+   "id": "readtime#m14",
+   "file": "readtime/utils.py",
+   "line": 93,
+   "desc": "return … → return None",
+   "point": {
+    "node": 35,
+    "kind": "ret",
+    "line": 93,
+    "desc": "return … → return None"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_check_data.BaseTestCase::test_plain_text_empty"
+   ]
+  },
+  {
+   "id": "readtime#m15",
+   "file": "readtime/api.py",
+   "line": 29,
+   "desc": "265 → 266",
+   "point": {
+    "node": 24,
+    "kind": "const",
+    "line": 29,
+    "desc": "265 → 266"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_custom_wpm.BaseTestCase::test_custom_wpm_html"
+   ]
+  },
+  {
+   "id": "readtime#m16",
+   "file": "readtime/result.py",
+   "line": 72,
+   "desc": "and ↔ or",
+   "point": {
+    "node": 125,
+    "kind": "bool",
+    "line": 72,
+    "desc": "and ↔ or"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "readtime#m17",
+   "file": "readtime/utils.py",
+   "line": 124,
+   "desc": "True → False",
+   "point": {
+    "node": 324,
+    "kind": "const",
+    "line": 124,
+    "desc": "True → False"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "readtime#m18",
+   "file": "readtime/api.py",
+   "line": 40,
+   "desc": "return … → return None",
+   "point": {
+    "node": 13,
+    "kind": "ret",
+    "line": 40,
+    "desc": "return … → return None"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_custom_wpm.BaseTestCase::test_custom_wpm_html"
+   ]
+  },
+  {
+   "id": "readtime#m19",
+   "file": "readtime/result.py",
+   "line": 76,
+   "desc": "條件取反",
+   "point": {
+    "node": 87,
+    "kind": "neg",
+    "line": 76,
+    "desc": "條件取反"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "readtime#m20",
+   "file": "readtime/utils.py",
+   "line": 120,
+   "desc": "條件取反",
+   "point": {
+    "node": 91,
+    "kind": "neg",
+    "line": 120,
+    "desc": "條件取反"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "readtime#m21",
+   "file": "readtime/api.py",
+   "line": 40,
+   "desc": "'html' → ''",
+   "point": {
+    "node": 52,
+    "kind": "const",
+    "line": 40,
+    "desc": "'html' → ''"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_custom_wpm.BaseTestCase::test_custom_wpm_html"
+   ]
+  },
+  {
+   "id": "readtime#m22",
+   "file": "readtime/result.py",
+   "line": 26,
+   "desc": "return … → return None",
+   "point": {
+    "node": 26,
+    "kind": "ret",
+    "line": 26,
+    "desc": "return … → return None"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_check_data.BaseTestCase::test_plain_text_empty"
+   ]
+  },
+  {
+   "id": "readtime#m23",
+   "file": "readtime/utils.py",
+   "line": 84,
+   "desc": "* → /",
+   "point": {
+    "node": 123,
+    "kind": "bin",
+    "line": 84,
+    "desc": "* → /"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_custom_wpm.BaseTestCase::test_custom_wpm"
+   ]
+  },
+  {
+   "id": "readtime#m24",
+   "file": "readtime/api.py",
+   "line": 26,
+   "desc": "'text' → ''",
+   "point": {
+    "node": 47,
+    "kind": "const",
+    "line": 26,
+    "desc": "'text' → ''"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_check_data.BaseTestCase::test_plain_text_empty"
+   ]
+  },
+  {
+   "id": "readtime#m25",
+   "file": "readtime/result.py",
+   "line": 49,
+   "desc": "/ → *",
+   "point": {
+    "node": 113,
+    "kind": "bin",
+    "line": 49,
+    "desc": "/ → *"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_check_data.BaseTestCase::test_plain_text_empty"
+   ]
+  },
+  {
+   "id": "readtime#m26",
+   "file": "readtime/utils.py",
+   "line": 118,
+   "desc": "and ↔ or",
+   "point": {
+    "node": 155,
+    "kind": "bool",
+    "line": 118,
+    "desc": "and ↔ or"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "readtime#m27",
+   "file": "readtime/result.py",
+   "line": 74,
+   "desc": "'__' → ''",
+   "point": {
+    "node": 199,
+    "kind": "const",
+    "line": 74,
+    "desc": "'__' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "readtime#m28",
+   "file": "readtime/utils.py",
+   "line": 114,
+   "desc": "and ↔ or",
+   "point": {
+    "node": 150,
+    "kind": "bool",
+    "line": 114,
+    "desc": "and ↔ or"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "readtime#m29",
+   "file": "readtime/result.py",
+   "line": 61,
+   "desc": "return … → return None",
+   "point": {
+    "node": 41,
+    "kind": "ret",
+    "line": 61,
+    "desc": "return … → return None"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_check_data.BaseTestCase::test_plain_text_empty"
+   ]
+  },
+  {
+   "id": "readtime#m30",
+   "file": "readtime/utils.py",
+   "line": 55,
+   "desc": "== → !=",
+   "point": {
+    "node": 186,
+    "kind": "cmp",
+    "sub": 0,
+    "line": 55,
+    "desc": "== → !="
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_check_data.BaseTestCase::test_invalid_format"
+   ]
+  },
+  {
+   "id": "readtime#m31",
+   "file": "readtime/result.py",
+   "line": 72,
+   "desc": "is → is not",
+   "point": {
+    "node": 164,
+    "kind": "cmp",
+    "sub": 0,
+    "line": 72,
+    "desc": "is → is not"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "readtime#m32",
+   "file": "readtime/utils.py",
+   "line": 89,
+   "desc": "+= → -=",
+   "point": {
+    "node": 75,
+    "kind": "aug",
+    "line": 89,
+    "desc": "+= → -="
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "readtime#m33",
+   "file": "readtime/result.py",
+   "line": 51,
+   "desc": "return … → return None",
+   "point": {
+    "node": 37,
+    "kind": "ret",
+    "line": 51,
+    "desc": "return … → return None"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_check_data.BaseTestCase::test_plain_text_empty"
+   ]
+  },
+  {
+   "id": "readtime#m34",
+   "file": "readtime/utils.py",
+   "line": 66,
+   "desc": "0 → 1",
+   "point": {
+    "node": 64,
+    "kind": "const",
+    "line": 66,
+    "desc": "0 → 1"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_check_data.BaseTestCase::test_plain_text_empty"
+   ]
+  },
+  {
+   "id": "readtime#m35",
+   "file": "readtime/result.py",
+   "line": 75,
+   "desc": "'__' → ''",
+   "point": {
+    "node": 201,
+    "kind": "const",
+    "line": 75,
+    "desc": "'__' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "readtime#m36",
+   "file": "readtime/utils.py",
+   "line": 90,
+   "desc": "> → >=",
+   "point": {
+    "node": 131,
+    "kind": "cmp",
+    "sub": 0,
+    "line": 90,
+    "desc": "> → >="
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "readtime#m37",
+   "file": "readtime/result.py",
+   "line": 29,
+   "desc": "return … → return None",
+   "point": {
+    "node": 28,
+    "kind": "ret",
+    "line": 29,
+    "desc": "return … → return None"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_check_data.BaseTestCase::test_plain_text_empty"
+   ]
+  },
+  {
+   "id": "readtime#m38",
+   "file": "readtime/utils.py",
+   "line": 46,
+   "desc": "條件取反",
+   "point": {
+    "node": 27,
+    "kind": "neg",
+    "line": 46,
+    "desc": "條件取反"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_check_data.BaseTestCase::test_invalid_format"
+   ]
+  },
+  {
+   "id": "readtime#m39",
+   "file": "readtime/result.py",
+   "line": 50,
+   "desc": "1 → 0",
+   "point": {
+    "node": 116,
+    "kind": "const",
+    "line": 50,
+    "desc": "1 → 0"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_check_data.BaseTestCase::test_plain_text_null"
+   ]
+  },
+  {
+   "id": "readtime#m40",
+   "file": "readtime/utils.py",
+   "line": 112,
+   "desc": "條件取反",
+   "point": {
+    "node": 87,
+    "kind": "neg",
+    "line": 112,
+    "desc": "條件取反"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "readtime#m41",
+   "file": "readtime/result.py",
+   "line": 73,
+   "desc": "is not → is",
+   "point": {
+    "node": 165,
+    "kind": "cmp",
+    "sub": 0,
+    "line": 73,
+    "desc": "is not → is"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "readtime#m42",
+   "file": "readtime/utils.py",
+   "line": 120,
+   "desc": "and ↔ or",
+   "point": {
+    "node": 157,
+    "kind": "bool",
+    "line": 120,
+    "desc": "and ↔ or"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "readtime#m43",
+   "file": "readtime/result.py",
+   "line": 49,
+   "desc": "60 → 61",
+   "point": {
+    "node": 156,
+    "kind": "const",
+    "line": 49,
+    "desc": "60 → 61"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_transitions.BaseTestCase::test_transitions"
+   ]
+  },
+  {
+   "id": "readtime#m44",
+   "file": "readtime/utils.py",
+   "line": 128,
+   "desc": "return … → return None",
+   "point": {
+    "node": 44,
+    "kind": "ret",
+    "line": 128,
+    "desc": "return … → return None"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_custom_wpm.BaseTestCase::test_custom_wpm_html"
+   ]
+  },
+  {
+   "id": "readtime#m45",
+   "file": "readtime/utils.py",
+   "line": 91,
+   "desc": "-= → +=",
+   "point": {
+    "node": 132,
+    "kind": "aug",
+    "line": 91,
+    "desc": "-= → +="
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "readtime#m46",
+   "file": "readtime/utils.py",
+   "line": 84,
+   "desc": "/ → *",
+   "point": {
+    "node": 204,
+    "kind": "bin",
+    "line": 84,
+    "desc": "/ → *"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_check_data.BaseTestCase::test_plain_text_empty"
+   ]
+  },
+  {
+   "id": "readtime#m47",
+   "file": "readtime/utils.py",
+   "line": 126,
+   "desc": "' ' → ''",
+   "point": {
+    "node": 327,
+    "kind": "const",
+    "line": 126,
+    "desc": "' ' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "readtime#m48",
+   "file": "readtime/utils.py",
+   "line": 109,
+   "desc": "'h2' → ''",
+   "point": {
+    "node": 140,
+    "kind": "const",
+    "line": 109,
+    "desc": "'h2' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "readtime#m49",
+   "file": "readtime/utils.py",
+   "line": 90,
+   "desc": "條件取反",
+   "point": {
+    "node": 76,
+    "kind": "neg",
+    "line": 90,
+    "desc": "條件取反"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "readtime#m50",
+   "file": "readtime/utils.py",
+   "line": 91,
+   "desc": "1 → 0",
+   "point": {
+    "node": 216,
+    "kind": "const",
+    "line": 91,
+    "desc": "1 → 0"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "readtime#m51",
+   "file": "readtime/utils.py",
+   "line": 118,
+   "desc": "條件取反",
+   "point": {
+    "node": 90,
+    "kind": "neg",
+    "line": 118,
+    "desc": "條件取反"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "readtime#m52",
+   "file": "readtime/utils.py",
+   "line": 112,
+   "desc": "== → !=",
+   "point": {
+    "node": 148,
+    "kind": "cmp",
+    "sub": 0,
+    "line": 112,
+    "desc": "== → !="
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "readtime#m53",
+   "file": "readtime/utils.py",
+   "line": 119,
+   "desc": "'.' → ''",
+   "point": {
+    "node": 315,
+    "kind": "const",
+    "line": 119,
+    "desc": "'.' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "readtime#m54",
+   "file": "readtime/utils.py",
+   "line": 61,
+   "desc": "'Unsupported format: ' → ''",
+   "point": {
+    "node": 416,
+    "kind": "const",
+    "line": 61,
+    "desc": "'Unsupported format: ' → ''"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_check_data.BaseTestCase::test_invalid_format"
+   ]
+  },
+  {
+   "id": "readtime#m55",
+   "file": "readtime/utils.py",
+   "line": 49,
+   "desc": "條件取反",
+   "point": {
+    "node": 59,
+    "kind": "neg",
+    "line": 49,
+    "desc": "條件取反"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_check_data.BaseTestCase::test_invalid_format"
+   ]
+  },
+  {
+   "id": "readtime#m56",
+   "file": "readtime/utils.py",
+   "line": 114,
+   "desc": "條件取反",
+   "point": {
+    "node": 88,
+    "kind": "neg",
+    "line": 114,
+    "desc": "條件取反"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_custom_wpm.BaseTestCase::test_custom_wpm_markdown"
+   ]
+  },
+  {
+   "id": "readtime#m57",
+   "file": "readtime/utils.py",
+   "line": 111,
+   "desc": "False → True",
+   "point": {
+    "node": 147,
+    "kind": "const",
+    "line": 111,
+    "desc": "False → True"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "readtime#m58",
+   "file": "readtime/utils.py",
+   "line": 126,
+   "desc": "'\\\\s+' → ''",
+   "point": {
+    "node": 326,
+    "kind": "const",
+    "line": 126,
+    "desc": "'\\\\s+' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "readtime#m59",
+   "file": "readtime/utils.py",
+   "line": 66,
+   "desc": "265 → 266",
+   "point": {
+    "node": 65,
+    "kind": "const",
+    "line": 66,
+    "desc": "265 → 266"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  }
+ ]
+}

@@ -1,0 +1,56 @@
+diff --git a/django/tests/utils_tests/test_text.py b/django/tests/utils_tests/test_text.py
+new file mode 100644
+index 0000000000..75a2f8d91b
+--- /dev/null
++++ b/django/tests/utils_tests/test_text.py
+@@ -0,0 +1,8 @@
++from django.utils.ordered_set import OrderedSet
++from django.test import SimpleTestCase
++
++class OrderedSetTests(SimpleTestCase):
++    def test_reversed(self):
++        ordered_set = OrderedSet([1, 2, 3, 4, 5])
++        reversed_iter = reversed(ordered_set)
++        self.assertEqual(list(reversed_iter), [5, 4, 3, 2, 1])
+diff --git a/django/utils/ordered_set.py b/django/utils/ordered_set.py
+new file mode 100644
+index 0000000000..7b03471d58
+--- /dev/null
++++ b/django/utils/ordered_set.py
+@@ -0,0 +1,36 @@
++class OrderedSet:
++    def __init__(self, iterable=None):
++        self._set = set()
++        self._list = []
++        if iterable is not None:
++            for item in iterable:
++                self.add(item)
++
++    def add(self, item):
++        if item not in self._set:
++            self._set.add(item)
++            self._list.append(item)
++
++    def remove(self, item):
++        self._set.remove(item)
++        self._list.remove(item)
++
++    def discard(self, item):
++        if item in self._set:
++            self._set.remove(item)
++            self._list.remove(item)
++
++    def __iter__(self):
++        return iter(self._list)
++
++    def __contains__(self, item):
++        return item in self._set
++
++    def __bool__(self):
++        return bool(self._set)
++
++    def __len__(self):
++        return len(self._set)
++
++    def __reversed__(self):
++        return reversed(self._list)

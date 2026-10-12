@@ -1,0 +1,41 @@
+{
+ "id": "bf_people_management",
+ "family": "bf",
+ "source": "devbench",
+ "repo": "people_management",
+ "lang": "cpp",
+ "workspace": "workspaces/bf_people_management",
+ "task": "這個專案（people_management）最近有幾個改動之後，單元測試（`make -f makefile_test test`）有 8 個失敗：\n- PeopleManagementTest.TEST_ADD\n- PeopleManagementTest.TEST_CONTAINS\n- PeopleManagementTest.TEST_DELETE\n- PeopleManagementTest.TEST_HANDLE_OPTIONS\n- PeopleManagementTest.TEST_MENTOR\n- PeopleManagementTest.TEST_SEARCH\n- …（共 8 個）\n請找出原因並修正程式，讓測試全部通過。測試本身是對的，不要修改測試；問題可能不只一個、也可能不在同一個檔案。修完請說明每個問題在哪裡、怎麼修的。",
+ "test_dir": "tests",
+ "injected": [
+  {
+   "id": "people_management#m1",
+   "file": "src/utils.cpp",
+   "line": 4,
+   "desc": "!= → =="
+  },
+  {
+   "id": "people_management#m36",
+   "file": "src/people_management.cpp",
+   "line": 69,
+   "desc": "0 → 1"
+  },
+  {
+   "id": "people_management#m5",
+   "file": "src/people_management.cpp",
+   "line": 12,
+   "desc": "false → true"
+  }
+ ],
+ "visible_failing": [
+  "PeopleManagementTest.TEST_ADD",
+  "PeopleManagementTest.TEST_CONTAINS",
+  "PeopleManagementTest.TEST_DELETE",
+  "PeopleManagementTest.TEST_HANDLE_OPTIONS",
+  "PeopleManagementTest.TEST_MENTOR",
+  "PeopleManagementTest.TEST_SEARCH",
+  "PeopleManagementTest.TEST_UPDATE",
+  "PeopleManagementTest.TEST_VALIDATE_OPTIONS"
+ ],
+ "python": "devbench_venv"
+}

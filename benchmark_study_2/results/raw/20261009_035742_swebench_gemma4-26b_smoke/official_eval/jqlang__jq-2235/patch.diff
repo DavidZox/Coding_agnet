@@ -1,0 +1,217 @@
+diff --git a/src/execute.c b/src/execute.c
+index e1894aa..42ec712 100644
+--- a/src/execute.c
++++ b/src/execute.c
+@@ -37,6 +37,7 @@ struct jq_state {
+   jv value_at_path;
+   int subexp_nest;
+   int debug_trace_enabled;
++  int null_delim;
+   int initial_execution;
+   unsigned next_label;
+ 
+@@ -328,6 +329,10 @@ void jq_report_error(jq_state *jq, jv value) {
+   jq->err_cb(jq->err_cb_data, value);
+ }
+ 
++void jq_set_null_delim(jq_state *jq, int null_delim) {
++  jq->null_delim = null_delim;
++}
++
+ static void set_error(jq_state *jq, jv value) {
+   // Record so try/catch can find it.
+   jv_free(jq->error);
+diff --git a/src/jq.h b/src/jq.h
+index 5269de3..68a0246 100644
+--- a/src/jq.h
++++ b/src/jq.h
+@@ -67,5 +67,6 @@ jv jq_util_input_get_current_filename(jq_state*);
+ jv jq_util_input_get_current_line(jq_state*);
+ 
+ int jq_set_colors(const char *);
++void jq_set_null_delim(jq_state *, int);
+ 
+ #endif /* !JQ_H */
+diff --git a/src/main.c b/src/main.c
+index cabe6ec..c857bea 100644
+--- a/src/main.c
++++ b/src/main.c
+@@ -76,6 +76,7 @@ static void usage(int code, int keep_it_short) {
+       "  -e               set the exit status code based on the output;\n"
+       "  -s               read (slurp) all inputs into an array; apply filter to it;\n"
+       "  -r               output raw strings, not JSON texts;\n"
++      "  -0               output NUL delimited instead of LF;\n"
+       "  -R               read raw strings, not JSON texts;\n"
+       "  -C               colorize JSON;\n"
+       "  -M               monochrome (don't colorize JSON);\n"
+@@ -105,7 +106,7 @@ static void die() {
+ 
+ 
+ static int isoptish(const char* text) {
+-  return text[0] == '-' && (text[1] == '-' || isalpha(text[1]));
++  return text[0] == '-' && (text[1] == '-' || isalpha(text[1]) || isdigit(text[1]));
+ }
+ 
+ static int isoption(const char* text, char shortopt, const char* longopt, size_t *short_opts) {
+@@ -177,32 +178,42 @@ static const char *skip_shebang(const char *p) {
+ static int process(jq_state *jq, jv value, int flags, int dumpopts) {
+   int ret = JQ_OK_NO_OUTPUT; // No valid results && -e -> exit(4)
+   jq_start(jq, value, flags);
+-  jv result;
+-  while (jv_is_valid(result = jq_next(jq))) {
+-    if ((options & RAW_OUTPUT) && jv_get_kind(result) == JV_KIND_STRING) {
+-      if (options & ASCII_OUTPUT) {
++  jv result = jv_null();
++  while (1) {
++    result = jq_next(jq);
++    if (!jv_is_valid(result))
++      break;
++
++    if (((flags & RAW_OUTPUT) || (flags & RAW_NUL)) && jv_get_kind(result) == JV_KIND_STRING) {
++      if (flags & ASCII_OUTPUT) {
+         jv_dumpf(jv_copy(result), stdout, JV_PRINT_ASCII);
+       } else {
+         fwrite(jv_string_value(result), 1, jv_string_length_bytes(jv_copy(result)), stdout);
+       }
+       ret = JQ_OK;
+-      jv_free(result);
+     } else {
+       if (jv_get_kind(result) == JV_KIND_FALSE || jv_get_kind(result) == JV_KIND_NULL)
+         ret = JQ_OK_NULL_KIND;
+       else
+         ret = JQ_OK;
+-      if (options & SEQ)
++      if (flags & SEQ)
+         priv_fwrite("\036", 1, stdout, dumpopts & JV_PRINT_ISATTY);
+       jv_dump(result, dumpopts);
+     }
+-    if (!(options & RAW_NO_LF))
+-      priv_fwrite("\n", 1, stdout, dumpopts & JV_PRINT_ISATTY);
+-    if (options & RAW_NUL)
++    jv_free(result);
++
++    if (flags & RAW_NUL) {
+       priv_fwrite("\0", 1, stdout, dumpopts & JV_PRINT_ISATTY);
+-    if (options & UNBUFFERED_OUTPUT)
+-      fflush(stdout);
++    } else {
++      if (!(flags & RAW_NO_LF)) {
++        priv_fwrite("\n", 1, stdout, dumpopts & JV_PRINT_ISATTY);
++      }
++    }
+   }
++
++  if (flags & UNBUFFERED_OUTPUT)
++    fflush(stdout);
++
+   if (jq_halted(jq)) {
+     // jq program invoked `halt` or `halt_error`
+     options |= EXIT_STATUS_EXACT;
+@@ -225,7 +236,7 @@ static int process(jq_state *jq, jv value, int flags, int dumpopts) {
+     } // else no message on stderr; use --debug-trace to see a message
+     fflush(stderr);
+     jv_free(error_message);
+-  } else if (jv_invalid_has_msg(jv_copy(result))) {
++  } else if (jv_is_valid(result) && jv_invalid_has_msg(jv_copy(result))) {
+     // Uncaught jq exception
+     jv msg = jv_invalid_get_msg(jv_copy(result));
+     jv input_pos = jq_util_input_get_position(jq);
+@@ -241,7 +252,12 @@ static int process(jq_state *jq, jv value, int flags, int dumpopts) {
+     jv_free(input_pos);
+     jv_free(msg);
+   }
+-  jv_free(result);
++
++  if (jv_is_valid(result))
++    jv_free(result);
++  else
++    jv_free(result);
++
+   return ret;
+ }
+ 
+@@ -400,7 +416,7 @@ int main(int argc, char* argv[]) {
+         if (!short_opts) continue;
+       }
+       if (isoption(argv[i], '0', "nul-output", &short_opts)) {
+-        options |= RAW_OUTPUT | RAW_NO_LF | RAW_NUL;
++        options |= RAW_NUL;
+         if (!short_opts) continue;
+       }
+       if (isoption(argv[i], 'b', "binary", &short_opts)) {
+@@ -581,6 +597,7 @@ int main(int argc, char* argv[]) {
+   if (options & ASCII_OUTPUT) dumpopts |= JV_PRINT_ASCII;
+   if (options & COLOR_OUTPUT) dumpopts |= JV_PRINT_COLOR;
+   if (options & NO_COLOR_OUTPUT) dumpopts &= ~JV_PRINT_COLOR;
++  if (options & RAW_NUL) jq_set_null_delim(jq, 1);
+ 
+   if (getenv("JQ_COLORS") != NULL && !jq_set_colors(getenv("JQ_COLORS")))
+       fprintf(stderr, "Failed to set $JQ_COLORS\n");
+diff --git a/tests/test_null_delim.sh b/tests/test_null_delim.sh
+new file mode 100644
+index 0000000..1770eee
+--- /dev/null
++++ b/tests/test_null_delim.sh
+@@ -0,0 +1,62 @@
++#!/bin/bash
++
++# Build jq first
++make -j
++
++# Check if jq was built successfully
++if [ ! -f "jq" ]; then
++    echo "Error: jq binary not found. Please run make first."
++    exit 1
++fi
++
++# Helper function to check for NUL byte
++# Returns 0 if NUL is found, 1 otherwise
++has_nul() {
++    printf "%s" "$1" | grep -Pa '\x00' > /dev/null
++}
++
++# Helper function to check for NUL byte in a file
++has_nul_file() {
++    grep -Pa '\x00' "$1" > /dev/null
++}
++
++echo "Running tests for -0 option..."
++
++# Test 1: jq -0 '.a' output should contain NUL delimiter
++echo '{"a": 1}' > input1.json
++./jq -0 '.a' < input1.json > output1.bin
++if has_nul_file output1.bin; then
++    echo "Test 1 Passed: -0 produces NUL delimiter."
++else
++    echo "Test 1 Failed: -0 did not produce NUL delimiter."
++    exit 1
++fi
++
++# Test 2: jq -0 -r '.a' output should be raw mode and contain NUL
++echo '{"a": "hello"}' > input2.json
++./jq -0 -r '.a' < input2.json > output2.bin
++# In raw mode, "hello" should be followed by NUL, not quotes
++if has_nul_file output2.bin && ! grep -q '"hello"' output2.bin; then
++    echo "Test 2 Passed: -0 -r produces raw output with NUL."
++else
++    echo "Test 2 Failed: -0 -r behavior incorrect."
++    exit 1
++fi
++
++# Test 3: Multiple inputs, each output followed by NUL
++printf '{"a": 1}\n{"a": 2}\n' > input3.json
++./jq -0 '.a' < input3.json > output3.bin
++# Check if output contains exactly two NUL bytes
++NUL_COUNT=$(od -An -t u1 output3.bin | tr -s ' ' '\n' | grep -c '^0$')
++if [ "$NUL_COUNT" -eq 2 ]; then
++    echo "Test 3 Passed: Multiple inputs correctly delimited by NUL."
++else
++    echo "Test 3 Failed: Expected 2 NUL delimiters, found $NUL_COUNT."
++    exit 1
++fi
++
++# Cleanup
++rm input1.json output1.bin input2.json output2.bin input3.json output3.bin
++
++echo "All tests passed successfully!"
++exit 0

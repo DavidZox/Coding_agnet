@@ -1,0 +1,71 @@
+diff --git a/src/t_hash.c b/src/t_hash.c
+index ff8746384..28e178b4a 100644
+--- a/src/t_hash.c
++++ b/src/t_hash.c
+@@ -636,13 +636,29 @@ void hincrbyCommand(client *c) {
+     unsigned char *vstr;
+     unsigned int vlen;
+ 
+-    if (getLongLongFromObjectOrReply(c,c->argv[3],&incr,NULL) != C_OK) return;
++    if (getLongLongFromObjectOrReply(c,c->argv[3],&incr,NULL) != C_OK) {
++        /* If getLongLongFromObjectOrReply fails, it might be because the input
++         * is in scientific notation (e.g. 1e9). Try parsing as long double. */
++        long double ldincr;
++        if (getLongDoubleFromObjectOrReply(c,c->argv[3],&ldincr,NULL) != C_OK) return;
++        /* Check if the long double is actually an integer within long long range. */
++        if (ldincr < LLONG_MIN || ldincr > LLONG_MAX || ldincr != (long long)ldincr) {
++            addReplyError(c,"value is not an integer or out of range");
++            return;
++        }
++        incr = (long long)ldincr;
++    }
+     if ((o = hashTypeLookupWriteOrCreate(c,c->argv[1])) == NULL) return;
+     if (hashTypeGetValue(o,c->argv[2]->ptr,&vstr,&vlen,&value) == C_OK) {
+         if (vstr) {
+             if (string2ll((char*)vstr,vlen,&value) == 0) {
+-                addReplyError(c,"hash value is not an integer");
+-                return;
++                /* If string2ll fails, it might be scientific notation. */
++                long double ldval;
++                if (string2ld((char*)vstr,vlen,&ldval) != 0 || ldval < LLONG_MIN || ldval > LLONG_MAX || ldval != (long long)ldval) {
++                    addReplyError(c,"hash value is not an integer");
++                    return;
++                }
++                value = (long long)ldval;
+             }
+         } /* Else hashTypeGetValue() already stored it into &value */
+     } else {
+diff --git a/tests/unit/lua/incr_bug.tcl b/tests/unit/lua/incr_bug.tcl
+new file mode 100644
+index 000000000..210554193
+--- /dev/null
++++ b/tests/unit/lua/incr_bug.tcl
+@@ -0,0 +1,28 @@
++proc test_incr_bug {} {
++    set key "hash"
++    set field "field"
++    set script "return redis.call('HINCRBY', KEYS[1], ARGV[1], tonumber(ARGV[2]))"
++
++    # Test values of the form n * 100,000,000
++    # The issue reported is that tonumber() might return a float that HINCRBY 
++    # rejects if it's not perfectly represented as an integer in the conversion.
++    set test_values {
++        1000000000
++        1100000000
++        1200000000
++        1300000000
++        1400000000
++        1500000000
++        1600000000
++        1700000000
++        1800000000
++        1900000000
++        2000000000
++    }
++
++    foreach val $test_values {
++        client DEL $key
++        set res [client EVAL $script 1 $key $field $val]
++        assert_equal $res $val "HINCRBY with tonumber($val) failed"
++    }
++}

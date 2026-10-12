@@ -1,0 +1,18 @@
+{
+ "id": "ap_cpp_kindergarten_garden",
+ "family": "ap",
+ "source": "aider_polyglot",
+ "repo": "kindergarten-garden",
+ "lang": "cpp",
+ "workspace": "workspaces/ap_cpp_kindergarten_garden",
+ "task": "請照 `.docs/introduction.md`、`.docs/instructions.md` 的說明完成 `kindergarten_garden.h`、`kindergarten_garden.cpp`（目前只有空的骨架）。測試在 `kindergarten_garden_test.cpp`，要全部通過；測試是對的，不要修改測試。",
+ "impl_files": [
+  "kindergarten_garden.h",
+  "kindergarten_garden.cpp"
+ ],
+ "test_files": [
+  "kindergarten_garden_test.cpp",
+  "test"
+ ],
+ "python": "devbench_venv"
+}

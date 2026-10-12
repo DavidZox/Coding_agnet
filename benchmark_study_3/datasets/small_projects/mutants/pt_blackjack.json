@@ -1,0 +1,854 @@
+{
+ "repo": "blackjack",
+ "seed": 20261010,
+ "official_tests": 0,
+ "mutants": [
+  {
+   "id": "pt_blackjack#m0",
+   "file": "blackjack/base.py",
+   "line": 13,
+   "desc": "'H' → ''",
+   "point": {
+    "node": 43,
+    "kind": "const",
+    "line": 13,
+    "desc": "'H' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m1",
+   "file": "blackjack/dealer.py",
+   "line": 24,
+   "desc": "* → /",
+   "point": {
+    "node": 128,
+    "kind": "bin",
+    "line": 24,
+    "desc": "* → /"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m2",
+   "file": "blackjack/game.py",
+   "line": 119,
+   "desc": "'state' → ''",
+   "point": {
+    "node": 315,
+    "kind": "const",
+    "line": 119,
+    "desc": "'state' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m3",
+   "file": "blackjack/judger.py",
+   "line": 6,
+   "desc": "'2' → ''",
+   "point": {
+    "node": 70,
+    "kind": "const",
+    "line": 6,
+    "desc": "'2' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m4",
+   "file": "blackjack/player.py",
+   "line": 18,
+   "desc": "return … → return None",
+   "point": {
+    "node": 13,
+    "kind": "ret",
+    "line": 18,
+    "desc": "return … → return None"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m5",
+   "file": "blackjack/base.py",
+   "line": 52,
+   "desc": "return … → return None",
+   "point": {
+    "node": 38,
+    "kind": "ret",
+    "line": 52,
+    "desc": "return … → return None"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m6",
+   "file": "blackjack/dealer.py",
+   "line": 17,
+   "desc": "1 → 0",
+   "point": {
+    "node": 74,
+    "kind": "const",
+    "line": 17,
+    "desc": "1 → 0"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m7",
+   "file": "blackjack/game.py",
+   "line": 134,
+   "desc": "True → False",
+   "point": {
+    "node": 328,
+    "kind": "const",
+    "line": 134,
+    "desc": "True → False"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m8",
+   "file": "blackjack/judger.py",
+   "line": 6,
+   "desc": "'A' → ''",
+   "point": {
+    "node": 69,
+    "kind": "const",
+    "line": 6,
+    "desc": "'A' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m9",
+   "file": "blackjack/player.py",
+   "line": 13,
+   "desc": "0 → 1",
+   "point": {
+    "node": 27,
+    "kind": "const",
+    "line": 13,
+    "desc": "0 → 1"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m10",
+   "file": "blackjack/base.py",
+   "line": 36,
+   "desc": "+ → -",
+   "point": {
+    "node": 82,
+    "kind": "bin",
+    "line": 36,
+    "desc": "+ → -"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m11",
+   "file": "blackjack/dealer.py",
+   "line": 13,
+   "desc": "return … → return None",
+   "point": {
+    "node": 12,
+    "kind": "ret",
+    "line": 13,
+    "desc": "return … → return None"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m12",
+   "file": "blackjack/game.py",
+   "line": 135,
+   "desc": "return … → return None",
+   "point": {
+    "node": 59,
+    "kind": "ret",
+    "line": 135,
+    "desc": "return … → return None"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m13",
+   "file": "blackjack/judger.py",
+   "line": 72,
+   "desc": "return … → return None",
+   "point": {
+    "node": 24,
+    "kind": "ret",
+    "line": 72,
+    "desc": "return … → return None"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m14",
+   "file": "blackjack/player.py",
+   "line": 12,
+   "desc": "'alive' → ''",
+   "point": {
+    "node": 25,
+    "kind": "const",
+    "line": 12,
+    "desc": "'alive' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m15",
+   "file": "blackjack/base.py",
+   "line": 27,
+   "desc": "條件取反",
+   "point": {
+    "node": 28,
+    "kind": "neg",
+    "line": 27,
+    "desc": "條件取反"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m16",
+   "file": "blackjack/dealer.py",
+   "line": 27,
+   "desc": "'alive' → ''",
+   "point": {
+    "node": 88,
+    "kind": "const",
+    "line": 27,
+    "desc": "'alive' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m17",
+   "file": "blackjack/game.py",
+   "line": 88,
+   "desc": "+= → -=",
+   "point": {
+    "node": 457,
+    "kind": "aug",
+    "line": 88,
+    "desc": "+= → -="
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m18",
+   "file": "blackjack/judger.py",
+   "line": 41,
+   "desc": "條件取反",
+   "point": {
+    "node": 17,
+    "kind": "neg",
+    "line": 41,
+    "desc": "條件取反"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m19",
+   "file": "blackjack/base.py",
+   "line": 13,
+   "desc": "'S' → ''",
+   "point": {
+    "node": 42,
+    "kind": "const",
+    "line": 13,
+    "desc": "'S' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m20",
+   "file": "blackjack/dealer.py",
+   "line": 23,
+   "desc": "not in → in",
+   "point": {
+    "node": 82,
+    "kind": "cmp",
+    "sub": 0,
+    "line": 23,
+    "desc": "not in → in"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m21",
+   "file": "blackjack/game.py",
+   "line": 132,
+   "desc": "條件取反",
+   "point": {
+    "node": 58,
+    "kind": "neg",
+    "line": 132,
+    "desc": "條件取反"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m22",
+   "file": "blackjack/judger.py",
+   "line": 47,
+   "desc": "2 → 3",
+   "point": {
+    "node": 201,
+    "kind": "const",
+    "line": 47,
+    "desc": "2 → 3"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m23",
+   "file": "blackjack/base.py",
+   "line": 28,
+   "desc": "and ↔ or",
+   "point": {
+    "node": 98,
+    "kind": "bool",
+    "line": 28,
+    "desc": "and ↔ or"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m24",
+   "file": "blackjack/dealer.py",
+   "line": 10,
+   "desc": "'H' → ''",
+   "point": {
+    "node": 47,
+    "kind": "const",
+    "line": 10,
+    "desc": "'H' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m25",
+   "file": "blackjack/game.py",
+   "line": 202,
+   "desc": "== → !=",
+   "point": {
+    "node": 367,
+    "kind": "cmp",
+    "sub": 0,
+    "line": 202,
+    "desc": "== → !="
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m26",
+   "file": "blackjack/judger.py",
+   "line": 62,
+   "desc": "0 → 1",
+   "point": {
+    "node": 52,
+    "kind": "const",
+    "line": 62,
+    "desc": "0 → 1"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m27",
+   "file": "blackjack/base.py",
+   "line": 14,
+   "desc": "'A' → ''",
+   "point": {
+    "node": 50,
+    "kind": "const",
+    "line": 14,
+    "desc": "'A' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m28",
+   "file": "blackjack/dealer.py",
+   "line": 45,
+   "desc": "條件取反",
+   "point": {
+    "node": 43,
+    "kind": "neg",
+    "line": 45,
+    "desc": "條件取反"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m29",
+   "file": "blackjack/game.py",
+   "line": 110,
+   "desc": "條件取反",
+   "point": {
+    "node": 50,
+    "kind": "neg",
+    "line": 110,
+    "desc": "條件取反"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m30",
+   "file": "blackjack/judger.py",
+   "line": 70,
+   "desc": "-= → +=",
+   "point": {
+    "node": 61,
+    "kind": "aug",
+    "line": 70,
+    "desc": "-= → +="
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m31",
+   "file": "blackjack/base.py",
+   "line": 44,
+   "desc": "return … → return None",
+   "point": {
+    "node": 35,
+    "kind": "ret",
+    "line": 44,
+    "desc": "return … → return None"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m32",
+   "file": "blackjack/dealer.py",
+   "line": 10,
+   "desc": "'S' → ''",
+   "point": {
+    "node": 46,
+    "kind": "const",
+    "line": 10,
+    "desc": "'S' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m33",
+   "file": "blackjack/game.py",
+   "line": 102,
+   "desc": "1 → 0",
+   "point": {
+    "node": 651,
+    "kind": "const",
+    "line": 102,
+    "desc": "1 → 0"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m34",
+   "file": "blackjack/judger.py",
+   "line": 49,
+   "desc": "1 → 0",
+   "point": {
+    "node": 269,
+    "kind": "const",
+    "line": 49,
+    "desc": "1 → 0"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m35",
+   "file": "blackjack/base.py",
+   "line": 14,
+   "desc": "'2' → ''",
+   "point": {
+    "node": 51,
+    "kind": "const",
+    "line": 14,
+    "desc": "'2' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m36",
+   "file": "blackjack/dealer.py",
+   "line": 45,
+   "desc": "!= → ==",
+   "point": {
+    "node": 105,
+    "kind": "cmp",
+    "sub": 0,
+    "line": 45,
+    "desc": "!= → =="
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m37",
+   "file": "blackjack/game.py",
+   "line": 91,
+   "desc": "條件取反",
+   "point": {
+    "node": 145,
+    "kind": "neg",
+    "line": 91,
+    "desc": "條件取反"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m38",
+   "file": "blackjack/judger.py",
+   "line": 69,
+   "desc": "條件取反",
+   "point": {
+    "node": 23,
+    "kind": "neg",
+    "line": 69,
+    "desc": "條件取反"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m39",
+   "file": "blackjack/base.py",
+   "line": 28,
+   "desc": "return … → return None",
+   "point": {
+    "node": 75,
+    "kind": "ret",
+    "line": 28,
+    "desc": "return … → return None"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m40",
+   "file": "blackjack/dealer.py",
+   "line": 23,
+   "desc": "條件取反",
+   "point": {
+    "node": 29,
+    "kind": "neg",
+    "line": 23,
+    "desc": "條件取反"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m41",
+   "file": "blackjack/game.py",
+   "line": 135,
+   "desc": "False → True",
+   "point": {
+    "node": 166,
+    "kind": "const",
+    "line": 135,
+    "desc": "False → True"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m42",
+   "file": "blackjack/judger.py",
+   "line": 19,
+   "desc": "條件取反",
+   "point": {
+    "node": 13,
+    "kind": "neg",
+    "line": 19,
+    "desc": "條件取反"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m43",
+   "file": "blackjack/base.py",
+   "line": 36,
+   "desc": "return … → return None",
+   "point": {
+    "node": 32,
+    "kind": "ret",
+    "line": 36,
+    "desc": "return … → return None"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m44",
+   "file": "blackjack/dealer.py",
+   "line": 28,
+   "desc": "0 → 1",
+   "point": {
+    "node": 90,
+    "kind": "const",
+    "line": 28,
+    "desc": "0 → 1"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m45",
+   "file": "blackjack/game.py",
+   "line": 20,
+   "desc": "'game_num_decks' → ''",
+   "point": {
+    "node": 218,
+    "kind": "const",
+    "line": 20,
+    "desc": "'game_num_decks' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m46",
+   "file": "blackjack/judger.py",
+   "line": 22,
+   "desc": "return … → return None",
+   "point": {
+    "node": 39,
+    "kind": "ret",
+    "line": 22,
+    "desc": "return … → return None"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m47",
+   "file": "blackjack/base.py",
+   "line": 44,
+   "desc": "+ → -",
+   "point": {
+    "node": 85,
+    "kind": "bin",
+    "line": 44,
+    "desc": "+ → -"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m48",
+   "file": "blackjack/dealer.py",
+   "line": 11,
+   "desc": "'A' → ''",
+   "point": {
+    "node": 52,
+    "kind": "const",
+    "line": 11,
+    "desc": "'A' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m49",
+   "file": "blackjack/game.py",
+   "line": 132,
+   "desc": "> → >=",
+   "point": {
+    "node": 163,
+    "kind": "cmp",
+    "sub": 0,
+    "line": 132,
+    "desc": "> → >="
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m50",
+   "file": "blackjack/judger.py",
+   "line": 19,
+   "desc": "<= → <",
+   "point": {
+    "node": 37,
+    "kind": "cmp",
+    "sub": 0,
+    "line": 19,
+    "desc": "<= → <"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m51",
+   "file": "blackjack/base.py",
+   "line": 52,
+   "desc": "+ → -",
+   "point": {
+    "node": 88,
+    "kind": "bin",
+    "line": 52,
+    "desc": "+ → -"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m52",
+   "file": "blackjack/dealer.py",
+   "line": 11,
+   "desc": "'2' → ''",
+   "point": {
+    "node": 53,
+    "kind": "const",
+    "line": 11,
+    "desc": "'2' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m53",
+   "file": "blackjack/game.py",
+   "line": 100,
+   "desc": "0 → 1",
+   "point": {
+    "node": 648,
+    "kind": "const",
+    "line": 100,
+    "desc": "0 → 1"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m54",
+   "file": "blackjack/judger.py",
+   "line": 42,
+   "desc": "1 → 0",
+   "point": {
+    "node": 151,
+    "kind": "const",
+    "line": 42,
+    "desc": "1 → 0"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m55",
+   "file": "blackjack/base.py",
+   "line": 31,
+   "desc": "return … → return None",
+   "point": {
+    "node": 76,
+    "kind": "ret",
+    "line": 31,
+    "desc": "return … → return None"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m56",
+   "file": "blackjack/game.py",
+   "line": 95,
+   "desc": "< → <=",
+   "point": {
+    "node": 640,
+    "kind": "cmp",
+    "sub": 0,
+    "line": 95,
+    "desc": "< → <="
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m57",
+   "file": "blackjack/judger.py",
+   "line": 70,
+   "desc": "1 → 0",
+   "point": {
+    "node": 127,
+    "kind": "const",
+    "line": 70,
+    "desc": "1 → 0"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m58",
+   "file": "blackjack/game.py",
+   "line": 49,
+   "desc": "0 → 1",
+   "point": {
+    "node": 261,
+    "kind": "const",
+    "line": 49,
+    "desc": "0 → 1"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_blackjack#m59",
+   "file": "blackjack/judger.py",
+   "line": 43,
+   "desc": "== → !=",
+   "point": {
+    "node": 108,
+    "kind": "cmp",
+    "sub": 0,
+    "line": 43,
+    "desc": "== → !="
+   },
+   "killed": null,
+   "invalid": false
+  }
+ ]
+}

@@ -1,0 +1,6 @@
+# geonames.org
+# This file contains cities with a population greater than 15000
+# The columns are separated by tabs
+# The first line is a header
+# Columns are: geonameid,name,asciiname,alternatenames,latitude,longitude,feature class,feature code,country code,cc2,admin1 code,admin2 code,admin3 code,admin4 code,population,elevation,dem,timezone,modification date
+2081986	Palikir - National Government Center	Palikir - National Government Center	Palikir,Palikir,Palikiras,Palirik,Pallikir,pa li ji er,pa liki r,pallikileu,parikiru,plyqyr,Παλιρίκ,Паликир,Պալիկիր,פליקיר,ปาลีกีร์,ፓሊኪር,パリキール,帕利キル,팔리키르	6.92477	158.16109	P	PPLC	FM		02	SO			0	90	92	Pacific/Pohnpei	2011-08-01

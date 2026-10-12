@@ -1,0 +1,16 @@
+{
+ "id": "ap_python_robot_name",
+ "family": "ap",
+ "source": "aider_polyglot",
+ "repo": "robot-name",
+ "lang": "python",
+ "workspace": "workspaces/ap_python_robot_name",
+ "task": "請照 `.docs/instructions.md` 的說明完成 `robot_name.py`（目前只有空的骨架）。測試在 `robot_name_test.py`，要全部通過；測試是對的，不要修改測試。",
+ "impl_files": [
+  "robot_name.py"
+ ],
+ "test_files": [
+  "robot_name_test.py"
+ ],
+ "python": "devbench_venv"
+}

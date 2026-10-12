@@ -1,0 +1,7 @@
+1
+AccountId: user1
+UserName: name1
+UserPhone: 1234567890
+Money: 0
+Address: addr1
+UserType: normal user

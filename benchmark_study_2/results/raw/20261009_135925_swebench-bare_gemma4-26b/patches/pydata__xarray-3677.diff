@@ -1,0 +1,23 @@
+diff --git a/xarray/core/merge.py b/xarray/core/merge.py
+index 10c7804d..791e637e 100644
+--- a/xarray/core/merge.py
++++ b/xarray/core/merge.py
+@@ -387,6 +387,8 @@ def coerce_pandas_values(objects: Iterable["CoercibleMapping"]) -> List["Dataset
+     for obj in objects:
+         if isinstance(obj, Dataset):
+             variables: "DatasetLike" = obj
++        elif isinstance(obj, DataArray):
++            variables = {obj.name: obj} if obj.name is not None else {"__xarray_dataarray_variable__": obj}
+         else:
+             variables = {}
+             if isinstance(obj, PANDAS_TYPES):
+@@ -787,7 +789,8 @@ def merge(
+                 "Dataset(s), DataArray(s), and dictionaries."
+             )
+ 
+-        obj = obj.to_dataset() if isinstance(obj, DataArray) else obj
++        if isinstance(obj, DataArray):
++            obj = obj.to_dataset()
+         dict_like_objects.append(obj)
+ 
+     merge_result = merge_core(dict_like_objects, compat, join, fill_value=fill_value)

@@ -1,0 +1,5 @@
+AD	AND	020	AN	Andorra	Andorra la Vella	468	84000	EU	.ad	EUR	Euro	376	AD###	^(?:AD)*(\d{3})$	ca	3041565	ES,FR
+JP	JPN	392	JP	Japan	Tokyo	126	125900000	AS	.jp	JPY	Yen	81	JP###	^(?:JP)*(\d{3})$	ja	1104483	CN,KR
+BR	BRA	076	BR	Brazil	Brasilia	8548	214300000	SA	.br	BRL	Real	55	BR###	^(?:BR)*(\d{3})$	pt	3485808	AR,CO
+US	USA	840	US	United States	Washington	380	331000000	NA	.us	USD	Dollar	1	US###	^(?:US)*(\d{3})$	en	840
+CN	CHN	156	CN	China	Beijing	9596961	1402000000	AS	.cn	CNY	Yuan	86	CN###	^(?:CN)*(\d{3})$	zh

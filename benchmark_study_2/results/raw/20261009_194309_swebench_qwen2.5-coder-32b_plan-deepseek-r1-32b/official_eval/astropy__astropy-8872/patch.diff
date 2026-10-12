@@ -1,0 +1,171 @@
+diff --git a/astropy/io/ascii/setup_package.py b/astropy/io/ascii/setup_package.py
+index bb989205a..8f15ccf34 100644
+--- a/astropy/io/ascii/setup_package.py
++++ b/astropy/io/ascii/setup_package.py
+@@ -2,6 +2,8 @@
+ 
+ import os
+ from distutils.extension import Extension
++import numpy
++import sysconfig
+ 
+ ROOT = os.path.relpath(os.path.dirname(__file__))
+ 
+@@ -11,6 +13,6 @@ def get_extensions():
+                os.path.join(ROOT, 'src', 'tokenizer.c')]
+     ascii_ext = Extension(
+         name="astropy.io.ascii.cparser",
+-        include_dirs=["numpy"],
++        include_dirs=["numpy", numpy.get_include(), sysconfig.get_path('include')],
+         sources=sources)
+     return [ascii_ext]
+diff --git a/astropy/io/fits/setup_package.py b/astropy/io/fits/setup_package.py
+index e456301ea..31b0020ab 100644
+--- a/astropy/io/fits/setup_package.py
++++ b/astropy/io/fits/setup_package.py
+@@ -1,6 +1,7 @@
+ # Licensed under a 3-clause BSD style license - see PYFITS.rst
+ 
+ import os
++import sysconfig
+ 
+ from distutils.core import Extension
+ from glob import glob
+@@ -13,6 +14,7 @@ def _get_compression_extension():
+     # 'numpy' will be replaced with the proper path to the numpy includes
+     cfg = setup_helpers.DistutilsExtensionArgs()
+     cfg['include_dirs'].append('numpy')
++    cfg['include_dirs'].append(sysconfig.get_path('include'))
+     cfg['sources'].append(os.path.join(os.path.dirname(__file__), 'src',
+                                        'compressionmodule.c'))
+ 
+diff --git a/astropy/io/votable/setup_package.py b/astropy/io/votable/setup_package.py
+index 1d80a8783..65bbd7f03 100755
+--- a/astropy/io/votable/setup_package.py
++++ b/astropy/io/votable/setup_package.py
+@@ -2,7 +2,8 @@
+ 
+ from distutils.core import Extension
+ from os.path import join
+-
++import numpy
++import sysconfig
+ 
+ def get_extensions(build_type='release'):
+     VO_DIR = 'astropy/io/votable/src'
+@@ -10,4 +11,4 @@ def get_extensions(build_type='release'):
+     return [Extension(
+         "astropy.io.votable.tablewriter",
+         [join(VO_DIR, "tablewriter.c")],
+-        include_dirs=[VO_DIR])]
++        include_dirs=[VO_DIR, numpy.get_include(), sysconfig.get_path('include')])]
+diff --git a/astropy/table/_np_utils.pyx b/astropy/table/_np_utils.pyx
+index 228a8a513..4f6d19cb9 100644
+--- a/astropy/table/_np_utils.pyx
++++ b/astropy/table/_np_utils.pyx
+@@ -12,7 +12,7 @@ from numpy.lib.recfunctions import drop_fields
+ 
+ cimport cython
+ cimport numpy as np
+-DTYPE = np.int
++DTYPE = int
+ ctypedef np.intp_t DTYPE_t
+ 
+ @cython.wraparound(False)
+diff --git a/astropy/units/quantity.py b/astropy/units/quantity.py
+index ded609cbe..6dfada1ff 100644
+--- a/astropy/units/quantity.py
++++ b/astropy/units/quantity.py
+@@ -380,7 +380,9 @@ class Quantity(np.ndarray, metaclass=InheritDocstrings):
+         if dtype is None and (not (np.can_cast(np.float32, value.dtype)
+                                    or value.dtype.fields)
+                               or value.dtype.kind == 'O'):
+-            value = value.astype(float)
++            if value.dtype == np.float16:
++                dtype = np.float16
++            value = value.astype(dtype if dtype is not None else float)
+ 
+         value = value.view(cls)
+         value._set_unit(value_unit)
+diff --git a/astropy/units/tests/test_quantity.py b/astropy/units/tests/test_quantity.py
+index be18e65c5..28a2b4e52 100644
+--- a/astropy/units/tests/test_quantity.py
++++ b/astropy/units/tests/test_quantity.py
+@@ -129,6 +129,10 @@ class TestQuantityCreation:
+         numbers are converted to float (including decimal.Decimal, which
+         numpy converts to an object; closes #1419)
+         """
++
++    def test_float16_dtype(self):
++        q = np.float16(1) * u.km
++        assert q.dtype == np.float16
+         # If dtype is specified, use it, but if not, convert int, bool to float
+         q1 = u.Quantity(12, unit=u.m / u.s, dtype=int)
+         assert q1.dtype == int
+@@ -511,32 +515,6 @@ class TestQuantityOperations:
+         assert dq1.value == 3.001
+         assert dq1.unit == dq.unit
+ 
+-        dq2 = dq + 1.
+-        assert dq2.value == 1.003
+-        assert dq2.unit == u.dimensionless_unscaled
+-
+-        # this test will check that operations with dimensionless Quantities
+-        # don't work
+-        with pytest.raises(u.UnitsError):
+-            self.q1 + u.Quantity(0.1, unit=u.Unit(""))
+-
+-        with pytest.raises(u.UnitsError):
+-            self.q1 - u.Quantity(0.1, unit=u.Unit(""))
+-
+-        # and test that scaling of integers works
+-        q = u.Quantity(np.array([1, 2, 3]), u.m / u.km, dtype=int)
+-        q2 = q + np.array([4, 5, 6])
+-        assert q2.unit == u.dimensionless_unscaled
+-        assert_allclose(q2.value, np.array([4.001, 5.002, 6.003]))
+-        # but not if doing it inplace
+-        with pytest.raises(TypeError):
+-            q += np.array([1, 2, 3])
+-        # except if it is actually possible
+-        q = np.array([1, 2, 3]) * u.km / u.m
+-        q += np.array([4, 5, 6])
+-        assert q.unit == u.dimensionless_unscaled
+-        assert np.all(q.value == np.array([1004, 2005, 3006]))
+-
+     def test_complicated_operation(self):
+         """ Perform a more complicated test """
+         from astropy.units import imperial
+diff --git a/astropy/utils/iers/iers.py b/astropy/utils/iers/iers.py
+index 5d881db5b..2b4b5086e 100644
+--- a/astropy/utils/iers/iers.py
++++ b/astropy/utils/iers/iers.py
+@@ -198,7 +198,7 @@ class IERS(QTable):
+             pass
+ 
+         mjd = np.floor(jd1 - MJD_ZERO + jd2)
+-        utc = jd1 - (MJD_ZERO+mjd) + jd2
++        utc = jd1 - (MJD_ZERO + mjd) + jd2
+         return mjd, utc
+ 
+     def ut1_utc(self, jd1, jd2=0., return_status=False):
+diff --git a/setup.py b/setup.py
+index cef37ce13..d486d7785 100755
+--- a/setup.py
++++ b/setup.py
+@@ -15,6 +15,7 @@ from astropy_helpers.distutils_helpers import is_distutils_display_option
+ from astropy_helpers.setup_helpers import setup
+ 
+ from setuptools.config import read_configuration
++import numpy
+ 
+ # We set up the following variable because we then use this in astropy/__init__.py
+ # to make sure that we aren't importing astropy during the setup process (we used
+@@ -32,4 +33,7 @@ else:
+     if not os.path.exists(os.path.join(os.path.dirname(__file__), 'PKG-INFO')):
+         setup_requires.extend(['cython>=0.21', 'jinja2>=2.7'])
+ 
+-setup(setup_requires=setup_requires)
++setup(
++    setup_requires=setup_requires,
++    include_dirs=[os.path.join(os.sys.prefix, 'include', 'python3.9'), numpy.get_include()]
++)

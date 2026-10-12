@@ -1,0 +1,849 @@
+{
+ "repo": "stock2",
+ "seed": 20261010,
+ "official_tests": 0,
+ "mutants": [
+  {
+   "id": "pt_stock2#m0",
+   "file": "reader.py",
+   "line": 35,
+   "desc": "return … → return None",
+   "point": {
+    "node": 62,
+    "kind": "ret",
+    "line": 35,
+    "desc": "return … → return None"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m1",
+   "file": "stock.py",
+   "line": 15,
+   "desc": "-= → +=",
+   "point": {
+    "node": 21,
+    "kind": "aug",
+    "line": 15,
+    "desc": "-= → +="
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m2",
+   "file": "structure.py",
+   "line": 21,
+   "desc": "條件取反",
+   "point": {
+    "node": 46,
+    "kind": "neg",
+    "line": 21,
+    "desc": "條件取反"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m3",
+   "file": "tableformat.py",
+   "line": 35,
+   "desc": "',' → ''",
+   "point": {
+    "node": 313,
+    "kind": "const",
+    "line": 35,
+    "desc": "',' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m4",
+   "file": "validate.py",
+   "line": 66,
+   "desc": "return … → return None",
+   "point": {
+    "node": 43,
+    "kind": "ret",
+    "line": 66,
+    "desc": "return … → return None"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m5",
+   "file": "reader.py",
+   "line": 27,
+   "desc": "return … → return None",
+   "point": {
+    "node": 22,
+    "kind": "ret",
+    "line": 27,
+    "desc": "return … → return None"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m6",
+   "file": "stock.py",
+   "line": 12,
+   "desc": "return … → return None",
+   "point": {
+    "node": 18,
+    "kind": "ret",
+    "line": 12,
+    "desc": "return … → return None"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m7",
+   "file": "structure.py",
+   "line": 13,
+   "desc": "0 → 1",
+   "point": {
+    "node": 166,
+    "kind": "const",
+    "line": 13,
+    "desc": "0 → 1"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m8",
+   "file": "tableformat.py",
+   "line": 65,
+   "desc": "== → !=",
+   "point": {
+    "node": 217,
+    "kind": "cmp",
+    "sub": 0,
+    "line": 65,
+    "desc": "== → !="
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m9",
+   "file": "validate.py",
+   "line": 91,
+   "desc": "'Bad Arguments\\n' → ''",
+   "point": {
+    "node": 485,
+    "kind": "const",
+    "line": 91,
+    "desc": "'Bad Arguments\\n' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m10",
+   "file": "reader.py",
+   "line": 10,
+   "desc": "條件取反",
+   "point": {
+    "node": 15,
+    "kind": "neg",
+    "line": 10,
+    "desc": "條件取反"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m11",
+   "file": "stock.py",
+   "line": 12,
+   "desc": "* → /",
+   "point": {
+    "node": 29,
+    "kind": "bin",
+    "line": 12,
+    "desc": "* → /"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m12",
+   "file": "structure.py",
+   "line": 42,
+   "desc": "'def __init__(self, ' → ''",
+   "point": {
+    "node": 190,
+    "kind": "const",
+    "line": 42,
+    "desc": "'def __init__(self, ' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m13",
+   "file": "tableformat.py",
+   "line": 45,
+   "desc": "' ' → ''",
+   "point": {
+    "node": 263,
+    "kind": "const",
+    "line": 45,
+    "desc": "' ' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m14",
+   "file": "validate.py",
+   "line": 121,
+   "desc": "': ' → ''",
+   "point": {
+    "node": 606,
+    "kind": "const",
+    "line": 121,
+    "desc": "': ' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m15",
+   "file": "reader.py",
+   "line": 19,
+   "desc": "'Row %s: Reason: %s' → ''",
+   "point": {
+    "node": 182,
+    "kind": "const",
+    "line": 19,
+    "desc": "'Row %s: Reason: %s' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m16",
+   "file": "structure.py",
+   "line": 77,
+   "desc": "條件取反",
+   "point": {
+    "node": 27,
+    "kind": "neg",
+    "line": 77,
+    "desc": "條件取反"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m17",
+   "file": "tableformat.py",
+   "line": 61,
+   "desc": "條件取反",
+   "point": {
+    "node": 32,
+    "kind": "neg",
+    "line": 61,
+    "desc": "條件取反"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m18",
+   "file": "validate.py",
+   "line": 88,
+   "desc": "'  ' → ''",
+   "point": {
+    "node": 567,
+    "kind": "const",
+    "line": 88,
+    "desc": "'  ' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m19",
+   "file": "reader.py",
+   "line": 23,
+   "desc": "return … → return None",
+   "point": {
+    "node": 20,
+    "kind": "ret",
+    "line": 23,
+    "desc": "return … → return None"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m20",
+   "file": "structure.py",
+   "line": 41,
+   "desc": "',' → ''",
+   "point": {
+    "node": 266,
+    "kind": "const",
+    "line": 41,
+    "desc": "',' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m21",
+   "file": "tableformat.py",
+   "line": 42,
+   "desc": "'</tr>' → ''",
+   "point": {
+    "node": 193,
+    "kind": "const",
+    "line": 42,
+    "desc": "'</tr>' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m22",
+   "file": "validate.py",
+   "line": 33,
+   "desc": "'Float' → ''",
+   "point": {
+    "node": 160,
+    "kind": "const",
+    "line": 33,
+    "desc": "'Float' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m23",
+   "file": "reader.py",
+   "line": 42,
+   "desc": "return … → return None",
+   "point": {
+    "node": 69,
+    "kind": "ret",
+    "line": 42,
+    "desc": "return … → return None"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m24",
+   "file": "structure.py",
+   "line": 47,
+   "desc": "'__init__' → ''",
+   "point": {
+    "node": 206,
+    "kind": "const",
+    "line": 47,
+    "desc": "'__init__' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m25",
+   "file": "tableformat.py",
+   "line": 25,
+   "desc": "* → /",
+   "point": {
+    "node": 179,
+    "kind": "bin",
+    "line": 25,
+    "desc": "* → /"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m26",
+   "file": "validate.py",
+   "line": 66,
+   "desc": "and ↔ or",
+   "point": {
+    "node": 99,
+    "kind": "bool",
+    "line": 66,
+    "desc": "and ↔ or"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m27",
+   "file": "reader.py",
+   "line": 18,
+   "desc": "'Row %s: Bad row: %s' → ''",
+   "point": {
+    "node": 178,
+    "kind": "const",
+    "line": 18,
+    "desc": "'Row %s: Bad row: %s' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m28",
+   "file": "structure.py",
+   "line": 21,
+   "desc": "and ↔ or",
+   "point": {
+    "node": 105,
+    "kind": "bool",
+    "line": 21,
+    "desc": "and ↔ or"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m29",
+   "file": "tableformat.py",
+   "line": 78,
+   "desc": "return … → return None",
+   "point": {
+    "node": 35,
+    "kind": "ret",
+    "line": 78,
+    "desc": "return … → return None"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m30",
+   "file": "validate.py",
+   "line": 103,
+   "desc": "return … → return None",
+   "point": {
+    "node": 49,
+    "kind": "ret",
+    "line": 103,
+    "desc": "return … → return None"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m31",
+   "file": "reader.py",
+   "line": 20,
+   "desc": "return … → return None",
+   "point": {
+    "node": 18,
+    "kind": "ret",
+    "line": 20,
+    "desc": "return … → return None"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m32",
+   "file": "structure.py",
+   "line": 44,
+   "desc": "+= → -=",
+   "point": {
+    "node": 124,
+    "kind": "aug",
+    "line": 44,
+    "desc": "+= → -="
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m33",
+   "file": "tableformat.py",
+   "line": 28,
+   "desc": "' ' → ''",
+   "point": {
+    "node": 306,
+    "kind": "const",
+    "line": 28,
+    "desc": "' ' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m34",
+   "file": "validate.py",
+   "line": 29,
+   "desc": "return … → return None",
+   "point": {
+    "node": 73,
+    "kind": "ret",
+    "line": 29,
+    "desc": "return … → return None"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m35",
+   "file": "reader.py",
+   "line": 10,
+   "desc": "is → is not",
+   "point": {
+    "node": 38,
+    "kind": "cmp",
+    "sub": 0,
+    "line": 10,
+    "desc": "is → is not"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m36",
+   "file": "structure.py",
+   "line": 33,
+   "desc": "return … → return None",
+   "point": {
+    "node": 51,
+    "kind": "ret",
+    "line": 33,
+    "desc": "return … → return None"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m37",
+   "file": "tableformat.py",
+   "line": 41,
+   "desc": "' ' → ''",
+   "point": {
+    "node": 321,
+    "kind": "const",
+    "line": 41,
+    "desc": "' ' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m38",
+   "file": "validate.py",
+   "line": 43,
+   "desc": "'must be >= 0' → ''",
+   "point": {
+    "node": 371,
+    "kind": "const",
+    "line": 43,
+    "desc": "'must be >= 0' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m39",
+   "file": "reader.py",
+   "line": 14,
+   "desc": "1 → 0",
+   "point": {
+    "node": 116,
+    "kind": "const",
+    "line": 14,
+    "desc": "1 → 0"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m40",
+   "file": "structure.py",
+   "line": 65,
+   "desc": "and ↔ or",
+   "point": {
+    "node": 218,
+    "kind": "bool",
+    "line": 65,
+    "desc": "and ↔ or"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m41",
+   "file": "tableformat.py",
+   "line": 53,
+   "desc": "% → *",
+   "point": {
+    "node": 203,
+    "kind": "bin",
+    "line": 53,
+    "desc": "% → *"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m42",
+   "file": "validate.py",
+   "line": 27,
+   "desc": "條件取反",
+   "point": {
+    "node": 72,
+    "kind": "neg",
+    "line": 27,
+    "desc": "條件取反"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m43",
+   "file": "structure.py",
+   "line": 24,
+   "desc": "'No attribute %s' → ''",
+   "point": {
+    "node": 322,
+    "kind": "const",
+    "line": 24,
+    "desc": "'No attribute %s' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m44",
+   "file": "tableformat.py",
+   "line": 68,
+   "desc": "'Unknown format %s' → ''",
+   "point": {
+    "node": 379,
+    "kind": "const",
+    "line": 68,
+    "desc": "'Unknown format %s' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m45",
+   "file": "validate.py",
+   "line": 133,
+   "desc": "return … → return None",
+   "point": {
+    "node": 229,
+    "kind": "ret",
+    "line": 133,
+    "desc": "return … → return None"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m46",
+   "file": "structure.py",
+   "line": 85,
+   "desc": "return … → return None",
+   "point": {
+    "node": 31,
+    "kind": "ret",
+    "line": 85,
+    "desc": "return … → return None"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m47",
+   "file": "tableformat.py",
+   "line": 47,
+   "desc": "' ' → ''",
+   "point": {
+    "node": 326,
+    "kind": "const",
+    "line": 47,
+    "desc": "' ' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m48",
+   "file": "validate.py",
+   "line": 88,
+   "desc": "': ' → ''",
+   "point": {
+    "node": 569,
+    "kind": "const",
+    "line": 88,
+    "desc": "': ' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m49",
+   "file": "structure.py",
+   "line": 9,
+   "desc": "return … → return None",
+   "point": {
+    "node": 34,
+    "kind": "ret",
+    "line": 9,
+    "desc": "return … → return None"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m50",
+   "file": "tableformat.py",
+   "line": 24,
+   "desc": "' ' → ''",
+   "point": {
+    "node": 297,
+    "kind": "const",
+    "line": 24,
+    "desc": "' ' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m51",
+   "file": "validate.py",
+   "line": 101,
+   "desc": "return … → return None",
+   "point": {
+    "node": 114,
+    "kind": "ret",
+    "line": 101,
+    "desc": "return … → return None"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m52",
+   "file": "structure.py",
+   "line": 28,
+   "desc": "', ' → ''",
+   "point": {
+    "node": 372,
+    "kind": "const",
+    "line": 28,
+    "desc": "', ' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m53",
+   "file": "tableformat.py",
+   "line": 39,
+   "desc": "'<tr>' → ''",
+   "point": {
+    "node": 187,
+    "kind": "const",
+    "line": 39,
+    "desc": "'<tr>' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m54",
+   "file": "validate.py",
+   "line": 123,
+   "desc": "條件取反",
+   "point": {
+    "node": 226,
+    "kind": "neg",
+    "line": 123,
+    "desc": "條件取反"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m55",
+   "file": "structure.py",
+   "line": 14,
+   "desc": "return … → return None",
+   "point": {
+    "node": 38,
+    "kind": "ret",
+    "line": 14,
+    "desc": "return … → return None"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m56",
+   "file": "tableformat.py",
+   "line": 5,
+   "desc": "拿掉 not",
+   "point": {
+    "node": 39,
+    "kind": "not",
+    "line": 5,
+    "desc": "拿掉 not"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m57",
+   "file": "validate.py",
+   "line": 27,
+   "desc": "拿掉 not",
+   "point": {
+    "node": 153,
+    "kind": "not",
+    "line": 27,
+    "desc": "拿掉 not"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m58",
+   "file": "structure.py",
+   "line": 61,
+   "desc": "條件取反",
+   "point": {
+    "node": 71,
+    "kind": "neg",
+    "line": 61,
+    "desc": "條件取反"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_stock2#m59",
+   "file": "tableformat.py",
+   "line": 60,
+   "desc": "False → True",
+   "point": {
+    "node": 84,
+    "kind": "const",
+    "line": 60,
+    "desc": "False → True"
+   },
+   "killed": null,
+   "invalid": false
+  }
+ ]
+}

@@ -1,0 +1,194 @@
+2026-10-09 14:54:32,606 - INFO - Creating container for redis__redis-12472...
+2026-10-09 14:54:33,108 - INFO - Container for redis__redis-12472 created: accc02c6e06626e217a04cfbad267fd8f8c745465cd7e5fd575f1e3eb707a896
+2026-10-09 14:54:33,717 - INFO - Container for redis__redis-12472 started: accc02c6e06626e217a04cfbad267fd8f8c745465cd7e5fd575f1e3eb707a896
+2026-10-09 14:54:33,717 - INFO - Intermediate patch for redis__redis-12472 written to logs/run_evaluation/20261009_140903_swebench_gemma4-26b_v411-affected/gemma4-26b_v411-affected/redis__redis-12472/patch.diff, now applying to container...
+2026-10-09 14:54:33,757 - INFO - >>>>> Applied Patch:
+/tmp/patch.diff:34: trailing whitespace.
+        
+/tmp/patch.diff:40: trailing whitespace.
+        res1 = subprocess.run([redis_cli_path, "-p", str(port), "ACL", "SETUSER", "user1", "on", ">123", "+config|get", "-config|set"], 
+/tmp/patch.diff:48: trailing whitespace.
+        res2 = subprocess.run([redis_cli_path, "-p", str(port), "ACL", "SETUSER", "user1", "+config"], 
+/tmp/patch.diff:56: trailing whitespace.
+        res3 = subprocess.run([redis_cli_path, "-p", str(port), "ACL", "LIST"], 
+/tmp/patch.diff:58: trailing whitespace.
+        
+Checking patch reproduce_issue.py...
+Checking patch src/acl.c...
+Checking patch tests/acl/acl_redundancy.tcl...
+Checking patch tests/acl_redundancy_repro.py...
+Applied patch reproduce_issue.py cleanly.
+Applied patch src/acl.c cleanly.
+Applied patch tests/acl/acl_redundancy.tcl cleanly.
+Applied patch tests/acl_redundancy_repro.py cleanly.
+warning: squelched 5 whitespace errors
+warning: 10 lines add whitespace errors.
+
+2026-10-09 14:54:33,869 - INFO - Git diff before:
+diff --git a/src/acl.c b/src/acl.c
+index 0bffbe97..4949b220 100644
+--- a/src/acl.c
++++ b/src/acl.c
+@@ -758,13 +758,70 @@ sds ACLDescribeSelectorCommandRules(aclSelector *selector) {
+         int res = ACLSetSelector(fake_selector, argv[i], -1);
+         serverAssert(res == C_OK);
+     }
+-    if (sdslen(selector->command_rules)) {
+-        rules = sdscatfmt(rules, "%S ", selector->command_rules);
++    sdsfreesplitres(argv, argc);
++
++    /* Now we want to generate the rule string by only including rules
++     * that actually change the bitmap of the fake_selector. This avoids
++     * including redundant rules (e.g., a +cmd rule after a -@all rule
++     * that already includes it, or a -cmd rule that is already covered
++     * by a +@all rule). */
++    rules = sdsempty();
++    aclSelector *prev_selector = ACLCreateSelector(0);
++    if (ACLSelectorCanExecuteFutureCommands(selector)) {
++        ACLSetSelector(prev_selector,"+@all",-1);
++    } else {
++        ACLSetSelector(prev_selector,"-@all",-1);
++    }
++
++    if (ACLSelectorCanExecuteFutureCommands(selector)) {
++        rules = sdscat(rules,"+@all ");
++    } else {
++        rules = sdscat(rules,"-@all ");
++    }
++
++    argc = 0;
++    argv = sdssplitargs(selector->command_rules, &argc);
++    serverAssert(argv != NULL);
++
++    for(int i = 0; i < argc; i++) {
++        /* Create a temporary selector to see if this rule changes the bitmap. */
++        aclSelector *test_selector = ACLCreateSelector(0);
++        /* Apply all previous rules to the test_selector. */
++        for(int j = 0; j < i; j++) {
++            ACLSetSelector(test_selector, argv[j], -1);
++        }
++
++        /* Check if applying argv[i] changes the bitmap of test_selector
++         * compared to the state after applying all previous rules (prev_selector). */
++        int changed = 0;
++        /* Apply argv[i] to test_selector to see the new state. */
++        ACLSetSelector(test_selector, argv[i], -1);
++
++        for (int k = 0; k < (USER_COMMAND_BITS_COUNT/64); k++) {
++            if (test_selector->allowed_commands[k] != prev_selector->allowed_commands[k]) {
++                changed = 1;
++                break;
++            }
++        }
++        /* Also check flags. */
++        if (!changed && test_selector->flags != prev_selector->flags) {
++            changed = 1;
++        }
++
++        if (changed) {
++            if (sdslen(rules)) rules = sdscatlen(rules, " ", 1);
++            rules = sdscatfmt(rules, "%S", argv[i]);
++            /* Update prev_selector to the new state. */
++            ACLFreeSelector(prev_selector);
++            prev_selector = ACLCopySelector(test_selector);
++        }
++        ACLFreeSelector(test_selector);
+     }
++    ACLFreeSelector(prev_selector);
+     sdsfreesplitres(argv, argc);
+ 
+     /* Trim the final useless space. */
+-    sdsrange(rules,0,-2);
++    if (sdslen(rules) > 0) sdsrange(rules, 0, -1);
+ 
+     /* This is technically not needed, but we want to verify that now the
+      * predicted bitmap is exactly the same as the user bitmap, and abort
+2026-10-09 14:54:33,869 - INFO - Eval script for redis__redis-12472 written to logs/run_evaluation/20261009_140903_swebench_gemma4-26b_v411-affected/gemma4-26b_v411-affected/redis__redis-12472/eval.sh; copying to container...
+2026-10-09 14:55:38,790 - INFO - Test runtime: 64.90 seconds
+2026-10-09 14:55:38,790 - INFO - Test output for redis__redis-12472 written to logs/run_evaluation/20261009_140903_swebench_gemma4-26b_v411-affected/gemma4-26b_v411-affected/redis__redis-12472/test_output.txt
+2026-10-09 14:55:38,813 - INFO - Git diff after:
+diff --git a/src/acl.c b/src/acl.c
+index 0bffbe97..4949b220 100644
+--- a/src/acl.c
++++ b/src/acl.c
+@@ -758,13 +758,70 @@ sds ACLDescribeSelectorCommandRules(aclSelector *selector) {
+         int res = ACLSetSelector(fake_selector, argv[i], -1);
+         serverAssert(res == C_OK);
+     }
+-    if (sdslen(selector->command_rules)) {
+-        rules = sdscatfmt(rules, "%S ", selector->command_rules);
++    sdsfreesplitres(argv, argc);
++
++    /* Now we want to generate the rule string by only including rules
++     * that actually change the bitmap of the fake_selector. This avoids
++     * including redundant rules (e.g., a +cmd rule after a -@all rule
++     * that already includes it, or a -cmd rule that is already covered
++     * by a +@all rule). */
++    rules = sdsempty();
++    aclSelector *prev_selector = ACLCreateSelector(0);
++    if (ACLSelectorCanExecuteFutureCommands(selector)) {
++        ACLSetSelector(prev_selector,"+@all",-1);
++    } else {
++        ACLSetSelector(prev_selector,"-@all",-1);
++    }
++
++    if (ACLSelectorCanExecuteFutureCommands(selector)) {
++        rules = sdscat(rules,"+@all ");
++    } else {
++        rules = sdscat(rules,"-@all ");
++    }
++
++    argc = 0;
++    argv = sdssplitargs(selector->command_rules, &argc);
++    serverAssert(argv != NULL);
++
++    for(int i = 0; i < argc; i++) {
++        /* Create a temporary selector to see if this rule changes the bitmap. */
++        aclSelector *test_selector = ACLCreateSelector(0);
++        /* Apply all previous rules to the test_selector. */
++        for(int j = 0; j < i; j++) {
++            ACLSetSelector(test_selector, argv[j], -1);
++        }
++
++        /* Check if applying argv[i] changes the bitmap of test_selector
++         * compared to the state after applying all previous rules (prev_selector). */
++        int changed = 0;
++        /* Apply argv[i] to test_selector to see the new state. */
++        ACLSetSelector(test_selector, argv[i], -1);
++
++        for (int k = 0; k < (USER_COMMAND_BITS_COUNT/64); k++) {
++            if (test_selector->allowed_commands[k] != prev_selector->allowed_commands[k]) {
++                changed = 1;
++                break;
++            }
++        }
++        /* Also check flags. */
++        if (!changed && test_selector->flags != prev_selector->flags) {
++            changed = 1;
++        }
++
++        if (changed) {
++            if (sdslen(rules)) rules = sdscatlen(rules, " ", 1);
++            rules = sdscatfmt(rules, "%S", argv[i]);
++            /* Update prev_selector to the new state. */
++            ACLFreeSelector(prev_selector);
++            prev_selector = ACLCopySelector(test_selector);
++        }
++        ACLFreeSelector(test_selector);
+     }
++    ACLFreeSelector(prev_selector);
+     sdsfreesplitres(argv, argc);
+ 
+     /* Trim the final useless space. */
+-    sdsrange(rules,0,-2);
++    if (sdslen(rules) > 0) sdsrange(rules, 0, -1);
+ 
+     /* This is technically not needed, but we want to verify that now the
+      * predicted bitmap is exactly the same as the user bitmap, and abort
+2026-10-09 14:55:38,813 - INFO - Grading answer for redis__redis-12472...
+2026-10-09 14:55:38,814 - INFO - report: {'redis__redis-12472': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'infra_failure': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['ACL GETUSER provides correct results']}, 'PASS_TO_PASS': {'success': [], 'failure': ['ACL GETUSER is able to translate back command permissions', 'ACL GETUSER provides reasonable results']}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for redis__redis-12472: resolved: False
+2026-10-09 14:55:38,814 - INFO - Attempting to stop container sweb.eval.redis__redis-12472.20261009_140903_swebench_gemma4-26b_v411-affected...
+2026-10-09 14:55:55,354 - INFO - Container sweb.eval.redis__redis-12472.20261009_140903_swebench_gemma4-26b_v411-affected stopped successfully.
+2026-10-09 14:55:55,354 - INFO - Attempting to remove container sweb.eval.redis__redis-12472.20261009_140903_swebench_gemma4-26b_v411-affected...
+2026-10-09 14:55:55,655 - INFO - Container sweb.eval.redis__redis-12472.20261009_140903_swebench_gemma4-26b_v411-affected removed successfully.

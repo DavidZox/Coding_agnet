@@ -1,0 +1,16 @@
+{
+ "id": "ap_python_list_ops",
+ "family": "ap",
+ "source": "aider_polyglot",
+ "repo": "list-ops",
+ "lang": "python",
+ "workspace": "workspaces/ap_python_list_ops",
+ "task": "請照 `.docs/instructions.md` 的說明完成 `list_ops.py`（目前只有空的骨架）。測試在 `list_ops_test.py`，要全部通過；測試是對的，不要修改測試。",
+ "impl_files": [
+  "list_ops.py"
+ ],
+ "test_files": [
+  "list_ops_test.py"
+ ],
+ "python": "devbench_venv"
+}

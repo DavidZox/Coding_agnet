@@ -1,0 +1,291 @@
+diff --git a/debug_handler.py b/debug_handler.py
+new file mode 100644
+index 000000000..3dfd9dcb7
+--- /dev/null
++++ b/debug_handler.py
+@@ -0,0 +1,37 @@
++from sympy import Symbol, ask, Q
++
++def debug_handler():
++    print("--- Debugging AskEvenHandler and AskFiniteHandler ---")
++    m = Symbol('m', even=True)
++    
++    print(f"Symbol: {m}")
++    print(f"m.is_even: {m.is_even}")
++    print(f"m.is_finite: {m.is_finite}")
++    
++    # Check if the assumption system can see the even property
++    # We use ask to see if the system can infer finiteness from evenness
++    print(f"ask(Q.finite(m)) with m.is_even=True: {ask(Q.finite(m))}")
++    
++    # Manual check of the handler logic if possible
++    from sympy.assumptions.handlers.ntheory import AskEvenHandler, AskFiniteHandler
++    
++    print("\nTesting AskEvenHandler.Expr directly:")
++    # In a real scenario, assumptions is a FactKB or similar
++    # Here we simulate the call
++    res_even = AskEvenHandler.Expr(m, None)
++    print(f"AskEvenHandler.Expr(m, None) returned: {res_even}")
++
++    print("\nTesting AskFiniteHandler.Expr directly:")
++    res_finite = AskFiniteHandler.Expr(m, None)
++    print(f"AskFiniteHandler.Expr(m, None) returned: {res_finite}")
++
++    # Test with explicit assumptions
++    from sympy.assumptions import FactKB
++    kb = FactKB()
++    # We can't easily inject assumptions into a Symbol object's internal KB 
++    # without more complex setup, but let's see if the handler reacts to the property
++    
++    print("\n--- End of Debug ---")
++
++if __name__ == "__main__":
++    debug_handler()
+diff --git a/diagnose_even.py b/diagnose_even.py
+new file mode 100644
+index 000000000..5da8b9fd4
+--- /dev/null
++++ b/diagnose_even.py
+@@ -0,0 +1,29 @@
++from sympy import Symbol, ask, Q
++
++def diagnose():
++    print("Testing m = Symbol('m', even=True)")
++    m = Symbol('m', even=True)
++    
++    print(f"m.is_even: {m.is_even}")
++    print(f"m.is_finite: {m.is_finite}")
++    
++    print("\nTesting ask(Q.even(m), assumptions=None)")
++    res_even = ask(Q.even(m))
++    print(f"ask(Q.even(m)): {res_even}")
++    
++    print("\nTesting ask(Q.finite(m), assumptions=None)")
++    res_finite = ask(Q.finite(m))
++    print(f"ask(Q.finite(m)): {res_finite}")
++    
++    print("\nTesting ask(Q.finite(m), assumptions={even: True})")
++    # Manually constructing assumptions if needed, but ask usually handles it via the symbol
++    res_finite_with_even = ask(Q.finite(m))
++    print(f"ask(Q.finite(m)) when m is even: {res_finite_with_even}")
++
++    print("\nTesting m = Symbol('m', even=True, finite=True)")
++    m2 = Symbol('m', even=True, finite=True)
++    print(f"m2.is_even: {m2.is_even}")
++    print(f"m2.is_finite: {m2.is_finite}")
++
++if __name__ == "__main__":
++    diagnose()
+diff --git a/diagnose_m.py b/diagnose_m.py
+new file mode 100644
+index 000000000..e97650442
+--- /dev/null
++++ b/diagnose_m.py
+@@ -0,0 +1,24 @@
++from sympy import Symbol, ask, Q
++
++def diagnose():
++    print("Testing m = Symbol('m', even=True)")
++    m = Symbol('m', even=True)
++    
++    print(f"m.is_even: {m.is_even}")
++    print(f"m.is_finite: {m.is_finite}")
++    
++    print("\nTesting ask(Q.even(m), assumptions=None)")
++    res_even = ask(Q.even(m))
++    print(f"ask(Q.even(m)): {res_even}")
++    
++    print("\nTesting ask(Q.finite(m), assumptions=None)")
++    res_finite = ask(Q.finite(m))
++    print(f"ask(Q.finite(m)): {res_finite}")
++    
++    print("\nTesting m = Symbol('m', even=True, finite=True)")
++    m2 = Symbol('m', even=True, finite=True)
++    print(f"m2.is_even: {m2.is_even}")
++    print(f"m2.is_finite: {m2.is_finite}")
++
++if __name__ == "__main__":
++    diagnose()
+diff --git a/sympy/assumptions/ask.py b/sympy/assumptions/ask.py
+index 2f72e111e..9724d4286 100644
+--- a/sympy/assumptions/ask.py
++++ b/sympy/assumptions/ask.py
+@@ -1481,6 +1481,7 @@ def get_known_facts():
+         Equivalent(Q.extended_real, Q.real | Q.infinite),
+         Equivalent(Q.even | Q.odd, Q.integer),
+         Implies(Q.even, ~Q.odd),
++        Implies(Q.even, Q.finite),
+         Equivalent(Q.prime, Q.integer & Q.positive & ~Q.composite),
+         Implies(Q.integer, Q.rational),
+         Implies(Q.rational, Q.algebraic),
+diff --git a/sympy/assumptions/handlers/calculus.py b/sympy/assumptions/handlers/calculus.py
+index aa0d00aca..a3173d24c 100644
+--- a/sympy/assumptions/handlers/calculus.py
++++ b/sympy/assumptions/handlers/calculus.py
+@@ -50,6 +50,18 @@ def Symbol(expr, assumptions):
+             return expr.is_finite
+         if Q.finite(expr) in conjuncts(assumptions):
+             return True
++        try:
++            from sympy.assumptions.handlers.ntheory import AskEvenHandler
++            if AskEvenHandler._implies_finite(expr, assumptions):
++                return True
++        except ImportError:
++            pass
++        if expr.is_even is True:
++            return True
++        if ask(Q.even(expr), assumptions) is True:
++            return True
++        if ask(Q.finite(expr), assumptions) is True:
++            return True
+         return None
+ 
+     @staticmethod
+@@ -60,34 +72,38 @@ def Add(expr, assumptions):
+         Truth Table:
+ 
+         +-------+-----+-----------+-----------+
++        |       |     |     U     |     ?     |
+         |       |     |           |           |
+-        |       |  B  |     U     |     ?     |
+         |       |     |           |           |
+-        +-------+-----+---+---+---+---+---+---+
+-        |       |     |   |   |   |   |   |   |
++        +-------+-----+-----------+-----------+
+         |       |     |'+'|'-'|'x'|'+'|'-'|'x'|
+         |       |     |   |   |   |   |   |   |
+         +-------+-----+---+---+---+---+---+---+
+-        |       |     |           |           |
+         |   B   |  B  |     U     |     ?     |
+         |       |     |           |           |
+         +---+---+-----+---+---+---+---+---+---+
+-        |   |   |     |   |   |   |   |   |   |
+-        |   |'+'|     | U | ? | ? | U | ? | ? |
+-        |   |   |     |   |   |   |   |   |   |
+-        |   +---+-----+---+---+---+---+---+---+
+-        |   |   |     |   |   |   |   |   |   |
+-        | U |'-'|     | ? | U | ? | ? | U | ? |
+-        |   |   |     |   |   |   |   |   |   |
++        |   |   |     |'+'|     | U | ? | ? |
++        |   |   |     |   |     |   |   |   |
++        +---+---+-----+---+---+---+---+---+---+
++        |   |   |     |   |     |   |   |   |
+         |   +---+-----+---+---+---+---+---+---+
++        |   |   |     |   |     |   |   |   |
++        |   |   |     |   |     |   |   |   |
++        +---+---+-----+---+---+---+---+---+---+
++        |   |   |     |   |     |   |   |   |
++        |   |   +-----+---+---+---+---+---+---+
++        |   |   |     |   |     |   |   |   |
++        |   |   |     |   |     |   |   |   |
++        +---+---+-----+---+---+---+---+---+---+
++        |   |   |     |   |     |   |   |   |
++        |   |   |     |   |     |   |   |   |
++        |   |   +-----+---+---+---+---+---+---+
+         |   |   |     |           |           |
+-        |   |'x'|     |     ?     |     ?     |
+         |   |   |     |           |           |
+-        +---+---+-----+---+---+---+---+---+---+
+-        |       |     |           |           |
+-        |   ?   |     |           |     ?     |
++        +---+---+-----+-----------+-----------+
+         |       |     |           |           |
+-        +-------+-----+-----------+---+---+---+
++        |   ?   |     |           |           |
++        +-------+-----+-----------+-----------+
+ 
+             * 'B' = Bounded
+ 
+@@ -146,26 +162,31 @@ def Mul(expr, assumptions):
+         Truth Table:
+ 
+         +---+---+---+--------+
+-        |   |   |   |        |
+-        |   | B | U |   ?    |
+-        |   |   |   |        |
+-        +---+---+---+---+----+
++        |   |   | B | U |   ?    |
++        |   |   |   |   |        |
++        |   |   |   |   |        |
++        +---+---+---+--------+
++        | B | B | U |   ?    |
++        |   |   |   |   |    |
++        +---+---+---+--------+
++        | U |   | U | U | ?  |
+         |   |   |   |   |    |
+-        |   |   |   | s | /s |
++        +---+---+---+--------+
++        | ? |   | ?   |   |   ?    |
++        |   |   |   |   |   |    |
++        +---+---+---+--------+
++        |   |   | s | /s |
+         |   |   |   |   |    |
+-        +---+---+---+---+----+
+-        |   |   |   |        |
++        +---+---+---+--------+
+         | B | B | U |   ?    |
+-        |   |   |   |        |
+-        +---+---+---+---+----+
+         |   |   |   |   |    |
++        +---+---+---+--------+
+         | U |   | U | U | ?  |
+         |   |   |   |   |    |
+-        +---+---+---+---+----+
+-        |   |   |   |        |
+-        | ? |   |   |   ?    |
+-        |   |   |   |        |
+-        +---+---+---+---+----+
++        +---+---+---+--------+
++        | ? |   | ?   |   |   ?    |
++        |   |   |   |   |   |    |
++        +---+---+---+--------+
+ 
+             * B = Bounded
+ 
+diff --git a/sympy/assumptions/handlers/ntheory.py b/sympy/assumptions/handlers/ntheory.py
+index 91761bad0..a8857cf78 100644
+--- a/sympy/assumptions/handlers/ntheory.py
++++ b/sympy/assumptions/handlers/ntheory.py
+@@ -110,6 +110,12 @@ class AskEvenHandler(CommonHandler):
+     def Expr(expr, assumptions):
+         return expr.is_even
+ 
++    @staticmethod
++    def _implies_finite(expr, assumptions):
++        if expr.is_even:
++            return True
++        return None
++
+     @staticmethod
+     def _number(expr, assumptions):
+         # helper method
+@@ -228,6 +234,15 @@ def im(expr, assumptions):
+             return True
+ 
+ 
++class AskFiniteHandler(CommonHandler):
++    @staticmethod
++    def Expr(expr, assumptions):
++        if expr.is_even:
++            return True
++        if ask(Q.even(expr), assumptions):
++            return True
++        return expr.is_finite
++
+ class AskOddHandler(CommonHandler):
+     """
+     Handler for key 'odd'
+diff --git a/sympy/core/tests/test_even_finite.py b/sympy/core/tests/test_even_finite.py
+new file mode 100644
+index 000000000..b8a48c672
+--- /dev/null
++++ b/sympy/core/tests/test_even_finite.py
+@@ -0,0 +1,8 @@
++from sympy import Symbol
++
++def test_even_implies_finite():
++    m = Symbol('m', even=True)
++    assert m.is_finite is True
++
++if __name__ == '__main__':
++    test_even_implies_finite()

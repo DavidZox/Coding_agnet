@@ -1,0 +1,304 @@
+"""SkillAgent：把各 mixin 組合成一個類別，並定義所有狀態的初始值（__init__）與 token 計量。"""
+import json
+import ollama
+import os
+import threading
+import time
+from .archive import ArchiveMixin
+from .compression import CompressionMixin
+from .config import (
+    CONTEXT_MODE_DEFAULT,
+    DEFAULT_CHARS_PER_TOKEN,
+    GUARD_DEFAULT,
+    MAIN_THINK_DEFAULT,
+    MODEL_SETTINGS_NAME,
+    PLAN_EXEC_GUARD_DEFAULT,
+    MAX_CHARS_PER_TOKEN,
+    MIN_CHARS_PER_TOKEN,
+    PROJECT_ROOT,
+    SKILL_MODEL,
+    SUMMARY_MODEL,
+)
+from .context_mode import ContextModeMixin
+from .conversation import ConversationMixin
+from .dispatch import DispatchMixin
+from .guard import GuardMixin
+from .make_skill import MakeSkillMixin
+from .ops_job import OpsMixin
+from .perf import PerfMixin
+from .plan import PlanMixin
+from .prompt import PromptMixin
+from .tool_summary import ToolSummaryMixin
+from .tool_use_index import ToolUseIndexMixin
+from .trajectory import TrajectoryMixin
+from .turn_guard import TurnGuardMixin
+
+
+class SkillAgent(ConversationMixin, PromptMixin, DispatchMixin, GuardMixin, ContextModeMixin, PlanMixin,
+                 ToolSummaryMixin, ToolUseIndexMixin, ArchiveMixin, TrajectoryMixin, CompressionMixin,
+                 MakeSkillMixin, PerfMixin, TurnGuardMixin, OpsMixin):
+    def __init__(self, model="gemma4:e4b", max_history=None, summary_model=None):
+        # max_history：訊息「則數」滑動視窗，預設停用（None）。上下文大小統一以 token 門檻
+        # （TOKEN_THRESHOLD）觸發壓縮歸檔；這個參數只保留作為極端情境的保險絲，需要時再開。
+        # summary_model：壓縮摘要與工具摘要這兩種獨立 session 用的模型，預設與主模型相同；
+        # 可用環境變數 AGENT_SUMMARY_MODEL 指定（見檔尾 SUMMARY_MODEL 說明）。
+        self.model = model
+        self.begin_turn()   # 卡住偵測與「沒執行卻說做完」的回合計數（turn_guard.py）
+        self.summary_model = summary_model or SUMMARY_MODEL or model
+        # 沒有另外指定摘要模型時，摘要模型「跟著主模型」：Web Console 換主模型時一起換（不會多載一個模型）
+        self._summary_follows_main = not (summary_model or SUMMARY_MODEL)
+        # 主對話的 thinking 模式（Ollama 的 think 參數；模型不支援時不送，見 model_caps.think_arg）。思考內容放在 last_thinking 給畫面看
+        self.main_think = MAIN_THINK_DEFAULT
+        self.last_thinking = ""
+        self.script_dir = PROJECT_ROOT
+        self.base_path = os.path.join(self.script_dir, "skills_system")
+        self.index_file = os.path.join(self.base_path, "SKILLS.md")
+        self.profile_file = os.path.join(self.script_dir, "AGENT.md")
+        self.memory_file = os.path.join(self.script_dir, "Memory.md")
+
+        # 預設工作目錄以程式所在位置為準，不寫死機器特定路徑
+        self.current_cwd = self.script_dir
+        self.container_cwd = ""
+        # 目標容器：容器相關技能預設操作的容器，預設空。跟工作目錄同一套機制——run_tool 以環境變數
+        # TARGET_CONTAINER 傳給腳本（省略容器名稱時用它），腳本成功操作某容器後在輸出末行印
+        # [TARGET_CONTAINER] <名稱>，_sync_state_from_tool_output 同步回來（比照 cd 的 [CWD_CHANGED]）。
+        # 所以它等於「最近一次成功操作的容器」；docker_open 用來刻意選定／切換。system prompt 的
+        # Current Agent State 讓模型直接用、不再問使用者要看哪個容器；Web Console 狀態列顯示。
+        self.target_container = ""
+
+        self.messages = []
+        self.max_history = max_history
+
+        # 🔀 上下文管理模式（harness／claude_code，見 config.CONTEXT_MODES 與 context_mode.py）與 🛡️ 執行前關卡
+        self.context_mode = CONTEXT_MODE_DEFAULT
+        self.guard_enabled = GUARD_DEFAULT
+        # 📝 /plan 的草稿與執行進度（plan.py）：None 或 {task, steps:[{skill, goal, status}], status, failures, warning}；
+        # plan_exec_guard：/plan_exec_guard on 時，計畫執行中有執行前檢查與自動推進（預設關＝沒有限制）
+        self.plan = None
+        self.plan_error = None   # 最近一次規劃 session 失敗的原因（連不到 Ollama 等）
+        self.plan_exec_guard = PLAN_EXEC_GUARD_DEFAULT
+
+        if not os.path.exists(self.index_file):
+            raise FileNotFoundError(f"找不到技能索引：{self.index_file}")
+
+        # 技能規格文件（OKF：Open Knowledge Format）目錄，每個技能一份 tools/<name>.md
+        self.tools_dir = os.path.join(self.base_path, "tools")
+
+        # =========================
+        # 🧠 Token Tracker（真實 token 尺度，見檔尾 NUM_CTX / TOKEN_THRESHOLD 說明）
+        # =========================
+        self.total_user_tokens = 0
+        self.total_ai_tokens = 0
+        self.total_tool_tokens = 0
+        self.chars_per_token = DEFAULT_CHARS_PER_TOKEN  # 字元→token 校準比，每次 ask_ai 後用 prompt_eval_count 更新
+        self.last_prompt_tokens = None   # 最近一次 ask_ai 由 Ollama 回報的完整 prompt token 數（精確）
+        self.last_prompt_chars = None    # 該次 prompt 的字元數，之後用來估算增量
+        self.last_eval_tokens = None     # 最近一次 ask_ai 產生的 token 數（精確）
+        self.auto_compressed = False     # 最近一次 ask_ai 呼叫前是否因超過門檻而自動壓縮（供 UI 顯示）
+        self.auto_cleared = None         # 最近一次 ask_ai 呼叫前 claude_code 模式清除舊工具回傳的統計（供 UI 顯示）
+        self.last_clearing = None        # 最近一次清除舊工具回傳的統計 {results, tokens}
+        self.last_tail_chars = 0         # 最近一次送出時動態區（build_state_tail）的字元數，context_tokens 估算用
+        self._tokenize_unavailable = False
+
+        # 🧭 非編碼的多步驟任務（ops_job.py）：ops_plan 的計畫草稿（等 ops_run）與最近一次執行完的計畫
+        self.ops_draft = None
+        self.ops_last = None
+
+        # ⏱️ 模型呼叫耗時（perf.py）：主對話呼叫前 system prompt 有沒有變、歷史有沒有被改寫、中間跑了幾次獨立 session
+        self.perf_calls = []
+        self.last_perf = None
+        self._side_calls_since_main = 0
+        self._last_main_sys_hash = None
+        self._history_rewritten = False
+
+        # 🧠 長期記憶載入狀態（load_long_term_memory）：超過上限沒載入的條目數，與待送給 UI 的提醒
+        self.memory_dropped = 0
+        self._memory_warning = None
+
+        # =========================
+        # 🎯 Sticky Objective
+        # =========================
+        self.sticky_objective = None
+
+        # =========================
+        # 📝 已核准、正在執行中的任務計畫（/plan 模式用）
+        # 跟 sticky_objective 一樣塞進 system prompt，而不是放在 self.messages
+        # 裡的一般訊息，這樣才不會被 _truncate_memory 的滑動視窗或
+        # compress_context_to_file 的壓縮摘要沖掉，整個任務執行期間都在。
+        # =========================
+        self.current_plan = None
+
+        # =========================
+        # 📌 使用者最近說的話（任務線）
+        # current_task 是最新一句、task_history 是連同它在內最近 3 句原話，每次使用者送出新訊息時由
+        # set_current_task 更新，/clear 時清空。給獨立 session（summarize_tool_result、_result_recall）當
+        # 「使用者的目標」的一部分（與 sticky_objective、current_plan 一起，見 _build_task_anchor_text）。
+        # =========================
+        self.current_task = None
+        self.task_history = []          # 最近 TASK_HISTORY_KEEP 則使用者任務訊息（舊→新），見 set_current_task／_build_task_anchor_text
+        self._user_said = []            # 使用者每句話與時間（最多 200 則），壓縮時逐字保留原話用（_keep_user_words）
+        self.last_result_id = None      # 最近一次 run_tool 存檔的結果編號（regard 規格載入時為 None），供摘要附註與 UI 顯示
+        self.last_result_file = None
+
+        # =========================
+        # 🗜️ 滾動摘要與背景壓縮（雙水位線，見檔尾 SOFT_TOKEN_THRESHOLD / KEEP_RECENT_TOKENS 說明）
+        # rolling_summary：最新一份「融合摘要」，get_system_prompt 每次注入；每次壓縮都是
+        #   「上一份摘要 + 這次要壓的訊息 → 新的一份」，system prompt 只帶一份而不是最近 5 個檔案。
+        #   啟動時從 logs/ 最新的 summary_*.md 載入，作為跨 session 的延續。
+        # messages_lock：保護 self.messages 的快照與整批替換（背景壓縮執行緒會用到）。
+        # =========================
+        # user_words：被壓縮掉的對話裡使用者的原話（程式逐字保留，不交給摘要模型改寫）；conversation_archives：
+        # 被壓縮的對話片段存檔編號。兩者跟滾動摘要一起從最新一份 summary_*.json 接回（_load_latest_summary_state）。
+        (self.rolling_summary, self.user_words, self.user_words_dropped,
+         self.conversation_archives) = self._load_latest_summary_state()
+        self.messages_lock = threading.RLock()
+        self._compress_thread = None          # 進行中的背景壓縮執行緒（/parallel_cal on 時才會有）
+        self._compress_state_lock = threading.Lock()
+        self._notices = []                    # 背景壓縮完成／失敗的通知，下一次互動時顯示
+        self.last_compression = None          # 最近一次壓縮的統計（檔名、則數、摘要 token 數）
+        self.last_tool_summary = None         # 最近一次工具回傳任務導向摘要的統計（structured／input_tokens／omitted_chars…）
+
+        # =========================
+        # 🧩 操作軌跡、對話紀錄與 make_skill
+        # trajectory：run_tool 每執行一支腳本就記一筆（指令、參數、當時的 cwd、成功／失敗、輸出開頭），
+        #   另有 kind="boundary" 的起點記錄（/clear、計畫核准、上一次 make_skill）。
+        # transcript：這個 session 每一則對話訊息的副本（使用者的話、AI 的想法／回覆／action、當時進上下文的工具回傳），
+        #   只增不減；transcript_starts 記每個起點在 transcript 的位置。兩者都在 messages 之外，壓縮、/clear、
+        #   claude_code 的清除都不會沖掉——/make_skill 從這裡取「整段對話＋工具回傳」交給草擬 session 寫流程技能的規格。
+        # pending_skill_draft：等待使用者核准／修改／取消的技能草稿（CLI 與 Web 共用同一份狀態）。
+        # =========================
+        self.session_id = time.strftime("%Y%m%d_%H%M%S")
+        self.trajectory = []
+        self.transcript = []
+        self._transcript_refs = []     # 記過的訊息 dict 本身（留著參照，id() 才不會被新物件重複使用）
+        self._transcript_ids = set()
+        self.transcript_starts = [{"reason": "start", "pos": 0, "ts": time.strftime("%m-%d %H:%M:%S")}]
+        # 編號跨 session 全域遞增：從既有存檔（logs/tool_results/）的最大編號續編。純數字的 #16 才能在任何一次啟動
+        # 都指到同一份存檔——工具使用檢索清單（_tool_use_index_block）就是靠這個讓模型只需要抄編號、不必抄檔名。
+        # 配號走 _next_id（上鎖：背景壓縮也會為被壓縮的對話片段配號）。
+        self._id_lock = threading.Lock()
+        self.trajectory_seq = self._max_archived_id()
+
+        self.drafts_dir = os.path.join(self.base_path, "drafts")
+        self.skill_model = SKILL_MODEL or self.summary_model
+        self._skill_follows_summary = not SKILL_MODEL
+        self.pending_skill_draft = None
+        self.last_reply_retry = None  # 最近一次 ask_ai 是否因「空白回覆」自動重試過（給 UI 顯示的說明），見 ask_ai
+        # 🧑‍💻 coding orchestrator（agent_core/coding_job.py）：Web Console／CLI 啟動時用 enable_coding() 建立並啟動背景服務；
+        # 評測與其他只用主對話的呼叫端不需要它（None 時動態區不顯示 coding job、code_job_send 只把任務放進收件匣）
+        self.coding = None
+
+    def enable_coding(self):
+        """建立 coding orchestrator 並啟動它的背景服務（收件匣、規劃、派 worker）。回傳 orchestrator。"""
+        if self.coding is None:
+            from .coding_job import CodingOrchestrator
+            self.coding = CodingOrchestrator(self)
+        self.coding.start_service()
+        return self.coding
+
+    # ---------------------------------------------------------------- 🧠 主對話的模型與 thinking（Web Console 的「🧠 模型」）
+    def set_main_model(self, model):
+        """換主對話（非 coding）的模型；下一次呼叫開始生效。摘要模型（與 /make_skill 的草擬模型）原本跟著主模型的話一起換。"""
+        model = (model or "").strip()
+        if not model:
+            raise ValueError("模型名稱是空的")
+        self.model = model
+        if self._summary_follows_main:
+            self.summary_model = model
+            if self._skill_follows_summary:
+                self.skill_model = model
+        return model
+
+    def model_settings_file(self):
+        return os.path.join(self.script_dir, "logs", MODEL_SETTINGS_NAME)
+
+    def save_model_settings(self):
+        path = self.model_settings_file()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"main": self.model, "main_think": bool(self.main_think)}, f, ensure_ascii=False, indent=1)
+        os.replace(tmp, path)
+
+    def load_model_settings(self, available=None):
+        """logs/model_settings.json：使用者在畫面上設定過的主對話模型與 thinking。畫面上的設定比環境變數優先（那是使用者最後一次
+        明確的選擇）；存的模型已經不在 Ollama 裡（available 有給時才檢查）就不套用。回傳說明文字（沒有套用任何東西時回 None）。"""
+        try:
+            with open(self.model_settings_file(), encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, ValueError):
+            return None
+        notes = []
+        model = data.get("main")
+        if model and model != self.model:
+            if available is not None and model not in available:
+                notes.append(f"上次設定的主對話模型 {model} 不在 Ollama 裡，改用 {self.model}")
+            else:
+                self.set_main_model(model)
+                notes.append(f"主對話模型：{model}（上次的設定）")
+        if isinstance(data.get("main_think"), bool):
+            self.main_think = data["main_think"]
+        return "；".join(notes) or None
+
+    def count_tokens(self, text: str) -> int:
+        """估算一段文字的 token 數（真實 token 尺度）。
+
+        Ollama 目前沒有 tokenize API（Python 套件與伺服器皆無），無法對任意文字精確計數，
+        這裡用「字元數 ÷ chars_per_token」估算。chars_per_token 會在每次 ask_ai 之後，用
+        Ollama 回報的 prompt_eval_count 對整個 prompt 重新校準（見 _record_usage），所以
+        使用者輸入、工具回傳的估算尺度跟模型實際計算一致（中文為主的內容實測約 1.8～1.9
+        字元/token，舊版寫死的 ÷4 會低估一半以上）。若未來 ollama 套件提供 tokenize()
+        會優先使用。"""
+        if not text:
+            return 0
+        if not self._tokenize_unavailable:
+            tokenize = getattr(ollama, "tokenize", None)
+            if tokenize is None:
+                self._tokenize_unavailable = True
+            else:
+                try:
+                    return len(tokenize(model=self.model, prompt=text))
+                except Exception:
+                    self._tokenize_unavailable = True
+        return max(1, round(len(text) / self.chars_per_token))
+
+    def _messages_chars(self) -> int:
+        """目前要送出的字元數：self.messages 加上動態區（不寫進 messages，用上一次送出時的大小估）。"""
+        return sum(len(m['content']) for m in self.messages) + (self.last_tail_chars or 0)
+
+    def context_tokens(self) -> int:
+        """目前主對話（system prompt + 全部 messages）的 token 數，真實尺度。
+
+        剛呼叫完模型時，以 Ollama 回報的 prompt_eval_count 為基準（精確，含 chat 模板；
+        prompt cache 命中時仍回報完整值，已實測），之後每加入一則訊息就用校準比估算增量
+        加上去；還沒呼叫過模型（或剛壓縮過）時整段用校準比估算。"""
+        chars = self._messages_chars()
+        if self.last_prompt_tokens is not None and self.last_prompt_chars is not None:
+            delta = chars - self.last_prompt_chars
+            return max(0, self.last_prompt_tokens + round(delta / self.chars_per_token))
+        return round(chars / self.chars_per_token)
+
+
+    def _record_usage(self, response, sent_messages=None):
+        """用 Ollama 回應的精確計量更新校準與狀態：
+        prompt_eval_count = 這次送出的完整 prompt token 數，eval_count = 這次產生的 token 數。
+        sent_messages 是這次實際送出的訊息快照；背景壓縮可能在呼叫期間改動 self.messages，
+        校準比必須用「真正送出的那份」的字元數來算。"""
+        get = getattr(response, "get", None)
+        prompt_tokens = get('prompt_eval_count') if get else None
+        eval_tokens = get('eval_count') if get else None
+        if sent_messages is not None:
+            chars = sum(len(m['content']) for m in sent_messages)
+        else:
+            chars = self._messages_chars()
+        if prompt_tokens and chars:
+            self.last_prompt_tokens = int(prompt_tokens)
+            self.last_prompt_chars = chars
+            ratio = chars / prompt_tokens
+            if MIN_CHARS_PER_TOKEN <= ratio <= MAX_CHARS_PER_TOKEN:
+                self.chars_per_token = ratio
+        self.last_eval_tokens = int(eval_tokens) if eval_tokens else None
+
+    def last_ai_tokens(self, text: str) -> int:
+        """最近一次 ask_ai 產生內容的 token 數：優先用 Ollama 回報的 eval_count（精確），沒有才估算。"""
+        return self.last_eval_tokens if self.last_eval_tokens is not None else self.count_tokens(text)

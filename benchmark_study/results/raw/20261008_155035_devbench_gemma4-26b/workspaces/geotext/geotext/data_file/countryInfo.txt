@@ -1,0 +1,148 @@
+import os
+import re
+from collections import OrderedDict, namedtuple
+
+def get_data_path(path):
+    """Constructs a file path by joining the root directory with a given path."""
+    return os.path.join(os.path.dirname(__file__), path)
+
+def read_table(filename, usecols, sep='\t', comment='', encoding='utf-8', skip=0):
+    """Parses data files to create dictionaries mapping terms to their corresponding values."""
+    data = {}
+    path = get_data_path(os.path.join('data_file', filename))
+    if not os.path.exists(path):
+        return data
+    
+    with open(path, 'r', encoding=encoding) as f:
+        lines = f.readlines()[skip:]
+        for line in lines:
+            if line.startswith(comment) or not line.strip():
+                continue
+            parts = line.strip().split(sep)
+            # Create a dictionary for the row based on usecols indices
+            row_dict = {}
+            for col_idx in usecols:
+                if col_idx < len(parts):
+                    row_dict[col_idx] = parts[col_idx]
+            
+            # We assume the first column (index 0) is the key for the dictionary
+            if 0 in row_dict:
+                key = row_dict[0]
+                # Store the rest of the requested columns
+                data[key] = {k: v for k, v in row_dict.items() if k != 0}
+    return data
+
+def build_index():
+    """Loads data from text files and creates an index of nationalities, cities, and countries."""
+    # 1. Countries
+    countries_map = {} # Name -> ISO
+    iso_to_name = {}   # ISO -> Name
+    path_ci = get_data_path(os.path.join('data_file', 'countryInfo.txt'))
+    if os.path.exists(path_ci):
+        with open(path_ci, 'r', encoding='utf-8') as f:
+            for line in f:
+                parts = line.strip().split('\t')
+                if len(parts) > 4:
+                    iso = parts[0]
+                    name = parts[4]
+                    countries_map[name] = iso
+                    iso_to_name[iso] = name
+
+    # 2. Nationalities
+    nationalities_map = {} # Nationality -> ISO
+    path_nat = get_data_path(os.path.join('data_file', 'nationalities.txt'))
+    if os.path.exists(path_nat):
+        with open(path_nat, 'r', encoding='utf-8') as f:
+            for line in f:
+                if ':' in line:
+                    nat, iso = line.strip().split(':')
+                    nationalities_map[nat.lower()] = iso
+
+    # 3. Cities
+    cities_map = {} # City Name -> ISO
+    path_city = get_data_path(os.path.join('data_file', 'cities15000.txt'))
+    if os.path.exists(path_city):
+        with open(path_city, 'r', encoding='utf-8') as f:
+            for line in f:
+                parts = line.strip().split('\t')
+                if len(parts) > 13:
+                    city_name = parts[1]
+                    country_code = parts[13]
+                    cities_map[city_name] = country_code
+
+    # 4. City Patches
+    # citypatches.txt: oklahoma US
+    path_patch = get_data_path(os.path.join('data_file', 'citypatches.txt'))
+    if os.path.exists(path_patch):
+        with open(path_patch, 'r', encoding='utf-8') as f:
+            for line in f:
+                parts = line.strip().split('\t')
+                if len(parts) == 2:
+                    cities_map[parts[0]] = parts[1]
+
+    Index = namedtuple('Index', ['countries', 'cities', 'nationalities', 'iso_to_name'])
+    return Index(countries=countries_map, cities=cities_map, nationalities=nationalities_map, iso_to_name=iso_to_name)
+
+class GeoText:
+    def __init__(self, text, country=None):
+        self.text = text
+        self.country = country
+        self.index = build_index()
+        
+        self.countries = []
+        self.cities = []
+        self.nationalities = []
+        self.country_mentions = OrderedDict()
+        
+        # Pre-compile regex for word boundaries to find candidates
+        # This is a simple approach: find all words
+        self.city_regex = re.compile(r'\b[A-Z][a-z]+(?:\s[A-Z][a-z]+)*\b|\b[a-z]+\b')
+        
+        candidates = self._find_candidates(text)
+        self.countries = self._extract_countries(candidates)
+        self.cities = self._extract_cities(candidates, country)
+        self.nationalities = self._extract_nationalities(candidates)
+        self._calculate_country_mentions()
+
+    def _find_candidates(self, text):
+        # Find all potential words/phrases that could be names
+        # For simplicity, we'll use a regex that picks up capitalized words or single words
+        return re.findall(r'\b[A-Za-z]+\b', text)
+
+    def _extract_countries(self, candidates):
+        found_countries = []
+        for cand in candidates:
+            if cand in self.index.countries:
+                found_countries.append(cand)
+        return found_countries
+
+    def _extract_cities(self, candidates, country_filter):
+        found_cities = []
+        for cand in candidates:
+            if cand in self.index.cities:
+                city_iso = self.index.cities[cand]
+                if country_filter:
+                    # If country filter is provided, it's usually the name or ISO
+                    # Check if the city's ISO matches the filter's ISO
+                    filter_iso = None
+                    if country_filter in self.index.iso_to_name:
+                        filter_iso = country_filter
+                    elif country_filter in self.index.countries:
+                        filter_iso = self.index.countries[country_filter]
+                    
+                    if filter_iso and city_iso == filter_iso:
+                        found_cities.append(cand)
+                else:
+                    found_cities.append(cand)
+        return found_cities
+
+    def _extract_nationalities(self, candidates):
+        found_nationalities = []
+        for cand in candidates:
+            if cand.lower() in self.index.nationalities:
+                found_nationalities.append(cand)
+        return found_nationalities
+
+    def _calculate_country_mentions(self):
+        for country in self.countries:
+            self.country_mentions[country] = self.country_mentions.get(country, 0) + 1

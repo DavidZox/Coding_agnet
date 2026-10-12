@@ -1,0 +1,18 @@
+{
+ "id": "ap_cpp_clock",
+ "family": "ap",
+ "source": "aider_polyglot",
+ "repo": "clock",
+ "lang": "cpp",
+ "workspace": "workspaces/ap_cpp_clock",
+ "task": "請照 `.docs/instructions.md` 的說明完成 `clock.h`、`clock.cpp`（目前只有空的骨架）。測試在 `clock_test.cpp`，要全部通過；測試是對的，不要修改測試。",
+ "impl_files": [
+  "clock.h",
+  "clock.cpp"
+ ],
+ "test_files": [
+  "clock_test.cpp",
+  "test"
+ ],
+ "python": "devbench_venv"
+}

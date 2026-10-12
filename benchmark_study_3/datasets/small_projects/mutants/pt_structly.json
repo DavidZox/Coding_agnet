@@ -1,0 +1,848 @@
+{
+ "repo": "structly",
+ "seed": 20261010,
+ "official_tests": 0,
+ "mutants": [
+  {
+   "id": "pt_structly#m0",
+   "file": "stock.py",
+   "line": 15,
+   "desc": "-= → +=",
+   "point": {
+    "node": 21,
+    "kind": "aug",
+    "line": 15,
+    "desc": "-= → +="
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m1",
+   "file": "structly/reader.py",
+   "line": 10,
+   "desc": "條件取反",
+   "point": {
+    "node": 15,
+    "kind": "neg",
+    "line": 10,
+    "desc": "條件取反"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m2",
+   "file": "structly/structure.py",
+   "line": 21,
+   "desc": "條件取反",
+   "point": {
+    "node": 48,
+    "kind": "neg",
+    "line": 21,
+    "desc": "條件取反"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m3",
+   "file": "structly/tableformat.py",
+   "line": 48,
+   "desc": "' ' → ''",
+   "point": {
+    "node": 326,
+    "kind": "const",
+    "line": 48,
+    "desc": "' ' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m4",
+   "file": "structly/validate.py",
+   "line": 88,
+   "desc": "'  ' → ''",
+   "point": {
+    "node": 567,
+    "kind": "const",
+    "line": 88,
+    "desc": "'  ' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m5",
+   "file": "stock.py",
+   "line": 12,
+   "desc": "return … → return None",
+   "point": {
+    "node": 18,
+    "kind": "ret",
+    "line": 12,
+    "desc": "return … → return None"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m6",
+   "file": "structly/reader.py",
+   "line": 10,
+   "desc": "is → is not",
+   "point": {
+    "node": 38,
+    "kind": "cmp",
+    "sub": 0,
+    "line": 10,
+    "desc": "is → is not"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m7",
+   "file": "structly/structure.py",
+   "line": 50,
+   "desc": "+= → -=",
+   "point": {
+    "node": 137,
+    "kind": "aug",
+    "line": 50,
+    "desc": "+= → -="
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m8",
+   "file": "structly/tableformat.py",
+   "line": 33,
+   "desc": "',' → ''",
+   "point": {
+    "node": 310,
+    "kind": "const",
+    "line": 33,
+    "desc": "',' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m9",
+   "file": "structly/validate.py",
+   "line": 33,
+   "desc": "'Float' → ''",
+   "point": {
+    "node": 160,
+    "kind": "const",
+    "line": 33,
+    "desc": "'Float' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m10",
+   "file": "stock.py",
+   "line": 12,
+   "desc": "* → /",
+   "point": {
+    "node": 29,
+    "kind": "bin",
+    "line": 12,
+    "desc": "* → /"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m11",
+   "file": "structly/reader.py",
+   "line": 35,
+   "desc": "return … → return None",
+   "point": {
+    "node": 62,
+    "kind": "ret",
+    "line": 35,
+    "desc": "return … → return None"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m12",
+   "file": "structly/structure.py",
+   "line": 13,
+   "desc": "0 → 1",
+   "point": {
+    "node": 179,
+    "kind": "const",
+    "line": 13,
+    "desc": "0 → 1"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m13",
+   "file": "structly/tableformat.py",
+   "line": 79,
+   "desc": "return … → return None",
+   "point": {
+    "node": 35,
+    "kind": "ret",
+    "line": 79,
+    "desc": "return … → return None"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m14",
+   "file": "structly/validate.py",
+   "line": 66,
+   "desc": "and ↔ or",
+   "point": {
+    "node": 99,
+    "kind": "bool",
+    "line": 66,
+    "desc": "and ↔ or"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m15",
+   "file": "structly/reader.py",
+   "line": 27,
+   "desc": "return … → return None",
+   "point": {
+    "node": 22,
+    "kind": "ret",
+    "line": 27,
+    "desc": "return … → return None"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m16",
+   "file": "structly/structure.py",
+   "line": 83,
+   "desc": "條件取反",
+   "point": {
+    "node": 29,
+    "kind": "neg",
+    "line": 83,
+    "desc": "條件取反"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m17",
+   "file": "structly/tableformat.py",
+   "line": 42,
+   "desc": "' ' → ''",
+   "point": {
+    "node": 321,
+    "kind": "const",
+    "line": 42,
+    "desc": "' ' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m18",
+   "file": "structly/validate.py",
+   "line": 103,
+   "desc": "return … → return None",
+   "point": {
+    "node": 49,
+    "kind": "ret",
+    "line": 103,
+    "desc": "return … → return None"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m19",
+   "file": "structly/reader.py",
+   "line": 23,
+   "desc": "return … → return None",
+   "point": {
+    "node": 20,
+    "kind": "ret",
+    "line": 23,
+    "desc": "return … → return None"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m20",
+   "file": "structly/structure.py",
+   "line": 53,
+   "desc": "'__init__' → ''",
+   "point": {
+    "node": 226,
+    "kind": "const",
+    "line": 53,
+    "desc": "'__init__' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m21",
+   "file": "structly/tableformat.py",
+   "line": 29,
+   "desc": "' ' → ''",
+   "point": {
+    "node": 306,
+    "kind": "const",
+    "line": 29,
+    "desc": "' ' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m22",
+   "file": "structly/validate.py",
+   "line": 124,
+   "desc": "'Bad Arguments\\n' → ''",
+   "point": {
+    "node": 548,
+    "kind": "const",
+    "line": 124,
+    "desc": "'Bad Arguments\\n' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m23",
+   "file": "structly/reader.py",
+   "line": 14,
+   "desc": "1 → 0",
+   "point": {
+    "node": 116,
+    "kind": "const",
+    "line": 14,
+    "desc": "1 → 0"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m24",
+   "file": "structly/structure.py",
+   "line": 48,
+   "desc": "'def __init__(self, ' → ''",
+   "point": {
+    "node": 210,
+    "kind": "const",
+    "line": 48,
+    "desc": "'def __init__(self, ' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m25",
+   "file": "structly/tableformat.py",
+   "line": 26,
+   "desc": "* → /",
+   "point": {
+    "node": 179,
+    "kind": "bin",
+    "line": 26,
+    "desc": "* → /"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m26",
+   "file": "structly/validate.py",
+   "line": 29,
+   "desc": "return … → return None",
+   "point": {
+    "node": 73,
+    "kind": "ret",
+    "line": 29,
+    "desc": "return … → return None"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m27",
+   "file": "structly/reader.py",
+   "line": 18,
+   "desc": "'Row %s: Bad row: %s' → ''",
+   "point": {
+    "node": 178,
+    "kind": "const",
+    "line": 18,
+    "desc": "'Row %s: Bad row: %s' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m28",
+   "file": "structly/structure.py",
+   "line": 67,
+   "desc": "條件取反",
+   "point": {
+    "node": 77,
+    "kind": "neg",
+    "line": 67,
+    "desc": "條件取反"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m29",
+   "file": "structly/tableformat.py",
+   "line": 54,
+   "desc": "% → *",
+   "point": {
+    "node": 203,
+    "kind": "bin",
+    "line": 54,
+    "desc": "% → *"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m30",
+   "file": "structly/validate.py",
+   "line": 43,
+   "desc": "'must be >= 0' → ''",
+   "point": {
+    "node": 371,
+    "kind": "const",
+    "line": 43,
+    "desc": "'must be >= 0' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m31",
+   "file": "structly/reader.py",
+   "line": 42,
+   "desc": "return … → return None",
+   "point": {
+    "node": 69,
+    "kind": "ret",
+    "line": 42,
+    "desc": "return … → return None"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m32",
+   "file": "structly/structure.py",
+   "line": 21,
+   "desc": "and ↔ or",
+   "point": {
+    "node": 111,
+    "kind": "bool",
+    "line": 21,
+    "desc": "and ↔ or"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m33",
+   "file": "structly/tableformat.py",
+   "line": 42,
+   "desc": "'<th>%s</th>' → ''",
+   "point": {
+    "node": 318,
+    "kind": "const",
+    "line": 42,
+    "desc": "'<th>%s</th>' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m34",
+   "file": "structly/validate.py",
+   "line": 51,
+   "desc": "return … → return None",
+   "point": {
+    "node": 90,
+    "kind": "ret",
+    "line": 51,
+    "desc": "return … → return None"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m35",
+   "file": "structly/reader.py",
+   "line": 19,
+   "desc": "'Row %s: Reason: %s' → ''",
+   "point": {
+    "node": 182,
+    "kind": "const",
+    "line": 19,
+    "desc": "'Row %s: Reason: %s' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m36",
+   "file": "structly/structure.py",
+   "line": 79,
+   "desc": "'expected_type' → ''",
+   "point": {
+    "node": 330,
+    "kind": "const",
+    "line": 79,
+    "desc": "'expected_type' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m37",
+   "file": "structly/tableformat.py",
+   "line": 62,
+   "desc": "條件取反",
+   "point": {
+    "node": 32,
+    "kind": "neg",
+    "line": 62,
+    "desc": "條件取反"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m38",
+   "file": "structly/validate.py",
+   "line": 50,
+   "desc": "'must be non-empty' → ''",
+   "point": {
+    "node": 378,
+    "kind": "const",
+    "line": 50,
+    "desc": "'must be non-empty' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m39",
+   "file": "structly/reader.py",
+   "line": 20,
+   "desc": "return … → return None",
+   "point": {
+    "node": 18,
+    "kind": "ret",
+    "line": 20,
+    "desc": "return … → return None"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m40",
+   "file": "structly/structure.py",
+   "line": 28,
+   "desc": "', ' → ''",
+   "point": {
+    "node": 411,
+    "kind": "const",
+    "line": 28,
+    "desc": "', ' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m41",
+   "file": "structly/tableformat.py",
+   "line": 36,
+   "desc": "',' → ''",
+   "point": {
+    "node": 313,
+    "kind": "const",
+    "line": 36,
+    "desc": "',' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m42",
+   "file": "structly/validate.py",
+   "line": 123,
+   "desc": "條件取反",
+   "point": {
+    "node": 226,
+    "kind": "neg",
+    "line": 123,
+    "desc": "條件取反"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m43",
+   "file": "structly/structure.py",
+   "line": 9,
+   "desc": "return … → return None",
+   "point": {
+    "node": 36,
+    "kind": "ret",
+    "line": 9,
+    "desc": "return … → return None"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m44",
+   "file": "structly/tableformat.py",
+   "line": 40,
+   "desc": "'<tr>' → ''",
+   "point": {
+    "node": 187,
+    "kind": "const",
+    "line": 40,
+    "desc": "'<tr>' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m45",
+   "file": "structly/validate.py",
+   "line": 27,
+   "desc": "拿掉 not",
+   "point": {
+    "node": 153,
+    "kind": "not",
+    "line": 27,
+    "desc": "拿掉 not"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m46",
+   "file": "structly/structure.py",
+   "line": 27,
+   "desc": "'%s(%s)' → ''",
+   "point": {
+    "node": 191,
+    "kind": "const",
+    "line": 27,
+    "desc": "'%s(%s)' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m47",
+   "file": "structly/tableformat.py",
+   "line": 5,
+   "desc": "拿掉 not",
+   "point": {
+    "node": 39,
+    "kind": "not",
+    "line": 5,
+    "desc": "拿掉 not"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m48",
+   "file": "structly/validate.py",
+   "line": 34,
+   "desc": "'String' → ''",
+   "point": {
+    "node": 163,
+    "kind": "const",
+    "line": 34,
+    "desc": "'String' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m49",
+   "file": "structly/structure.py",
+   "line": 14,
+   "desc": "return … → return None",
+   "point": {
+    "node": 40,
+    "kind": "ret",
+    "line": 14,
+    "desc": "return … → return None"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m50",
+   "file": "structly/tableformat.py",
+   "line": 26,
+   "desc": "+ → -",
+   "point": {
+    "node": 244,
+    "kind": "bin",
+    "line": 26,
+    "desc": "+ → -"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m51",
+   "file": "structly/validate.py",
+   "line": 49,
+   "desc": "條件取反",
+   "point": {
+    "node": 89,
+    "kind": "neg",
+    "line": 49,
+    "desc": "條件取反"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m52",
+   "file": "structly/structure.py",
+   "line": 24,
+   "desc": "'No attribute %s' → ''",
+   "point": {
+    "node": 350,
+    "kind": "const",
+    "line": 24,
+    "desc": "'No attribute %s' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m53",
+   "file": "structly/tableformat.py",
+   "line": 61,
+   "desc": "False → True",
+   "point": {
+    "node": 84,
+    "kind": "const",
+    "line": 61,
+    "desc": "False → True"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m54",
+   "file": "structly/validate.py",
+   "line": 121,
+   "desc": "': ' → ''",
+   "point": {
+    "node": 606,
+    "kind": "const",
+    "line": 121,
+    "desc": "': ' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m55",
+   "file": "structly/structure.py",
+   "line": 87,
+   "desc": "return … → return None",
+   "point": {
+    "node": 30,
+    "kind": "ret",
+    "line": 87,
+    "desc": "return … → return None"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m56",
+   "file": "structly/tableformat.py",
+   "line": 71,
+   "desc": "條件取反",
+   "point": {
+    "node": 33,
+    "kind": "neg",
+    "line": 71,
+    "desc": "條件取反"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m57",
+   "file": "structly/validate.py",
+   "line": 42,
+   "desc": "條件取反",
+   "point": {
+    "node": 84,
+    "kind": "neg",
+    "line": 42,
+    "desc": "條件取反"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m58",
+   "file": "structly/structure.py",
+   "line": 48,
+   "desc": "'):\\n' → ''",
+   "point": {
+    "node": 212,
+    "kind": "const",
+    "line": 48,
+    "desc": "'):\\n' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  },
+  {
+   "id": "pt_structly#m59",
+   "file": "structly/tableformat.py",
+   "line": 48,
+   "desc": "'<td>%s</td>' → ''",
+   "point": {
+    "node": 323,
+    "kind": "const",
+    "line": 48,
+    "desc": "'<td>%s</td>' → ''"
+   },
+   "killed": null,
+   "invalid": false
+  }
+ ]
+}

@@ -1,0 +1,118 @@
+2026-10-09 13:39:24,436 - INFO - Creating container for redis__redis-12472...
+2026-10-09 13:39:25,269 - INFO - Container for redis__redis-12472 created: 278fe812bba243e8235896ab130fe31713a95a266d7dde6ec4e2b2f2d07aaedd
+2026-10-09 13:39:26,562 - INFO - Container for redis__redis-12472 started: 278fe812bba243e8235896ab130fe31713a95a266d7dde6ec4e2b2f2d07aaedd
+2026-10-09 13:39:26,562 - INFO - Intermediate patch for redis__redis-12472 written to logs/run_evaluation/20261009_132618_swebench-bare_qwen2.5-coder-32b/bare_qwen2.5-coder-32b/redis__redis-12472/patch.diff, now applying to container...
+2026-10-09 13:39:26,600 - INFO - >>>>> Applied Patch:
+Checking patch src/acl.c...
+Applied patch src/acl.c cleanly.
+
+2026-10-09 13:39:26,740 - INFO - Git diff before:
+diff --git a/src/acl.c b/src/acl.c
+index 0bffbe97..eacb7bc8 100644
+--- a/src/acl.c
++++ b/src/acl.c
+@@ -1443,6 +1443,32 @@ int ACLCheckUserCredentials(robj *username, robj *password) {
+     return C_ERR;
+ }
+ 
++// Function to update user permissions after ACL SETUSER command
++void ACLUpdateUserPermissions(user *u, const char *cmdname) {
++    struct redisCommand *cmd = lookupCommandByCString(cmdname);
++    if (cmd) {
++        ACLSetUser(u, cmd->fullname, -1);
++    }
++}
++
++// Call ACLUpdateUserPermissions after ACLSetUser in ACLSetUser function
++int ACLSetUser(user *u, const char *op, int flags) {
++    int result = ACLStringSetUser(u, NULL, (sds*)&op, 1);
++    if (result == ACL_OK) {
++        // Update user permissions for the command
++        ACLUpdateUserPermissions(u, op);
++    }
++    return result;
++}
++
++// Function to update user permissions after ACL SETUSER command
++void ACLUpdateUserPermissions(user *u, const char *cmdname) {
++    struct redisCommand *cmd = lookupCommandByCString(cmdname);
++    if (cmd) {
++        ACLSetUser(u, cmd->fullname, -1);
++    }
++}
++
+ /* If `err` is provided, this is added as an error reply to the client.
+  * Otherwise, the standard Auth error is added as a reply. */
+ void addAuthErrReply(client *c, robj *err) {
+@@ -3040,6 +3066,11 @@ void aclCommand(client *c) {
+             return;
+         }
+ 
++        // Update the user's permissions after successful ACL SETUSER command
++        if (!strcasecmp(sub,"setuser")) {
++            ACLSetUser(u, cmd->fullname, -1);
++        }
++
+         addReply(c,shared.ok);
+     } else if (c->argc == 2 && !strcasecmp(sub,"help")) {
+         const char *help[] = {
+2026-10-09 13:39:26,740 - INFO - Eval script for redis__redis-12472 written to logs/run_evaluation/20261009_132618_swebench-bare_qwen2.5-coder-32b/bare_qwen2.5-coder-32b/redis__redis-12472/eval.sh; copying to container...
+2026-10-09 13:56:57,099 - INFO - Test runtime: 1_050.34 seconds
+2026-10-09 13:56:57,099 - INFO - Test output for redis__redis-12472 written to logs/run_evaluation/20261009_132618_swebench-bare_qwen2.5-coder-32b/bare_qwen2.5-coder-32b/redis__redis-12472/test_output.txt
+2026-10-09 13:56:57,121 - INFO - Git diff after:
+diff --git a/src/acl.c b/src/acl.c
+index 0bffbe97..eacb7bc8 100644
+--- a/src/acl.c
++++ b/src/acl.c
+@@ -1443,6 +1443,32 @@ int ACLCheckUserCredentials(robj *username, robj *password) {
+     return C_ERR;
+ }
+ 
++// Function to update user permissions after ACL SETUSER command
++void ACLUpdateUserPermissions(user *u, const char *cmdname) {
++    struct redisCommand *cmd = lookupCommandByCString(cmdname);
++    if (cmd) {
++        ACLSetUser(u, cmd->fullname, -1);
++    }
++}
++
++// Call ACLUpdateUserPermissions after ACLSetUser in ACLSetUser function
++int ACLSetUser(user *u, const char *op, int flags) {
++    int result = ACLStringSetUser(u, NULL, (sds*)&op, 1);
++    if (result == ACL_OK) {
++        // Update user permissions for the command
++        ACLUpdateUserPermissions(u, op);
++    }
++    return result;
++}
++
++// Function to update user permissions after ACL SETUSER command
++void ACLUpdateUserPermissions(user *u, const char *cmdname) {
++    struct redisCommand *cmd = lookupCommandByCString(cmdname);
++    if (cmd) {
++        ACLSetUser(u, cmd->fullname, -1);
++    }
++}
++
+ /* If `err` is provided, this is added as an error reply to the client.
+  * Otherwise, the standard Auth error is added as a reply. */
+ void addAuthErrReply(client *c, robj *err) {
+@@ -3040,6 +3066,11 @@ void aclCommand(client *c) {
+             return;
+         }
+ 
++        // Update the user's permissions after successful ACL SETUSER command
++        if (!strcasecmp(sub,"setuser")) {
++            ACLSetUser(u, cmd->fullname, -1);
++        }
++
+         addReply(c,shared.ok);
+     } else if (c->argc == 2 && !strcasecmp(sub,"help")) {
+         const char *help[] = {
+2026-10-09 13:56:57,121 - INFO - Grading answer for redis__redis-12472...
+2026-10-09 13:56:57,122 - INFO - report: {'redis__redis-12472': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'infra_failure': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['ACL GETUSER provides correct results']}, 'PASS_TO_PASS': {'success': [], 'failure': ['ACL GETUSER is able to translate back command permissions', 'ACL GETUSER provides reasonable results']}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for redis__redis-12472: resolved: False
+2026-10-09 13:56:57,122 - INFO - Attempting to stop container sweb.eval.redis__redis-12472.20261009_132618_swebench-bare_qwen2.5-coder-32b...
+2026-10-09 13:57:12,753 - INFO - Container sweb.eval.redis__redis-12472.20261009_132618_swebench-bare_qwen2.5-coder-32b stopped successfully.
+2026-10-09 13:57:12,753 - INFO - Attempting to remove container sweb.eval.redis__redis-12472.20261009_132618_swebench-bare_qwen2.5-coder-32b...
+2026-10-09 13:57:12,984 - INFO - Container sweb.eval.redis__redis-12472.20261009_132618_swebench-bare_qwen2.5-coder-32b removed successfully.

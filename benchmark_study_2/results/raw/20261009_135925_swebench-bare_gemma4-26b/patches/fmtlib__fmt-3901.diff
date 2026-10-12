@@ -1,0 +1,21 @@
+diff --git a/include/fmt/format.h b/include/fmt/format.h
+index a4a07899..ee0dcc42 100644
+--- a/include/fmt/format.h
++++ b/include/fmt/format.h
+@@ -4130,6 +4130,16 @@ template <typename T> struct formatter<group_digits_view<T>> : formatter<T> {
+                                                        specs.width_ref, ctx);
+     detail::handle_dynamic_spec<detail::precision_checker>(
+         specs.precision, specs.precision_ref, ctx);
++    if constexpr (is_signed<T>::value) {
++      if (detail::is_negative(t.value)) {
++        ctx.out() = '-';
++        return detail::write_int(ctx.out(),
++                                 static_cast<detail::uint64_or_128_t<T>>(
++                                     -t.value),
++                                 0, specs,
++                                 detail::digit_grouping<char>("\3", ","));
++      }
++    }
+     return detail::write_int(ctx.out(),
+                              static_cast<detail::uint64_or_128_t<T>>(t.value),
+                              0, specs, detail::digit_grouping<char>("\3", ","));

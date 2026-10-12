@@ -1,0 +1,21 @@
+{
+ "id": "fe_area_calculation",
+ "family": "fe",
+ "source": "devbench",
+ "repo": "area_calculation",
+ "lang": "cpp",
+ "workspace": "workspaces/fe_area_calculation",
+ "task": "目前專案有 `Shape`、`Rectangle`、`Square`，請補上 PRD 裡的圓形 `Circle`，並讓主程式也計算圓面積：\n\n1. `include/Circle.hpp`：類別 `Circle` 公開繼承 `Shape`，私有成員 `double radius`；建構子 `Circle()`（半徑 0）與 `Circle(double _r)`、解構子 `~Circle()`，以及覆寫的 `double calcArea()`，回傳 `3.14159265 * radius * radius`。建構與解構時照 PRD 輸出追蹤訊息（各自一行）：`Circle()`、`Circle(r)`（就是字面上的 `Circle(r)`，不是實際半徑）、`~Circle()`。請跟 `Square.hpp` 一樣寫成 header-only（成員函式的定義直接寫在標頭檔；建置檔不會另外編譯 Circle 的 .cpp）。\n2. `src/main.cpp`：輸入檔的第一個數字是圓的半徑。先讀半徑、建立 `Circle` 並輸出面積（一行），再照現在的方式處理長方形（寬、高）與正方形（邊長）。物件都是 main 的區域變數，程式結束時解構訊息會依建立的相反順序印出。\n\n`inputs/` 每個輸入檔在 `expected_outputs/` 都有完整的預期輸出（包含建構／解構訊息）可以對照。\n\n要求：照這個專案現有的寫法與檔案結構實作（可能要改好幾個檔案）；同時在 `unit_tests/` 補上這個功能的單元測試。既有的測試（`make -f makefile_test test`）要維持全部通過，不要修改既有的測試。",
+ "test_dir": "unit_tests",
+ "feature": "圓形 Circle（類別＋主程式計算圓面積）",
+ "expected_files": [
+  "include/Circle.hpp",
+  "src/main.cpp"
+ ],
+ "ref_files": [
+  "include/Circle.hpp",
+  "src/main.cpp",
+  "unit_tests/test_Circle.cpp"
+ ],
+ "python": "devbench_venv"
+}

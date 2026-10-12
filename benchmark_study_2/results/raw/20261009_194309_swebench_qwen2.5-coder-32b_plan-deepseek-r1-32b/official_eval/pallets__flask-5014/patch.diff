@@ -1,0 +1,33 @@
+diff --git a/src/flask/blueprints.py b/src/flask/blueprints.py
+index eb50585d..03a82800 100644
+--- a/src/flask/blueprints.py
++++ b/src/flask/blueprints.py
+@@ -192,6 +192,8 @@ class Blueprint(Scaffold):
+ 
+         if "." in name:
+             raise ValueError("'name' may not contain a dot '.' character.")
++        if not name:
++            raise ValueError("Blueprint name cannot be an empty string.")
+ 
+         self.name = name
+         self.url_prefix = url_prefix
+diff --git a/tests/test_blueprints.py b/tests/test_blueprints.py
+index d46b769b..9803256b 100644
+--- a/tests/test_blueprints.py
++++ b/tests/test_blueprints.py
+@@ -255,6 +255,15 @@ def test_dotted_name_not_allowed(app, client):
+     with pytest.raises(ValueError):
+         flask.Blueprint("app.ui", __name__)
+ 
++def test_blueprint_empty_name():
++    with pytest.raises(ValueError):
++        flask.Blueprint("", __name__)
++    with pytest.raises(ValueError):
++        flask.Blueprint(" ", __name__)
++    with pytest.raises(ValueError):
++        flask.Blueprint(None, __name__)
++    flask.Blueprint("valid_name", __name__)
++
+ 
+ def test_dotted_names_from_app(app, client):
+     test = flask.Blueprint("test", __name__)

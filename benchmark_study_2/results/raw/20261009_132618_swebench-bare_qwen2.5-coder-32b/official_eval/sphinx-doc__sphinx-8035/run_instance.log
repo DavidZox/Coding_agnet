@@ -1,0 +1,30 @@
+2026-10-09 13:37:12,635 - INFO - Creating container for sphinx-doc__sphinx-8035...
+2026-10-09 13:37:13,667 - INFO - Container for sphinx-doc__sphinx-8035 created: e122a2b7290068dba9e8dd31b0e92abf6538001549a2e00820fbc9f1569e2211
+2026-10-09 13:37:15,919 - INFO - Container for sphinx-doc__sphinx-8035 started: e122a2b7290068dba9e8dd31b0e92abf6538001549a2e00820fbc9f1569e2211
+2026-10-09 13:37:15,919 - INFO - Intermediate patch for sphinx-doc__sphinx-8035 written to logs/run_evaluation/20261009_132618_swebench-bare_qwen2.5-coder-32b/bare_qwen2.5-coder-32b/sphinx-doc__sphinx-8035/patch.diff, now applying to container...
+2026-10-09 13:37:15,957 - INFO - Failed to apply patch to container: git apply --verbose
+2026-10-09 13:37:17,944 - INFO - >>>>> Applied Patch:
+Checking patch setup.py...
+Applied patch to 'setup.py' cleanly.
+Checking patch sphinx/ext/autodoc/__init__.py...
+Applied patch to 'sphinx/ext/autodoc/__init__.py' cleanly.
+Checking patch tox.ini...
+Applied patch to 'tox.ini' cleanly.
+Applied patch setup.py cleanly.
+Applied patch sphinx/ext/autodoc/__init__.py cleanly.
+Applied patch tox.ini cleanly.
+
+2026-10-09 13:37:17,964 - INFO - Git diff before:
+
+2026-10-09 13:37:17,964 - INFO - Eval script for sphinx-doc__sphinx-8035 written to logs/run_evaluation/20261009_132618_swebench-bare_qwen2.5-coder-32b/bare_qwen2.5-coder-32b/sphinx-doc__sphinx-8035/eval.sh; copying to container...
+2026-10-09 13:37:20,587 - INFO - Test runtime: 2.60 seconds
+2026-10-09 13:37:20,587 - INFO - Test output for sphinx-doc__sphinx-8035 written to logs/run_evaluation/20261009_132618_swebench-bare_qwen2.5-coder-32b/bare_qwen2.5-coder-32b/sphinx-doc__sphinx-8035/test_output.txt
+2026-10-09 13:37:20,609 - INFO - Git diff after:
+
+2026-10-09 13:37:20,609 - INFO - Grading answer for sphinx-doc__sphinx-8035...
+2026-10-09 13:37:20,610 - INFO - report: {'sphinx-doc__sphinx-8035': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'infra_failure': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['tests/test_ext_autodoc_private_members.py::test_private_members']}, 'PASS_TO_PASS': {'success': ['tests/test_ext_autodoc_private_members.py::test_private_field', 'tests/test_ext_autodoc_private_members.py::test_private_field_and_private_members'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sphinx-doc__sphinx-8035: resolved: False
+2026-10-09 13:37:20,610 - INFO - Attempting to stop container sweb.eval.sphinx-doc__sphinx-8035.20261009_132618_swebench-bare_qwen2.5-coder-32b...
+2026-10-09 13:37:36,544 - INFO - Container sweb.eval.sphinx-doc__sphinx-8035.20261009_132618_swebench-bare_qwen2.5-coder-32b stopped successfully.
+2026-10-09 13:37:36,544 - INFO - Attempting to remove container sweb.eval.sphinx-doc__sphinx-8035.20261009_132618_swebench-bare_qwen2.5-coder-32b...
+2026-10-09 13:37:36,788 - INFO - Container sweb.eval.sphinx-doc__sphinx-8035.20261009_132618_swebench-bare_qwen2.5-coder-32b removed successfully.

@@ -1,0 +1,274 @@
+diff --git a/reproduce_issue.py b/reproduce_issue.py
+new file mode 100644
+index 00000000..650d3e48
+--- /dev/null
++++ b/reproduce_issue.py
+@@ -0,0 +1,77 @@
++import subprocess
++import time
++import os
++import signal
++
++def run_test():
++    # Configuration
++    redis_server_path = "./src/redis-server"
++    redis_cli_path = "./src/redis-cli"
++    port = 12345
++    pid = None
++
++    # Check if binaries exist
++    if not os.path.exists(redis_server_path):
++        print(f"Error: {redis_server_path} not found. Please build the project first.")
++        return
++
++    print("Starting redis-server...")
++    try:
++        # Start redis-server in the background
++        process = subprocess.Popen(
++            [redis_server_path, "--port", str(port), "--daemonize", "no"],
++            stdout=subprocess.PIPE,
++            stderr=subprocess.PIPE,
++            text=True
++        )
++        pid = process.pid
++        
++        # Wait for server to be ready
++        time.sleep(2)
++
++        # 1. ACL SETUSER user1 on >123 +config|get -config|set
++        print("Executing: ACL SETUSER user1 on >123 +config|get -config|set")
++        res1 = subprocess.run([redis_cli_path, "-p", str(port), "ACL", "SETUSER", "user1", "on", ">123", "+config|get", "-config|set"], 
++                              capture_output=True, text=True)
++        if "OK" not in res1.stdout:
++            print(f"Step 1 failed: {res1.stdout} {res1.stderr}")
++            return
++
++        # 2. ACL SETUSER user1 +config
++        print("Executing: ACL SETUSER user1 +config")
++        res2 = subprocess.run([redis_cli_path, "-p", str(port), "ACL", "SETUSER", "user1", "+config"], 
++                              capture_output=True, text=True)
++        if "OK" not in res2.stdout:
++            print(f"Step 2 failed: {res2.stdout} {res2.stderr}")
++            return
++
++        # 3. ACL LIST
++        print("Executing: ACL LIST")
++        res3 = subprocess.run([redis_cli_path, "-p", str(port), "ACL", "LIST"], 
++                              capture_output=True, text=True)
++        
++        acl_list_output = res3.stdout
++        print(f"ACL LIST Output:\n{acl_list_output}")
++
++        # Verification
++        # The issue states that "-config|set" should NOT be in the output
++        # because "+config" should override/supersede the previous subcommands.
++        forbidden_string = "-config|set"
++        
++        if forbidden_string in acl_list_output:
++            print("TEST FAILED: Found redundant/incorrect rule '-config|set' in ACL LIST output.")
++            exit(1)
++        else:
++            print("TEST PASSED: '-config|set' is not present in ACL LIST output.")
++            exit(0)
++
++    except Exception as e:
++        print(f"An error occurred: {e}")
++        exit(1)
++    finally:
++        if pid:
++            print("Shutting down redis-server...")
++            os.kill(pid, signal.SIGTERM)
++
++if __name__ == "__main__":
++    run_test()
+diff --git a/src/acl.c b/src/acl.c
+index 0bffbe97..4949b220 100644
+--- a/src/acl.c
++++ b/src/acl.c
+@@ -758,13 +758,70 @@ sds ACLDescribeSelectorCommandRules(aclSelector *selector) {
+         int res = ACLSetSelector(fake_selector, argv[i], -1);
+         serverAssert(res == C_OK);
+     }
+-    if (sdslen(selector->command_rules)) {
+-        rules = sdscatfmt(rules, "%S ", selector->command_rules);
++    sdsfreesplitres(argv, argc);
++
++    /* Now we want to generate the rule string by only including rules
++     * that actually change the bitmap of the fake_selector. This avoids
++     * including redundant rules (e.g., a +cmd rule after a -@all rule
++     * that already includes it, or a -cmd rule that is already covered
++     * by a +@all rule). */
++    rules = sdsempty();
++    aclSelector *prev_selector = ACLCreateSelector(0);
++    if (ACLSelectorCanExecuteFutureCommands(selector)) {
++        ACLSetSelector(prev_selector,"+@all",-1);
++    } else {
++        ACLSetSelector(prev_selector,"-@all",-1);
++    }
++
++    if (ACLSelectorCanExecuteFutureCommands(selector)) {
++        rules = sdscat(rules,"+@all ");
++    } else {
++        rules = sdscat(rules,"-@all ");
++    }
++
++    argc = 0;
++    argv = sdssplitargs(selector->command_rules, &argc);
++    serverAssert(argv != NULL);
++
++    for(int i = 0; i < argc; i++) {
++        /* Create a temporary selector to see if this rule changes the bitmap. */
++        aclSelector *test_selector = ACLCreateSelector(0);
++        /* Apply all previous rules to the test_selector. */
++        for(int j = 0; j < i; j++) {
++            ACLSetSelector(test_selector, argv[j], -1);
++        }
++
++        /* Check if applying argv[i] changes the bitmap of test_selector
++         * compared to the state after applying all previous rules (prev_selector). */
++        int changed = 0;
++        /* Apply argv[i] to test_selector to see the new state. */
++        ACLSetSelector(test_selector, argv[i], -1);
++
++        for (int k = 0; k < (USER_COMMAND_BITS_COUNT/64); k++) {
++            if (test_selector->allowed_commands[k] != prev_selector->allowed_commands[k]) {
++                changed = 1;
++                break;
++            }
++        }
++        /* Also check flags. */
++        if (!changed && test_selector->flags != prev_selector->flags) {
++            changed = 1;
++        }
++
++        if (changed) {
++            if (sdslen(rules)) rules = sdscatlen(rules, " ", 1);
++            rules = sdscatfmt(rules, "%S", argv[i]);
++            /* Update prev_selector to the new state. */
++            ACLFreeSelector(prev_selector);
++            prev_selector = ACLCopySelector(test_selector);
++        }
++        ACLFreeSelector(test_selector);
+     }
++    ACLFreeSelector(prev_selector);
+     sdsfreesplitres(argv, argc);
+ 
+     /* Trim the final useless space. */
+-    sdsrange(rules,0,-2);
++    if (sdslen(rules) > 0) sdsrange(rules, 0, -1);
+ 
+     /* This is technically not needed, but we want to verify that now the
+      * predicted bitmap is exactly the same as the user bitmap, and abort
+diff --git a/tests/acl/acl_redundancy.tcl b/tests/acl/acl_redundancy.tcl
+new file mode 100644
+index 00000000..e02e1505
+--- /dev/null
++++ b/tests/acl/acl_redundancy.tcl
+@@ -0,0 +1,25 @@
++test {ACL redundancy check for user1} {
++    r ACL SETUSER user1 on >123 +config|get -config|set
++    r ACL SETUSER user1 +config
++    set list [r ACL LIST]
++    assert_match {$list =~ "user user1 on"}
++    assert_match {$list =~ "+config"}
++    assert_no_match {$list =~ "-config|set"}
++}
++
++test {ACL redundancy check for user2} {
++    r ACL SETUSER user2 on >password +config|get -config|set
++    r ACL SETUSER user2 +config
++    set list [r ACL LIST]
++    assert_match {$list =~ "user user2 on"}
++    assert_match {$list =~ "+config"}
++    assert_no_match {$list =~ "-config|set"}
++}
++
++test {Verify user1 can actually execute config set} {
++    r ACL SETUSER user3 on >123 +config|get -config|set
++    r ACL SETUSER user3 +config
++    r AUTH user3 123
++    r CONFIG SET slowlog-max-len 100
++    assert_reply OK
++}
+diff --git a/tests/acl_redundancy_repro.py b/tests/acl_redundancy_repro.py
+new file mode 100644
+index 00000000..9a2da236
+--- /dev/null
++++ b/tests/acl_redundancy_repro.py
+@@ -0,0 +1,76 @@
++import subprocess
++import time
++import os
++
++def run_redis_and_test():
++    # 1. Build redis (assuming it's already built or we use the existing one)
++    # For the purpose of this reproduction script, we assume 'redis-server' is in PATH
++    # or in the current directory.
++    
++    server_proc = None
++    try:
++        # Start redis-server in the background
++        server_proc = subprocess.Popen(
++            ["./src/redis-server", "--port", "6379", "--daemonize", "no"],
++            stdout=subprocess.PIPE,
++            stderr=subprocess.PIPE,
++            text=True
++        )
++        
++        # Wait for server to be ready
++        time.sleep(2)
++
++        # Use redis-cli to execute commands
++        def redis_cmd(cmd):
++            result = subprocess.run(
++                ["./src/redis-cli", "-p", "6379", cmd],
++                capture_output=True,
++                text=True
++            )
++            if result.returncode != 0:
++                print(f"Command '{cmd}' failed with error: {result.stderr.strip()}")
++            return result.stdout.strip()
++
++        print("Step 1: ACL SETUSER user1 on >123 +config|get -config|set")
++        redis_cmd("ACL SETUSER user1 on >123 +config|get -config|set")
++
++        print("Step 2: ACL SETUSER user1 +config")
++        redis_cmd("ACL SETUSER user1 +config")
++
++        print("Step 3: ACL LIST")
++        acl_list = redis_cmd("ACL LIST")
++        print(f"ACL LIST output: {acl_list}")
++
++        # If ACL LIST returned an error, it's a failure
++        if "ERR" in acl_list or "error" in acl_list.lower():
++            print(f"FAILURE: ACL LIST returned an error: {acl_list}")
++            return False
++
++        # The issue states that user1 rule should NOT contain "-config|set"
++        # Expected: "user user1 on sanitize-payload #a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3 resetchannels -@all +config"
++        # Actual (Buggy): contains "-config|set"
++        
++        forbidden_pattern = "-config|set"
++        
++        if forbidden_pattern in acl_list:
++            print(f"FAILURE: Found redundant/incorrect rule '{forbidden_pattern}' in ACL LIST.")
++            print(f"Full output: {acl_list}")
++            return False
++        else:
++            print("SUCCESS: Redundant rule not found in ACL LIST.")
++            return True
++
++    except Exception as e:
++        print(f"An error occurred: {e}")
++        return False
++    finally:
++        if server_proc:
++            server_proc.terminate()
++            time.sleep(1)
++
++if __name__ == "__main__":
++    success = run_redis_and_test()
++    if success:
++        exit(0)
++    else:
++        exit(1)

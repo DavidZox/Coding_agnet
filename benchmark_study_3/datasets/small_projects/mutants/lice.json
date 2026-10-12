@@ -1,0 +1,966 @@
+{
+ "repo": "lice",
+ "seed": 20261010,
+ "official_tests": 25,
+ "mutants": [
+  {
+   "id": "lice#m0",
+   "file": "lice/core.py",
+   "line": 82,
+   "desc": "'html' → ''",
+   "point": {
+    "node": 204,
+    "kind": "const",
+    "line": 82,
+    "desc": "'html' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "lice#m1",
+   "file": "lice/core.py",
+   "line": 49,
+   "desc": "'c' → ''",
+   "point": {
+    "node": 173,
+    "kind": "const",
+    "line": 49,
+    "desc": "'c' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "lice#m2",
+   "file": "lice/core.py",
+   "line": 145,
+   "desc": "'templates/template-%s.txt' → ''",
+   "point": {
+    "node": 749,
+    "kind": "const",
+    "line": 145,
+    "desc": "'templates/template-%s.txt' → ''"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_lice::test_package_template"
+   ]
+  },
+  {
+   "id": "lice#m3",
+   "file": "lice/core.py",
+   "line": 170,
+   "desc": "'%s is missing from the template context' → ''",
+   "point": {
+    "node": 1280,
+    "kind": "const",
+    "line": 170,
+    "desc": "'%s is missing from the template context' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "lice#m4",
+   "file": "lice/core.py",
+   "line": 174,
+   "desc": "return … → return None",
+   "point": {
+    "node": 82,
+    "kind": "ret",
+    "line": 174,
+    "desc": "return … → return None"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_lice::test_license"
+   ]
+  },
+  {
+   "id": "lice#m5",
+   "file": "lice/core.py",
+   "line": 325,
+   "desc": "0 → 1",
+   "point": {
+    "node": 947,
+    "kind": "const",
+    "line": 325,
+    "desc": "0 → 1"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "lice#m6",
+   "file": "lice/core.py",
+   "line": 55,
+   "desc": "'c' → ''",
+   "point": {
+    "node": 179,
+    "kind": "const",
+    "line": 55,
+    "desc": "'c' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "lice#m7",
+   "file": "lice/core.py",
+   "line": 77,
+   "desc": "'c' → ''",
+   "point": {
+    "node": 199,
+    "kind": "const",
+    "line": 77,
+    "desc": "'c' → ''"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_lice.TestFormatLicense::test_format_license_c_language"
+   ]
+  },
+  {
+   "id": "lice#m8",
+   "file": "lice/core.py",
+   "line": 169,
+   "desc": "條件取反",
+   "point": {
+    "node": 284,
+    "kind": "neg",
+    "line": 169,
+    "desc": "條件取反"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_lice::test_license"
+   ]
+  },
+  {
+   "id": "lice#m9",
+   "file": "lice/core.py",
+   "line": 73,
+   "desc": "'rust' → ''",
+   "point": {
+    "node": 197,
+    "kind": "const",
+    "line": 73,
+    "desc": "'rust' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "lice#m10",
+   "file": "lice/core.py",
+   "line": 84,
+   "desc": "'lisp' → ''",
+   "point": {
+    "node": 206,
+    "kind": "const",
+    "line": 84,
+    "desc": "'lisp' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "lice#m11",
+   "file": "lice/core.py",
+   "line": 54,
+   "desc": "'c' → ''",
+   "point": {
+    "node": 178,
+    "kind": "const",
+    "line": 54,
+    "desc": "'c' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "lice#m12",
+   "file": "lice/core.py",
+   "line": 238,
+   "desc": "'-f' → ''",
+   "point": {
+    "node": 597,
+    "kind": "const",
+    "line": 238,
+    "desc": "'-f' → ''"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_lice.TestMainFunction::test_custom_organization"
+   ]
+  },
+  {
+   "id": "lice#m13",
+   "file": "lice/core.py",
+   "line": 64,
+   "desc": "'ml' → ''",
+   "point": {
+    "node": 158,
+    "kind": "const",
+    "line": 64,
+    "desc": "'ml' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "lice#m14",
+   "file": "lice/core.py",
+   "line": 62,
+   "desc": "'lua' → ''",
+   "point": {
+    "node": 156,
+    "kind": "const",
+    "line": 62,
+    "desc": "'lua' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "lice#m15",
+   "file": "lice/core.py",
+   "line": 133,
+   "desc": "拿掉 not",
+   "point": {
+    "node": 251,
+    "kind": "not",
+    "line": 133,
+    "desc": "拿掉 not"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_lice::test_file_template"
+   ]
+  },
+  {
+   "id": "lice#m16",
+   "file": "lice/core.py",
+   "line": 187,
+   "desc": "' ' → ''",
+   "point": {
+    "node": 1078,
+    "kind": "const",
+    "line": 187,
+    "desc": "' ' → ''"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_lice.TestFormatLicense::test_format_license_c_language"
+   ]
+  },
+  {
+   "id": "lice#m17",
+   "file": "lice/core.py",
+   "line": 13,
+   "desc": "'template-([a-z0-9_]+).txt' → ''",
+   "point": {
+    "node": 384,
+    "kind": "const",
+    "line": 13,
+    "desc": "'template-([a-z0-9_]+).txt' → ''"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "::unit_tests.test_lice"
+   ]
+  },
+  {
+   "id": "lice#m18",
+   "file": "lice/core.py",
+   "line": 365,
+   "desc": "條件取反",
+   "point": {
+    "node": 25,
+    "kind": "neg",
+    "line": 365,
+    "desc": "條件取反"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "pytest::internal"
+   ]
+  },
+  {
+   "id": "lice#m19",
+   "file": "lice/core.py",
+   "line": 201,
+   "desc": "in → not in",
+   "point": {
+    "node": 545,
+    "kind": "cmp",
+    "sub": 0,
+    "line": 201,
+    "desc": "in → not in"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_lice.TestGetSuffix::test_unrecognized_suffix"
+   ]
+  },
+  {
+   "id": "lice#m20",
+   "file": "lice/core.py",
+   "line": 92,
+   "desc": "'//' → ''",
+   "point": {
+    "node": 449,
+    "kind": "const",
+    "line": 92,
+    "desc": "'//' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "lice#m21",
+   "file": "lice/core.py",
+   "line": 65,
+   "desc": "'c' → ''",
+   "point": {
+    "node": 189,
+    "kind": "const",
+    "line": 65,
+    "desc": "'c' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "lice#m22",
+   "file": "lice/core.py",
+   "line": 324,
+   "desc": "'%s : %s\\n' → ''",
+   "point": {
+    "node": 1367,
+    "kind": "const",
+    "line": 324,
+    "desc": "'%s : %s\\n' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "lice#m23",
+   "file": "lice/core.py",
+   "line": 302,
+   "desc": "條件取反",
+   "point": {
+    "node": 352,
+    "kind": "neg",
+    "line": 302,
+    "desc": "條件取反"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_lice.TestMainFunction::test_list_template_vars"
+   ]
+  },
+  {
+   "id": "lice#m24",
+   "file": "lice/core.py",
+   "line": 228,
+   "desc": "'-t' → ''",
+   "point": {
+    "node": 580,
+    "kind": "const",
+    "line": 228,
+    "desc": "'-t' → ''"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_lice.TestMainFunction::test_custom_organization"
+   ]
+  },
+  {
+   "id": "lice#m25",
+   "file": "lice/core.py",
+   "line": 63,
+   "desc": "'m' → ''",
+   "point": {
+    "node": 157,
+    "kind": "const",
+    "line": 63,
+    "desc": "'m' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "lice#m26",
+   "file": "lice/core.py",
+   "line": 69,
+   "desc": "'rb' → ''",
+   "point": {
+    "node": 163,
+    "kind": "const",
+    "line": 69,
+    "desc": "'rb' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "lice#m27",
+   "file": "lice/core.py",
+   "line": 81,
+   "desc": "'haskell' → ''",
+   "point": {
+    "node": 203,
+    "kind": "const",
+    "line": 81,
+    "desc": "'haskell' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "lice#m28",
+   "file": "lice/core.py",
+   "line": 64,
+   "desc": "'ml' → ''",
+   "point": {
+    "node": 188,
+    "kind": "const",
+    "line": 64,
+    "desc": "'ml' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "lice#m29",
+   "file": "lice/core.py",
+   "line": 66,
+   "desc": "'perl' → ''",
+   "point": {
+    "node": 190,
+    "kind": "const",
+    "line": 66,
+    "desc": "'perl' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "lice#m30",
+   "file": "lice/core.py",
+   "line": 47,
+   "desc": "'clj' → ''",
+   "point": {
+    "node": 141,
+    "kind": "const",
+    "line": 47,
+    "desc": "'clj' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "lice#m31",
+   "file": "lice/core.py",
+   "line": 365,
+   "desc": "== → !=",
+   "point": {
+    "node": 125,
+    "kind": "cmp",
+    "sub": 0,
+    "line": 365,
+    "desc": "== → !="
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "pytest::internal"
+   ]
+  },
+  {
+   "id": "lice#m32",
+   "file": "lice/core.py",
+   "line": 209,
+   "desc": "'Must be a four digit year' → ''",
+   "point": {
+    "node": 822,
+    "kind": "const",
+    "line": 209,
+    "desc": "'Must be a four digit year' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "lice#m33",
+   "file": "lice/core.py",
+   "line": 210,
+   "desc": "return … → return None",
+   "point": {
+    "node": 99,
+    "kind": "ret",
+    "line": 210,
+    "desc": "return … → return None"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_lice.TestValidYear::test_valid_year"
+   ]
+  },
+  {
+   "id": "lice#m34",
+   "file": "lice/core.py",
+   "line": 336,
+   "desc": "條件取反",
+   "point": {
+    "node": 121,
+    "kind": "neg",
+    "line": 336,
+    "desc": "條件取反"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_lice.TestMainFunction::test_custom_organization"
+   ]
+  },
+  {
+   "id": "lice#m35",
+   "file": "lice/core.py",
+   "line": 58,
+   "desc": "'haskell' → ''",
+   "point": {
+    "node": 182,
+    "kind": "const",
+    "line": 58,
+    "desc": "'haskell' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "lice#m36",
+   "file": "lice/core.py",
+   "line": 71,
+   "desc": "'unix' → ''",
+   "point": {
+    "node": 195,
+    "kind": "const",
+    "line": 71,
+    "desc": "'unix' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "lice#m37",
+   "file": "lice/core.py",
+   "line": 119,
+   "desc": "'git config --get user.name' → ''",
+   "point": {
+    "node": 1253,
+    "kind": "const",
+    "line": 119,
+    "desc": "'git config --get user.name' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "lice#m38",
+   "file": "lice/core.py",
+   "line": 200,
+   "desc": "'.' → ''",
+   "point": {
+    "node": 1089,
+    "kind": "const",
+    "line": 200,
+    "desc": "'.' → ''"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_lice.TestGetSuffix::test_unrecognized_suffix"
+   ]
+  },
+  {
+   "id": "lice#m39",
+   "file": "lice/core.py",
+   "line": 189,
+   "desc": "'\\n' → ''",
+   "point": {
+    "node": 805,
+    "kind": "const",
+    "line": 189,
+    "desc": "'\\n' → ''"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_lice.TestFormatLicense::test_format_license_c_language"
+   ]
+  },
+  {
+   "id": "lice#m40",
+   "file": "lice/core.py",
+   "line": 208,
+   "desc": "條件取反",
+   "point": {
+    "node": 98,
+    "kind": "neg",
+    "line": 208,
+    "desc": "條件取反"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_lice.TestValidYear::test_invalid_year_extra_characters"
+   ]
+  },
+  {
+   "id": "lice#m41",
+   "file": "lice/core.py",
+   "line": 307,
+   "desc": "in → not in",
+   "point": {
+    "node": 1178,
+    "kind": "cmp",
+    "sub": 0,
+    "line": 307,
+    "desc": "in → not in"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_lice.TestMainFunction::test_list_template_vars_with_custom_template"
+   ]
+  },
+  {
+   "id": "lice#m42",
+   "file": "lice/core.py",
+   "line": 91,
+   "desc": "'unix' → ''",
+   "point": {
+    "node": 213,
+    "kind": "const",
+    "line": 91,
+    "desc": "'unix' → ''"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_lice.TestFormatLicense::test_format_license_python_language"
+   ]
+  },
+  {
+   "id": "lice#m43",
+   "file": "lice/core.py",
+   "line": 54,
+   "desc": "'h' → ''",
+   "point": {
+    "node": 148,
+    "kind": "const",
+    "line": 54,
+    "desc": "'h' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "lice#m44",
+   "file": "lice/core.py",
+   "line": 141,
+   "desc": "False → True",
+   "point": {
+    "node": 258,
+    "kind": "const",
+    "line": 141,
+    "desc": "False → True"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_lice::test_package_template"
+   ]
+  },
+  {
+   "id": "lice#m45",
+   "file": "lice/core.py",
+   "line": 198,
+   "desc": "'.' → ''",
+   "point": {
+    "node": 541,
+    "kind": "const",
+    "line": 198,
+    "desc": "'.' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "lice#m46",
+   "file": "lice/core.py",
+   "line": 182,
+   "desc": "'txt' → ''",
+   "point": {
+    "node": 524,
+    "kind": "const",
+    "line": 182,
+    "desc": "'txt' → ''"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_lice.TestMainFunction::test_custom_organization"
+   ]
+  },
+  {
+   "id": "lice#m47",
+   "file": "lice/core.py",
+   "line": 275,
+   "desc": "True → False",
+   "point": {
+    "node": 1453,
+    "kind": "const",
+    "line": 275,
+    "desc": "True → False"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "lice#m48",
+   "file": "lice/core.py",
+   "line": 187,
+   "desc": "+ → -",
+   "point": {
+    "node": 798,
+    "kind": "bin",
+    "line": 187,
+    "desc": "+ → -"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_lice.TestFormatLicense::test_format_license_c_language"
+   ]
+  },
+  {
+   "id": "lice#m49",
+   "file": "lice/core.py",
+   "line": 208,
+   "desc": "拿掉 not",
+   "point": {
+    "node": 315,
+    "kind": "not",
+    "line": 208,
+    "desc": "拿掉 not"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_lice.TestValidYear::test_invalid_year_extra_characters"
+   ]
+  },
+  {
+   "id": "lice#m50",
+   "file": "lice/core.py",
+   "line": 66,
+   "desc": "'pl' → ''",
+   "point": {
+    "node": 160,
+    "kind": "const",
+    "line": 66,
+    "desc": "'pl' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "lice#m51",
+   "file": "lice/core.py",
+   "line": 158,
+   "desc": "0 → 1",
+   "point": {
+    "node": 1049,
+    "kind": "const",
+    "line": 158,
+    "desc": "0 → 1"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_lice::test_extract_vars"
+   ]
+  },
+  {
+   "id": "lice#m52",
+   "file": "lice/core.py",
+   "line": 44,
+   "desc": "'haskell' → ''",
+   "point": {
+    "node": 168,
+    "kind": "const",
+    "line": 44,
+    "desc": "'haskell' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "lice#m53",
+   "file": "lice/core.py",
+   "line": 269,
+   "desc": "條件取反",
+   "point": {
+    "node": 117,
+    "kind": "neg",
+    "line": 269,
+    "desc": "條件取反"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_lice.TestMainFunction::test_custom_organization"
+   ]
+  },
+  {
+   "id": "lice#m54",
+   "file": "lice/core.py",
+   "line": 232,
+   "desc": "'copyright year' → ''",
+   "point": {
+    "node": 856,
+    "kind": "const",
+    "line": 232,
+    "desc": "'copyright year' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "lice#m55",
+   "file": "lice/core.py",
+   "line": 78,
+   "desc": "'erlang' → ''",
+   "point": {
+    "node": 200,
+    "kind": "const",
+    "line": 78,
+    "desc": "'erlang' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "lice#m56",
+   "file": "lice/core.py",
+   "line": 68,
+   "desc": "'powershell' → ''",
+   "point": {
+    "node": 192,
+    "kind": "const",
+    "line": 68,
+    "desc": "'powershell' → ''"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  },
+  {
+   "id": "lice#m57",
+   "file": "lice/core.py",
+   "line": 228,
+   "desc": "'--template' → ''",
+   "point": {
+    "node": 581,
+    "kind": "const",
+    "line": 228,
+    "desc": "'--template' → ''"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_lice.TestMainFunction::test_custom_organization"
+   ]
+  },
+  {
+   "id": "lice#m58",
+   "file": "lice/core.py",
+   "line": 222,
+   "desc": "'--org' → ''",
+   "point": {
+    "node": 569,
+    "kind": "const",
+    "line": 222,
+    "desc": "'--org' → ''"
+   },
+   "killed": true,
+   "invalid": false,
+   "failed_tests": [
+    "unit_tests.test_lice.TestMainFunction::test_custom_organization"
+   ]
+  },
+  {
+   "id": "lice#m59",
+   "file": "lice/core.py",
+   "line": 280,
+   "desc": "1 → 0",
+   "point": {
+    "node": 1457,
+    "kind": "const",
+    "line": 280,
+    "desc": "1 → 0"
+   },
+   "killed": false,
+   "invalid": false,
+   "failed_tests": []
+  }
+ ]
+}

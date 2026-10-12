@@ -1,0 +1,116 @@
+diff --git a/django/db/backends/sqlite3/schema.py b/django/db/backends/sqlite3/schema.py
+index b3a2f4282b..c1db9eee28 100644
+--- a/django/db/backends/sqlite3/schema.py
++++ b/django/db/backends/sqlite3/schema.py
+@@ -171,6 +171,10 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
+             with self.connection.cursor() as cursor:
+                 cursor.execute("VACUUM")
+         else:
++            if old_field.choices != new_field.choices:
++                if old_field.choices and new_field.choices and all(old_choice[0] == new_choice[0] for old_choice, new_choice in zip(old_field.choices, new_field.choices)):
++                    if all(old_choice[1] == new_choice[1] for old_choice, new_choice in zip(old_field.choices, new_field.choices)):
++                        return
+             super().alter_field(model, old_field, new_field, strict=strict)
+ 
+     def _remake_table(
+diff --git a/django/db/migrations/operations/fields.py b/django/db/migrations/operations/fields.py
+index cd3aab43ad..5e479912d0 100644
+--- a/django/db/migrations/operations/fields.py
++++ b/django/db/migrations/operations/fields.py
+@@ -230,6 +230,12 @@ class AlterField(FieldOperation):
+             from_model = from_state.apps.get_model(app_label, self.model_name)
+             from_field = from_model._meta.get_field(self.name)
+             to_field = to_model._meta.get_field(self.name)
++            if schema_editor.connection.vendor == 'sqlite':
++                if from_field.choices != to_field.choices:
++                    if from_field.choices and to_field.choices and set(from_field.choices) == set(to_field.choices):
++                        # Only return if choices are the same in value, not label
++                        if all(old_choice[0] == new_choice[0] for old_choice, new_choice in zip(from_field.choices, to_field.choices)):
++                            return
+             if not self.preserve_default:
+                 to_field.default = self.field.default
+             schema_editor.alter_field(from_model, from_field, to_field)
+diff --git a/tests/runtests.py b/tests/runtests.py
+index e3a60d777b..6993a48a72 100755
+--- a/tests/runtests.py
++++ b/tests/runtests.py
+@@ -689,6 +689,8 @@ if __name__ == "__main__":
+         parser.error(
+             "--selenium-hub and --external-host require --selenium to be used."
+         )
++    if options.modules == ["tests/sqlite_tests"]:
++        options.modules = ["tests.sqlite_tests"]
+     if using_selenium_hub and not options.external_host:
+         parser.error("--selenium-hub and --external-host must be used together.")
+ 
+diff --git a/tests/sqlite_tests.py b/tests/sqlite_tests.py
+new file mode 100644
+index 0000000000..b2b966b5b3
+--- /dev/null
++++ b/tests/sqlite_tests.py
+@@ -0,0 +1,65 @@
++from django.db import models
++from django.test import TestCase
++from django.db.migrations.autodetector import MigrationAutodetector
++from django.db.migrations.state import ProjectState, ModelState
++from django.db.migrations.operations.fields import AlterField
++from django.db import connection
++
++class sqlite_tests(TestCase):
++    def setUp(self):
++        self.app_label = 'test_app'
++        self.model_name = 'test_model'
++        self.field_name = 'test_field'
++
++    def _get_alter_field_operation(self, from_choices, to_choices):
++        from_state = ProjectState(models={
++            (self.app_label, self.model_name): ModelState(
++                app_label=self.app_label,
++                name=self.model_name,
++                fields=[
++                    ('id', models.AutoField(primary_key=True)),
++                    (self.field_name, models.CharField(max_length=10, choices=from_choices)),
++                ],
++            ),
++        })
++        to_state = ProjectState(models={
++            (self.app_label, self.model_name): ModelState(
++                app_label=self.app_label,
++                name=self.model_name,
++                fields=[
++                    ('id', models.AutoField(primary_key=True)),
++                    (self.field_name, models.CharField(max_length=10, choices=to_choices)),
++                ],
++            ),
++        })
++        autodetector = MigrationAutodetector(from_state, to_state, connection)
++        changes = autodetector._detect_changes()
++        return changes.get((self.app_label, self.model_name), {}).get('fields', [])
++
++    def test_add_choice(self):
++        operations = self._get_alter_field_operation(
++            from_choices=[('A', 'Option A')],
++            to_choices=[('A', 'Option A'), ('B', 'Option B')]
++        )
++        self.assertEqual(operations, [])
++
++    def test_remove_choice(self):
++        operations = self._get_alter_field_operation(
++            from_choices=[('A', 'Option A'), ('B', 'Option B')],
++            to_choices=[('A', 'Option A')]
++        )
++        self.assertEqual(operations, [])
++
++    def test_change_choice_order(self):
++        operations = self._get_alter_field_operation(
++            from_choices=[('A', 'Option A'), ('B', 'Option B')],
++            to_choices=[('B', 'Option B'), ('A', 'Option A')]
++        )
++        self.assertEqual(operations, [])
++
++    def test_change_choice_label(self):
++        operations = self._get_alter_field_operation(
++            from_choices=[('A', 'Option A')],
++            to_choices=[('A', 'Option B')]
++        )
++        self.assertNotEqual(operations, [])

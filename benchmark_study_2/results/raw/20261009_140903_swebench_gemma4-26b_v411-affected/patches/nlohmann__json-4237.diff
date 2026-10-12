@@ -1,0 +1,56 @@
+diff --git a/include/nlohmann/detail/conversions/to_json.hpp b/include/nlohmann/detail/conversions/to_json.hpp
+index e39b7797..ffce04ed 100644
+--- a/include/nlohmann/detail/conversions/to_json.hpp
++++ b/include/nlohmann/detail/conversions/to_json.hpp
+@@ -315,12 +315,13 @@ inline void to_json(BasicJsonType& j, CompatibleNumberIntegerType val) noexcept
+ }
+ 
+ #if !JSON_DISABLE_ENUM_SERIALIZATION
++
+ template<typename BasicJsonType, typename EnumType,
+-         enable_if_t<std::is_enum<EnumType>::value, int> = 0>
++         enable_if_t<std::is_enum<typename std::remove_cv<EnumType>::type>::value, int> = 0>
+ inline void to_json(BasicJsonType& j, EnumType e) noexcept
+ {
+-    using underlying_type = typename std::underlying_type<EnumType>::type;
+-    external_constructor<value_t::number_integer>::construct(j, static_cast<underlying_type>(e));
++    using underlying_type = typename std::underlying_type<typename std::remove_cv<EnumType>::type>::type;
++    j = static_cast<underlying_type>(e);
+ }
+ #endif  // JSON_DISABLE_ENUM_SERIALIZATION
+ 
+diff --git a/tests/src/unit-udt.cpp b/tests/src/unit-udt.cpp
+index b138aa46..3f91930a 100644
+--- a/tests/src/unit-udt.cpp
++++ b/tests/src/unit-udt.cpp
+@@ -527,6 +527,30 @@ TEST_CASE("Non-copyable types" * doctest::test_suite("udt"))
+     }
+ }
+ 
++TEST_CASE("enum with unsigned underlying type" * doctest::test_suite("udt"))
++{
++    enum class book_id : uint64_t
++    {
++        large_id = uint64_t(1) << 63
++    };
++
++    const book_id id{book_id::large_id};
++    const json j = id;
++
++    CHECK(j > 0u);
++    CHECK(to_string(j) == "9223372036854775808");
++    CHECK(j.is_number_unsigned());
++
++    enum class max_id : uint64_t
++    {
++        max_val = uint64_t(0xFFFFFFFFFFFFFFFF)
++    };
++    const max_id mid{max_id::max_val};
++    const json j2 = mid;
++    CHECK(j2.is_number_unsigned());
++    CHECK(to_string(j2) == "18446744073709551615");
++}
++
+ // custom serializer - advanced usage
+ // pack structs that are pod-types (but not scalar types)
+ // relies on adl for any other type

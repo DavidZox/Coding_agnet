@@ -1,0 +1,61 @@
+diff --git a/astropy/units/quantity.py b/astropy/units/quantity.py
+index ded609cbe..f9b4a90ef 100644
+--- a/astropy/units/quantity.py
++++ b/astropy/units/quantity.py
+@@ -296,7 +296,7 @@ class Quantity(np.ndarray, metaclass=InheritDocstrings):
+                 if not copy:
+                     return value
+ 
+-                if not (np.can_cast(np.float32, value.dtype) or
++                if not (np.can_cast(value.dtype, np.float32) or
+                         value.dtype.fields):
+                     dtype = float
+ 
+@@ -377,10 +377,12 @@ class Quantity(np.ndarray, metaclass=InheritDocstrings):
+                             "Numpy numeric type.")
+ 
+         # by default, cast any integer, boolean, etc., to float
+-        if dtype is None and (not (np.can_cast(np.float32, value.dtype)
++        if dtype is None and (not (np.can_cast(value.dtype, np.float32)
+                                    or value.dtype.fields)
+                               or value.dtype.kind == 'O'):
+-            value = value.astype(float)
++            # If it's already a float type (like float16), don't upgrade to float64
++            if not (value.dtype.kind == 'f'):
++                value = value.astype(float)
+ 
+         value = value.view(cls)
+         value._set_unit(value_unit)
+diff --git a/astropy/units/tests/test_float16_dtype.py b/astropy/units/tests/test_float16_dtype.py
+new file mode 100644
+index 000000000..9cd95c01f
+--- /dev/null
++++ b/astropy/units/tests/test_float16_dtype.py
+@@ -0,0 +1,27 @@
++import numpy as np
++import pytest
++from astropy import units as u
++from astropy.units import Quantity
++
++def test_float16_scalar_dtype():
++    """Test that a float16 scalar multiplied by a unit keeps float16 dtype."""
++    val = np.float16(1.0)
++    q = val * u.km
++    assert q.dtype == np.dtype(np.float16)
++    assert q.value == 1.0
++    assert q.unit == u.km
++
++def test_float16_array_dtype():
++    """Test that a float16 array multiplied by a unit keeps float16 dtype."""
++    val = np.array([1.0, 2.0, 3.0], dtype=np.float16)
++    q = val * u.km
++    assert q.dtype == np.dtype(np.float16)
++    assert np.array_equal(q.value, val)
++    assert q.unit == u.km
++
++def test_float16_quantity_creation():
++    """Test that creating a Quantity directly with float16 keeps float16 dtype."""
++    val = np.array([1.0, 2.0], dtype=np.float16)
++    q = Quantity(val, u.m)
++    assert q.dtype == np.dtype(np.float16)
++    assert q.unit == u.m

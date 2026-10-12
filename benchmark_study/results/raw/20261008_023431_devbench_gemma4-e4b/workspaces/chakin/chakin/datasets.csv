@@ -1,0 +1,7 @@
+Name,Dimension,Corpus,VocabularySize,Method,Language,Paper,Author,URL
+fastText(ar),300,Wikipedia,610K,fastText,Arabic,Enriching Word Vectors with Subword Information,Facebook,https://dl.fbaipublicfiles.com/fasttext/vectors-crawl/cc.ar.300.vec.gz
+fastText(de),300,Wikipedia,2.3M,fastText,German,Enriching Word Vectors with Subword Information,Facebook,https://dl.fbaipublicfiles.com/fasttext/vectors-crawl/cc.de.300.vec.gz
+fastText(en),300,Wikipedia,1.2M,fastText,English,Enriching Word Vectors with Subword Information,Facebook,https://dl.fbaipublicfiles.com/fasttext/vectors-crawl/cc.en.300.vec.gz
+Word2Vec(fr),100,News,500K,Word2Vec,French,NLP Basics,Google,http://example.com/fr_w2v.vec
+GloVe(es),200,Corpus,800K,GloVe,Spanish,Vector Embeddings,Stanford,http://example.com/es_glove.bin
+fastText(zh),300,Wikipedia,3M,fastText,Chinese,Chinese NLP,Baidu,http://example.com/zh_ft.vec.gz

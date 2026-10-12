@@ -1,0 +1,47 @@
+{
+ "id": "bf_lice",
+ "family": "bf",
+ "source": "devbench",
+ "repo": "lice",
+ "lang": "python",
+ "workspace": "workspaces/bf_lice",
+ "task": "這個專案（lice）最近有幾個改動之後，單元測試（`python -m pytest -q unit_tests`）有 14 個失敗：\n- unit_tests.test_lice.TestFormatLicense::test_format_license_c_language\n- unit_tests.test_lice.TestFormatLicense::test_format_license_python_language\n- unit_tests.test_lice.TestMainFunction::test_custom_organization\n- unit_tests.test_lice.TestMainFunction::test_custom_project\n- unit_tests.test_lice.TestMainFunction::test_help_message\n- unit_tests.test_lice.TestMainFunction::test_invalid_license\n- …（共 14 個）\n請找出原因並修正程式，讓測試全部通過。測試本身是對的，不要修改測試；問題可能不只一個、也可能不在同一個檔案。修完請說明每個問題在哪裡、怎麼修的。",
+ "test_dir": "unit_tests",
+ "injected": [
+  {
+   "id": "lice#m48",
+   "file": "lice/core.py",
+   "line": 187,
+   "desc": "+ → -"
+  },
+  {
+   "id": "lice#m57",
+   "file": "lice/core.py",
+   "line": 228,
+   "desc": "'--template' → ''"
+  },
+  {
+   "id": "lice#m51",
+   "file": "lice/core.py",
+   "line": 158,
+   "desc": "0 → 1"
+  }
+ ],
+ "visible_failing": [
+  "unit_tests.test_lice.TestFormatLicense::test_format_license_c_language",
+  "unit_tests.test_lice.TestFormatLicense::test_format_license_python_language",
+  "unit_tests.test_lice.TestMainFunction::test_custom_organization",
+  "unit_tests.test_lice.TestMainFunction::test_custom_project",
+  "unit_tests.test_lice.TestMainFunction::test_help_message",
+  "unit_tests.test_lice.TestMainFunction::test_invalid_license",
+  "unit_tests.test_lice.TestMainFunction::test_list_languages_option",
+  "unit_tests.test_lice.TestMainFunction::test_list_template_vars",
+  "unit_tests.test_lice.TestMainFunction::test_list_template_vars_with_custom_template",
+  "unit_tests.test_lice.TestMainFunction::test_output_to_file",
+  "unit_tests.test_lice.TestMainFunction::test_template_path_not_exist",
+  "unit_tests.test_lice.TestMainFunction::test_valid_license",
+  "unit_tests.test_lice::test_extract_vars",
+  "unit_tests.test_lice::test_license"
+ ],
+ "python": "devbench_venv"
+}

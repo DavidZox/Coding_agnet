@@ -1,0 +1,16 @@
+{
+ "id": "ap_python_go_counting",
+ "family": "ap",
+ "source": "aider_polyglot",
+ "repo": "go-counting",
+ "lang": "python",
+ "workspace": "workspaces/ap_python_go_counting",
+ "task": "請照 `.docs/instructions.md`、`.docs/instructions.append.md` 的說明完成 `go_counting.py`（目前只有空的骨架）。測試在 `go_counting_test.py`，要全部通過；測試是對的，不要修改測試。",
+ "impl_files": [
+  "go_counting.py"
+ ],
+ "test_files": [
+  "go_counting_test.py"
+ ],
+ "python": "devbench_venv"
+}

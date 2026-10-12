@@ -1,0 +1,20 @@
+diff --git a/include/fmt/printf.h b/include/fmt/printf.h
+index a6275ce2..cf2b96e9 100644
+--- a/include/fmt/printf.h
++++ b/include/fmt/printf.h
+@@ -231,6 +231,15 @@ class printf_arg_formatter : public arg_formatter<Char> {
+ 
+   template <typename T, FMT_ENABLE_IF(std::is_floating_point<T>::value)>
+   OutputIt operator()(T value) {
++    if (std::isnan(value) || std::isinf(value)) {
++      format_specs fmt_specs = this->specs;
++      fmt_specs.sign = sign::none;
++      fmt_specs.alt = false;
++      fmt_specs.fill[0] = ' ';
++      if (fmt_specs.align == align::none || fmt_specs.align == align::numeric)
++        fmt_specs.align = align::right;
++      return write<Char>(this->out, value, fmt_specs);
++    }
+     return base::operator()(value);
+   }
+ 

@@ -1,0 +1,16 @@
+{
+ "id": "ap_python_book_store",
+ "family": "ap",
+ "source": "aider_polyglot",
+ "repo": "book-store",
+ "lang": "python",
+ "workspace": "workspaces/ap_python_book_store",
+ "task": "請照 `.docs/instructions.md` 的說明完成 `book_store.py`（目前只有空的骨架）。測試在 `book_store_test.py`，要全部通過；測試是對的，不要修改測試。",
+ "impl_files": [
+  "book_store.py"
+ ],
+ "test_files": [
+  "book_store_test.py"
+ ],
+ "python": "devbench_venv"
+}
