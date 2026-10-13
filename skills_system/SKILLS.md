@@ -70,3 +70,9 @@
 
 ## 記憶修改
 - [modify_memory](tools/modify_memory.md) — 寫入經驗記憶：使用者明確要求記住時，寫進每輪常駐的 Memory.md
+
+## ROS 2 診斷與分析管線 (Agent-Ready)
+- [mcap_recorder](tools/mcap_recorder.md) — 參數化或互動式錄製 ROS 2 實驗數據 (MCAP + /rosout)
+- [rosout_parser](tools/rosout_parser.md) — 解析與檢視實驗記錄中的系統日誌 (rosout.log)，鎖定錯誤時間點
+- [mcap_slicer](tools/mcap_slicer.md) — 依據日誌標記進行高效時間切片，並自動萃取 Keys 與統計特徵
+- [mcap_analyzer](tools/mcap_analyzer.md) — 讀取切片 Metadata 與可用 Keys，透過編號清單進行精準的局部時序數據調閱
