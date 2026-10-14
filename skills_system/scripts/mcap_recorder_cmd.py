@@ -10,14 +10,15 @@ import sys
 import uuid
 from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _docker_common import (  # noqa: E402
-    docker_exec,
-    parse_timeout,
-    resolve_container,
-    with_target_marker,
-    ROS2_ENV_FALLBACK,
-)
+if os.environ.get("ROS2_TOOL_WORKER") != "1":
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from _docker_common import (
+        docker_exec,
+        parse_timeout,
+        resolve_container,
+        with_target_marker,
+        ROS2_ENV_FALLBACK,
+    )
 
 DEFAULT_TIMEOUT = 120
 MAX_TIMEOUT = 570
