@@ -1,139 +1,294 @@
+
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
+"""Host-side entry point; inspect and deserialize MCAP inside the ROS 2 container."""
+
+import argparse
+import base64
 import os
+import shlex
 import sys
-import yaml
-from mcap.reader import make_reader
-import rclpy.serialization
-from rosidl_runtime_py.utilities import get_message
+import uuid
+from pathlib import Path
 
-def inspect_mcap(slice_dir):
-    mcap_path = os.path.join(slice_dir, "rosbag2.mcap")
-    metadata_yaml_path = os.path.join(slice_dir, "metadata.yaml")
+if os.environ.get("ROS2_TOOL_WORKER") != "1":
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from _docker_common import (
+        docker_exec,
+        parse_timeout,
+        resolve_container,
+        with_target_marker,
+        ROS2_ENV_FALLBACK,
+    )
 
-    if not os.path.exists(mcap_path):
-        print(f"[ERROR] 找不到 mcap 檔案：{mcap_path}")
-        return
+DEFAULT_TIMEOUT = 120
+MAX_TIMEOUT = 570
 
-    print(f"\n========================================")
-    print(f" 正在分析切片檔案：{slice_dir}")
-    print(f"========================================")
 
-    # 1. 優先讀取 metadata.yaml 中的 ai_features 與 available_keys 供 AI / 使用者參考
-    topic_keys_dict = {}
-    if os.path.exists(metadata_yaml_path):
+def worker_main(argv):
+    import json
+    from collections import Counter
+    import yaml
+    from mcap.reader import make_reader
+
+    p = argparse.ArgumentParser(description="Inspect MCAP data using ROS 2 message types.")
+    p.add_argument("--input", required=True, help="An .mcap file or directory containing one")
+    p.add_argument("--topic", help="Topic to inspect")
+    p.add_argument("--field", help="Field path, e.g. pose.position.x")
+    p.add_argument("--limit", type=int, default=20)
+    p.add_argument("--offset", type=int, default=0)
+    p.add_argument("--list-topics", action="store_true")
+    p.add_argument("--list-fields", action="store_true")
+    p.add_argument("--json", action="store_true")
+    args = p.parse_args(argv)
+
+    if args.limit < 1 or args.offset < 0:
+        p.error("--limit must be >= 1 and --offset must be >= 0")
+
+    path = Path(args.input).expanduser()
+    if path.is_dir():
+        candidates = sorted(path.rglob("*.mcap"))
+        if len(candidates) != 1:
+            print(
+                f"[ERROR] Expected exactly one .mcap under {path}; found "
+                f"{len(candidates)}. Pass --input with an explicit file path."
+            )
+            return 2
+        path = candidates[0]
+    if not path.is_file() or path.suffix.lower() != ".mcap":
+        print(f"[ERROR] Input is not an existing .mcap file: {path}")
+        return 2
+
+    try:
+        with path.open("rb") as stream:
+            reader = make_reader(stream)
+            summary = Counter()
+            channel_types = {}
+            schema_names = {}
+            for schema, channel, message in reader.iter_messages():
+                summary[channel.topic] += 1
+                channel_types[channel.topic] = channel.message_encoding
+                if schema is not None:
+                    schema_names[channel.topic] = schema.name
+
+        if args.list_topics or (not args.topic and not args.field):
+            result = {
+                "input": str(path),
+                "total_messages": sum(summary.values()),
+                "topics": [
+                    {
+                        "topic": topic,
+                        "message_count": count,
+                        "message_encoding": channel_types.get(topic),
+                        "schema": schema_names.get(topic),
+                    }
+                    for topic, count in sorted(summary.items())
+                ],
+            }
+            print(json.dumps(result, ensure_ascii=False, indent=2) if args.json else
+                  "\n".join(
+                      [f"MCAP: {path}", f"Total messages: {sum(summary.values())}",
+                       f"Topics: {len(summary)}"] +
+                      [f"{x['topic']}: {x['message_count']} messages "
+                       f"(schema={x['schema'] or 'unknown'})" for x in result["topics"]]
+                  ))
+            return 0
+
+        if not args.topic:
+            p.error("--topic is required when using --field or --list-fields")
+
+        # Find a schema for the selected topic.
+        selected_schema = None
+        with path.open("rb") as stream:
+            reader = make_reader(stream)
+            for schema, channel, _ in reader.iter_messages(topics=[args.topic]):
+                if schema is not None:
+                    selected_schema = schema
+                    break
+        if selected_schema is None:
+            print(f"[ERROR] No message/schema found for topic: {args.topic}")
+            return 3
+
         try:
-            with open(metadata_yaml_path, 'r', encoding='utf-8') as mf:
-                meta_data = yaml.safe_load(mf)
-                bag_info = meta_data.get('rosbag2_bagfile_information', {})
-                print(f"\n[1] 區段統計摘要 (Duration: {bag_info.get('duration', {}).get('nanoseconds', 0) / 1e9}s, Total Msgs: {bag_info.get('message_count', 0)}):")
-                
-                for t_info in bag_info.get('topics_with_message_count', []):
-                    t_meta = t_info.get('topic_metadata', {})
-                    t_name = t_meta.get('name')
-                    t_count = t_meta.get('message_count')
-                    t_keys = t_meta.get('available_keys', [])
-                    t_feat = t_meta.get('ai_features', {})
-                    
-                    topic_keys_dict[t_name] = t_keys
-                    print(f"  - Topic: {t_name} (數量: {t_count}, 頻率: {t_feat.get('avg_frequency_hz', 0)}Hz)")
-                    print(f"    預先萃取可用 Keys: {t_keys}")
-        except Exception as e:
-            print(f"  (讀取 metadata.yaml 失敗: {e})")
+            from rosidl_runtime_py.utilities import get_message
+            import rclpy.serialization
+            msg_class = get_message(selected_schema.name)
+        except Exception as exc:
+            print(
+                f"[ERROR] Cannot load ROS 2 message type {selected_schema.name!r}: "
+                f"{type(exc).__name__}: {exc}"
+            )
+            return 4
 
-    with open(mcap_path, "rb") as f:
-        reader = make_reader(f)
-        summary = reader.get_summary()
-
-        # 2. 讀取檔案級 Metadata (AI 診斷註記)
-        print("\n[2] 檔案級 Metadata (AI 診斷註記):")
+        # Determine available field names from the ROS message class, not raw __slots__.
         try:
-            for metadata in reader.get_metadata():
-                print(f"  - 名稱: {metadata.name}")
-                print(f"    內容: {metadata.metadata}")
-        except Exception as e:
-            print(f"  (無額外 Metadata: {e})")
+            prototype = msg_class()
+            if hasattr(prototype, "get_fields_and_field_types"):
+                field_names = list(prototype.get_fields_and_field_types().keys())
+            else:
+                field_names = [
+                    name.lstrip("_") for name in getattr(prototype, "__slots__", [])
+                ]
+        except Exception:
+            field_names = []
 
-        if not summary or not summary.channels:
-            print("[WARN] 此切片中沒有找到任何 Channels。")
-            return
+        if args.list_fields:
+            result = {
+                "topic": args.topic,
+                "schema": selected_schema.name,
+                "available_fields": field_names,
+            }
+            print(json.dumps(result, ensure_ascii=False, indent=2) if args.json else
+                  "\n".join(
+                      [f"Topic: {args.topic}", f"Schema: {selected_schema.name}",
+                       f"Fields ({len(field_names)}):"] +
+                      [f"- {name}" for name in field_names]
+                  ))
+            return 0
 
-        channels_list = list(summary.channels.values())
-        print(f"\n[3] 可用的 Topic 列表 (共 {len(channels_list)} 個):")
-        for idx, ch in enumerate(channels_list, 1):
-            schema = summary.schemas.get(ch.schema_id)
-            msg_type = schema.name if schema else "unknown"
-            print(f"  {idx}) Topic: {ch.topic} [Type: {msg_type}]")
+        if not args.field:
+            p.error("provide --field or --list-fields")
 
-        # 3. 互動選擇要調閱哪一個 Topic 與特定的 Key
-        try:
-            choice = input("\n請選擇想深入調閱的 Topic 編號 (輸入 0 離開): ").strip()
-            if not choice.isdigit() or int(choice) == 0:
-                return
-            
-            selected_idx = int(choice) - 1
-            if selected_idx < 0 or selected_idx >= len(channels_list):
-                print("[ERROR] 無效的編號。")
-                return
+        def get_path(obj, field_path):
+            current = obj
+            for part in field_path.split("."):
+                if not part or part.startswith("_"):
+                    raise ValueError(f"invalid field component: {part!r}")
+                if isinstance(current, dict):
+                    if part not in current:
+                        raise AttributeError(f"no key {part!r}")
+                    current = current[part]
+                elif isinstance(current, (list, tuple)):
+                    current = current[int(part)]
+                else:
+                    if not hasattr(current, part):
+                        raise AttributeError(
+                            f"{type(current).__name__} has no field {part!r}"
+                        )
+                    current = getattr(current, part)
+            return current
 
-            target_ch = channels_list[selected_idx]
-            target_schema = summary.schemas.get(target_ch.schema_id)
-            msg_type_str = target_schema.name if target_schema else None
-
-            print(f"\n已選擇 Topic: {target_ch.topic} (型別: {msg_type_str})")
-
-            # 取得該 topic 在 metadata 中預先記錄的 available_keys
-            available_keys = topic_keys_dict.get(target_ch.topic, [])
-
-            if not available_keys:
-                print("[WARN] 此 Topic 沒有可用的 Keys 欄位（可能為原始二進位資料）。")
-                return
-
-            # 改為使用 1) 2) 3) 編號清單讓使用者挑選 Key
-            print(f"\n[4] 該 Topic 可用的欄位 Keys (共 {len(available_keys)} 個):")
-            for idx, k in enumerate(available_keys, 1):
-                print(f"  {idx}) {k}")
-
-            key_choice_input = input("\n請選擇想調閱的欄位 Key 編號 (輸入 0 離開): ").strip()
-            if not key_choice_input.isdigit() or int(key_choice_input) == 0:
-                return
-
-            key_idx = int(key_choice_input) - 1
-            if key_idx < 0 or key_idx >= len(available_keys):
-                print("[ERROR] 無效的編號。")
-                return
-
-            key_choice = available_keys[key_idx]
-
-            msg_class = get_message(msg_type_str) if msg_type_str else None
-            if not msg_class:
-                print("[ERROR] 無法載入該訊息型別類別。")
-                return
-
-            print(f"\n--- 正在擷取並展開欄位 [{key_choice}] 的時序數據 (前 15 筆) ---")
-            count = 0
-            for schema, channel, message in reader.iter_messages(topics=[target_ch.topic]):
+        values = []
+        failures = Counter()
+        seen = 0
+        with path.open("rb") as stream:
+            reader = make_reader(stream)
+            for schema, channel, message in reader.iter_messages(topics=[args.topic]):
+                if seen < args.offset:
+                    seen += 1
+                    continue
+                if len(values) >= args.limit:
+                    break
                 try:
-                    ros_msg = rclpy.serialization.deserialize_message(message.data, msg_class)
-                    val = getattr(ros_msg, key_choice)
-                    print(f"  [時間戳: {message.log_time}] {key_choice} = {val}")
-                    count += 1
-                    if count >= 15:
-                        print("  ... (為節省篇幅，僅顯示前 15 筆)")
-                        break
-                except Exception:
-                    pass
+                    ros_msg = rclpy.serialization.deserialize_message(
+                        message.data, msg_class
+                    )
+                    value = get_path(ros_msg, args.field)
+                    values.append({
+                        "log_time_ns": message.log_time,
+                        "publish_time_ns": message.publish_time,
+                        "sequence": message.sequence,
+                        "value": value,
+                    })
+                except Exception as exc:
+                    failures[f"{type(exc).__name__}: {exc}"] += 1
+                seen += 1
 
-        except Exception as ex:
-            print(f"[ERROR] 解析過程中發生錯誤: {ex}")
+        result = {
+            "input": str(path),
+            "topic": args.topic,
+            "schema": selected_schema.name,
+            "field": args.field,
+            "offset": args.offset,
+            "returned": len(values),
+            "failures": sum(failures.values()),
+            "failure_reasons": dict(failures),
+            "timestamp_basis": "MCAP log_time/publish_time nanoseconds",
+            "values": values,
+        }
+        if args.json:
+            print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        else:
+            print(
+                f"Topic: {args.topic}\nSchema: {selected_schema.name}\n"
+                f"Field: {args.field}\nReturned: {len(values)}\n"
+                f"Failures: {sum(failures.values())}"
+            )
+            for item in values:
+                print(
+                    f"log_time_ns={item['log_time_ns']} "
+                    f"publish_time_ns={item['publish_time_ns']} "
+                    f"value={item['value']}"
+                )
+            for reason, count in failures.most_common():
+                print(f"[WARN] {count} failures: {reason}")
+        return 0
+    except Exception as exc:
+        print(f"[ERROR] MCAP analysis failed: {type(exc).__name__}: {exc}")
+        return 1
 
-def main():
-    if len(sys.argv) < 2:
-        print("Usage: python3 mcap_analyzer.py <sliced_bag_directory>")
-        sys.exit(1)
-    
-    slice_dir = sys.argv[1]
-    inspect_mcap(slice_dir)
+
+def host_main(argv):
+    p = argparse.ArgumentParser(
+        description="Run MCAP analysis inside a Docker container."
+    )
+    p.add_argument("--container")
+    p.add_argument("--timeout", default=str(DEFAULT_TIMEOUT))
+    p.add_argument("--input", required=True, help="Container path to .mcap or directory")
+    p.add_argument("--topic")
+    p.add_argument("--field")
+    p.add_argument("--limit", type=int, default=20)
+    p.add_argument("--offset", type=int, default=0)
+    p.add_argument("--list-topics", action="store_true")
+    p.add_argument("--list-fields", action="store_true")
+    p.add_argument("--json", action="store_true")
+    args = p.parse_args(argv)
+
+    if args.limit < 1 or args.offset < 0:
+        p.error("--limit must be >= 1 and --offset must be >= 0")
+    timeout, error = parse_timeout(args.timeout, DEFAULT_TIMEOUT, MAX_TIMEOUT)
+    if error:
+        print(error)
+        return 2
+    container, error = resolve_container(args.container)
+    if error:
+        print(error)
+        return 2
+
+    source = base64.b64encode(Path(__file__).read_bytes()).decode("ascii")
+    remote = f"/tmp/mcap_analyzer_{uuid.uuid4().hex}.py"
+    worker_args = ["--input", args.input, "--limit", str(args.limit),
+                   "--offset", str(args.offset)]
+    if args.topic:
+        worker_args += ["--topic", args.topic]
+    if args.field:
+        worker_args += ["--field", args.field]
+    if args.list_topics:
+        worker_args.append("--list-topics")
+    if args.list_fields:
+        worker_args.append("--list-fields")
+    if args.json:
+        worker_args.append("--json")
+
+    command = (
+        f"printf %s {shlex.quote(source)} | base64 -d > {shlex.quote(remote)}"
+        f" && ROS2_TOOL_WORKER=1 python3 {shlex.quote(remote)} {shlex.join(worker_args)}"
+        f"; rc=$?; rm -f {shlex.quote(remote)}; exit $rc"
+    )
+    ok, stdout, error_message = docker_exec(
+        container, ROS2_ENV_FALLBACK + command, timeout,
+        interactive=True, what="ROS 2 MCAP analyzer",
+        timeout_hint="請確認容器已載入自訂 ROS 2 message package，且輸入路徑存在於容器內。",
+    )
+    if not ok:
+        print(error_message)
+        if stdout.strip():
+            print(stdout.rstrip())
+        return 1
+    print(with_target_marker(stdout.strip() or "[PASS] Analyzer completed.", container))
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    if os.environ.get("ROS2_TOOL_WORKER") == "1":
+        raise SystemExit(worker_main(sys.argv[1:]))
+    raise SystemExit(host_main(sys.argv[1:]))

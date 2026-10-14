@@ -1,10 +1,13 @@
+
 # Agent Skills Index
 
 > 輕量索引：`action.command` 填技能名稱取得該技能的規格文件（這一輪不執行），下一輪改填規格文件標明的腳本路徑（如 `scripts/cd_cmd.py`）、參數放 `args` 才會真正執行；文件裡 `EXECUTE: 路徑 參數` 的範例即 command 與 args。
->
+
 > **共同回傳慣例**：成功以 `[PASS]` 開頭；失敗（含逾時）以 `[ERROR]` 開頭並附原因與建議。各技能有自己的逾時上限（見規格），系統另有 600 秒總逾時。收到 `[ERROR]` 請依訊息修正參數或回報使用者，不要原樣重試。
->
+
 > **目標容器**：容器技能的 `<container_name>` 可省略＝Current Agent State 的 CURRENT_TARGET_CONTAINER（`docker_open` 選定／切換；成功操作過的容器會自動成為目標）。已有目標時直接用，不要再問使用者要看哪個容器。
+
+> **ROS 2 資料分析執行邊界**：`mcap_recorder`、`rosout_parser`、`mcap_slicer`、`mcap_analyzer` 的入口腳本由主機端 Agent 呼叫，但實際操作資料與 ROS 2 訊息反序列化均在目標 Docker 容器內執行。四支腳本共用 `scripts/_docker_common.py` 的容器選擇、環境載入、逾時與錯誤回報機制。這些工具的輸入、輸出路徑都以容器內路徑解讀；要讓主機讀取輸出，請使用已掛載的共享目錄。
 
 ## 系統內建
 - [list_dir](tools/list_dir.md) — 查看本機某一層目錄的清單（不含子目錄）；標頭算好數量與最新修改，`--filter 關鍵字` 計數、`--newest N` 找最新修改的檔案
@@ -22,6 +25,7 @@
 
 ## 程式開發（Coding）
 > 修改、新增、重構程式碼一律用 code_job_send 交給 coding orchestrator（它會探索、規劃、等使用者核准、派 worker 修改並驗證）；主對話只看、只查、只跑測試，不直接改檔案。
+
 - [repo_map](tools/repo_map.md) — 專案地圖：目錄樹＋每個程式檔的類別與函式（含行號，Python 與 C／C++）＋測試指令、建置系統與 git 狀態，認識一個專案時先用
 - [code_view](tools/code_view.md) — 帶行號讀程式檔：整份、某一段，或 --symbol 只看某個函式／類別（Python、C／C++）
 - [code_search](tools/code_search.md) — 在整個專案的程式碼裡搜尋字串／正規表示式（略過 venv、build），附行號與前後文
@@ -35,7 +39,7 @@
 
 ## 容器化環境
 - [docker_containers](tools/docker_containers.md) — 列出目前所有容器（名稱、狀態、映像檔），可只看運行中或以關鍵字過濾；要進入容器前先用這個確認完整名稱
-- [docker_images](tools/docker_images.md) — 列出本機所有映像檔（名稱、tag、大小），可用關鍵字過濾；建立容器前先用這個確認映像檔存在
+- [docker_images](tools/docker_images.md) — 列出本機所有映像檔（名稱、tag、大小），建立容器前先用這個確認映像檔存在
 - [docker_est](tools/docker_est.md) — 用映像檔（可帶 tag）建立並啟動容器，可指定容器名稱（--name）與指令（--cmd）；會先請使用者確認
 - [docker_open](tools/docker_open.md) — 進入指定名稱的 container 並設為目標容器（之後容器技能可省略名稱；要換容器再用一次）
 - [docker_runcmd](tools/docker_runcmd.md) — 若要在容器內使用指令時使用
@@ -63,16 +67,13 @@
 - [rmf_handshake](tools/rmf_handshake.md) — 某台機器人跟 distribute 的授權交握：診斷卡住的原因（離線、沒回應、回 no、完成訊號遺失）；必要時手動回 yes／no 或補發完成訊號（會先請使用者確認）
 
 ## 工具結果存檔
-- [result_recall](tools/result_recall.md) — 追問任何存檔的內容時用（檢索清單裡的舊紀錄、或剛剛摘要沒寫到的細節）：帶編號＋使用者的話，系統把那份存檔原文交給獨立 session 依問題提煉回給你（清單規則裡有語法，可直接執行）
+- [result_recall](tools/result_recall.md) — 追問任何存檔的內容時用（檢索清單裡的舊紀錄、或剛剛摘要沒寫到的細節）：檢索清單裡的舊紀錄、或剛剛摘要沒寫到的細節
 - [result_grep](tools/result_grep.md) — 使用者要找某個字串／名稱出現在存檔哪幾行時用（a|b 同義詞、前後幾行）；一般追問用 result_recall
 - [result_view](tools/result_view.md) — 讀某個存檔的第 N 行起 M 行，看 grep 命中處的整段原文
-- [result_list](tools/result_list.md) — 檢索清單裡沒有相關的一筆、或要瀏覽更早／更多的存檔時，列出存檔索引（編號、腳本、任務、摘要回答）
-
-## 記憶修改
-- [modify_memory](tools/modify_memory.md) — 寫入經驗記憶：使用者明確要求記住時，寫進每輪常駐的 Memory.md
+- [result_list](tools/result_list.md) — 檢索清單裡沒有相關的一筆、或要瀏覽更早／更多的存檔時，列出存檔索引（編號、腳本、任務、摘要回答） 
 
 ## ROS 2 診斷與分析管線 (Agent-Ready)
-- [mcap_recorder](tools/mcap_recorder.md) — 參數化或互動式錄製 ROS 2 實驗數據 (MCAP + /rosout)
-- [rosout_parser](tools/rosout_parser.md) — 解析與檢視實驗記錄中的系統日誌 (rosout.log)，鎖定錯誤時間點
-- [mcap_slicer](tools/mcap_slicer.md) — 依據日誌標記進行高效時間切片，並自動萃取 Keys 與統計特徵
-- [mcap_analyzer](tools/mcap_analyzer.md) — 讀取切片 Metadata 與可用 Keys，透過編號清單進行精準的局部時序數據調閱
+- [mcap_recorder](tools/mcap_recorder.md) — 在目標容器內錄製 ROS 2 Topic，輸出 MCAP、終端紀錄與 metadata；可選擇保存 /rosout
+- [rosout_parser](tools/rosout_parser.md) — 在目標容器內解析 rosout.log，保留來源行號與事件層級；不自動推定與 MCAP 的時間基準一致
+- [mcap_slicer](tools/mcap_slicer.md) — 依已確認的 MCAP log_time 奈秒時間戳進行時間切片，輸出切片 MCAP 與 Metadata
+- [mcap_analyzer](tools/mcap_analyzer.md) — 在目標容器內列出 Topic／欄位，並以 rclpy.serialization 反序列化指定欄位的時序數據
