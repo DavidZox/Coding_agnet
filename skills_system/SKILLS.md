@@ -7,6 +7,9 @@
 
 > **目標容器**：容器技能的 `<container_name>` 可省略＝Current Agent State 的 CURRENT_TARGET_CONTAINER（`docker_open` 選定／切換；成功操作過的容器會自動成為目標）。已有目標時直接用，不要再問使用者要看哪個容器。
 
+> **ROS 2 Workspace 狀態**：`CURRENT_ROS2_WORKSPACE` 只適用於 `ROS2_WORKSPACE_CONTAINER` 所記錄的容器。只有當它與 `CURRENT_TARGET_CONTAINER` 相同時，才能將該路徑作為目前 Workspace 的候選值。執行前仍須確認 `install/setup.bash` 存在且可載入。每次獨立的 ROS 2 Shell 命令都必須自行載入環境。
+
+
 > **ROS 2 資料分析執行邊界**：`mcap_recorder`、`rosout_parser`、`mcap_slicer`、`mcap_analyzer` 的入口腳本由主機端 Agent 呼叫，但實際操作資料與 ROS 2 訊息反序列化均在目標 Docker 容器內執行。四支腳本共用 `scripts/_docker_common.py` 的容器選擇、環境載入、逾時與錯誤回報機制。這些工具的輸入、輸出路徑都以容器內路徑解讀；要讓主機讀取輸出，請使用已掛載的共享目錄。
 
 ## 系統內建
@@ -44,6 +47,8 @@
 - [docker_open](tools/docker_open.md) — 進入指定名稱的 container 並設為目標容器（之後容器技能可省略名稱；要換容器再用一次）
 - [docker_runcmd](tools/docker_runcmd.md) — 若要在容器內使用指令時使用
 - [docker_ctl](tools/docker_ctl.md) — 容器本身的狀態、log、環境變數與設定，以及啟動／停止／重新啟動容器（會先請使用者確認）
+- [ROS2_workspace_env](tools/ROS2_workspace_env.md) — 確認容器內的 ROS 2 Workspace，載入 install/setup.bash，並在同一個 Shell 執行命令；成功確認後由 Agent 狀態保存路徑
+
 
 ## 多模態資訊
 - [stt_engine](tools/stt_engine.md) — 使用者需要進行語音輸入時使用

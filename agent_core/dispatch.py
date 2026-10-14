@@ -89,18 +89,54 @@ class DispatchMixin:
             parts = [a.strip("\"'") for a in remainder.split()]
         return [a for a in parts if a != ""]
 
+    
     def _sync_state_from_tool_output(self, output_text):
-        """解析工具輸出中的狀態標記，同步更新目前的工作目錄／容器目錄。"""
+        """解析工具輸出的狀態標記，同步工作目錄、容器目錄與 ROS 2 Workspace。"""
+        import json
+
         lines = output_text.splitlines()
+
         for i, line in enumerate(lines):
             if line.startswith("[CWD_CHANGED]"):
-                self.current_cwd = line.replace("[CWD_CHANGED]", "").strip()
+                self.current_cwd = line.replace(
+                    "[CWD_CHANGED]", ""
+                ).strip()
+
             # 抓取 [CONTAINER_CWD] 標記的下一行作為路徑
             if line.startswith("[CONTAINER_CWD]") and i + 1 < len(lines):
                 self.container_cwd = lines[i + 1].strip()
-            # 目標容器：容器技能成功操作某容器後印在末行（見 _docker_common.with_target_marker）
+
+            # 目標容器：沿用既有狀態同步機制
             if line.startswith("[TARGET_CONTAINER]"):
-                self.target_container = line[len("[TARGET_CONTAINER]"):].strip()
+                self.target_container = line[
+                    len("[TARGET_CONTAINER]"):
+                ].strip()
+
+            # ROS 2 Workspace：
+            # [ROS2_WORKSPACE] {"container":"容器名稱","path":"/workspace/project"}
+            if line.startswith("[ROS2_WORKSPACE]"):
+                raw = line[len("[ROS2_WORKSPACE]"):].strip()
+
+                try:
+                    data = json.loads(raw)
+                except (json.JSONDecodeError, TypeError):
+                    # 不接受格式錯誤的狀態標記
+                    continue
+
+                container = str(data.get("container", "")).strip()
+                workspace = str(data.get("path", "")).strip()
+
+                # 只接受具有完整容器名稱及絕對路徑的狀態
+                if (
+                    container
+                    and workspace.startswith("/")
+                    and "\n" not in workspace
+                    and "\r" not in workspace
+                ):
+                    self.current_ros2_workspace = {
+                        "container": container,
+                        "path": workspace,
+                    }
 
     def run_tool(self, ai_response, approved=False):
         """執行 AI 回覆的 action（見 _run_tool_once），再交給 note_tool_result 做卡住偵測：同一個回合裡同樣的動作得到同樣的

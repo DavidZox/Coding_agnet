@@ -176,13 +176,70 @@ class PromptMixin:
         return "\n\n".join(b for b in blocks if b)
 
     # ---------------------------------------------------------------- 動態區（每次送出時附在最尾端）
+    
     def build_state_tail(self):
-        """每次呼叫主模型時接在最後一則訊息後面的「目前狀態」（不寫進 self.messages，見 ConversationMixin._with_state_tail）。"""
-        state = (f"## Current Agent State\n- CURRENT_WORKING_DIRECTORY: {self.current_cwd}\n"
-                 f"- CURRENT_CONTAINER_DIRECTORY: {self.container_cwd}\n"
-                 f"- CURRENT_TARGET_CONTAINER: {self.target_container or '（未設定：需要容器時先用 docker_containers 查、docker_open 選定）'}")
+        """每次呼叫主模型時附加目前狀態，不寫進 self.messages。"""
+
+        state = (
+            f"## Current Agent State\n"
+            f"- CURRENT_WORKING_DIRECTORY: {self.current_cwd}\n"
+            f"- CURRENT_CONTAINER_DIRECTORY: {self.container_cwd}\n"
+            f"- CURRENT_TARGET_CONTAINER: "
+            f"{self.target_container or '（未設定：需要容器時先用 docker_containers 查、docker_open 選定）'}"
+        )
+
+        # 只有 Workspace 所屬容器與目前目標容器相同時，
+        # 才將它當成目前可直接沿用的 Workspace。
+        workspace_state = getattr(
+            self,
+            "current_ros2_workspace",
+            {"container": "", "path": ""},
+        ) or {}
+
+        workspace_container = workspace_state.get("container", "")
+        workspace_path = workspace_state.get("path", "")
+
+        if (
+            workspace_container
+            and workspace_path
+            and workspace_container == self.target_container
+        ):
+            workspace_line = (
+                f"- CURRENT_ROS2_WORKSPACE: {workspace_path}\n"
+                f"- ROS2_WORKSPACE_CONTAINER: {workspace_container}\n"
+                "- ROS 2 Workspace 已記錄；執行前仍須確認該容器內的 "
+                "install/setup.bash 存在且可載入。"
+            )
+        elif workspace_path:
+            workspace_line = (
+                f"- CURRENT_ROS2_WORKSPACE: （目前目標容器為 "
+                f"{self.target_container or '未設定'}，已記錄的 Workspace "
+                f"屬於 {workspace_container}，不可直接沿用）"
+            )
+        else:
+            workspace_line = (
+                "- CURRENT_ROS2_WORKSPACE: （尚未設定；需要 ROS 2 "
+                "Workspace 時，先確認容器及路徑）"
+            )
+
         coding = getattr(self, "coding", None)
         coding_line = coding.state_line() if coding is not None else ""
-        blocks = [state, self._build_objective_prompt(), self.plan_block(), coding_line, self.tool_use_index_pointer()]
+
+        blocks = [
+            state,
+            workspace_line,
+            self._build_objective_prompt(),
+            self.plan_block(),
+            coding_line,
+            self.tool_use_index_pointer(),
+        ]
+
         body = "\n\n".join(b for b in blocks if b)
-        return ("[harness state]\n（以下是系統每次附上的目前狀態，不是使用者說的話；請回應上面那則訊息）\n" + body)
+
+        return (
+            "[harness state]\n"
+            "（以下是系統每次附上的目前狀態，不是使用者說的話；"
+            "請回應上面那則訊息）\n"
+            + body
+        )
+

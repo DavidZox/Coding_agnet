@@ -37,6 +37,24 @@ def current_mode_label():
 
 
 def build_stats():
+    
+    # ROS 2 Workspace 狀態：從 SkillAgent 讀取，不在 Web Console 另外維護。
+    workspace_state = getattr(
+        agent, "current_ros2_workspace", {}
+    ) or {}
+
+    ros2_workspace_path = str(
+        workspace_state.get("path", "") or ""
+    )
+    ros2_workspace_container = str(
+        workspace_state.get("container", "") or ""
+    )
+    ros2_workspace_matches_target = bool(
+        ros2_workspace_path
+        and ros2_workspace_container
+        and ros2_workspace_container == agent.target_container
+    )
+
     return {
         "mode": current_mode_label(),
         "context_mode": agent.context_mode,   # harness／claude_code（/context_mode 切換）
@@ -49,6 +67,9 @@ def build_stats():
         "current_cwd": agent.current_cwd,
         "container_cwd": agent.container_cwd,
         "target_container": agent.target_container,
+        "ros2_workspace_path": ros2_workspace_path,
+        "ros2_workspace_container": ros2_workspace_container,
+        "ros2_workspace_matches_target": ros2_workspace_matches_target,
         "objective": agent.sticky_objective or None,
         "total_user_tokens": agent.total_user_tokens,
         "total_ai_tokens": agent.total_ai_tokens,

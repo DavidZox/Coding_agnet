@@ -47,8 +47,18 @@ def worker_main(argv):
         print(f"[ERROR] rosout file not found: {path}")
         return 2
 
-    # Support ROS console output and common ros2 topic echo representations.
+    
+    # 支援 ROS 2 console 格式與傳統日期時間格式。
     patterns = [
+        # ROS 2: [WARN] [1791880259.426140553] [node_name]: message
+        re.compile(
+            r"^\[(?P<level>DEBUG|INFO|WARN|WARNING|ERROR|FATAL)\]\s+"
+            r"\[(?P<stamp>\d+(?:\.\d+)?)\]\s+"
+            r"\[(?P<node>[^\]]+)\]:\s*"
+            r"(?P<message>.*)$",
+            re.IGNORECASE,
+        ),
+        # Traditional: 2026-10-13 08:30:58.426 WARN message
         re.compile(
             r"(?P<stamp>\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}"
             r"(?:[.,]\d+)?)\s+"
@@ -56,47 +66,66 @@ def worker_main(argv):
             r"(?P<message>.*)",
             re.IGNORECASE,
         ),
-        re.compile(
-            r"(?P<key>level)\s*:\s*(?P<level>\d+).*?"
-            r"(?P<message>(?:msg|message)\s*:\s*.*)",
-            re.IGNORECASE,
-        ),
     ]
+
     level_map = {
-        "0": "UNSET", "10": "DEBUG", "20": "INFO",
-        "30": "WARN", "40": "ERROR", "50": "FATAL",
+        "0": "UNSET",
+        "10": "DEBUG",
+        "20": "INFO",
+        "30": "WARN",
+        "40": "ERROR",
+        "50": "FATAL",
         "WARNING": "WARN",
     }
 
     events = []
     unparsed = 0
     counts = Counter()
+
     with path.open("r", encoding="utf-8", errors="replace") as stream:
         for line_no, raw in enumerate(stream, 1):
             line = raw.rstrip("\r\n")
             if not line.strip():
                 continue
-            match = patterns[0].search(line)
+
+            match = None
+            for pattern in patterns:
+                match = pattern.search(line)
+                if match:
+                    break
+
             if match:
-                level = match.group("level").upper()
+                groups = match.groupdict()
+                level = groups["level"].upper()
                 level = level_map.get(level, level)
+
                 event = {
                     "event_id": line_no,
                     "source_line": line_no,
-                    "timestamp_text": match.group("stamp"),
-                    "timestamp_basis": "text_from_log; clock basis not inferred",
+                    "timestamp_text": groups.get("stamp"),
+                    "timestamp_basis": (
+                        "ROS 2 console timestamp; clock basis not inferred"
+                        if groups.get("node") is not None
+                        else "text_from_log; clock basis not inferred"
+                    ),
+                    "node": groups.get("node"),
                     "level": level,
-                    "message": match.group("message").strip(),
+                    "message": groups.get("message", "").strip(),
                     "raw": line,
                 }
             else:
-                # For YAML-like ros2 topic echo output, retain the block as raw text.
-                if re.search(r"^\s*(level|stamp|msg|name)\s*:", line):
+                # 非標準格式保留原始內容，避免靜默遺失。
+                if re.search(
+                    r"^\s*(level|stamp|msg|message|name)\s*:",
+                    line,
+                    re.IGNORECASE,
+                ):
                     event = {
                         "event_id": line_no,
                         "source_line": line_no,
                         "timestamp_text": None,
                         "timestamp_basis": None,
+                        "node": None,
                         "level": "UNKNOWN",
                         "message": line.strip(),
                         "raw": line,
@@ -104,8 +133,10 @@ def worker_main(argv):
                 else:
                     unparsed += 1
                     continue
+
             counts[event["level"]] += 1
             events.append(event)
+
 
     selected_levels = {x.upper() for x in args.level} if args.level else None
     selected = [

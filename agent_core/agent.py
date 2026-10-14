@@ -66,6 +66,14 @@ class SkillAgent(ConversationMixin, PromptMixin, DispatchMixin, GuardMixin, Cont
         # Current Agent State 讓模型直接用、不再問使用者要看哪個容器；Web Console 狀態列顯示。
         self.target_container = ""
 
+        # 目前已確認的 ROS 2 Workspace。
+        # Workspace 必須與容器綁定，不能把容器 A 的路徑直接套用到容器 B。
+        # 尚未確認時，兩個欄位皆為空字串。
+        self.current_ros2_workspace = {
+            "container": "",
+            "path": "",
+        }
+
         self.messages = []
         self.max_history = max_history
 

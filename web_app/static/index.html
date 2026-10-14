@@ -17,6 +17,13 @@
   }
   header h1 { font-size: 16px; margin: 0; }
   #status { font-size: 12px; color: #9aa0a6; display: flex; gap: 14px; flex-wrap: wrap; }
+  #stat-ros2-workspace {
+    display: inline-block;
+    max-width: min(60vw, 520px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   main { flex: 1; display: flex; min-height: 0; }
   .panel { flex: 1; display: flex; flex-direction: column; min-width: 0; }
   .panel + .panel { border-left: 1px solid #3a3c40; }
@@ -243,6 +250,7 @@
     <span id="stat-code" title="coding job（點一下打開 Coding 面板）" onclick="showTab('code')"></span>
     <span id="stat-cwd">cwd: -</span>
     <span id="stat-container" title="目前的目標容器：預設空白；AI 成功操作某個容器後自動帶入，之後容器技能可省略名稱。要換容器直接跟 AI 說。">container: -</span>
+    <span id="stat-ros2-workspace" title="目前 ROS 2 Workspace；只有所屬容器與目前目標容器一致時才能沿用。">ROS 2 WS: -</span>
     <span id="stat-tokens">tokens: -</span>
     <span id="stat-attach"></span>
   </div>
@@ -444,6 +452,28 @@ function updateStatus(stats) {
   planEl.title = p ? '計畫（/plan show 看詳細；🔒＝/plan_exec_guard on）：\n' + p.text : '';
   document.getElementById('stat-cwd').textContent = 'cwd: ' + stats.current_cwd;
   document.getElementById('stat-container').textContent = 'container: ' + (stats.target_container || '-');
+  const workspaceEl = document.getElementById('stat-ros2-workspace');
+  const workspacePath = stats.ros2_workspace_path || '';
+  const workspaceContainer = stats.ros2_workspace_container || '';
+
+  if (workspacePath && stats.ros2_workspace_matches_target) {
+    workspaceEl.textContent = 'ROS 2 WS: ' + workspacePath;
+    workspaceEl.title =
+      '目前可沿用的 ROS 2 Workspace\n' +
+      '容器：' + workspaceContainer + '\n' +
+      '路徑：' + workspacePath;
+  } else if (workspacePath) {
+    workspaceEl.textContent = 'ROS 2 WS: ⚠️ 容器不符';
+    workspaceEl.title =
+      '已記錄的 Workspace 不屬於目前目標容器，不能直接沿用。\n' +
+      '已記錄容器：' + workspaceContainer + '\n' +
+      '目前目標容器：' + (stats.target_container || '未設定') + '\n' +
+      '已記錄路徑：' + workspacePath;
+  } else {
+    workspaceEl.textContent = 'ROS 2 WS: 未設定';
+    workspaceEl.title =
+      '尚未記錄 ROS 2 Workspace。請先使用 ros2_workspace_env 確認路徑。';
+  }
   const tokensEl = document.getElementById('stat-tokens');
   tokensEl.textContent =
     `tokens: user ${stats.total_user_tokens} / ai ${stats.total_ai_tokens} / tool ${stats.total_tool_tokens}` +
