@@ -16,8 +16,22 @@
 | ![架構](images/AI_agent_harness的說明.png) | `AI_agent_harness的說明.puml` | 元件與資料流；`vision/`（框選／上傳 → 結構化提取 → `[vision result]`）與使用者介面、SkillAgent、技能、存檔的關係 |
 | ![一回合](images/AI_agent_harness的狀態轉移.png) | `AI_agent_harness的狀態轉移.puml` | 一回合的狀態機；附圖時的視覺提取（1b），以及附圖分析在 prompt、壓縮、下一句話裡的位置 |
 | ![工具回傳管線](images/AI_agent_harness的工具回傳管線.png) | `AI_agent_harness的工具回傳管線.puml` | 原文存檔 → 摘要 → 檢索清單 → result_recall；中段是附圖的影像分析（提取 → 存成 #編號 → 〔附圖分析〕進清單 → 併進訊息），同一套 recall |
+| ![數據診斷的流程](images/數據診斷的流程.png) | `數據診斷的流程.puml` | 數據診斷從問題到報告：資料預備 → Orchestrator → 動態時間切片 → Workers → Synthesizer（＋程式檢查）→ 報告，每一步誰做（程式／模型）與產物（文字版與每一步的產物在 README、架構說明 13.1） |
 
-數據解析的流程圖還沒有畫（架構說明 13.1 有文字版的流程）。改完 `.puml` 後重新產生 PNG（純標準庫，透過 PlantUML 官方伺服器，需要網路）：
+改完 `.puml` 後重新產生 PNG。建議用本機離線渲染（不把圖的內容送到外部服務）：這台機器有 Java、Graphviz（`dot`）與
+`/home/david/Software_quality_checking_pipeline/tools`（PlantUML 與 Microsoft JhengHei 字型）：
+
+```bash
+cd doc
+PH=/home/david/Software_quality_checking_pipeline/tools
+FONTCONFIG_FILE=$PH/fontconfig/fonts.conf GRAPHVIZ_DOT=/usr/bin/dot \
+  $PH/jre/bin/java -Djava.awt.headless=true -DPLANTUML_LIMIT_SIZE=16384 -jar $PH/plantuml.jar \
+  -tpng -charset UTF-8 -failfast2 -o images 數據診斷的流程.puml
+```
+
+寫 `.puml` 時注意：字型沒有 emoji（📊 會變成方框，請用文字）；同一行有兩個 `--`（例如 `--window --topics`）會被當成刪除線，要寫成 `~--`。
+
+`流程圖產生器.py` 是另一種做法：純標準庫，把 `.puml` 的內容送到 PlantUML 官方伺服器（plantuml.com）渲染，需要網路；圖的內容會離開這台機器：
 
 ```bash
 python3 doc/流程圖產生器.py                 # 全部

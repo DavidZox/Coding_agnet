@@ -1,0 +1,98 @@
+@startuml
+' --- 樣式精準控制 ---
+skinparam RectangleWidthMax 420
+skinparam ranksep 40
+skinparam nodesep 50
+skinparam shadowing false
+skinparam defaultFontName "Microsoft JhengHei"
+
+title 數據診斷：從問題到報告（Orchestrator → Workers → Synthesizer）
+
+rectangle In #D1E5F0 [
+  **0. 收到問題（需要的話先錄數據）**
+  * 主對話的 AI：analysis_run 技能（偽技能，在本程式內執行，不用使用者確認）
+  * Web：分析模式按鈕、/analyze <問題>；CLI：/analyze <問題>
+  * 數據：實驗資料夾、bag、切片、實驗名稱或 latest（省略＝目前分析的數據）
+  * 要錄：mcap_recorder 在容器裡錄 MCAP＋rosout.log，
+    錄完建立全域 Topic Metadata 索引（之後直接讀快取）
+]
+
+rectangle Prep #DDEEF6 [
+  **1. 資料預備（程式算，不用模型）**
+  * mcap_analyzer ~--json：全域 Topic Metadata
+    （Topic、型別、筆數、頻率、起訖、每個 Key 的類別與維度）
+  * rosout_parser ~--json：/rosout 去重成唯一訊號 L#
+    （層級、Node、次數、每一次的時間戳；略過 rosbag2 自己的 Log）
+  * 字串與 Log 只交給 Orchestrator；數值與狀態留給 worker
+]
+
+rectangle Plan #E3F2E1 [
+  **2. Orchestrator（一次模型呼叫，format= 強制結構）**
+  * 同時看「去重後的 Log」與「全域 Topic Metadata」，對齊使用者的問題
+  * 只挑相關的訊號 L#；時間窗由程式換算：
+    每次出現前後各幾秒、重疊的合併、限制在數據範圍內
+  * 廣度優先：每個 worker 一個不同的 Topic
+  * 程式檢查：L#／Topic 要存在、可分析、不重複、不派 Log
+    → 有問題交回修一次 → 還是不行由程式依關聯度補指派
+]
+
+rectangle Slice #FFF4D6 [
+  **3. 動態時間切片（程式）**
+  * mcap_slicer ~--window ~--topics ~--with-state：每個時間窗切一片
+  * 只含指派的 Topic＋/rosout，每個 Topic 再帶上
+    時間窗之前的最後一則（只在改變時才發布的狀態才接得上）
+  * 放在 <數據>/analysis_slices/<job 編號>/（toolkit 格式）
+  * 整段數據不切；切片失敗就讀原本的數據
+  * 實測 180 秒的錄製：worker 只讀約 14% 的訊息
+]
+
+rectangle Worker #F6E6F6 [
+  **4. Workers（每個 Topic 一個乾淨的 session，可以平行）**
+  * 任務說明：問題、子任務、Topic、時間窗、可量測的 Key 目錄；看不到 Log 字串
+  * 每一步 JSON {thought, reply, action}：只准 mcap_feature_measure／mcap_analyzer，
+    ~--topic 由系統固定；量測只讀自己時間窗的切片
+  * 量測（程式算）：數值統計、尖峰、最大跳變、只有幾種值時的每次切換、
+    狀態跳轉（集合的增減、時間占比）、訊息中斷、中途開始／停止發布
+  * 局部報告＝Frontmatter Markdown：數字由程式用 ~--json 重量一次填入；
+    訊息流中斷一定算異常、列進證據
+]
+
+rectangle Synth #FDE2E1 [
+  **5. Synthesizer（一次模型呼叫）＋程式檢查**
+  * 輸入：相關的 Log 訊號、全部局部報告，加上程式整理：
+    沒錄到的輸入、背景條件（每次跳轉前後都在的原因）、同一時間一起中斷的 Topic
+  * 輸出：結論、根因與信心、時間線、證據、尚未確認、建議
+  * 程式：L# 的時間照 Log 的時間戳校正、補上訊息流事件、時間線依時間排序、
+    拿背景條件當原因時附更正、沒錄到的輸入列進尚未確認且信心最多 medium
+]
+
+rectangle Final #E8E8F4 [
+  **6. 報告**
+  * report.md（Frontmatter Markdown）＋存成主對話的 #編號（之後可以 result_recall）
+  * 主對話的 AI 依報告回答：引用時間（+秒）、L#、數值；尚未確認的照實說
+  * Web：右欄的進度卡片、「數據分析」面板（計畫、每個 worker 的報告與對話、最後的報告）
+]
+
+In -down-> Prep
+Prep -down-> Plan
+Plan -down-> Slice : 時間窗與指派
+Slice -down-> Worker : 每個時間窗一片
+Worker -down-> Synth : 局部報告
+Synth -down-> Final
+
+note right of Plan
+  時間一律寫成「距離數據開頭的 +秒」：
+  Log、Topic、時間窗、報告用同一個基準；
+  Orchestrator 只填 L#，worker 用 W1 這種編號，
+  不用抄 19 位數的時間戳
+end note
+
+note right of Worker
+  產物都在 logs/analysis_jobs/<編號>/：
+  job.json、events.jsonl（進度）、log_digest.md、
+  topic_metadata.md、plan.json、
+  workers/W<n>_<topic>.md 與 .transcript.md、report.md
+  回歸評分（evals/analysis_regression.py）
+  只讀這些產物，不改
+end note
+@enduml

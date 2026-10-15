@@ -12,21 +12,38 @@ harness 本身（技能系統的索引＋按需載入的規格＋既有腳本、
 ## 數據解析的多 agent 協同（`analysis_run`，2026-10-14 新增）
 
 ```
-使用者 ─問題─▶ 主對話的 AI（analysis_run 技能）／/analyze 指令／📊 分析模式
-                    │
+使用者 ─問題─▶ 主對話的 AI（analysis_run）／/analyze 指令／📊 分析模式
+                    │  需要的話先錄：mcap_recorder 在容器裡錄 MCAP＋rosout.log，錄完建立全域 Topic Metadata 索引
                     ▼
-0. 資料預備（程式，按需處理）
+① 資料預備（程式，不用模型）
+   mcap_analyzer：全域 Topic Metadata（Topic、型別、筆數、頻率、起訖、每個 Key 的類別）——錄製時建好的索引直接讀
    rosout_parser：/rosout 去重成唯一訊號 L#（層級、Node、次數、每一次的時間戳）
-   mcap_analyzer：全域 Topic Metadata（錄製時已建立的索引直接讀快取）
-1. Orchestrator（一次模型呼叫）──同時看「去重後的 Log」與「全域 Topic Metadata」
-   對齊問題 → 挑出相關的 Log 訊號（只填 L#，精確的時間窗由程式換算：前後各幾秒、重疊的合併）
-   → 廣度優先分派：每個 worker 一個不同的 Topic（程式檢查：Topic 要存在、可分析、不重複、不派 Log）
-2. Workers（每個一個乾淨的 session，可以平行）──只看自己的 Topic、時間窗與 Key 目錄，看不到 Log 字串
+② Orchestrator（一次模型呼叫）——同時看「去重後的 Log」與「全域 Topic Metadata」
+   對齊問題 → 只挑相關的 L#（精確的時間窗由程式換算：前後各幾秒、重疊的合併）→ 每個 worker 一個不同的 Topic
+   程式檢查計畫：L#／Topic 要存在、可分析、不重複、不派 Log——有問題交回修一次，修不好由程式依關聯度補指派
+③ 動態時間切片（程式）——每個時間窗用 mcap_slicer 切一片：只含指派的 Topic＋/rosout，
+   每個 Topic 再帶上時間窗之前的最後一則（狀態接得上）；整段數據不切
+④ Workers（每個 Topic 一個乾淨的 session，可以平行）——只讀自己時間窗的切片，看不到 Log 字串
    自己決定量哪些 Key（mcap_feature_measure：數值統計、狀態跳轉、訊息中斷）→ Frontmatter Markdown 的局部報告
-   （frontmatter 的數字由程式從量測結果填，模型只寫判斷與說明）
-3. Synthesizer（一次模型呼叫）──Log 的宏觀視角＋全部局部報告 → 因果拼圖 → 根因診斷報告
-   （結論、根因與信心、時間線、證據、尚未確認、建議；也是 Frontmatter Markdown）
+   程式：frontmatter 的數字用 --json 重量一次填入（模型只寫判斷與說明）；訊息流中斷一定算異常、列進證據
+⑤ Synthesizer（一次模型呼叫）——相關的 Log＋全部局部報告＋程式整理（沒錄到的輸入、背景條件、同時中斷的 Topic）
+   → 結論、根因與信心、時間線、證據、尚未確認、建議
+   程式：L# 的時間照 Log 校正、補上訊息流事件、時間線排序、拿背景條件當原因時附更正、沒錄到的輸入信心最多 medium
+⑥ 報告——report.md（Frontmatter Markdown）＋存成主對話的 #編號 → 主對話的 AI 依報告回答；Web 面板看每一步
 ```
+
+![數據診斷的流程](doc/images/數據診斷的流程.png)
+
+每一步留下什麼（`logs/analysis_jobs/<編號>/`，切片在數據資料夾裡）：
+
+| 步驟 | 誰做 | 產物 |
+|---|---|---|
+| ① 資料預備 | 程式 | `topic_metadata.md`（全域 Topic Metadata）、`log_digest.md`（去重後的 Log；rosbag2 自己的 Log 也列出並標明） |
+| ② Orchestrator | 模型＋程式檢查 | `plan.json`（對問題的理解、相關訊號、時間窗、每個 worker 的 Topic 與子任務） |
+| ③ 動態時間切片 | 程式 | `<數據>/analysis_slices/<編號>/sliced_bag_*`（toolkit 格式，Foxglove 也能開；路徑記在 `job.json` 的 `slices`） |
+| ④ Workers | 模型決定、程式量測 | `workers/W<n>_<topic>.md`（局部報告）、`workers/W<n>_<topic>.transcript.md`（worker 的完整對話） |
+| ⑤ Synthesizer | 模型＋程式檢查 | `report.md`（最後的報告；程式附的更正、檢查說明會標「程式更正／程式檢查」） |
+| 全程 | 程式 | `job.json`（狀態、計畫、時間窗、切片、每個 worker 的結果與量測數字、報告、更正）、`events.jsonl`（進度，Web 的卡片與面板讀它） |
 
 | 資料類型 | 誰處理 | 怎麼處理 |
 |---|---|---|
@@ -35,8 +52,6 @@ harness 本身（技能系統的索引＋按需載入的規格＋既有腳本、
 | UINT8／Enum／bool／列舉字串／代碼集合（狀態） | Worker（平行） | 狀態變遷偵測（時間、從哪個值到哪個值、集合增減、各狀態的時間占比） |
 | DiagnosticArray 這類「訊息的序列」 | Worker | 依名稱展開（`status.level` 對每個 `status.name` 各一項），只列有變化的 |
 
-產物都在 `logs/analysis_jobs/<編號>/`：`job.json`、`events.jsonl`（進度）、`log_digest.md`、`topic_metadata.md`、`plan.json`、
-`workers/W<n>_<topic>.md`（局部報告）與 `.transcript.md`（worker 的完整對話）、`report.md`（最後的報告）。
 回傳給主對話的是報告的重點（以 `[PASS] 📊 數據診斷報告` 開頭：不再交給摘要 session，並存成 `#編號`，之後可以 `result_recall`）。
 
 worker 的局部報告長這樣（frontmatter 由程式填，數字來自量測、不是模型抄的）：
@@ -51,6 +66,7 @@ analyzed_keys: ["primary_reaction", "winning_task", "winning_level"]
 anomaly_detected: true
 program_flags: ["W1 primary_reaction 狀態跳轉 1 次", "W1 winning_task 狀態跳轉 1 次"]
 key_metrics: {"W1": {"_rate": {"messages": 301, "avg_hz": 10.0, "max_gap_sec": 0.101}, "primary_reaction": {"transitions": 1, "first": "INIT", "last": "NONE", "changes": ["INIT → NONE @1791967522.546327"]}}}
+data_slices: {"W1": "…/exp_20261014_084506/analysis_slices/<job 編號>/sliced_bag_1_1791967507_515000000"}
 ---
 
 ## 分析摘要
@@ -63,6 +79,10 @@ primary_reaction 從 INIT 轉向 NONE，發生在 +15.53s……
 - **能由程式做的就不交給模型**：Log 去重、Key 的型別／維度／類別、統計數字、狀態跳轉、訊息中斷、異常指標、計畫的檢查（不存在的 L#／Topic、重複的 Topic 會具體列出、交回 Orchestrator 修一次，修不好由程式依關聯度補指派）。
 - **worker 只能量自己的 Topic**：`--topic` 由系統固定、只准用量測技能；實測 e4b 常把動作的 JSON 寫進 `reply`，worker 的工具都是唯讀的量測，所以照做；一個 Key 都沒量時系統代選（狀態優先）。
 - **「數據範圍」的程式檢查**：Log 說某個輸入沒有／逾時（`NO_CMD_VEL_RAW`、`IMU_TIMEOUT`…），數據裡卻沒有對得上的 Topic 時，程式保證報告把它列在「尚未確認」、信心最多 medium——小模型常拿名稱相近的輸出 Topic 當證據。
+- **動態時間切片**：worker 只讀自己時間窗的切片（實測 180 秒的錄製只讀約 14% 的訊息），讀切片量到的跟讀原本的數據逐字相同；worker 自己抄的時間窗有四捨五入時，換成指派的那個。
+- **訊息流中斷本身就是異常**：Topic 停發、中途開始或停止由程式量、程式判定，列進證據、交給 Synthesizer 時列出同一時間一起中斷的 Topic（共同的上游），時間線缺了程式補上——實測 e4b 會以「狀態沒變」忽略 10 秒的中斷。
+- **背景條件的更正**：每次跳轉前後都在的原因（例如恢復之後仍在的 `NO_CMD_VEL_RAW`）不可能是這次變化的原因；報告拿它當原因時，程式附更正並點名真正新增／移除的項目。
+- **回歸評分**：`evals/analysis_regression.py` 用 6 份錄好的數據與 ground truth 自動評分（只讀上面的產物，不改），換模型、改 prompt 前後用同一套比較（見 `test_data/README.md`）。
 
 ## 數據技能（依 `diagnostics_package/toolkit` 的人工工具重寫）
 
@@ -75,7 +95,7 @@ primary_reaction 從 INIT 轉向 NONE，發生在 +15.53s……
 | `rosout_parser` | `rosout_parser.py`、`mcap_slicer.py` 步驟 1～3 | Log 智慧過濾：去重成唯一訊號 L#（只差在數字也算同一句），篩層級／Node／關鍵字；預設用 bag 裡的 /rosout（時間跟其他 Topic 同一個時鐘），沒有就用 `rosout.log`；略過 rosbag2 自己的 Log |
 | `mcap_analyzer` | `mcap_analyzer.py`（Metadata 摘要、欄位維度、原始值預覽） | 全域索引（時間範圍、每個 Topic 的型別、筆數、頻率、起訖、角色），`--topic` 看每個 Key 的型別／維度／類別，`--key --preview` 看原始值；索引快取在 bag 資料夾的 `topic_metadata.json` |
 | `mcap_feature_measure` | `mcap_feature_measure.py`（`compute_features`） | 按需量測 Key 的特徵（同 toolkit：尖峰 >2.5σ、整數相異值 ≤10 當狀態跳轉），加上最大跳變、訊息頻率與中斷、依名稱展開的序列 |
-| `mcap_slicer` | `mcap_slicer.py` 步驟 4～5 | 依 L# 或時間點前後各取幾秒（預設 5 秒），輸出 toolkit 格式的 `sliced_bag_*`（`metadata.yaml` 的 available_keys、`ai_slice_diagnostic_summary`）——toolkit 的 `mcap_analyzer.py` 讀得懂 |
+| `mcap_slicer` | `mcap_slicer.py` 步驟 4～5 | 依 L# 或時間點前後各取幾秒（預設 5 秒），或明確的時間窗（`--window`），可以只切指定的 Topic（`--topics`）、帶上時間窗之前的狀態（`--with-state`）；輸出 toolkit 格式的 `sliced_bag_*`（`metadata.yaml` 的 available_keys、`ai_slice_diagnostic_summary`）——toolkit 的 `mcap_analyzer.py` 讀得懂。analysis_run 用它做動態時間切片 |
 | `analysis_run` | （新增） | 上面的多 agent 數據診斷 |
 
 改得跟 toolkit 不一樣的地方：全部非互動（agent 要用參數）、字串欄位分成「列舉」（相異值少 → 狀態）與「自由文字」（只給 Orchestrator）、
@@ -100,6 +120,7 @@ python3 Agent_Runner.py     # CLI（同樣有 /analyze 與 /analysis_* 指令）
 | `/analysis`、`/analysis jobs` | 看最近一次的報告／列出最近的 job |
 | `/analysis_data <數據>`、`/analysis_root <路徑>`、`/analysis_container <容器>` | 目前的數據、數據根目錄、預設容器（`-` 清除） |
 | `/analysis_model <orchestrator\|worker\|synthesizer\|all> <模型>`、`/analysis_workers N` | 各角色的模型（`-` 跟著主對話）、worker 上限 |
+| `/analysis_slice on\|off` | 動態時間切片（預設開；關掉時 worker 直接讀原本的數據） |
 | `/analysis_mode on\|off` | 📊 分析模式（同輸入框旁的按鈕） |
 
 | 數據分析設定（環境變數） | 預設 | 說明 |
@@ -109,6 +130,8 @@ python3 Agent_Runner.py     # CLI（同樣有 /analyze 與 /analysis_* 指令）
 | `AGENT_ANALYSIS_DATA_ROOT` | 自動尋找 | 數據根目錄 |
 | `AGENT_ANALYSIS_MAX_WORKERS`／`AGENT_ANALYSIS_PARALLEL` | 4／2 | 最多派幾個 worker／同時跑幾個（同一個模型在 Ollama 只有一個 slot 時，模型呼叫仍會排隊） |
 | `AGENT_ANALYSIS_WORKER_STEPS` | 6 | 一個 worker 最多幾個動作 |
+| `AGENT_ANALYSIS_SLICE` | 開 | 動態時間切片（Web：`/analysis_slice`） |
+| （設定檔）`<角色>_ctx` | 同 `AGENT_NUM_CTX` | 各角色的上下文長度（`logs/analysis_settings.json`；8 GB 顯卡上換大一點的模型時調小，見設計筆記限制 54） |
 
 ## 實測（2026-10-14，這台筆電：RTX 5060 Laptop GPU 8 GB、Ollama；數據 `toolkit/experiment_logs/exp_20261014_084506`，52 秒、10 個 Topic、/rosout 31 則）
 
@@ -119,7 +142,7 @@ python3 Agent_Runner.py     # CLI（同樣有 /analyze 與 /analysis_* 指令）
 | gemma4:26b | 這台 GPU 8 GB 放不下（18.7 GB，大部分在 CPU）：Orchestrator 一次約 2 分鐘，20 分鐘內做不完；worker 的交叉比對看得出比 e4b 好，要在 ≥24 GB 的機器上量 |
 | 主對話的路由（`evals/run_evals.py` 的 3 個 analysis 情境，e4b、harness 模式） | 3/3：根因問題用 analysis_run、單一數值用 mcap_feature_measure、Log 問題用 rosout_parser，回答引用工具的數字 |
 | 數據技能的實機測試（`evals/analysis_tools_live.py --record`） | 16/16（含真的錄 6 秒、切片、讀切片＝讀原本的數據、錯誤處理） |
-| 數據解析的回歸評分（`evals/analysis_regression.py`） | 6 份數據 × N 次，自動對照 ground truth（見 `test_data/README.md`） |
+| 數據解析的回歸評分（`evals/analysis_regression.py`，2026-10-15） | 6 份數據（穩定、開機、/cmd_vel_raw 事件、重啟 monitor、凍結 aggregator 的真故障、180 秒長錄製）× 3 次：e4b 時間線全對、真故障的根因 3/3；開機範例仍會拿 NO_CMD_VEL_RAW 當原因（程式附更正）。Synthesizer 換 deepseek-r1:8b 沒有比較好、慢 2～3 倍（見 `test_data/README.md`） |
 | 離線自我測試 | `analysis_selftest.py` 11/11、`main_selftest.py` 12/12、`v5_selftest.py` 8/8 |
 | toolkit 相容 | toolkit 的 `mcap_analyzer.py` 讀得懂 mcap_slicer 產生的切片（包括巢狀的 Key） |
 
