@@ -67,6 +67,16 @@ def _mentions_change(text):
 
 class OpsMixin:
 
+    def _ops_note(self, text):
+        """進度：印出，執行中有 progress_callback（Web）時也推到右欄（同 analysis_job 的 _analysis_note）。"""
+        print(text)
+        cb = getattr(self, "progress_callback", None)
+        if cb:
+            try:
+                cb(text)
+            except Exception:   # noqa: BLE001  畫面的問題不能中斷執行
+                pass
+
     # ---------------------------------------------------------------- 規劃
     def ops_skill_names(self):
         return [s["name"] for s in self.list_skills() if s["name"] not in _NOT_FOR_OPS]
@@ -146,7 +156,7 @@ class OpsMixin:
         task = (task or "").strip().strip('"').strip()
         if len(task) < 4:
             return "[ERROR] ops_plan 需要任務描述：args 填使用者的原話。"
-        print("🧭 ops_plan：規劃中…")
+        self._ops_note("🧭 ops_plan：規劃中…")
         system = _read_prompt("planner.md")
         user = (f"【技能清單】\n{self._ops_catalog()}\n\n【目前狀態】\n{self._ops_env_text()}\n\n【任務】\n{task}\n\n"
                 "（計畫的每個欄位都用繁體中文寫）")
@@ -182,7 +192,7 @@ class OpsMixin:
         if run_readonly and not any(it["changes_state"] for it in items):
             # 只查詢的計畫不需要先給使用者看（不會改變任何狀態）：直接執行、回報結果。實測主對話把「先不要修改、查原因」
             # 當成要先看計畫，規劃完就停下來問使用者「要開始嗎」
-            print("🧭 ops_plan：計畫都只查詢，直接執行")
+            self._ops_note("🧭 ops_plan：計畫都只查詢，直接執行")
             return ("（計畫都只查詢、不會改變任何狀態，所以直接執行了）\n" + self.ops_run())
         return ("[PASS] " + self.ops_plan_text(self.ops_draft)
                 + "\n\n（這是計畫草稿，還沒有執行。要執行就用 ops_run（action.command 填 scripts/ops_run_cmd.py、args 留空），"
@@ -251,7 +261,7 @@ class OpsMixin:
             prev_failure = None
             while it["attempts"] < 2:
                 it["attempts"] += 1
-                print(f"🧭 ops 第 {it['n']}/{len(plan['items'])} 步（第 {it['attempts']} 次）：{it['title']}")
+                self._ops_note(f"🧭 ops 第 {it['n']}/{len(plan['items'])} 步（第 {it['attempts']} 次）：{it['title']}")
                 res = OpsWorker(self, plan, it, facts, prev_failure).run()
                 it["steps"] += res["steps"]
                 it["calls"] += res["calls"]

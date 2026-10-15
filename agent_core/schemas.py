@@ -174,65 +174,6 @@ PLAN_OPS_SCHEMA = {
 }
 
 
-# 🧑‍💻 Coding orchestrator 的規劃 session（agent_core/coding_planner.py）。跟 MAKE_SKILL_SCHEMA 一樣，陣列與字串都有上限：
-# 小模型偶爾會在陣列裡失控，有上限就一定是合法、而且不會長到離譜的 JSON。
-# scout：看完專案地圖後，先挑出規劃前需要讀完整內容的檔案（harness 讀好再交給 plan）。
-CODE_SCOUT_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "understanding": _text(500),
-        "files_to_read": {"type": "array", "maxItems": 6, "items": _text(200)},
-        "questions": {"type": "array", "maxItems": 3, "items": _text(200)},
-    },
-    "required": ["understanding", "files_to_read", "questions"],
-}
-
-_CODE_ITEM = {
-    "type": "object",
-    "properties": {
-        "title": _text(60),
-        "goal": _text(900),
-        "files": {"type": "array", "maxItems": 6, "items": _text(200)},
-        "context_files": {"type": "array", "maxItems": 6, "items": _text(200)},
-        "verify": _text(200),
-    },
-    "required": ["title", "goal", "files", "context_files", "verify"],
-}
-
-CODE_PLAN_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "summary": _text(500),
-        "items": {"type": "array", "maxItems": 10, "items": _CODE_ITEM},
-        "final_verify": _text(200),
-        "risks": {"type": "array", "maxItems": 4, "items": _text(200)},
-    },
-    "required": ["summary", "items", "final_verify", "risks"],
-}
-
-# 用說的改計畫：只輸出要套用的操作（同 PLAN_OPS_SCHEMA 的理由：小模型重寫整份會改掉沒提到的項目）
-CODE_PLAN_OPS_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "ops": {"type": "array", "maxItems": 8, "items": {
-            "type": "object",
-            "properties": {
-                "op": {"type": "string", "enum": ["add", "insert", "edit", "delete", "move"]},
-                "step": {"type": "integer"},
-                "to": {"type": "integer"},
-                "title": _text(60),
-                "goal": _text(900),
-                "files": {"type": "array", "maxItems": 6, "items": _text(200)},
-                "verify": _text(200),
-            },
-            "required": ["op", "step", "to", "title", "goal", "files", "verify"],
-        }},
-        "final_verify": _text(200),
-    },
-    "required": ["ops", "final_verify"],
-}
-
-
 # 🧭 非編碼的多步驟任務（agent_core/ops_job.py）的規劃 session。欄位順序＝生成順序：先寫對任務的理解（要查什麼、要改什麼、
 # 使用者有沒有說先確認），再列步驟，最後寫要回報的重點——同 MAKE_SKILL_SCHEMA 的教訓，直接列步驟時小模型會漏掉條件。
 # check：做完那一步用哪個唯讀技能確認（技能、參數、輸出要出現的字樣）；只有查詢的步驟填 null。
@@ -292,4 +233,94 @@ OPS_WORKER_WRAPUP_SCHEMA = {
     "type": "object",
     "properties": {"done": {"type": "boolean"}, "summary": _text(1500)},
     "required": ["done", "summary"],
+}
+
+
+# 📊 數據解析的多 agent 協同（agent_core/analysis_job.py）。陣列與字串都有上限（同 OPS 的理由：小模型偶爾在一個欄位裡失控）。
+# Orchestrator：欄位順序＝生成順序——先寫對問題的理解，再挑相關的 Log 訊號（只填編號，精確的時間戳由程式換算），
+# 最後才指派 Topic（每個 worker 一個不同的 Topic）與子任務。
+_ANALYSIS_ASSIGNMENT = {
+    "type": "object",
+    "properties": {
+        "topic": _text(120),
+        "subtask": _text(400),
+        "signals": {"type": "array", "maxItems": 4, "items": _text(12)},
+    },
+    "required": ["topic", "subtask", "signals"],
+}
+
+ANALYSIS_PLAN_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "understanding": _text(500),
+        "related_signals": {"type": "array", "maxItems": 6, "items": {
+            "type": "object",
+            "properties": {"id": _text(12), "why": _text(160)},
+            "required": ["id", "why"],
+        }},
+        "before_sec": {"type": "number"},
+        "after_sec": {"type": "number"},
+        "assignments": {"type": "array", "maxItems": 8, "items": _ANALYSIS_ASSIGNMENT},
+        "report_focus": _text(300),
+    },
+    "required": ["understanding", "related_signals", "before_sec", "after_sec", "assignments", "report_focus"],
+}
+
+# worker 每一步的決定：同主對話的 {thought, reply, action}，字串有上限
+ANALYSIS_WORKER_REPLY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "thought": _text(500),
+        "reply": _text(1500),
+        "action": {"anyOf": [
+            {"type": "null"},
+            {
+                "type": "object",
+                "properties": {"command": _text(120), "args": _text(600)},
+                "required": ["command", "args"],
+            },
+        ]},
+    },
+    "required": ["thought", "reply", "action"],
+}
+
+# worker 的局部報告（Frontmatter Markdown 的模型部分）：analyzed_keys 程式會核對是不是真的量過；數字一律由程式從量測結果填，
+# 這裡只要模型判斷「跟子任務有沒有關、算不算異常」與文字說明
+ANALYSIS_WORKER_REPORT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "analyzed_keys": {"type": "array", "maxItems": 6, "items": _text(120)},
+        "anomaly_detected": {"type": "boolean"},
+        "summary": _text(800),
+        "evidence": {"type": "array", "maxItems": 6, "items": {
+            "type": "object",
+            "properties": {"time": _text(40), "key": _text(120), "observation": _text(200)},
+            "required": ["time", "key", "observation"],
+        }},
+        "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
+    },
+    "required": ["analyzed_keys", "anomaly_detected", "summary", "evidence", "confidence"],
+}
+
+# Synthesizer 的根因診斷報告（Root Cause Analysis）
+ANALYSIS_REPORT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "conclusion": _text(500),
+        "root_cause": _text(700),
+        "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
+        "timeline": {"type": "array", "maxItems": 10, "items": {
+            "type": "object",
+            "properties": {"time": _text(40), "source": _text(80), "event": _text(220)},
+            "required": ["time", "source", "event"],
+        }},
+        "evidence": {"type": "array", "maxItems": 10, "items": {
+            "type": "object",
+            "properties": {"source": _text(80), "fact": _text(260)},
+            "required": ["source", "fact"],
+        }},
+        "unknowns": {"type": "array", "maxItems": 5, "items": _text(220)},
+        "recommendations": {"type": "array", "maxItems": 5, "items": _text(220)},
+    },
+    "required": ["conclusion", "root_cause", "confidence", "timeline", "evidence", "unknowns", "recommendations"],
 }

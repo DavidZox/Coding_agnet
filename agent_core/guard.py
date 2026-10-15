@@ -18,7 +18,6 @@ _GUARD_REASONS = {
     "overpending_cancel": "刪除卡在逾時區的任務",
     "docker_est": "建立新的容器",
     "docker_runcmd": "在容器內執行指令：這個指令不在唯讀清單裡，可能會改變容器內的狀態",
-    "code_job_cancel": "停止 coding job：還沒做的項目不會做（已改好的檔案保留）",
     "host_runcmd": "在主機上執行指令：這個指令不在唯讀清單裡，可能會改變主機或容器的狀態",
     "docker_ctl": "啟動／停止／重新啟動容器",
     "file_ops": "修改本機的檔案或目錄（原檔會先備份）",

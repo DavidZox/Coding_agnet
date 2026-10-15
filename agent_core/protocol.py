@@ -2,7 +2,7 @@
 import json
 import os
 import re
-from .config import PROCEDURE_DOC_TYPE, SKILL_DOC_PREFIX, TOOL_RESULT_FRAME, TOOL_SUMMARY_TAG
+from .config import ANALYSIS_REPORT_HEAD, PROCEDURE_DOC_TYPE, SKILL_DOC_PREFIX, TOOL_RESULT_FRAME, TOOL_SUMMARY_TAG
 
 _DOC_TYPE_RE = re.compile(r"^type:\s*(\S+)\s*$", re.M)
 
@@ -119,4 +119,5 @@ def is_exempt_result(result, tool_tokens):
     TOOL_SUMMARY_TAG 開頭）——後者再摘要一次只會摘要的摘要、多一次模型呼叫。所有腳本輸出（包括分析型的
     --watch／--duration／語義地圖）都走同一套規則——超過門檻就交給獨立 session 做任務導向擷取。
     CLI／Web 的 ⚠️ 標記與 _content_for_context 共用這個判斷。"""
-    return is_skill_doc_result(result) or result.startswith(TOOL_SUMMARY_TAG)
+    # analysis_run 的根因診斷報告（ANALYSIS_REPORT_HEAD 開頭）同理：它本身就是 Synthesizer 依問題整理好的結論
+    return is_skill_doc_result(result) or result.startswith((TOOL_SUMMARY_TAG, ANALYSIS_REPORT_HEAD))

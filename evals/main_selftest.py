@@ -1,4 +1,4 @@
-"""主對話（非 coding）的離線自我測試：假的 ollama.chat 照劇本回答，直接驅動 Web 的回合迴圈（web_app.flows.run_turn），
+"""主對話的離線自我測試：假的 ollama.chat 照劇本回答，直接驅動 Web 的回合迴圈（web_app.flows.run_turn），
 幾秒鐘跑完、不需要 Ollama。
 
     python3 evals/main_selftest.py
@@ -18,7 +18,7 @@ import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROJECT = os.path.dirname(HERE)
-COPY = ["agent_core", "skills_system", "coding_agents", "context_modes", "web_app", "vision", "subagent", "AGENT.md", "Memory.md"]
+COPY = ["agent_core", "skills_system", "analysis_agents", "ops_agents", "context_modes", "web_app", "vision", "subagent", "AGENT.md", "Memory.md"]
 
 
 class FakeMain:
@@ -216,26 +216,30 @@ def main():
             agent.set_main_model(old)
             note = agent.load_model_settings({old})     # 存的模型已經不在 Ollama 裡：不套用、說明原因
             assert agent.model == old and "不在 Ollama 裡" in (note or ""), note
-            orch = agent.coding
-            orch.set_models(planner="deepseek-r1:32b", worker="qwen2.5-coder:32b", planner_think=True, worker_think=True)
-            assert orch.think_for("planner") is True and orch.think_for("worker") is False, "worker 的模型不支援 thinking，不送"
-            with open(orch.settings_file, encoding="utf-8") as f:
+            # 📊 數據分析三個角色：各自的模型與 thinking（模型支援才送）、存檔、跟著主對話
+            from agent_core.model_caps import think_arg
+            agent.set_analysis_model("orchestrator", "deepseek-r1:32b", think=True)
+            agent.set_analysis_model("worker", "qwen2.5-coder:32b", think=True)
+            assert think_arg(agent.analysis_model("orchestrator"), agent.analysis_think("orchestrator")) is True
+            assert think_arg(agent.analysis_model("worker"), agent.analysis_think("worker")) is False, "worker 的模型不支援 thinking，不送"
+            with open(agent.analysis_settings_file(), encoding="utf-8") as f:
                 saved = json.load(f)
-            assert saved["planner_think"] is True and saved["worker_think"] is True, saved
+            assert saved["orchestrator_think"] is True and saved["worker_think"] is True, saved
             from web_app.models import model_update, model_view
             view = model_view()
             assert view["thinking"]["deepseek-r1:32b"] and not view["thinking"]["qwen2.5-coder:32b"], view["thinking"]
             res = model_update({"main": "gemma4:e4b", "main_think": False, "worker_think": False})
-            assert res["ok"] and agent.model == "gemma4:e4b" and agent.main_think is False and orch.think["worker"] is False, res
-            assert "Coding worker qwen2.5-coder:32b（不支援 thinking）" in res["message"], res["message"]
+            assert res["ok"] and agent.model == "gemma4:e4b" and agent.main_think is False and agent.analysis_think("worker") is False, res
+            assert "分析 Worker qwen2.5-coder:32b（不支援 thinking）" in res["message"], res["message"]
             ev = []
             from web_app.commands import handle_slash_command
-            handle_slash_command("/think planner off", ev)
-            assert orch.think["planner"] is False and "Coding 規劃 deepseek-r1:32b（thinking 關）" in ev[-1]["text"], ev
+            handle_slash_command("/think orchestrator off", ev)
+            assert not agent.analysis_think("orchestrator") and "分析 Orchestrator deepseek-r1:32b（thinking 關）" in ev[-1]["text"], ev
             handle_slash_command("/model gemma4:26b", ev)
             assert agent.model == "gemma4:26b", agent.model
-            orch.set_models(planner=None, worker=None, planner_think=False, worker_think=False)
-            orch.models.update(planner=None, worker=None)
+            assert agent.analysis_model("synthesizer") == "gemma4:26b", "沒有另外設定的角色跟著主對話"
+            agent.set_analysis_model("all", "", think=False)
+            assert agent.analysis_model("worker") == "gemma4:26b"
             agent.set_main_model(old)
 
         for name, fn in [("卡住偵測：同樣的動作第二次附提醒、第三次加強提醒、第四次停下這一回合（v4.1）", t_stuck),
@@ -249,12 +253,8 @@ def main():
                          ("路徑找不到時列出相近的路徑（view_file／list_dir／change_dir）", t_path_suggestions),
                          ("兩階段揭露照舊：技能名稱回規格、腳本路徑才執行", t_two_stage_disclosure),
                          ("🧠 主對話 thinking：支援的模型才送 think=True，思考內容推到右欄、不進對話", t_think_main),
-                         ("🧠 模型設定：換主模型（摘要跟著換）、存檔與載入、Coding 規劃／worker 的 thinking、/model 與 /think", t_model_settings)]:
+                         ("🧠 模型設定：換主模型（摘要跟著換）、存檔與載入、數據分析各角色的模型與 thinking、/model 與 /think", t_model_settings)]:
             check(name, fn)
-        try:
-            agent.coding.stop_service()
-        except Exception:
-            pass
     finally:
         os.chdir(cwd)
         shutil.rmtree(tmp, ignore_errors=True)

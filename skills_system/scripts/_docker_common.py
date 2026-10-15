@@ -53,7 +53,8 @@ ROS2_ENV_FALLBACK = (
     'command -v ros2 >/dev/null 2>&1 || '
     '{ [ -n "$ROS_DISTRO" ] && [ -f "/opt/ros/$ROS_DISTRO/setup.bash" ] '
     '&& source "/opt/ros/$ROS_DISTRO/setup.bash"; }; '
-    'for _ws in /workspaces/*/install/setup.bash "$HOME"/*_ws/install/setup.bash /root/*_ws/install/setup.bash /opt/*_ws/install/setup.bash; do '
+    'for _ws in /workspaces/*/install/setup.bash /workspace/install/setup.bash /workspace/*/install/setup.bash '
+    '"$HOME"/*_ws/install/setup.bash /root/*_ws/install/setup.bash /opt/*_ws/install/setup.bash; do '
     '[ -f "$_ws" ] && { source "$_ws" >/dev/null 2>&1; break; }; done; '
     'if [ -z "$ROS_DOMAIN_ID" ]; then for _e in /proc/[0-9]*/environ; do '
     'if tr "\\0" "\\n" < "$_e" 2>/dev/null | grep -q "^ROS_DOMAIN_ID="; then '
@@ -145,24 +146,27 @@ def run_docker(cmd, timeout, what="docker 指令"):
     return True, r.stdout, ""
 
 
-def docker_exec(container, command, timeout, interactive=False, what=None, timeout_hint=None):
+def docker_exec(container, command, timeout, interactive=False, what=None, timeout_hint=None, input_text=None):
     """在容器內以 bash 執行 shell 指令，含容器內 timeout 與宿主機端後盾逾時。
 
     interactive=True 時用 `bash -ic`（會載入 .bashrc，ROS2 指令需要）。
     timeout_hint 會附加在逾時訊息後面，讓呼叫端補充「逾時最可能的原因」。
+    input_text：要送進指令 stdin 的文字（docker exec -i）；ROS 2 數據分析技能用它把腳本打包送進容器（_ros2_data_common），
+    不受單一參數 128 KB 的長度限制。
     """
     what = what or f"容器 '{container}' 內的指令"
     shell_flag = "-ic" if interactive else "-c"
-    with_inner_timeout = [
-        "docker", "exec", container,
+    exec_head = ["docker", "exec", "-i", container] if input_text is not None else ["docker", "exec", container]
+    with_inner_timeout = exec_head + [
         "timeout", "-k", str(KILL_AFTER_SECONDS), str(timeout),
         "bash", shell_flag, command,
     ]
-    plain = ["docker", "exec", container, "bash", shell_flag, command]
+    plain = exec_head + ["bash", shell_flag, command]
 
     for cmd, inner in ((with_inner_timeout, True), (plain, False)):
         try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout + HOST_GRACE_SECONDS)
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout + HOST_GRACE_SECONDS,
+                               input=input_text)
         except FileNotFoundError:
             return False, "", "[ERROR] 找不到 docker 指令，請確認 Docker 已安裝且在 PATH 中。"
         except subprocess.TimeoutExpired as e:

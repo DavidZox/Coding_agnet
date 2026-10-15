@@ -139,7 +139,8 @@ DEFAULT_SKILL_CATEGORY = "自建技能"   # 模型選的分類不在 SKILLS.md �
 SKILL_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{1,40}$")
 # 會改變狀態（建容器、送工單、寫記憶、切換目錄／容器）的技能：流程技能的步驟用到它們時，草稿預覽與規格會提醒（執行時照常確認）
 NON_READONLY_SKILLS = {"docker_est", "workpackage_send", "workpackage_cancel", "overpending_cancel", "modify_memory", "change_dir", "docker_open",
-                       "docker_ctl", "file_ops", "ROS2_param", "ROS2_topic_pub", "rmf_handshake", "host_runcmd", "ops_run"}
+                       "docker_ctl", "file_ops", "ROS2_param", "ROS2_topic_pub", "rmf_handshake", "host_runcmd", "ops_run",
+                       "mcap_recorder", "mcap_slicer"}
 
 # 使用者角色但實為工具回傳的訊息前綴（見 _split_for_compression 的配對規則）
 TOOL_RESULT_PREFIXES = ("[tool result]",)
@@ -165,6 +166,9 @@ TOOL_RESULT_TOKEN_THRESHOLD = 500
 TOOL_SUMMARY_DEFAULT = os.environ.get("AGENT_TOOL_SUMMARY", "1").strip().lower() not in ("0", "off", "false", "no")
 # summarize_tool_result() 產生的內容固定以這個標籤開頭：CLI 據此印出、Web 據此推 🧠 卡片，讓使用者看到主對話實際收到的內容。
 TOOL_SUMMARY_TAG = "[tool result - 任務導向摘要]"
+# analysis_run 的回傳（Synthesizer 寫好的根因診斷報告）固定以這個開頭：它本身就是多個 agent 依問題整理好的結論，跟 result_recall
+# 一樣不再交給摘要 session（is_exempt_result），主對話直接收到完整的報告。
+ANALYSIS_REPORT_HEAD = "[PASS] 📊 數據診斷報告"
 # _content_for_context 退回「只給成功／失敗判定」時的固定開頭（/summarize off 或摘要 session 失敗）；UI 據此標示 AI 實際收到的是哪一種。
 TOOL_REDUCED_TAG = "[tool result - 已精簡]"
 # 獨立 session 一次最多讀多少原始輸出（字元）：超過就保留頭尾、明確告知中間省略了多少（見 _clip_tool_output）。
@@ -217,7 +221,7 @@ TOOL_CLEARED_TAG = "[tool result - 已清除]"       # 被清成佔位的舊回�
 # workpackage_send 加 --dry-run 只顯示不送，也放行。change_dir／docker_open 只改 harness 自己的狀態，不擋。
 # AGENT_GUARDED_SKILLS 可覆寫清單（逗號分隔，none＝全部不擋）；/guard off 只對目前 session 關閉。
 # =========================================================
-_GUARDED_DEFAULT = ("workpackage_send,workpackage_cancel,overpending_cancel,docker_est,docker_runcmd,code_job_cancel,"
+_GUARDED_DEFAULT = ("workpackage_send,workpackage_cancel,overpending_cancel,docker_est,docker_runcmd,"
                     "host_runcmd,docker_ctl,file_ops,ROS2_param,ROS2_topic_pub,rmf_handshake,ops_run")
 _guarded_env = os.environ.get("AGENT_GUARDED_SKILLS", _GUARDED_DEFAULT).strip()
 GUARDED_SKILLS = set() if _guarded_env.lower() in ("", "none", "off") else {s.strip() for s in _guarded_env.split(",") if s.strip()}
@@ -248,59 +252,49 @@ PLAN_EXEC_GUARD_DEFAULT = os.environ.get("AGENT_PLAN_EXEC_GUARD", "0").strip().l
 TOOL_EXEC_TIMEOUT = 600
 
 # =========================================================
-# 🧑‍💻 Coding orchestrator（agent_core/coding_*.py）：長時間、跨檔案的程式開發任務。
-# 流程：探索專案（repo_map）→ 規劃 session 挑要先讀的檔案（scout）→ 規劃 session 把任務拆成 work items → 使用者在畫面上核准
-# → 依序派給 coding worker（每一項一個乾淨的 session，有自己的工具迴圈）→ 每一項做完由程式驗證（語法／未定義名稱／跨檔匯入
-# ＋這一項的驗證指令），失敗把錯誤交還 worker 修，仍失敗就換一個新的 worker 重試，再失敗就停下來問使用者 → 整體驗證 → 報告。
-# job 的狀態、事件、備份、worker 的完整紀錄都在 logs/coding_jobs/<編號>/（可以中途停止、還原全部變更）。
+# 🧠 模型的 thinking 與設定檔
+# 每個角色各自開關（主對話、數據分析的 Orchestrator／Worker／Synthesizer），模型不支援 thinking 時一律不送（Ollama 會回 400）。
+# 預設都關：主對話與 worker 要的是照格式的 JSON 決定，思考會多花時間。Web Console 的「🧠 模型」可以逐一切換
+# （存檔：logs/model_settings.json、logs/analysis_settings.json）。注意：有些模型關掉也還是會思考（deepseek-r1）。
 # =========================================================
-CODING_JOBS_DIRNAME = "coding_jobs"
-CODING_SETTINGS_NAME = "coding_settings.json"   # logs/ 下：Coding 面板 ⚙️ 設定（模型、工作區、測試用的 Python…），重開也記得
-CODING_AGENTS_DIRNAME = "coding_agents"     # worker.md／planner.md：worker 與規劃 session 的 system prompt（可直接改）
-# 各角色的模型：預設同主模型（AGENT_CODING_*_MODEL 可分別指定，例如規劃用 gemma4:26b、worker 用 gemma4:e4b）；
-# Web 可用 /code_model planner|worker <模型> 臨時切換。兩個模型同時用時 Ollama 會輪流載入，換模型要多等幾秒。
-CODING_PLANNER_MODEL = os.environ.get("AGENT_CODING_PLANNER_MODEL", "").strip() or None
-CODING_WORKER_MODEL = os.environ.get("AGENT_CODING_WORKER_MODEL", "").strip() or None
-# thinking 模式（Ollama 的 think 參數）：每個角色各自開關，模型不支援 thinking 時一律不送（Ollama 會回 400）。
-# 預設都關：主對話與 worker 要的是照格式的 JSON 決定與檔案內容，思考會多花時間；規劃可以用 AGENT_CODING_THINK=1 打開。
-# Web Console 的「🧠 模型」與 Coding 面板 ⚙️ 可以逐一切換（存檔：logs/model_settings.json、logs/coding_settings.json）。
-# 注意：有些模型關掉也還是會思考（實測 deepseek-r1:32b 送 think=false 仍會先想；Ollama 一樣把思考放在 thinking 欄位）。
-CODING_PLANNER_THINK = os.environ.get("AGENT_CODING_THINK", "").strip().lower() in ("1", "on", "true", "yes")
-CODING_WORKER_THINK = os.environ.get("AGENT_CODING_WORKER_THINK", "").strip().lower() in ("1", "on", "true", "yes")
 MAIN_THINK_DEFAULT = os.environ.get("AGENT_MAIN_THINK", "").strip().lower() in ("1", "on", "true", "yes")
 THINK_EXTRA_PREDICT = 8192               # 開了 thinking 的呼叫若有 num_predict 上限，再加這麼多給思考（思考也算在 num_predict 裡）
 MODEL_SETTINGS_NAME = "model_settings.json"   # logs/ 下：Web Console 設定的主對話模型與 thinking 開關，重開也記得
-CODING_MAX_ITEMS = 10                    # 一個 job 最多幾項
-CODING_SCOUT_MAX_FILES = 6               # 規劃前最多先讀幾個檔案的完整內容
-CODING_MAP_MAX_CHARS = 9000              # 交給規劃 session 的專案地圖上限（字元）
-CODING_FILE_PREVIEW_MAX_LINES = 300      # 交給規劃／worker 的檔案超過這麼多行只給結構大綱＋開頭
-CODING_WORKER_MAX_STEPS = int(os.environ.get("AGENT_CODING_WORKER_STEPS", "18"))   # 一個 worker 最多幾個動作
-CODING_VERIFY_ROUNDS = 3                 # worker 回報完成後，驗證失敗最多交還幾次
-CODING_ITEM_ATTEMPTS = 2                 # 同一項最多派幾個 worker（第二個會拿到上一個失敗的原因）
-CODING_COVERAGE_TARGET = 90.0            # 只寫測試的工作：每一項的測試通過後，目標程式的行覆蓋率低於這個就把沒測到的行交還 worker
-CODING_COVERAGE_ROUNDS = 1               # 同一個 worker 最多因為覆蓋率被交還幾次（真的測不到的部分可以在摘要說明；實測交還兩次時 C++ 的 worker 常用完步數）
 
 # 🧭 非編碼的多步驟任務（agent_core/ops_job.py）：ops_plan 規劃 → 使用者確認 → ops_run 每一步派一個乾淨的 worker
 OPS_MAX_ITEMS = 6                        # 計畫最多幾步（小模型規劃太多步時後面的步驟品質差，也難確認）
 OPS_WORKER_MAX_STEPS = 10                # 每一步的 worker 最多幾輪（每輪一個動作）
-CODING_FINAL_FIX_ROUNDS = 1              # 整體驗證失敗時，最多派幾次「修正」worker
-# 某一項試完仍失敗時：ask＝停下來問使用者（重試／跳過／停止）；skip＝跳過繼續；stop＝停止整個 job
-CODING_ON_FAIL = os.environ.get("AGENT_CODING_ON_FAIL", "ask").strip().lower()
-if CODING_ON_FAIL not in ("ask", "skip", "stop"):
-    CODING_ON_FAIL = "ask"
-CODING_AUTO_APPROVE = os.environ.get("AGENT_CODING_AUTO_APPROVE", "").strip().lower() in ("1", "on", "true", "yes")
-# code_edit 的內容怎麼請模型輸出：檔案不超過這麼多行時請它輸出「整份檔案」（實測 e4b 整份重寫 5/5 正確、SEARCH/REPLACE 2/5），
-# 更長的檔案改用 SEARCH/REPLACE 區塊（整份重寫太花時間、也容易漏）
-CODING_WHOLE_FILE_MAX_LINES = int(os.environ.get("AGENT_CODING_WHOLE_FILE_LINES", "250"))
-CODING_EDIT_CONTEXT_MAX_LINES = 800      # SEARCH/REPLACE 模式時，附給模型看的檔案內容上限（行）
-CODING_TOOL_RESULT_MAX_CHARS = 6000      # worker 的工具回傳進上下文的上限（超過保留頭尾）
-CODING_WORKER_CTX_RATIO = 0.6            # worker 上下文超過 num_ctx 的這個比例，就把舊的工具回傳換成一行摘要
-CODING_CONTENT_MAX_PREDICT = 8192        # 請模型輸出檔案內容時的 num_predict 上限
-CODING_RUN_TIMEOUT = 300                 # 驗證指令的逾時（秒；C／C++ 第一次建置要設定 CMake、編譯全部）
-# worker 可以用的腳本（其餘一律拒絕）；需要 payload（內容另外用文字輸出）的是 code_edit／code_write
-CODING_WORKER_SCRIPTS = {
-    "code_view_cmd.py", "code_search_cmd.py", "code_refs_cmd.py", "repo_map_cmd.py", "code_ast_reader_cmd.py",
-    "code_edit_cmd.py", "code_write_cmd.py", "code_test_cmd.py", "code_run_cmd.py", "code_check_cmd.py",
-    "code_diff_cmd.py", "find_file_cmd.py", "ls_cmd.py", "cat_cmd.py",
-}
-CODING_PAYLOAD_SCRIPTS = {"code_edit_cmd.py", "code_write_cmd.py"}
+
+# =========================================================
+# 📊 數據解析的多 agent 協同（agent_core/analysis_job.py，analysis_run 技能）：Orchestrator → Workers → Synthesizer。
+# 1. 資料預備（程式）：rosout_parser 把 Log 去重成唯一訊號、mcap_analyzer 讀全域 Topic Metadata 索引（錄製時已建立的就讀快取）；
+# 2. Orchestrator（一次模型呼叫）：同時看去重後的 Log 與 Topic Metadata，挑出跟問題有關的 Log 訊號（程式換成精確的時間窗）、
+#    把不同的 Topic 指派給不同的 worker（一個 Topic 只給一個 worker，擴大分析廣度）；
+# 3. Workers（每個一個乾淨的 session＋自己的工具迴圈）：只看自己的 Topic 與時間窗，自己決定量測哪些 Key（mcap_feature_measure），
+#    不碰 Log 字串；產出 Frontmatter Markdown 的局部報告（frontmatter 的數字由程式從量測結果填，不讓模型抄）；
+# 4. Synthesizer（一次模型呼叫）：拿 Orchestrator 的 Log 視角＋全部局部報告做因果拼圖，寫根因診斷報告。
+# job 的計畫、每個 worker 的報告與對話、最後的報告都在 logs/analysis_jobs/<編號>/。
+# =========================================================
+ANALYSIS_JOBS_DIRNAME = "analysis_jobs"
+ANALYSIS_SETTINGS_NAME = "analysis_settings.json"   # logs/ 下：各角色的模型、數據根目錄、worker 數…（Web 的 📊 分析面板 ⚙️ 設定）
+ANALYSIS_AGENTS_DIRNAME = "analysis_agents"         # orchestrator.md／worker.md／synthesizer.md：三個角色的 system prompt（可直接改）
+# 各角色的模型：預設同主模型（AGENT_ANALYSIS_*_MODEL 可分別指定，例如 Orchestrator 與 Synthesizer 用 gemma4:26b、worker 用 e4b）
+ANALYSIS_ORCHESTRATOR_MODEL = os.environ.get("AGENT_ANALYSIS_ORCHESTRATOR_MODEL", "").strip() or None
+ANALYSIS_WORKER_MODEL = os.environ.get("AGENT_ANALYSIS_WORKER_MODEL", "").strip() or None
+ANALYSIS_SYNTHESIZER_MODEL = os.environ.get("AGENT_ANALYSIS_SYNTHESIZER_MODEL", "").strip() or None
+ANALYSIS_THINK_DEFAULT = os.environ.get("AGENT_ANALYSIS_THINK", "").strip().lower() in ("1", "on", "true", "yes")
+# 數據根目錄（容器內或主機路徑都可以，主機路徑會依 bind mount 換成容器路徑）：mcap_recorder 錄到這裡、實驗名稱與 latest 相對於它；
+# 沒設定時工具在容器的 /workspace 底下找 experiment_logs
+ANALYSIS_DATA_ROOT = os.environ.get("AGENT_ANALYSIS_DATA_ROOT", "").strip()
+ANALYSIS_MAX_WORKERS = int(os.environ.get("AGENT_ANALYSIS_MAX_WORKERS", "4"))        # 一次最多派幾個 worker（＝最多分析幾個 Topic）
+ANALYSIS_PARALLEL_WORKERS = int(os.environ.get("AGENT_ANALYSIS_PARALLEL", "2"))      # 同時跑幾個 worker（Ollama 同一個模型只有一個 slot
+#                                                                                       時模型呼叫仍會排隊，但容器內的量測可以重疊）
+ANALYSIS_WORKER_MAX_STEPS = int(os.environ.get("AGENT_ANALYSIS_WORKER_STEPS", "6"))  # 一個 worker 最多幾個動作
+ANALYSIS_WINDOW_BEFORE = 5.0             # 時間窗：Log 訊號前後各取幾秒（同 toolkit 的預設）；Orchestrator 可以依問題調整
+ANALYSIS_WINDOW_AFTER = 5.0
+ANALYSIS_MAX_WINDOWS = 4                 # 時間窗最多幾個（重疊的會合併）；同一個訊號最多取前幾次出現
+ANALYSIS_SIGNAL_OCCURRENCES = 2
+ANALYSIS_DIGEST_MAX_SIGNALS = 60         # 交給 Orchestrator 的去重後 Log 最多幾個訊號（WARN 以上全部，其餘依時間補到上限）
+ANALYSIS_TOOL_RESULT_MAX_CHARS = 5000    # worker 的工具回傳進上下文的上限（超過保留頭尾）
+# worker 可以用的腳本（其餘一律拒絕）：特徵量測與 Key／原始值檢視；Topic 由系統固定成指派的那一個
+ANALYSIS_WORKER_SCRIPTS = {"mcap_feature_measure_cmd.py", "mcap_analyzer_cmd.py"}

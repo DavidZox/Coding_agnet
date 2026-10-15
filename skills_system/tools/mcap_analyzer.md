@@ -1,57 +1,27 @@
-
 ---
 type: Tool
-title: ROS 2 MCAP Metadata 與時序數據分析工具
-description: 在目標 ROS 2 容器內列出 Topic、取得欄位清單，並反序列化指定欄位。
-version: 2.0.0
-dependencies: ["docker", "mcap", "rclpy", "rosidl_runtime_py", "pyyaml"]
+title: 全域 Topic Metadata 與 Key 檢視
+description: 數據的全域索引（時間範圍、每個 Topic 的型別、筆數、頻率、角色與 Key）；看某個 Topic 每個 Key 的型別、維度與類別；預覽原始值。
+version: 3.0.0
+dependencies: ["docker", "mcap", "rclpy", "rosidl_runtime_py"]
 ---
 
 # 用途
-
-在目標容器內分析 MCAP，利用容器已安裝的 ROS 2 message packages 反序列化訊息。支援列出 Topic、列出某 Topic 的欄位，以及擷取指定欄位的時序值。
-
-所有輸入路徑都是**容器內路徑**。如果輸入是目錄，目錄底下必須剛好有一個 `.mcap` 檔案；若有多個，請直接指定檔案路徑。
+- 不帶 `--topic`：整份數據的索引（第一次建立後快取在 bag 資料夾的 topic_metadata.json，之後直接讀）。每個 Topic 的角色：
+  可分析（有數值／狀態 Key）、Log（/rosout，用 rosout_parser）、只有文字、沒有訊息、無法解碼（自訂訊息要先用 ROS2_workspace_env 確認 Workspace）。
+- `--topic`：每個 Key 的 ROS 型別、維度（scalar／vector [n]／matrix／set／map）、類別（數值／向量／狀態／鍵值／文字／時間）與抽樣看到的值。
+  DiagnosticArray 這類訊息的序列會依名稱展開（status.level 對每個 status.name 各一項）。
+- `--topic --key`：原始值預覽。
 
 # 語法
-
-`EXECUTE: scripts/mcap_analyzer_cmd.py [--container NAME] [--timeout SEC] --input FILE_OR_DIR [--list-topics] [--topic TOPIC] [--list-fields] [--field FIELD_PATH] [--limit N] [--offset N] [--json]`
-
-- `--input`：MCAP 檔案或包含唯一 MCAP 檔案的目錄。
-- `--list-topics`：列出 Topic、訊息數與可辨識的 schema。
-- `--topic`：要分析的 Topic。
-- `--list-fields`：列出指定 Topic 的訊息欄位。
-- `--field`：擷取欄位，可使用巢狀路徑，例如 `pose.position.x`。
-- `--limit`：最多回傳幾筆，預設 20。
-- `--offset`：略過前 N 筆符合 Topic 的訊息，預設 0。
-- `--json`：以 JSON 輸出。
-- `--container`：省略時使用目前目標容器。
-- `--timeout`：預設 120 秒，上限 570 秒。
+`EXECUTE: scripts/mcap_analyzer_cmd.py [數據] [--topic TOPIC] [--key KEY --preview N] [--window 開始,結束] [--refresh]`
+* 數據：實驗資料夾、bag、切片資料夾、.mcap、實驗名稱或 `latest`；省略＝目前分析的數據。
+* `--window`：epoch 秒或 `+秒`，例如 `+10,+20`。`--refresh`：重建索引。`--json`：結構化輸出。
 
 # 範例
-
-列出 Topic：
-
-`EXECUTE: scripts/mcap_analyzer_cmd.py --input /data/exp_001/slice_001 --list-topics`
-
-列出 `/odom` 欄位：
-
-`EXECUTE: scripts/mcap_analyzer_cmd.py --input /data/exp_001/slice_001 --topic /odom --list-fields`
-
-擷取巢狀欄位：
-
-`EXECUTE: scripts/mcap_analyzer_cmd.py --input /data/exp_001/slice_001/data.mcap --topic /odom --field pose.pose.position.x --limit 30 --json`
-
-從第 100 筆開始擷取：
-
-`EXECUTE: scripts/mcap_analyzer_cmd.py --input /data/exp_001/data.mcap --topic /odom --field twist.twist.linear.x --offset 100 --limit 50`
+`EXECUTE: scripts/mcap_analyzer_cmd.py latest`
+`EXECUTE: scripts/mcap_analyzer_cmd.py --topic /system/safety_gate_status`
+`EXECUTE: scripts/mcap_analyzer_cmd.py --topic /cmd_vel --key linear.x --preview 20 --window +10,+20`
 
 # 回傳
-
-欄位擷取結果包含 `log_time_ns`、`publish_time_ns`、`sequence` 與 `value`，並統計反序列化或欄位存取失敗的筆數與原因。
-
-# 注意事項
-
-- 必須在已安裝相應 ROS 2 message packages 的容器內執行。
-- `log_time_ns` 與 `publish_time_ns` 是 MCAP 的奈秒時間值；不要在未確認前將其當成 Unix 時間或直接與日誌文字時間比較。
-- `available_fields` 會優先透過 `get_fields_and_field_types()` 取得，不直接將 `__slots__` 的底線欄位名當成使用者欄位名。
+索引：時間範圍、Topic 總表（型別｜訊息數｜頻率｜起訖｜角色｜Key 摘要）、切片的檔案級 Metadata。量測特徵用 mcap_feature_measure。

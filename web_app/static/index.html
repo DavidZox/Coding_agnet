@@ -134,7 +134,7 @@
   .entry.skillload { background: #1f2a24; border: 1px dashed #4fa37a; font-family: "Cascadia Code", Consolas, monospace; }
   .entry.skillload .tag { color: #7fd8a8; opacity: 1; }
 
-  /* ===== 🧑‍💻 Coding 面板 ===== */
+  /* ===== 📊 數據分析面板（沿用 job／item 卡片的樣式） ===== */
   .tabs { display: flex; background: #26282c; border-bottom: 1px solid #3a3c40; }
   .tab { background: transparent; color: #9aa0a6; border-radius: 0; padding: 8px 14px; font-size: 13px; cursor: pointer; border-bottom: 2px solid transparent; }
   .tab:hover { color: #e3e3e3; }
@@ -143,7 +143,7 @@
   .tab .badge { display: none; margin-left: 6px; background: #e0a23a; color: #1e1f22; border-radius: 9px; padding: 0 6px; font-size: 11px; font-weight: bold; }
   .tab .badge.show { display: inline-block; }
   .tab .badge.alert { background: #ff7a6b; }
-  #code-panel { display: none; font-size: 13px; }
+  #analysis-panel { display: none; font-size: 13px; }
   .code-toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; font-size: 12px; color: #b8bcc2; }
   .code-toolbar select, .code-toolbar input, .code-settings input, .code-settings select {
     background: #1e1f22; color: #e3e3e3; border: 1px solid #3a3c40; border-radius: 5px; padding: 4px 6px; font-size: 12px; }
@@ -176,9 +176,12 @@
   .job-task { margin: 8px 0; font-size: 14px; line-height: 1.5; white-space: pre-wrap; }
   .job-meta { color: #9aa0a6; font-size: 12px; margin-top: 6px; display: flex; gap: 14px; flex-wrap: wrap; }
   .status-badge { padding: 2px 9px; border-radius: 10px; font-size: 12px; font-weight: bold; background: #4a4c50; }
-  .s-queued, .s-planning { background: #3d4f7a; } .s-awaiting_approval { background: #8a6a1a; } .s-running, .s-verifying { background: #2a5fb0; }
-  .s-paused { background: #6a5a8a; } .s-needs_attention { background: #b0473f; } .s-done { background: #2f7d4a; }
-  .s-partial { background: #8a6a1a; } .s-failed { background: #8a2f2f; } .s-cancelled, .s-reverted { background: #555; }
+  .s-preparing, .s-planning { background: #3d4f7a; } .s-working, .s-synthesizing { background: #2a5fb0; }
+  .s-done { background: #2f7d4a; } .s-failed { background: #8a2f2f; }
+  .an-steps { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 12px; margin: 6px 0; }
+  .an-step { padding: 2px 8px; border-radius: 10px; background: #2b2d31; color: #8f96a0; border: 1px solid #3a3c40; }
+  .an-step.done { color: #9fe0b8; border-color: #2f7d4a; } .an-step.now { color: #fff; background: #2a5fb0; border-color: #2a5fb0; }
+  .an-arrow { color: #5f646b; }
   .progress { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #b8bcc2; }
   .progress .bar { flex: 1; height: 8px; background: #1e1f22; border-radius: 4px; overflow: hidden; border: 1px solid #3a3c40; }
   .progress .bar div { height: 100%; background: linear-gradient(90deg, #2f9e58, #4fd88a); transition: width .4s; }
@@ -218,24 +221,17 @@
   .item-edit { padding: 8px 10px 10px 34px; display: grid; gap: 6px; }
   .item-edit input, .item-edit textarea { background: #1e1f22; color: #e3e3e3; border: 1px solid #3a3c40; border-radius: 6px; padding: 6px; font-size: 12px; font-family: inherit; }
   .item-edit textarea { min-height: 90px; }
-  .chg { display: flex; gap: 8px; align-items: center; padding: 5px 8px; border-radius: 6px; cursor: pointer; font-family: "Cascadia Code", Consolas, monospace; font-size: 12px; }
-  .chg:hover { background: #2a2d32; }
-  .add { color: #6fdc8c; } .del { color: #ff8a80; }
-  .chg .kind { color: #9aa0a6; font-family: inherit; font-size: 11px; }
-  #diff-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 300; }
-  #diff-modal.show { display: flex; align-items: center; justify-content: center; }
-  #diff-modal .box { width: min(1100px, 94vw); height: 86vh; background: #1e1f22; border: 1px solid #45474c; border-radius: 10px; display: flex; flex-direction: column; }
-  #diff-modal .bar { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border-bottom: 1px solid #3a3c40; }
-  #diff-body { flex: 1; overflow: auto; padding: 8px 0; font-family: "Cascadia Code", Consolas, monospace; font-size: 12px; }
-  .dl { white-space: pre; padding: 0 12px; }
-  .dl.a { background: #1d3325; color: #b8f0c8; } .dl.d { background: #3a1f1f; color: #ffc4bd; }
-  .dl.h { color: #8ab4f8; background: #1f2533; margin-top: 6px; } .dl.f { color: #e6b95c; font-weight: bold; margin-top: 10px; }
-  .entry.code { background: #1f2533; border: 1px solid #34507a; color: #cfe0ff; }
-  .entry.code .tag { color: #8ab4f8; opacity: 1; }
+  #viewer-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 300; }
+  #viewer-modal.show { display: flex; align-items: center; justify-content: center; }
+  #viewer-modal .box { width: min(1100px, 94vw); height: 86vh; background: #1e1f22; border: 1px solid #45474c; border-radius: 10px; display: flex; flex-direction: column; }
+  #viewer-modal .bar { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border-bottom: 1px solid #3a3c40; }
+  #viewer-body { flex: 1; overflow: auto; padding: 10px 14px; margin: 0; white-space: pre-wrap; word-break: break-word; font-family: "Cascadia Code", Consolas, monospace; font-size: 12px; color: #dfe3e8; }
+  .entry.analysis { background: #1f2533; border: 1px solid #34507a; color: #cfe0ff; }
+  .entry.analysis .tag { color: #8ab4f8; opacity: 1; }
   .entry .goto { display: inline-block; margin-top: 6px; font-size: 12px; color: #8ab4f8; cursor: pointer; text-decoration: underline; }
-  button.code-on { background: #2a5fb0; }
-  #stat-code { cursor: pointer; }
-  #stat-code.alert { color: #ffb4a8; font-weight: bold; }
+  button.analysis-on { background: #2a5fb0; }
+  #stat-analysis { cursor: pointer; }
+  #stat-analysis.running { color: #9fc7ff; font-weight: bold; }
 </style>
 </head>
 <body>
@@ -243,11 +239,12 @@
 <header>
   <h1>🤖 SkillAgent Web Console</h1>
   <div id="status">
-    <span id="stat-model" title="主對話（非 coding）用的模型；點一下可以分別設定主對話、Coding 規劃、Coding worker 的模型與 thinking 開關" onclick="toggleModelPanel()">🧠 -</span>
+    <span id="stat-model" title="主對話用的模型；點一下可以分別設定主對話與數據分析 Orchestrator／Worker／Synthesizer 的模型與 thinking 開關" onclick="toggleModelPanel()">🧠 -</span>
     <span id="stat-mode">mode: manual</span>
     <span id="stat-cmode" title="上下文模式（/context_mode 切換）：harness＝大量回傳由獨立 session 擷取重點；claude_code＝原文進上下文，查不查細節由 AI 決定">ctx-mode: -</span>
     <span id="stat-plan" title="計畫進度（/plan）"></span>
-    <span id="stat-code" title="coding job（點一下打開 Coding 面板）" onclick="showTab('code')"></span>
+    <span id="stat-analysis" title="最近一次數據分析 job（點一下打開數據分析面板）" onclick="showTab('analysis')"></span>
+    <span id="stat-data" title="目前分析的數據（CURRENT_ANALYSIS_DATA）：數據技能省略路徑時用；數據技能成功操作某份數據後自動帶入">data: -</span>
     <span id="stat-cwd">cwd: -</span>
     <span id="stat-container" title="目前的目標容器：預設空白；AI 成功操作某個容器後自動帶入，之後容器技能可省略名稱。要換容器直接跟 AI 說。">container: -</span>
     <span id="stat-ros2-workspace" title="目前 ROS 2 Workspace；只有所屬容器與目前目標容器一致時才能沿用。">ROS 2 WS: -</span>
@@ -265,11 +262,11 @@
   <section class="panel" id="right-panel">
     <div class="tabs">
       <button class="tab active" data-tab="tools" onclick="showTab('tools')">🛠️ 系統 / 工具回傳</button>
-      <button class="tab" data-tab="code" onclick="showTab('code')">🧑‍💻 Coding<span class="badge" id="code-badge"></span></button>
-      <button class="tab" id="widen-btn" style="margin-left:auto" title="放大／縮小右欄（看 diff 與 worker 的過程比較清楚）" onclick="toggleWide()">⇔ 放大</button>
+      <button class="tab" data-tab="analysis" onclick="showTab('analysis')">📊 數據分析<span class="badge" id="analysis-badge"></span></button>
+      <button class="tab" id="widen-btn" style="margin-left:auto" title="放大／縮小右欄（看 worker 的局部報告與報告比較清楚）" onclick="toggleWide()">⇔ 放大</button>
     </div>
     <div class="log" id="tool-log"></div>
-    <div class="log" id="code-panel"></div>
+    <div class="log" id="analysis-panel"></div>
   </section>
 </main>
 
@@ -305,17 +302,17 @@
     </div>
     <button class="secondary" id="attach-btn" title="附加影像：框選畫面或選擇檔案" onclick="toggleAttachMenu()">📷</button>
     <button class="secondary" id="plan-btn" title="切換 Plan 模式：開啟後，下一個新任務會先規劃步驟、你核准才執行" onclick="togglePlanMode()">📝 Plan</button>
-    <button class="secondary" id="code-btn" title="Code 模式：開啟後，送出的任務直接交給 coding orchestrator（探索專案→列計畫→你核准→worker 修改並驗證）" onclick="toggleCodeMode()">🧑‍💻 Code</button>
+    <button class="secondary" id="analysis-btn" title="📊 分析模式：開啟後，送出的問題直接交給數據診斷（Orchestrator → Workers → Synthesizer），數據用目前的數據" onclick="toggleAnalysisMode()">📊 分析</button>
     <textarea id="msg" placeholder="輸入訊息；打「/」選擇功能開關或手動載入技能規格...（Enter 送出，Shift+Enter 換行；📷 可附加影像）"></textarea>
     <button id="send-btn" onclick="sendMessage()">送出</button>
     <input type="file" id="file-input" accept="image/*" multiple style="display:none">
   </div>
 </footer>
 
-<div id="diff-modal" onclick="if (event.target === this) closeDiff()">
+<div id="viewer-modal" onclick="if (event.target === this) closeViewer()">
   <div class="box">
-    <div class="bar"><b id="diff-title">diff</b><span><button class="mini-btn" onclick="closeDiff()">關閉（Esc）</button></span></div>
-    <div id="diff-body"></div>
+    <div class="bar"><b id="viewer-title">檔案</b><span><button class="mini-btn" onclick="closeViewer()">關閉（Esc）</button></span></div>
+    <pre id="viewer-body"></pre>
   </div>
 </div>
 
@@ -334,11 +331,11 @@ const attachMenu = document.getElementById('attach-menu');
 const attachBtn = document.getElementById('attach-btn');
 const planBtn = document.getElementById('plan-btn');
 const fileInput = document.getElementById('file-input');
-const codeBtn = document.getElementById('code-btn');
-const codePanel = document.getElementById('code-panel');
+const analysisBtn = document.getElementById('analysis-btn');
+const analysisPanel = document.getElementById('analysis-panel');
 const DEFAULT_PLACEHOLDER = msgBox.placeholder;
 let planModeOn = false;  // updateStatus() 依 stats.plan_mode 同步；只用來決定按鈕外觀與切換方向
-let codeModeOn = false;  // 同上，stats.code_mode
+let analysisModeOn = false;  // 同上，stats.analysis_mode
 
 function renderEntry(container, cls, tag, text, oversized) {
   const div = document.createElement('div');
@@ -417,13 +414,10 @@ function renderEvents(events) {
       renderEntry(chatLog, 'skilldraft', `🧩 技能草稿 ${ev.name}（待你決定：核准／取消，或送出修改意見）`, ev.text);
     } else if (ev.channel === 'system') {
       renderEntry(toolLog, 'system', '系統', ev.text);
-    } else if (ev.channel === 'code') {
-      // 🧑‍💻 coding orchestrator 的訊息：放在左欄（使用者要知道），附「打開 Coding 面板」
-      renderEntry(chatLog, 'code', '🧑‍💻 coding orchestrator', ev.text);
-      if (ev.job) {
-        addGotoLink(chatLog, ev.job);
-        selectJob(ev.job, true);
-      }
+    } else if (ev.channel === 'progress') {
+      // ⏳ 偽技能（analysis_run、ops_run）執行中的進度：右欄的卡片；數據分析的進度另外讓面板切到那個 job
+      renderEntry(toolLog, 'analysis', '⏳ 執行進度', ev.text);
+      if (/^[📊🧭🔧💭▶✅❌🧩]/u.test(ev.text) && !ev.text.startsWith('🧭 ops')) noteAnalysisEvent(ev.text);
     }
   });
 }
@@ -493,18 +487,21 @@ function updateStatus(stats) {
     clearInterval(compressPoll);
     compressPoll = null;
   }
-  // 🧑‍💻 Code 模式按鈕與標題列的 coding job
-  codeModeOn = !!stats.code_mode;
-  codeBtn.classList.toggle('code-on', codeModeOn);
-  codeBtn.textContent = codeModeOn ? '🧑‍💻 Code ✓' : '🧑‍💻 Code';
-  msgBox.placeholder = codeModeOn
-    ? '🧑‍💻 Code 模式：描述要做的程式修改（例如「在 Inventory 新增 restock_below 方法並加測試」），送出後交給 coding orchestrator 規劃…'
+  // 📊 分析模式按鈕、標題列的數據分析 job 與目前的數據
+  analysisModeOn = !!stats.analysis_mode;
+  analysisBtn.classList.toggle('analysis-on', analysisModeOn);
+  analysisBtn.textContent = analysisModeOn ? '📊 分析 ✓' : '📊 分析';
+  msgBox.placeholder = analysisModeOn
+    ? '📊 分析模式：輸入要診斷的問題（例如「底盤為什麼在錄製中途停下來？什麼時候恢復？」），送出後直接交給數據診斷…'
     : DEFAULT_PLACEHOLDER;
-  const sc = document.getElementById('stat-code');
-  const cj = stats.coding;
-  sc.textContent = cj ? `🧑‍💻 #${cj.id} ${cj.label} ${cj.done}/${cj.total}` : '';
-  sc.classList.toggle('alert', !!(cj && cj.needs));
-  if (cj) ensureCodePolling();
+  const sa = document.getElementById('stat-analysis');
+  const aj = stats.analysis;
+  sa.textContent = aj ? `📊 ${aj.id} ${aj.label}` : '';
+  sa.classList.toggle('running', !!(aj && AN_ACTIVE.has(aj.status)));
+  const dataPath = stats.analysis_data || '';
+  const sd = document.getElementById('stat-data');
+  sd.textContent = 'data: ' + (dataPath ? dataPath.split('/').filter(Boolean).slice(-2).join('/') : '-');
+  sd.title = '目前分析的數據（CURRENT_ANALYSIS_DATA）：' + (dataPath || '未設定') + '\n數據技能省略路徑時用；數據技能成功操作某份數據後自動帶入';
   // 伺服器端附件已被消費（送出新任務）或清空時，同步清掉輸入框上方的縮圖
   if (stats.attachments === 0) clearAttachStrip();
   // 📘 待送的技能規格以伺服器狀態為準
@@ -516,7 +513,7 @@ function setBusy(busy) {
   msgBox.disabled = busy;
   attachBtn.disabled = busy;
   planBtn.disabled = busy;
-  codeBtn.disabled = busy;
+  analysisBtn.disabled = busy;
 }
 
 async function togglePlanMode() {
@@ -852,25 +849,23 @@ msgBox.addEventListener('keydown', (e) => {
 
 
 // =====================================================================
-// 🧑‍💻 Coding 面板：coding orchestrator 的 job（背景服務，可能跑很久）→ 每 1.5 秒輪詢 /api/code/state
+// 📊 數據分析面板：analysis_run 的 job（Orchestrator → Workers → Synthesizer）。分析在主對話的回合裡同步執行，進度同時推到
+// 右欄的系統卡片；面板讀 job 資料夾的檔案，分析進行中或面板打開時每 1.5 秒輪詢 /api/analysis/state。
 // =====================================================================
-const STATUS_TEXT = { queued: '排隊中', planning: '規劃中', awaiting_approval: '等你核准計畫', running: '執行中', paused: '已暫停',
-  needs_attention: '需要你決定', verifying: '整體驗證中', done: '完成', partial: '部分完成', failed: '失敗', cancelled: '已停止', reverted: '已還原' };
-const ACTIVE = new Set(['queued', 'planning', 'awaiting_approval', 'running', 'paused', 'needs_attention', 'verifying']);
-const ITEM_MARK = { pending: '⬜', running: '🔄', done: '✅', failed: '❌', skipped: '⏭️' };
-const code = { jobId: null, since: 0, events: [], job: null, jobs: [], workspace: '', models: {}, available: [], thinking: {},
-  expanded: new Set(), showAll: new Set(), editing: null, timer: null, lastKey: '', statusSeen: {}, firstPoll: true,
-  settingsOpen: false, autoApprove: false, onFail: 'ask' };
+const AN_STATUS = { preparing: '資料預備', planning: 'Orchestrator 規劃', working: 'Workers 分析', synthesizing: 'Synthesizer 整合', done: '完成', failed: '失敗' };
+const AN_STEPS = ['preparing', 'planning', 'working', 'synthesizing'];
+const AN_ACTIVE = new Set(AN_STEPS);
+const an = { jobId: null, data: null, timer: null, lastKey: '', settingsOpen: false, open: new Set() };
 
 function esc(t) { return String(t == null ? '' : t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
 function showTab(name) {
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
   toolLog.style.display = name === 'tools' ? 'block' : 'none';
-  codePanel.style.display = name === 'code' ? 'block' : 'none';
-  if (name === 'code') { pollCode(); ensureCodePolling(); }
+  analysisPanel.style.display = name === 'analysis' ? 'block' : 'none';
+  if (name === 'analysis') { pollAnalysis(); ensureAnalysisPolling(); }
 }
-function codeTabVisible() { return codePanel.style.display === 'block'; }
+function analysisTabVisible() { return analysisPanel.style.display === 'block'; }
 function toggleWide(force) {
   const panel = document.getElementById('right-panel');
   const wide = typeof force === 'boolean' ? force : !panel.classList.contains('wide');
@@ -880,323 +875,211 @@ function toggleWide(force) {
 }
 try { if (localStorage.getItem('rightPanelWide') === '1') toggleWide(true); } catch (e) {}
 
-function addGotoLink(container, jobId) {
-  const entry = container.lastElementChild;
-  if (!entry) return;
-  const a = document.createElement('span');
-  a.className = 'goto'; a.textContent = `打開 Coding 面板看 job #${jobId} →`;
-  a.onclick = () => { selectJob(jobId, true); showTab('code'); };
-  entry.appendChild(a);
-}
-
-function selectJob(id, show) {
-  if (id && id !== code.jobId) { code.jobId = id; code.since = 0; code.events = []; code.lastKey = ''; code.expanded.clear(); code.editing = null; }
-  if (show) showTab('code');
-  pollCode();
-}
-
-async function toggleCodeMode() {
+async function toggleAnalysisMode() {
   setBusy(true);
-  try { applyDone(await streamPost('/api/send', { message: codeModeOn ? '/code_mode off' : '/code_mode on' })); }
+  try { applyDone(await streamPost('/api/send', { message: analysisModeOn ? '/analysis_mode off' : '/analysis_mode on' })); }
   catch (e) { renderEntry(toolLog, 'system', '錯誤', '與伺服器的連線中斷：' + e); }
   finally { setBusy(false); msgBox.focus(); }
 }
 
-function ensureCodePolling() {
-  if (code.timer) return;
-  code.timer = setInterval(() => {
-    const active = code.job && ACTIVE.has(code.job.status);
-    if (active || codeTabVisible()) pollCode();
-    else { clearInterval(code.timer); code.timer = null; }
+function noteAnalysisEvent(text) {
+  // analysis_run 開始時的第一則進度帶 job 編號：面板切到這個 job、開始輪詢
+  const m = String(text).match(/數據分析 job (\d{8}_\d{6}\S*)：/);
+  if (m) { an.jobId = m[1]; an.lastKey = ''; an.open.clear(); }
+  pollAnalysis();
+  ensureAnalysisPolling();
+}
+
+function ensureAnalysisPolling() {
+  if (an.timer) return;
+  an.timer = setInterval(() => {
+    const st = an.data && an.data.detail && an.data.detail.job.status;
+    if (AN_ACTIVE.has(st) || analysisTabVisible()) pollAnalysis();
+    else { clearInterval(an.timer); an.timer = null; }
   }, 1500);
 }
 
-let codePolling = false;
-async function pollCode() {
-  if (codePolling) return;
-  codePolling = true;
-  let refetch = false;
+let anPolling = false;
+async function pollAnalysis() {
+  if (anPolling) return;
+  anPolling = true;
   try {
-    const r = await fetch(`/api/code/state?job=${code.jobId || ''}&since=${code.since}`);
-    const d = await r.json();
+    const d = await (await fetch(`/api/analysis/state?job=${encodeURIComponent(an.jobId || '')}`)).json();
     if (d.error) return;
-    if (d.stats) updateStatus(d.stats);
-    code.jobs = d.jobs || []; code.workspace = d.workspace; code.models = d.models || {}; code.available = d.available_models || [];
-    code.thinking = d.thinking || {};
-    code.autoApprove = !!d.auto_approve; code.onFail = d.on_fail || 'ask';
-    code.python = d.python || ''; code.pythonAuto = d.python_auto || '';
-    if (d.job && code.jobId !== d.job.id && code.since > 0) {
-      // 伺服器回的是另一個 job（例如原本那個不見了）：事件游標要從 0 重新拿，不然會漏掉前面的事件
-      code.jobId = d.job.id; code.since = 0; code.events = []; code.expanded.clear(); code.lastKey = '';
-      refetch = true;
-      return;
-    }
-    if (d.job) {
-      code.jobId = d.job.id;
-      for (const ev of d.events || []) { if (ev.seq > code.since) { code.events.push(ev); code.since = ev.seq; } }
-      notifyTransitions(d.job);
-    }
-    code.job = d.job;
-    updateCodeBadge();
-    const key = JSON.stringify([d.job && d.job.updated, d.job && d.job.status, code.events.length, code.jobs.length, code.workspace, code.models, code.settingsOpen]);
-    // 正在輸入（修改意見、補充說明、設定）時不重畫，不然打到一半的字會不見；離開輸入框後下一輪再畫
-    const typing = codePanel.contains(document.activeElement) && /^(TEXTAREA|INPUT|SELECT)$/.test(document.activeElement.tagName);
-    if (key !== code.lastKey && code.editing === null && !typing) { code.lastKey = key; renderCodePanel(); }
-    if (d.job && ACTIVE.has(d.job.status)) ensureCodePolling();
-  } catch (e) { /* 伺服器重新啟動中：下一輪再試 */ }
-  finally { codePolling = false; if (refetch) setTimeout(pollCode, 0); }
+    an.data = d;
+    if (!an.jobId && d.detail) an.jobId = d.detail.job.id;
+    updateAnalysisBadge();
+    const job = d.detail && d.detail.job;
+    const key = JSON.stringify([job && job.updated, job && job.status, d.detail && d.detail.events.length, (d.jobs || []).length,
+      d.data, d.container, d.settings, an.settingsOpen, [...an.open]]);
+    const typing = analysisPanel.contains(document.activeElement) && /^(TEXTAREA|INPUT|SELECT)$/.test(document.activeElement.tagName);
+    if (key !== an.lastKey && !typing) { an.lastKey = key; renderAnalysisPanel(); }
+  } catch (e) {}
+  finally { anPolling = false; }
 }
 
-function updateCodeBadge() {
-  const b = document.getElementById('code-badge');
-  const j = code.job;
-  const needs = j && (j.status === 'awaiting_approval' || j.status === 'needs_attention');
-  b.textContent = needs ? '!' : (j && ACTIVE.has(j.status) ? `${(j.items || []).filter(i => i.status === 'done').length}/${(j.items || []).length}` : '');
-  b.classList.toggle('show', !!b.textContent);
-  b.classList.toggle('alert', !!needs);
+function updateAnalysisBadge() {
+  const b = document.getElementById('analysis-badge');
+  const job = an.data && an.data.detail && an.data.detail.job;
+  const active = !!(job && AN_ACTIVE.has(job.status));
+  b.textContent = active ? AN_STATUS[job.status] : '';
+  b.classList.toggle('show', active);
 }
 
-// job 狀態一變（計畫列好、需要你決定、完成），左欄的對話也出現一則，不用一直盯著右邊
-function notifyTransitions(job) {
-  const prev = code.statusSeen[job.id];
-  code.statusSeen[job.id] = job.status;
-  if (code.firstPoll) { code.firstPoll = false; return; }
-  if (prev === job.status) return;
-  const items = job.items || [];
-  const done = items.filter(i => i.status === 'done').length;
-  let text = null;
-  if (job.status === 'awaiting_approval') text = `📋 job #${job.id} 的計畫列好了（${items.length} 項）：請到右邊 Coding 面板確認——可以直接編輯每一項、用說的修改，或按「✅ 核准並開始」。`;
-  else if (job.status === 'needs_attention') text = `⚠️ job #${job.id}：${(job.needs || {}).message || '需要你決定怎麼繼續'}`;
-  else if (['done', 'partial', 'failed', 'cancelled'].includes(job.status) && prev && ACTIVE.has(prev)) {
-    const fv = job.final_output ? `；整體驗證：${job.final_output.split('\n')[0]}` : '';
-    text = `${job.status === 'done' ? '✅' : '⚠️'} job #${job.id} ${STATUS_TEXT[job.status]}（${done}/${items.length} 項完成）${fv}` +
-      (job.report_id ? `。報告存成 #${job.report_id}，可以直接問我「剛剛改了什麼」。` : '');
-  }
-  if (text) { renderEntry(chatLog, 'code', '🧑‍💻 coding orchestrator', text); addGotoLink(chatLog, job.id); }
+function selectAnalysisJob(id) { an.jobId = id || null; an.lastKey = ''; an.open.clear(); pollAnalysis(); }
+function toggleAnOpen(k) { if (an.open.has(k)) an.open.delete(k); else an.open.add(k); an.lastKey = ''; renderAnalysisPanel(); }
+
+function anRel(ns, baseSec) { if (ns == null || baseSec == null) return '-'; const d = ns / 1e9 - baseSec; return (d >= 0 ? '+' : '-') + Math.abs(d).toFixed(2) + 's'; }
+function stripFrontmatter(text) { return String(text || '').replace(/^---\n[\s\S]*?\n---\n/, '').trim(); }
+
+function anStepsHtml(status) {
+  const idx = AN_STEPS.indexOf(status);
+  return '<div class="an-steps">' + AN_STEPS.map((s, i) => {
+    const cls = status === 'done' || (idx >= 0 && i < idx) ? 'done' : (i === idx ? 'now' : '');
+    return `<span class="an-step ${cls}">${i + 1}. ${AN_STATUS[s]}</span>`;
+  }).join('<span class="an-arrow">→</span>') + (status === 'failed' ? '<span class="status-badge s-failed" style="margin-left:8px">失敗</span>' : '') + '</div>';
 }
 
-async function codePost(action, body) {
-  try {
-    const r = await fetch('/api/code/' + action, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
-    const d = await r.json();
-    if (!d.ok) { renderEntry(toolLog, 'system', '錯誤', d.error || '操作失敗'); alert(d.error || '操作失敗'); }
-    else if (d.message && !['edit_item', 'move_item', 'delete_item'].includes(action)) renderEntry(toolLog, 'system', '🧑‍💻 Coding', d.message);
-    code.lastKey = '';
-    await pollCode();
-    return d;
-  } catch (e) { alert('與伺服器的連線中斷：' + e); return null; }
-}
-function jobAct(action, extra) { return codePost(action, Object.assign({ job: code.jobId }, extra || {})); }
-
-function fmtElapsed(job) {
-  const start = job.started || job.created;
-  if (!start) return '';
-  const t0 = new Date(start.replace(' ', 'T'));
-  const t1 = job.finished ? new Date(job.finished.replace(' ', 'T')) : new Date();
-  const sec = Math.max(0, Math.round((t1 - t0) / 1000));
-  return `${start.slice(11, 16)} 開始 · ${Math.floor(sec / 60)} 分 ${sec % 60} 秒`;
-}
-
-function renderCodePanel() {
-  const j = code.job;
-  const opts = code.jobs.map(x => `<option value="${x.id}" ${j && x.id === j.id ? 'selected' : ''}>#${x.id} ${esc(x.label)}（${x.done}/${x.total}）${esc(x.task.slice(0, 28))}</option>`).join('');
-  const models = (code.available.length ? code.available : [code.models.planner, code.models.worker]).filter(Boolean);
-  const sel = (role) => `<select id="set-${role}" onchange="syncCodeThink('${role}')">${[...new Set(models.concat([code.models[role]]))].map(m => `<option ${m === code.models[role] ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select>`
-    + `<label class="think-wrap" id="set-${role}-think-wrap" style="display:${code.thinking[code.models[role]] ? '' : 'none'}" title="thinking 模式：先想再回答（比較慢）。有些模型（例如 deepseek-r1）關掉也還是會思考"><input type="checkbox" id="set-${role}-think" ${code.models[role + '_think'] ? 'checked' : ''}> thinking</label>`
-    + `<span class="think-na" id="set-${role}-think-na" style="display:${code.thinking[code.models[role]] ? 'none' : ''}">不支援 thinking</span>`;
-  let html = `<div class="code-toolbar">
-      ${opts ? `<select onchange="selectJob(Number(this.value))">${opts}</select>` : ''}
-      <span title="新的 coding job 會在這個目錄（專案根目錄）裡工作；⚙️ 設定或 /code_ws 可以改">📁 工作區：</span><span class="ws" title="${esc(code.workspace)}">${esc(code.workspace)}</span>
-      <button class="mini-btn" onclick="code.settingsOpen = !code.settingsOpen; code.lastKey=''; renderCodePanel()">⚙️ 設定</button>
-    </div>
-    <div class="code-settings ${code.settingsOpen ? 'show' : ''}">
-      <span>工作區（專案根目錄）</span><span><input id="set-ws" style="width:70%" value="${esc(code.workspace)}"> <button class="mini-btn" onclick="saveWorkspace()">套用</button></span>
-      <span>規劃模型</span><span>${sel('planner')}</span>
-      <span>worker 模型</span><span>${sel('worker')} <button class="mini-btn" onclick="saveModels()">套用</button></span>
-      <span>某一項失敗時</span><span><select id="set-onfail" onchange="codePost('settings', {on_fail: this.value})">
-        ${[['ask', '停下來問我'], ['skip', '跳過繼續'], ['stop', '停止整個 job']].map(([v, t]) => `<option value="${v}" ${v === code.onFail ? 'selected' : ''}>${t}</option>`).join('')}</select></span>
-      <span>自動核准計畫</span><span><label><input type="checkbox" ${code.autoApprove ? 'checked' : ''} onchange="codePost('settings', {auto_approve: this.checked})"> 計畫列好就直接開始（無人看管時用）</label></span>
-      <span title="跑 Python 測試（pytest）與程式用的直譯器；留空＝自動：工作區的 .venv／venv，沒有就用 harness 的 Python">測試用的 Python</span><span><input id="set-python" style="width:70%" value="${esc(code.python)}" placeholder="自動：${esc(code.pythonAuto)}"> <button class="mini-btn" onclick="codePost('python', { path: document.getElementById('set-python').value.trim() })">套用</button></span>
+function renderAnalysisSettings(d) {
+  const s = d.settings || {};
+  const m = s.models || {};
+  return `<div class="code-settings ${an.settingsOpen ? 'show' : ''}">
+      <span title="mcap_recorder 錄到這裡；實驗名稱與 latest 相對於它；空白＝在容器的 /workspace 底下找 experiment_logs">數據根目錄</span>
+      <span><input id="an-root" style="width:70%" value="${esc(s.data_root)}" placeholder="自動尋找 experiment_logs"></span>
+      <span title="數據技能都在這個容器內執行（目標容器沒設定時用）">預設容器</span>
+      <span><input id="an-container" style="width:50%" value="${esc(s.container)}" placeholder="例如 ros2_web_container">　目前的目標容器：<code>${esc(d.container || '（沒有）')}</code></span>
+      <span>worker 上限／同時執行</span>
+      <span><input id="an-workers" type="number" min="1" max="8" style="width:60px" value="${esc(s.max_workers)}"> 個／
+        <input id="an-parallel" type="number" min="1" max="8" style="width:60px" value="${esc(s.parallel)}"> 個（Ollama 同一個模型只有一個 slot 時模型呼叫仍會排隊）</span>
+      <span title="Orchestrator 選的 Log 訊號前後各取幾秒（它也可以依問題調整）">時間窗預設</span>
+      <span>前 <input id="an-before" type="number" min="0.5" max="60" step="0.5" style="width:70px" value="${esc(s.before)}"> 秒、
+        後 <input id="an-after" type="number" min="0.5" max="60" step="0.5" style="width:70px" value="${esc(s.after)}"> 秒
+        <button class="mini-btn primary" onclick="saveAnalysisSettings()">套用</button></span>
+      <span>目前的數據</span>
+      <span><input id="an-data" style="width:70%" value="${esc(d.data)}" placeholder="實驗資料夾、bag、切片、實驗名稱或 latest"> <button class="mini-btn" onclick="saveAnalysisData()">設定</button></span>
+      <span>模型</span>
+      <span>Orchestrator <code>${esc(m.orchestrator)}</code>、Worker <code>${esc(m.worker)}</code>、Synthesizer <code>${esc(m.synthesizer)}</code>（點標題列的 🧠 修改）</span>
     </div>`;
+}
+
+function renderAnalysisPanel() {
+  const d = an.data || {};
+  const det = d.detail;
+  const j = det && det.job;
+  const opts = (d.jobs || []).map(x => `<option value="${esc(x.id)}" ${j && x.id === j.id ? 'selected' : ''}>${esc(x.id)} ${esc(AN_STATUS[x.status] || x.status)}｜${esc(x.data_label || '')}｜${esc((x.question || '').slice(0, 26))}</option>`).join('');
+  let html = `<div class="code-toolbar">
+      ${opts ? `<select onchange="selectAnalysisJob(this.value)">${opts}</select>` : ''}
+      <span title="目前分析的數據（數據技能省略路徑時用）">📁 數據：</span><span class="ws" title="${esc(d.data)}">${esc(d.data || '（未設定）')}</span>
+      <button class="mini-btn" onclick="an.settingsOpen = !an.settingsOpen; an.lastKey=''; renderAnalysisPanel()">⚙️ 設定</button>
+    </div>` + renderAnalysisSettings(d);
   if (!j) {
-    html += `<div class="code-empty">還沒有 coding job。<br>
-      ① 按輸入框旁的 <b>🧑‍💻 Code</b>（或輸入 <code>/code &lt;任務&gt;</code>），描述要做的程式修改；也可以直接跟 AI 說，它會用 <code>code_job_send</code> 交給 orchestrator。<br>
-      ② orchestrator 會先探索專案、列出計畫（每一項要改哪些檔案、怎麼驗證），<b>你核准後</b>才開始改檔案。<br>
-      ③ 每一項由一個 worker 修改，做完由程式驗證（語法、跨檔 import、測試），失敗會自動修正或重試；全部做完跑整體驗證並產生報告。<br>
-      改檔前都會備份，任何時候都可以「↩ 還原」。工作區目前是 <code>${esc(code.workspace)}</code>（⚙️ 設定可以改）。</div>`;
-    codePanel.innerHTML = html;
+    html += `<div class="code-empty">還沒有數據分析 job。<br>
+      ① 數據：用現有的實驗資料夾，或跟 AI 說「錄 30 秒的核心 Topic」（mcap_recorder，錄完自動建立 Topic Metadata 索引）。<br>
+      ② 問問題：直接跟 AI 說（像「為什麼車子在這段時間停下來？」，它會選 analysis_run），或輸入 <code>/analyze &lt;問題&gt;</code>，或按輸入框旁的 <b>📊 分析</b>。<br>
+      ③ 這裡會顯示：Orchestrator 從去重後的 Log 挑出的訊號與時間窗、每個 worker 負責的 Topic 與局部報告（Frontmatter Markdown）、Synthesizer 的根因診斷報告。</div>`;
+    analysisPanel.innerHTML = html;
     return;
   }
-  const items = j.items || [];
-  const done = items.filter(i => i.status === 'done').length;
-  const pct = items.length ? Math.round(done / items.length * 100) : 0;
-  const btn = (label, cls, onclick, title) => `<button class="mini-btn ${cls}" title="${esc(title || '')}" onclick="${onclick}">${label}</button>`;
-  const buttons = [];
-  if (j.status === 'awaiting_approval') buttons.push(btn('✅ 核准並開始', 'primary', "jobAct('approve')", '開始依計畫修改檔案'));
-  if (j.status === 'running' || j.status === 'verifying') buttons.push(btn('⏸ 暫停', '', "jobAct('pause')", '目前這一步做完就暫停'));
-  if (j.status === 'paused') buttons.push(btn('▶ 繼續', 'primary', "jobAct('resume')"));
-  if (j.status === 'failed' && j.interrupted) buttons.push(btn('▶ 從中斷的地方繼續', 'primary', "jobAct('resume')", '程式重新啟動時這個 job 還沒做完；已完成的項目不會重做'));
-  if (ACTIVE.has(j.status)) buttons.push(btn('⏹ 停止', 'danger', "if (confirm('停止這個 job？已改好的檔案會保留（之後可以還原）。')) jobAct('cancel')"));
-  if (!ACTIVE.has(j.status) || j.status === 'awaiting_approval') {
-    if ((j.changes || []).length) buttons.push(btn('↩ 還原全部變更', 'warn', "if (confirm('把這個 job 改過的檔案全部還原成 job 開始前的樣子？')) jobAct('revert')"));
-  }
-  if ((j.changes || []).length) buttons.push(btn('🔍 看全部 diff', '', 'showDiff()'));
-  if (j.report_file) buttons.push(btn('📄 報告', '', `window.open('/api/code/report?job=${j.id}', '_blank')`));
+  const base = (j.time_range || [])[0];
+  const files = det.files || {};
   html += `<div class="job-card">
-    <div class="job-top"><span class="job-id">#${j.id}</span><span class="status-badge s-${j.status}">${esc(STATUS_TEXT[j.status] || j.status)}</span>
-      <span class="job-time">${esc(fmtElapsed(j))}</span></div>
-    <div class="job-task">${esc(j.task)}</div>
-    <div class="progress"><div class="bar"><div style="width:${pct}%"></div></div><span>${done}/${items.length} 項</span></div>
-    <div class="job-meta"><span title="工作區">📁 ${esc(j.workspace)}</span><span>🧭 規劃 ${esc(j.models.planner)}</span><span>🔧 worker ${esc(j.models.worker)}</span>
-      ${j.model_calls ? `<span>🧠 模型呼叫 ${j.model_calls} 次</span>` : ''}</div>
-    ${j.self_edit ? '<div class="plan-notes">⚠️ 工作區是 harness 本身的目錄：核准前請確認計畫不會改壞正在執行的程式。</div>' : ''}
-    ${j.error ? `<div class="plan-notes" style="color:#ff9a8f">❌ ${esc(j.error)}</div>` : ''}
-    <div class="btn-row">${buttons.join('')}</div>
-  </div>`;
-  if (j.status === 'awaiting_approval') {
-    const notes = [];
-    if (j.understanding) notes.push(`<b>理解：</b>${esc(j.understanding)}`);
-    if (j.summary) notes.push(`<b>做法：</b>${esc(j.summary)}`);
-    (j.questions || []).forEach(q => notes.push(`<b>❓ 疑問：</b>${esc(q)}`));
-    (j.risks || []).forEach(q => notes.push(`<b>⚠️ 風險：</b>${esc(q)}`));
-    (j.warnings || []).forEach(q => notes.push(`<b>ℹ️ 系統調整：</b>${esc(q)}`));
-    html += `<div class="needs-box"><h3>📋 計畫列好了，等你核准</h3>
-      <div class="plan-notes">${notes.join('<br>')}</div>
-      <div class="plan-notes">核准後才會開始改檔案。可以直接編輯下面每一項（✏️）、調整順序、刪除或新增；也可以用說的改：</div>
-      <textarea id="revise-text" placeholder="例如：第 2 項也要改 README；把測試合併到第 1 項；整體驗證改成 python3 -m pytest -q tests"></textarea>
-      <div class="btn-row">${btn('✏️ 用說的改計畫', '', 'reviseByText()')}${btn('✅ 核准並開始', 'primary', "jobAct('approve')")}${btn('🚫 取消', 'danger', "jobAct('cancel')")}</div>
-      <div class="plan-notes" style="margin-top:8px">整體驗證：<input id="final-verify" style="width:60%" value="${esc(j.final_verify)}" placeholder="（空白＝對改過的檔案做靜態檢查）"> ${btn('更新', '', 'saveFinalVerify()')}</div>
+      <div class="job-top"><span class="status-badge s-${esc(j.status)}">${esc(AN_STATUS[j.status] || j.status)}</span>
+        <span class="job-id">job ${esc(j.id)}</span><span class="job-time">${esc(j.created || '')}${j.seconds ? `，${Math.round(j.seconds)} 秒` : ''}${j.model_calls ? `，模型呼叫 ${j.model_calls} 次` : ''}</span></div>
+      <div class="job-task">${esc(j.question)}</div>
+      ${anStepsHtml(j.status)}
+      <div class="job-meta"><span>📁 ${esc(j.data_label || j.data)}${j.duration_sec ? `（${esc(j.duration_sec)} 秒）` : ''}</span>
+        <span>🧠 ${esc((j.models || {}).orchestrator)}／${esc((j.models || {}).worker)}／${esc((j.models || {}).synthesizer)}</span>
+        ${j.log_source ? `<span>📜 Log：${esc(j.log_source.split('（')[0])}</span>` : ''}</div>
+      ${j.error ? `<div class="needs-box failure"><h3>❌ 分析中斷</h3>${esc(j.error)}</div>` : ''}
+      <div class="btn-row">${files['log_digest.md'] ? `<button class="mini-btn" onclick="openAnalysisFile('log_digest.md', '去重後的 Log')">📜 去重後的 Log</button>` : ''}
+        ${files['topic_metadata.md'] ? `<button class="mini-btn" onclick="openAnalysisFile('topic_metadata.md', '全域 Topic Metadata')">🗂️ Topic Metadata</button>` : ''}
+        ${files['report.md'] ? `<button class="mini-btn primary" onclick="openAnalysisFile('report.md', '數據診斷報告')">📄 完整報告</button>` : ''}</div>
     </div>`;
-  } else if (j.status === 'needs_attention') {
-    html += `<div class="needs-box failure"><h3>⚠️ 需要你決定</h3><div class="plan-notes">${esc((j.needs || {}).message || '')}</div>
-      <textarea id="decide-note" placeholder="（可選）給 worker 的補充說明，重試時會帶上，例如：remove() 的錯誤訊息要用英文；測試請用 tmp_path"></textarea>
-      <div class="btn-row">${btn('🔁 重試這一項', 'primary', "decide('retry')")}${btn('⏭ 跳過，繼續下一項', '', "decide('skip')")}${btn('⏹ 停止', 'danger', "decide('stop')")}</div></div>`;
+  const plan = j.plan;
+  if (plan) {
+    const wins = (j.windows || []).map(w => `<span class="chip verify" title="${esc(w.label || '')}">${esc(w.id)} ${anRel(w.start_ns, base)}～${anRel(w.end_ns, base)}${w.signals && w.signals.length ? '（' + esc(w.signals.join(',')) + '）' : ''}</span>`).join(' ');
+    const rel = (plan.related || []).map(r => `<div class="plan-notes"><b>${esc(r.id)}</b> ${esc(r.why)}</div>`).join('');
+    html += `<div class="section-title"><span>🧭 Orchestrator 的計畫</span></div>
+      <div class="item-card st-done"><div class="item-body" style="padding:10px">
+        <div class="item-goal">${esc(plan.understanding || '（沒有）')}</div>
+        ${rel ? `<div style="margin-top:6px">${rel}</div>` : '<div class="plan-notes">沒有相關的 Log 訊號：分析整段數據</div>'}
+        <div style="margin-top:6px">時間窗：${wins}（前 ${esc(plan.before)} 秒／後 ${esc(plan.after)} 秒）</div>
+        ${plan.report_focus ? `<div class="plan-notes"><b>報告要回答</b> ${esc(plan.report_focus)}</div>` : ''}
+        ${(plan.issues || []).length ? `<div class="plan-notes">⚠️ 程式檢查：${esc(plan.issues.join('；'))}</div>` : ''}
+      </div></div>`;
   }
-  html += `<div class="section-title"><span>計畫（${items.length} 項）</span>${j.status === 'awaiting_approval' ? btn('＋ 新增一項', '', 'editItem(0)') : ''}</div>`;
-  items.forEach((it, idx) => { html += renderItem(j, it, idx, items.length); });
-  if ((j.changes || []).length) {
-    const ta = j.changes.reduce((a, c) => a + c.added, 0), td = j.changes.reduce((a, c) => a + c.removed, 0);
-    html += `<div class="section-title"><span>變更的檔案（${j.changes.length} 個，<span class="add">+${ta}</span> <span class="del">−${td}</span>）——點一下看 diff</span></div>`;
-    const canRevert = !ACTIVE.has(j.status) || j.status === 'awaiting_approval';
-    j.changes.forEach(c => {
-      const f = esc(c.file).replace(/'/g, "\\'");
-      const rv = canRevert ? `<button class="mini-btn" style="margin-left:auto" title="只還原這個檔案" onclick="event.stopPropagation(); if (confirm('把 ${f} 還原成 job 開始前的樣子？')) jobAct('revert_file', {file: '${f}'})">↩</button>` : '';
-      html += `<div class="chg" onclick="showDiff('${f}')"><span>${c.status === '新增' ? '🆕' : c.status === '刪除' ? '🗑️' : '✏️'}</span><span>${esc(c.file)}</span><span class="add">+${c.added}</span><span class="del">−${c.removed}</span><span class="kind">${esc(c.status)}</span>${rv}</div>`;
-    });
+  // worker：做完的從 job.workers 讀；還在做的從事件（kind=worker*、worker=N）組
+  const events = det.events || [];
+  const done = {};
+  (j.workers || []).forEach(w => { done[w.n] = w; });
+  const assigns = (plan && plan.assignments) || [];
+  if (assigns.length) html += `<div class="section-title"><span>🔧 Workers（每個 worker 一個 Topic）</span></div>`;
+  assigns.forEach((a, i) => {
+    const n = i + 1, w = done[n];
+    const evs = events.filter(e => e.worker === n);
+    const running = !w && evs.length && !evs.some(e => e.kind === 'worker_done' || e.kind === 'worker_error');
+    const st = w ? (w.status === 'failed' ? 'failed' : 'done') : (running ? 'running' : 'pending');
+    const mark = w ? (w.status === 'failed' ? '❌' : (w.anomaly_detected ? '⚠️' : '✅')) : (running ? '🔄' : '⬜');
+    const open = an.open.has('w' + n) || running;
+    let body = `<div class="item-goal">${esc(a.subtask)}</div>`;
+    if (w) {
+      body += `<div class="item-summary">${esc(w.summary || w.error || '')}</div>`;
+      if ((w.evidence || []).length) body += '<div style="margin-top:6px">' + w.evidence.map(e => `<div class="plan-notes"><b>${esc(e.time)}</b> <code>${esc(e.key)}</code> ${esc(e.observation)}</div>`).join('') + '</div>';
+      if ((w.program_flags || []).length) body += `<div class="plan-notes">程式判斷：${esc(w.program_flags.join('；'))}</div>`;
+      if (w.file) body += `<div class="btn-row"><button class="mini-btn" onclick="openAnalysisFile('${esc(w.file)}', 'W${n} ${esc(a.topic)} 的局部報告')">📄 局部報告（Frontmatter Markdown）</button>
+        <button class="mini-btn" onclick="openAnalysisFile('${esc(w.file.replace(/\.md$/, '.transcript.md'))}', 'W${n} ${esc(a.topic)} 的完整對話')">📜 worker 對話</button></div>`;
+    }
+    if (evs.length) body += `<div class="timeline">${evs.slice(-12).map(e => `<div class="tl"><span class="ts">${esc(e.ts)}</span>${esc(e.text)}</div>`).join('')}</div>`;
+    html += `<div class="item-card st-${st}">
+        <div class="item-head" onclick="toggleAnOpen('w${n}')"><span>${mark}</span><span class="item-title">W${n} ${esc(a.topic)}</span>
+          <span class="item-meta">${w ? `${esc(w.data_type || '')}${w.confidence ? ' · 信心 ' + esc(w.confidence) : ''}${w.key_selection === 'fallback' ? ' · 系統代選 Key' : ''}` : (running ? '分析中' : '等待')}</span></div>
+        <div class="item-sub">${(w && w.analyzed_keys || []).map(k => `<span class="chip">${esc(k)}</span>`).join('')}${(a.windows || []).map(x => `<span class="chip verify">${esc(x)}</span>`).join('')}</div>
+        ${open ? `<div class="item-body">${body}</div>` : ''}
+      </div>`;
+  });
+  if (files['report.md']) {
+    html += `<div class="section-title"><span>🧩 Synthesizer 的根因診斷報告</span><span><button class="mini-btn" onclick="openAnalysisFile('report.md', '數據診斷報告')">開啟（含 Frontmatter）</button></span></div>
+      <div class="item-card st-done"><div class="item-body" style="padding:10px"><div class="item-goal">${esc(stripFrontmatter(files['report.md']))}</div></div></div>`;
   }
-  if (j.final_output) {
-    html += `<div class="section-title"><span>整體驗證：${esc(j.final_verify || '靜態檢查')}</span></div>
-      <details ${j.final_ok === false ? 'open' : ''}><summary>${j.final_ok === false ? '❌' : '✅'} ${esc(j.final_output.split('\n')[0])}</summary><pre class="code-pre">${esc(j.final_output)}</pre></details>`;
-  }
-  const phase = code.events.filter(e => !e.item && ['phase', 'error', 'plan', 'status', 'verify'].includes(e.type));
-  if (phase.length) {
-    const last = phase.slice(-6);
-    html += `<div class="section-title"><span>orchestrator 的進度</span></div><div class="timeline">${last.map(renderEvent).join('')}</div>`;
-  }
-  const report = code.events.filter(e => e.type === 'report').slice(-1)[0];
-  if (report) html += `<div class="section-title"><span>報告</span></div><details><summary>展開報告</summary><pre class="code-pre">${esc(report.text)}</pre></details>`;
-  html += `<details style="margin-top:10px"><summary class="section-title" style="display:list-item">全部事件（${code.events.length} 筆）</summary><div class="timeline">${code.events.map(renderEvent).join('')}</div></details>`;
-  const keepScroll = codePanel.scrollTop;
-  codePanel.innerHTML = html;
-  codePanel.scrollTop = keepScroll;
+  html += `<details style="margin-top:10px"><summary class="section-title" style="display:list-item">全部進度（${events.length} 筆）</summary>
+    <div class="timeline">${events.map(e => `<div class="tl"><span class="ts">${esc(e.ts)}</span>${esc(e.text)}</div>`).join('')}</div></details>`;
+  const keep = analysisPanel.scrollTop;
+  analysisPanel.innerHTML = html;
+  analysisPanel.scrollTop = keep;
 }
 
-function renderItem(j, it, idx, total) {
-  const editable = j.status === 'awaiting_approval';
-  const open = code.expanded.has(it.n) || it.status === 'running';
-  const meta = it.attempts ? `嘗試 ${it.attempts} 次 · ${it.steps} 步` : '';
-  const ctl = editable ? `<span onclick="event.stopPropagation()">
-      <button class="mini-btn" title="編輯" onclick="editItem(${it.n})">✏️</button>
-      <button class="mini-btn" title="上移" ${idx === 0 ? 'disabled' : ''} onclick="jobAct('move_item', {n: ${it.n}, to: ${it.n - 1}})">↑</button>
-      <button class="mini-btn" title="下移" ${idx === total - 1 ? 'disabled' : ''} onclick="jobAct('move_item', {n: ${it.n}, to: ${it.n + 1}})">↓</button>
-      <button class="mini-btn danger" title="刪除" onclick="if (confirm('刪除第 ${it.n} 項？')) jobAct('delete_item', {n: ${it.n}})">🗑️</button></span>` : '';
-  const files = (it.files || []).map(f => `<span class="chip" title="要修改或建立的檔案">${esc(f)}</span>`).join('');
-  const ctx = (it.context_files || []).map(f => `<span class="chip" style="opacity:.7" title="參考檔案">📖 ${esc(f)}</span>`).join('');
-  const verify = `<span class="chip verify" title="這一項做完後的驗證">🧪 ${esc(it.verify || '靜態檢查')}</span>`;
-  let body = '';
-  if (code.editing === it.n) {
-    body = `<div class="item-edit">
-      <input id="ed-title" value="${esc(it.title)}" placeholder="標題">
-      <textarea id="ed-goal" placeholder="worker 要做的事（寫具體：檔案、函式、行為）">${esc(it.goal)}</textarea>
-      <input id="ed-files" value="${esc((it.files || []).join(', '))}" placeholder="要修改或建立的檔案（逗號分隔）">
-      <input id="ed-verify" value="${esc(it.verify || '')}" placeholder="驗證指令（例如 python3 -m pytest -q tests/test_x.py；空白＝靜態檢查）">
-      <div class="btn-row"><button class="mini-btn primary" onclick="saveItem(${it.n})">儲存</button><button class="mini-btn" onclick="code.editing=null; code.lastKey=''; renderCodePanel()">取消</button></div></div>`;
-  } else if (open) {
-    const evs = code.events.filter(e => e.item === it.n);
-    const all = code.showAll.has(it.n);
-    const shown = all ? evs : evs.slice(-14);
-    const more = evs.length > shown.length ? `<div class="tl"><span class="goto" onclick="code.showAll.add(${it.n}); code.lastKey=''; renderCodePanel()">顯示更早的 ${evs.length - shown.length} 筆</span></div>` : '';
-    const logs = Array.from({ length: it.attempts || 0 }, (_, k) => `<a class="goto" target="_blank" href="/api/code/worker?job=${j.id}&item=${it.n}&try=${k + 1}">📜 worker 完整紀錄（第 ${k + 1} 次）</a>`).join(' ');
-    body = `<div class="item-body"><div class="item-goal">${esc(it.goal)}</div>
-      ${it.summary ? `<div class="item-summary">📝 ${esc(it.summary)}</div>` : ''}
-      ${(it.notes || []).length ? `<div class="plan-notes">💬 補充：${esc(it.notes.join('；'))}</div>` : ''}
-      ${evs.length ? `<div class="timeline">${more}${shown.map(renderEvent).join('')}</div>` : ''}
-      <div>${logs}</div></div>`;
-  }
-  return `<div class="item-card st-${it.status}">
-    <div class="item-head" onclick="toggleItem(${it.n})"><span>${ITEM_MARK[it.status] || '⬜'}</span><span class="item-title">${it.n}. ${esc(it.title)}</span><span class="item-meta">${meta}</span>${ctl}</div>
-    <div class="item-sub">${files}${ctx}${verify}</div>${body}</div>`;
+async function analysisPost(action, body) {
+  try {
+    const d = await (await fetch('/api/analysis/' + action, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) })).json();
+    renderEntry(toolLog, 'system', '📊 數據分析', d.ok ? d.message : ('⚠️ ' + (d.error || '設定失敗')));
+  } catch (e) { renderEntry(toolLog, 'system', '錯誤', '設定失敗：' + e); }
+  an.lastKey = '';
+  pollAnalysis();
+  fetch('/api/status').then(r => r.json()).then(updateStatus).catch(() => {});
 }
+function saveAnalysisSettings() {
+  analysisPost('settings', { data_root: document.getElementById('an-root').value.trim(), container: document.getElementById('an-container').value.trim(),
+    max_workers: document.getElementById('an-workers').value, parallel: document.getElementById('an-parallel').value,
+    before: document.getElementById('an-before').value, after: document.getElementById('an-after').value });
+}
+function saveAnalysisData() { analysisPost('data', { path: document.getElementById('an-data').value.trim() }); }
 
-function renderEvent(e) {
-  const ts = `<span class="ts">${esc(e.ts)}</span>`;
-  if (e.type === 'step') {
-    return `<div class="tl">${ts}💬 ${esc(e.text)}${e.thought ? `<div class="thought">💭 ${esc(e.thought)}</div>` : ''}${e.action ? `<div class="act">▶ ${esc(e.action)}</div>` : '<div class="act">▶ （回報完成，交給系統驗證）</div>'}</div>`;
-  }
-  if (e.type === 'tool' || e.type === 'verify') {
-    const ok = e.type === 'tool' ? e.status !== 'ERROR' : e.ok;
-    const head = e.type === 'tool' ? `${ok ? '✅' : '❌'} <span class="act">${esc(e.command || '')}</span> ${esc(e.text)}` : `🧪 ${esc(e.text)}`;
-    return `<div class="tl ${ok ? 'ok' : 'err'}">${ts}<span class="head">${head}</span>${e.detail ? `<details><summary>詳細</summary><pre>${esc(e.detail)}</pre></details>` : ''}</div>`;
-  }
-  if (e.type === 'report') return `<div class="tl">${ts}📄 報告已產生</div>`;
-  return `<div class="tl ${e.type === 'error' ? 'err' : ''}">${ts}<span class="head">${esc(e.text)}</span>${e.detail ? `<details><summary>詳細</summary><pre>${esc(e.detail)}</pre></details>` : ''}</div>`;
+async function openAnalysisFile(rel, title) {
+  const text = await (await fetch(`/api/analysis/file?job=${encodeURIComponent(an.jobId || '')}&file=${encodeURIComponent(rel)}`)).text();
+  document.getElementById('viewer-title').textContent = title || rel;
+  document.getElementById('viewer-body').textContent = text;
+  document.getElementById('viewer-modal').classList.add('show');
 }
+function closeViewer() { document.getElementById('viewer-modal').classList.remove('show'); }
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeViewer(); });
 
-function toggleItem(n) {
-  if (code.expanded.has(n)) code.expanded.delete(n); else code.expanded.add(n);
-  code.lastKey = ''; renderCodePanel();
-}
-function editItem(n) {
-  if (n === 0) { jobAct('edit_item', { n: 0, title: '（新的一項）', goal: '', files: '' }).then(() => { const its = (code.job || {}).items || []; code.editing = its.length ? its[its.length - 1].n : null; code.lastKey = ''; renderCodePanel(); }); return; }
-  code.editing = n; code.lastKey = ''; renderCodePanel();
-}
-async function saveItem(n) {
-  const v = id => document.getElementById(id).value;
-  const body = { n, title: v('ed-title'), goal: v('ed-goal'), files: v('ed-files'), verify: v('ed-verify') };
-  code.editing = null;
-  await jobAct('edit_item', body);
-}
-async function reviseByText() {
-  const t = document.getElementById('revise-text').value.trim();
-  if (!t) return;
-  renderEntry(toolLog, 'system', '🧑‍💻 Coding', '✏️ 依你的意見修改計畫中（規劃 session，約幾秒到十幾秒）…');
-  await jobAct('revise', { feedback: t });
-}
-function saveFinalVerify() { jobAct('final_verify', { cmd: document.getElementById('final-verify').value }); }
-function decide(d) { const el = document.getElementById('decide-note'); jobAct('decide', { decision: d, note: el ? el.value : '' }); }
-function saveWorkspace() { codePost('workspace', { path: document.getElementById('set-ws').value.trim() }); }
-function saveModels() {
-  // 值要先讀出來、一次送出：codePost 之後會重畫面板，下拉選單會變回伺服器上的舊值
-  const planner = document.getElementById('set-planner').value;
-  const worker = document.getElementById('set-worker').value;
-  const body = { planner, worker };
-  // thinking 只送模型支援的角色（不支援時畫面上沒有開關，保留原本的選擇）
-  if (code.thinking[planner]) body.planner_think = document.getElementById('set-planner-think').checked;
-  if (code.thinking[worker]) body.worker_think = document.getElementById('set-worker-think').checked;
-  codePost('model', body);
-}
-function syncCodeThink(role) {
-  const ok = !!code.thinking[document.getElementById('set-' + role).value];
-  document.getElementById('set-' + role + '-think-wrap').style.display = ok ? '' : 'none';
-  document.getElementById('set-' + role + '-think-na').style.display = ok ? 'none' : '';
-}
-
-// ================================================================ 🧠 模型設定（主對話、Coding 規劃、Coding worker）
+// ================================================================ 🧠 模型設定（主對話、數據分析 Orchestrator／Worker／Synthesizer）
 const modelCfg = { open: false, data: null };
 const MODEL_ROLES = [
-  ['main', '主對話（非 coding）', '一般對話、查詢、操作技能用的模型；摘要模型沒有另外指定時跟著它換'],
-  ['planner', 'Coding 規劃', 'coding orchestrator 探索專案、拆計畫用的模型（下一個 job 生效）'],
-  ['worker', 'Coding worker', '照計畫逐項修改檔案、跑測試的模型（下一個 job 生效）'],
+  ['main', '主對話', '一般對話、查詢、操作技能用的模型；摘要模型沒有另外指定時跟著它換'],
+  ['orchestrator', '分析 Orchestrator', '數據診斷：看去重後的 Log 與 Topic Metadata、挑 Log 訊號、把不同的 Topic 分派給 worker（下一次分析生效）'],
+  ['worker', '分析 Worker', '數據診斷：每個 worker 一個 Topic，自己選 Key 量測、寫局部報告（下一次分析生效）'],
+  ['synthesizer', '分析 Synthesizer', '數據診斷：整合 Log 與各 worker 的局部報告，寫根因診斷報告（下一次分析生效）'],
 ];
 function mpThinkOk(name) { return !!(modelCfg.data && modelCfg.data.thinking && modelCfg.data.thinking[name]); }
 async function toggleModelPanel(force) {
@@ -1214,7 +1097,7 @@ async function toggleModelPanel(force) {
 }
 function renderModelPanel() {
   const d = modelCfg.data;
-  const names = [...new Set((d.available || []).concat([d.main, d.planner, d.worker]))].filter(Boolean);
+  const names = [...new Set((d.available || []).concat([d.main, d.orchestrator, d.worker, d.synthesizer]))].filter(Boolean);
   const row = ([role, label, hint]) => `<span title="${esc(hint)}">${label}</span><span>
       <select id="mp-${role}" onchange="mpSync('${role}')">${names.map(m => `<option ${m === d[role] ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select>
       <label class="think-wrap" id="mp-${role}-think-wrap" title="thinking 模式：先想再回答（比較慢）；思考內容顯示在右欄，不進對話"><input type="checkbox" id="mp-${role}-think" ${d[role + '_think'] ? 'checked' : ''}> thinking</label>
@@ -1224,7 +1107,7 @@ function renderModelPanel() {
     <div class="mp-grid">${MODEL_ROLES.map(row).join('')}</div>
     <div class="mp-note">摘要模型（壓縮對話、整理工具回傳）：${esc(d.summary_model)}${d.summary_follows_main ? '，跟著主對話換' : '，由 AGENT_SUMMARY_MODEL 指定'}。<br>
       thinking 開關只在模型支援時出現（依 Ollama 回報的模型能力）；有些模型（例如 deepseek-r1）關掉也還是會思考。<br>
-      設定會存檔：主對話下一輪生效，Coding 下一個 job 生效。</div>
+      設定會存檔：主對話下一輪生效，數據分析下一次分析生效；分析的角色選跟主對話一樣的模型＝跟著主對話換。</div>
     <div><button class="mini-btn primary" onclick="saveModelPanel()">套用</button></div>`;
   MODEL_ROLES.forEach(([role]) => mpSync(role));
 }
@@ -1248,25 +1131,13 @@ async function saveModelPanel() {
     renderEntry(toolLog, 'system', '系統', '⚠️ 設定失敗：' + e);
   }
   fetch('/api/status').then(r => r.json()).then(updateStatus).catch(() => {});
-  code.lastKey = '';
+  an.lastKey = '';
+  pollAnalysis();
 }
 
-async function showDiff(file) {
-  const q = `job=${code.jobId}` + (file ? `&file=${encodeURIComponent(file)}` : '');
-  const text = await (await fetch('/api/code/diff?' + q)).text();
-  document.getElementById('diff-title').textContent = `job #${code.jobId} 的變更` + (file ? `：${file}` : '（全部檔案）');
-  document.getElementById('diff-body').innerHTML = text.split('\n').map(l => {
-    const cls = l.startsWith('+++') || l.startsWith('---') ? 'f' : l.startsWith('@@') ? 'h' : l.startsWith('+') ? 'a' : l.startsWith('-') ? 'd' : '';
-    return `<div class="dl ${cls}">${esc(l) || ' '}</div>`;
-  }).join('');
-  document.getElementById('diff-modal').classList.add('show');
-}
-function closeDiff() { document.getElementById('diff-modal').classList.remove('show'); }
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDiff(); });
-
-// 啟動時：有 job 就載入（不顯示舊 job 的轉換通知）；網址是 /#code 時直接打開 Coding 面板
-pollCode();
-if (location.hash === '#code') showTab('code');
+// 啟動時：有 job 就載入；網址是 /#analysis 時直接打開數據分析面板
+pollAnalysis();
+if (location.hash === '#analysis') showTab('analysis');
 
 // 初始載入時抓一次目前狀態
 fetch('/api/status').then(r => r.json()).then(updateStatus);

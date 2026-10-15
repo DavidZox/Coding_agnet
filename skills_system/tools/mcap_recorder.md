@@ -1,54 +1,27 @@
-
 ---
 type: Tool
-title: ROS 2 MCAP 實驗數據錄製工具
-description: 在目前目標 Docker 容器內錄製 ROS 2 Topic，並可另外保存 /rosout 輸出。
-version: 2.0.0
-dependencies: ["docker", "ros2", "mcap"]
+title: ROS 2 實驗數據錄製（MCAP＋rosout.log＋Topic Metadata 索引）
+description: 在目標容器內定時錄製 ROS 2 Topic，產生 toolkit 格式的實驗資料夾，錄完自動建立全域 Topic Metadata 索引。
+version: 3.0.0
+dependencies: ["docker", "ros2", "rosbag2-storage-mcap", "mcap"]
 ---
 
 # 用途
-
-由主機端腳本選定目標容器，並在容器內執行 `ros2 bag record`。主機不需要安裝 ROS 2 或 `rclpy`。
-
-所有路徑均以**容器內路徑**解讀。若希望主機端讀取錄製資料，請將輸出目錄放在已掛載到主機的共享目錄中。
+在目標容器內執行 `ros2 bag record -s mcap`，同時把 `/rosout` 經 rosout_formatter 存成一行一則的 `rosout.log`；錄完建立全域 Topic Metadata 索引（之後的分析直接讀，不用再掃）。
+輸出（同 diagnostics_package/toolkit）：`<數據根目錄>/exp_YYYYmmdd_HHMMSS/` 底下 `bag/`（mcap、metadata.yaml、topic_metadata.json）、`rosout.log`、`terminal.log`、`recording_info.json`。
+錄完的實驗會成為「目前分析的數據」（之後的數據技能可以省略路徑）。
 
 # 語法
-
-`EXECUTE: scripts/mcap_recorder_cmd.py [--container NAME] [--timeout SEC] (--topics TOPIC [TOPIC ...] | --all) --duration SEC --output-dir PATH [--rosout]`
-
-- `--container`：容器名稱；省略時使用目前的目標容器。
-- `--timeout`：Agent 工具的逾時秒數，預設 120，上限 570。
-- `--topics`：明確指定一個或多個以 `/` 開頭的 Topic。
-- `--all`：錄製可見的所有 Topic，與 `--topics` 互斥。
-- `--duration`：有限錄製時間，必須大於 0。
-- `--output-dir`：容器內的輸出目錄。若目錄已存在且非空，工具會拒絕覆寫。
-- `--rosout`：額外將 `ros2 topic echo /rosout` 的輸出保存至 `rosout.log`。
+`EXECUTE: scripts/mcap_recorder_cmd.py (--topics TOPIC... | --preset core | --all) --duration 秒 [--out-root 數據根目錄] [--name 名稱] [--no-rosout]`
+* `--preset core`：toolkit 的預設核心 Topic（/sensor_scan /cmd_vel /cmd_vel_raw /diagnostics /diagnostics_agg /system/safety_command /tf /tf_static）。
+* `--duration`：一定要定時（1～480 秒）。
+* `--out-root`：省略＝系統設定的數據根目錄；沒設定時在容器的 /workspace 底下找 `experiment_logs`。主機路徑會自動換成容器內路徑。
+* 預設會加錄 /rosout；`--no-rosout` 不錄 Log。
 
 # 範例
+`EXECUTE: scripts/mcap_recorder_cmd.py --preset core --duration 30`
+`EXECUTE: scripts/mcap_recorder_cmd.py --topics /cmd_vel /odom /battery_state --duration 20 --name exp_battery_test`
 
-錄製特定 Topic 10 秒：
-
-`EXECUTE: scripts/mcap_recorder_cmd.py --topics /cmd_vel /diagnostics --duration 10 --output-dir /data/exp_001`
-
-錄製所有可見 Topic 30 秒，並保留 rosout：
-
-`EXECUTE: scripts/mcap_recorder_cmd.py --all --duration 30 --output-dir /data/exp_002 --rosout`
-
-指定容器並增加逾時：
-
-`EXECUTE: scripts/mcap_recorder_cmd.py --container ros2_humble --timeout 180 --topics /odom --duration 60 --output-dir /data/exp_003`
-
-# 輸出
-
-- `bag_<UTC時間>/`：`ros2 bag record` 產生的 bag 資料。
-- `terminal.log`：錄製程序的終端輸出。
-- `recording_metadata.json`：錄製參數、執行時間與 MCAP 檔案清單。
-- `rosout.log`：只有使用 `--rosout` 時才會產生。
-
-# 回傳與異常
-
-- 成功：`[PASS]` 與輸出目錄、MCAP 檔案數量。
-- 失敗：`[ERROR]` 與錯誤原因。
-- 若沒有產生任何 `.mcap`，即使錄製程序已結束也視為失敗。
-- 逾時時依工具回報處理；不要在不確認容器內錄製程序狀態的情況下反覆重試。
+# 回傳
+`[PASS] 錄製完成`、資料夾、每個 Topic 錄到幾則、沒有錄到訊息的 Topic（錄製期間沒有 publisher）、索引位置。
+`[ERROR]`：時長不合法、資料夾已存在、沒有產生 mcap（附 terminal.log 最後幾行）。

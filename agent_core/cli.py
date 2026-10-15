@@ -85,143 +85,46 @@ def _run_make_skill_flow(agent, arg_text):
         print(agent.skill_draft_preview(draft))
 
 
-def _format_code_event(e):
-    """coding job 的事件 → CLI 的一行（worker 的想法、動作、工具結果、驗證）。"""
-    item = f"[{e['item']}] " if e.get("item") else ""
-    if e["type"] == "step":
-        act = e.get("action") or "（回報完成，交給系統驗證）"
-        return f"  {e['ts']} {item}💬 {e['text']}\n      💭 {e.get('thought') or ''}\n      ▶ {act}"
-    if e["type"] == "tool":
-        mark = "❌" if e.get("status") == "ERROR" else "✅"
-        return f"  {e['ts']} {item}{mark} {e.get('command', '')}：{e['text']}"
-    if e["type"] == "verify":
-        detail = "" if e.get("ok") else "\n" + "\n".join("      " + ln for ln in (e.get("detail") or "").splitlines()[:25])
-        return f"  {e['ts']} {item}🧪 {e['text']}{detail}"
-    if e["type"] == "report":
-        return f"\n{'-' * 30}\n{e['text']}{'-' * 30}"
-    return f"  {e['ts']} {item}{e['text']}"
-
-
-def _follow_coding_job(agent, jid):
-    """跟著顯示一個 coding job 的進度；等核准、等決定時在終端機問使用者。Ctrl+C 只是不再跟著看（job 繼續在背景跑）。"""
-    import time
-    from .coding_job import FINISHED_STATUSES, STATUS_LABELS
-    orch, seen = agent.coding, 0
-    print(f"🧑‍💻 跟著顯示 coding job #{jid} 的進度（Ctrl+C 不再跟著看，job 會繼續在背景跑）")
-    try:
-        while True:
-            job = orch.get(jid)
-            for e in orch.events(jid, seen):
-                seen = e["seq"]
-                print(_format_code_event(e))
-            st = job["status"]
-            if st == "awaiting_approval":
-                print(f"\n📋 job #{jid} 的計畫（工作區 {job['workspace']}）：\n{orch.plan_text(job)}")
-                for w in job.get("warnings") or []:
-                    print(f"ℹ️ {w}")
-                choice = input("\n核准並開始(y) / 取消(n) / 直接輸入修改意見: ").strip()
-                try:
-                    if choice.lower() == "y":
-                        orch.approve(jid)
-                    elif choice.lower() in ("n", ""):
-                        orch.cancel(jid)
-                    else:
-                        print(orch.revise(jid, choice))
-                except ValueError as e:
-                    print(f"⚠️ {e}")
-                continue
-            if st == "needs_attention":
-                print(f"\n⚠️ {(job.get('needs') or {}).get('message')}")
-                choice = input("重試(r) / 跳過(s) / 停止(x)，或輸入給 worker 的補充說明（會帶著重試）: ").strip()
-                decision = {"r": "retry", "s": "skip", "x": "stop"}.get(choice.lower(), "retry")
-                orch.decide(jid, decision, "" if choice.lower() in ("r", "s", "x") else choice)
-                continue
-            if st in FINISHED_STATUSES:
-                for e in orch.events(jid, seen):
-                    print(_format_code_event(e))
-                print(f"🧑‍💻 job #{jid} {STATUS_LABELS.get(st, st)}。看改了什麼：/code diff {jid}；還原：/code revert {jid}")
-                return
-            time.sleep(1)
-    except KeyboardInterrupt:
-        print("\n（不再跟著顯示；job 仍在背景執行：/code 查看、/code follow 繼續看、/code cancel 停止）")
-
-
-def _handle_code_command(agent, text):
-    """CLI 的 /code 系列（同 Web 的 web_app/coding.py，操作都是 CodingOrchestrator 的方法）。回傳 True＝已處理。"""
-    import re
-    from .coding_job import STATUS_LABELS
-    orch = agent.coding
+def _handle_analysis_command(agent, text):
+    """CLI 的 /analysis 系列設定（/analyze 要跑一個回合，在 main() 處理；Web 是 web_app/analysis.py）。回傳 True＝已處理。"""
+    from .analysis_job import ROLES, ROLE_LABELS
     lower = text.lower()
-    if lower.startswith("/code_ws"):
-        arg = text[len("/code_ws"):].strip()
-        if arg:
-            if arg == "-":
-                orch.default_workspace = None
-            else:
-                ws, err = orch.check_workspace(arg)
-                if err:
-                    print(f"⚠️ {err}")
-                    return True
-                orch.default_workspace = ws
-            orch.save_settings()
-        print(f"🧑‍💻 coding 工作區：{orch.workspace_default()}")
-        return True
-    if lower.startswith("/code_python"):
-        arg = text[len("/code_python"):].strip()
-        if arg:
-            _, err = orch.set_python("" if arg == "-" else arg)
-            if err:
-                print(f"⚠️ {err}")
-                return True
-        from skills_system.scripts import _code_common as cc
-        print(f"🧑‍💻 測試用的 Python：{orch.python or '自動（' + cc.project_python(orch.workspace_default()) + '）'}")
-        return True
-    if lower.startswith("/code_model"):
-        parts = text.split()[1:]
-        if parts:
-            role, model = (parts[0], parts[1] if len(parts) > 1 else "") if parts[0] in ("planner", "worker", "all") else ("all", parts[0])
-            orch.set_model(role, model or None)
-        print(f"🧑‍💻 規劃模型 {orch.planner_model()}、worker 模型 {orch.worker_model()}")
-        return True
-    if not (lower == "/code" or lower.startswith("/code ")):
+    if not lower.startswith("/analysis"):
         return False
-    arg = text[len("/code"):].strip()
-    m = re.match(r"^(jobs|status|follow|approve|pause|resume|cancel|revert|diff)\b\s*#?(\d+)?\s*$", arg, re.I)
-    if arg and not m:
-        job, err = orch.submit(arg, None, "cli")
-        if err:
-            print(f"⚠️ {err}")
-            return True
-        print(f"🧑‍💻 已建立 coding job #{job['id']}（工作區 {job['workspace']}）：探索專案、列計畫中…")
-        _follow_coding_job(agent, job["id"])
-        return True
-    verb = (m.group(1).lower() if m else "status")
-    if verb == "jobs":
-        for j in orch.list_jobs(15):
-            print(f"  #{j['id']} {j['label']}（{j['done']}/{j['total']}）：{j['task'][:70]}")
-        return True
-    job = orch.get(m.group(2)) if m and m.group(2) else (orch.active_job() or orch.latest())
-    if not job:
-        print("🧑‍💻 目前沒有 coding job：/code <任務描述> 送出。")
-        return True
-    jid = job["id"]
-    try:
-        if verb == "status":
-            print(f"🧑‍💻 job #{jid}（{STATUS_LABELS.get(job['status'], job['status'])}）：{job['task']}\n{orch.plan_text(job)}")
-        elif verb == "follow":
-            _follow_coding_job(agent, jid)
-        elif verb == "approve":
-            orch.approve(jid)
-            _follow_coding_job(agent, jid)
-        elif verb in ("pause", "resume", "cancel"):
-            getattr(orch, verb)(jid)
-            print(f"🧑‍💻 job #{jid}：{verb}")
-        elif verb == "revert":
-            print(orch.revert(jid))
-        elif verb == "diff":
-            print(orch.diff_text(job) or "（沒有任何變更）")
-    except ValueError as e:
-        print(f"⚠️ {e}")
+    cmd, _, arg = text.partition(" ")
+    cmd, arg = cmd.lower(), arg.strip()
+    if cmd == "/analysis_data":
+        if arg:
+            agent.analysis_data = "" if arg == "-" else arg
+        print(f"📊 目前分析的數據：{agent.analysis_data or '（沒有；工具會用 latest 或你指定的數據）'}")
+    elif cmd == "/analysis_root":
+        if arg:
+            agent.analysis_cfg["data_root"] = "" if arg == "-" else arg
+            agent.save_analysis_settings()
+        print(f"📊 數據根目錄：{agent.analysis_cfg.get('data_root') or '自動尋找（容器的 /workspace 底下的 experiment_logs）'}")
+    elif cmd == "/analysis_container":
+        if arg:
+            agent.analysis_cfg["container"] = "" if arg == "-" else arg
+            agent.save_analysis_settings()
+            if agent.analysis_cfg["container"] and not agent.target_container:
+                agent.target_container = agent.analysis_cfg["container"]
+        print(f"📊 預設容器：{agent.analysis_cfg.get('container') or '（沒有）'}；目前的目標容器：{agent.target_container or '（沒有）'}")
+    elif cmd == "/analysis_model":
+        bits = arg.split()
+        if len(bits) == 2 and bits[0].lower() in ROLES + ("all",):
+            agent.set_analysis_model(bits[0].lower(), "" if bits[1] == "-" else bits[1])
+        else:
+            print("用法：/analysis_model orchestrator|worker|synthesizer|all <模型>（- ＝跟著主對話）")
+        print("📊 " + "、".join(f"{ROLE_LABELS[r]} {agent.analysis_model(r)}" for r in ROLES))
+    elif cmd == "/analysis":
+        jobs = agent.analysis_list_jobs(10)
+        for j in jobs:
+            print(f"- {j['id']}｜{j['status']}｜{j['data_label']}｜{j['workers']} 個 worker｜{j['question'][:50]}")
+        if not jobs:
+            print("📊 還沒有數據分析 job：/analyze [問題] 開始。")
+    else:
+        print("📊 /analyze [問題]、/analysis（最近的 job）、/analysis_data <數據>、/analysis_root <路徑>、"
+              "/analysis_container <容器>、/analysis_model <角色|all> <模型>")
     return True
 
 
@@ -231,7 +134,6 @@ def main():
         max_history=None,  # 則數視窗停用，統一以 token 門檻壓縮
     )
     agent.reset_conversation()
-    agent.enable_coding()   # 🧑‍💻 coding orchestrator（/code 指令；主對話的 code_job_send 也交給它）
     auto_mode = False
     hybrid_mode = False  # 👈 新增狀態
     tool_summary_mode = TOOL_SUMMARY_DEFAULT  # 👈 工具回傳超過門檻時交給獨立 session 做任務導向摘要（預設開；/summarize off 改成只給成功／失敗）
@@ -240,7 +142,7 @@ def main():
     plan_mode = False  # 👈 開啟後，下一個新任務先規劃、經使用者核准後才執行；核准即自動退出
 
     print("\n" + "="*50)
-    print("V6 Robot Agent + Token Tracker 已啟動")
+    print("ROS 2 數據解析 Agent + Token Tracker 已啟動（/analyze [問題]＝數據診斷）")
     print(f"上下文模式：{agent.context_mode}（/context_mode harness|claude_code 切換）；"
           f"執行前關卡：{'開' if agent.guard_enabled else '關'}（/guard on|off）")
     print("="*50)
@@ -250,7 +152,6 @@ def main():
     def execute_turn():
         """一個回合：反覆 ask_ai → 執行前確認 → run_tool → 依 auto／hybrid／manual 決定結果怎麼加入，直到模型不再下 action；
         最後做軟水位檢查。模式變數（auto_mode 等）由外層的 slash 指令改，這裡只讀。"""
-        turn_start = agent.trajectory_seq   # 這個回合之後記的軌跡編號都比它大（用來找這回合送出的 coding job）
         while True:
             # --- 🧠 AI 推論 ---
             ai_msg = agent.ask_ai()
@@ -355,17 +256,6 @@ def main():
 
         # --- 🗜️ 回合結束：軟水位檢查（答案已印出，這裡壓縮不影響回覆延遲） ---
         after_turn_compression(agent, parallel_cal, print)
-        # --- 🧑‍💻 這個回合主對話用 code_job_send 送出了任務：orchestrator 接手後在這裡跟著顯示（要在終端機核准計畫） ---
-        sent = [r for r in agent.trajectory if r.get("kind") == "exec" and r["id"] > turn_start
-                and r.get("script") == "code_job_send_cmd.py" and r.get("status") == "PASS"]
-        if sent:
-            import time
-            for _ in range(10):   # 收件匣每秒看一次，最多等 5 秒
-                job = agent.coding.active_job()
-                if job:
-                    _follow_coding_job(agent, job["id"])
-                    break
-                time.sleep(0.5)
 
     while True:
         try:
@@ -380,7 +270,28 @@ def main():
             # --- 基礎指令 ---
             if user_msg.lower() in ['exit', 'quit']:
                 break
-            if _handle_code_command(agent, user_msg.strip()):   # 🧑‍💻 /code、/code_ws、/code_model
+            if user_msg.strip().lower() == "/analyze" or user_msg.strip().lower().startswith("/analyze "):
+                # 📊 直接交給數據診斷（同主模型選用 analysis_run），報告進主對話後讓 AI 依報告回答、可以接著追問
+                from .protocol import quote_cli_arg
+                import json as _json
+                question = user_msg.strip()[len("/analyze"):].strip()
+                agent.set_current_task(question or user_msg.strip())
+                agent.end_plan_for_new_task()
+                agent.messages.append({'role': 'user', 'content': question or "找出這段數據的異常與根因。"})
+                data = agent.analysis_data or "latest"
+                action = {"command": "scripts/analysis_run_cmd.py",
+                          "args": f"--data {quote_cli_arg(data)}" + (f" {quote_cli_arg(question)}" if question else "")}
+                agent.messages.append({'role': 'assistant', 'content': _json.dumps(
+                    {"thought": "使用者要求數據診斷，直接交給 analysis_run", "reply": "交給數據診斷。", "action": action}, ensure_ascii=False)})
+                result = agent.run_tool({"action": action}, approved=True)
+                print(f"\n🚀 系統回傳:\n{'-'*30}\n{result}\n{'-'*30}")
+                tokens = agent.count_tokens(result)
+                agent.total_tool_tokens += tokens
+                agent.messages.append({'role': 'user', 'content': tool_result_message(
+                    _context_content_for_cli(agent, result, tokens, tool_summary_mode), action)})
+                execute_turn()
+                continue
+            if _handle_analysis_command(agent, user_msg.strip()):   # 📊 /analysis、/analysis_data、/analysis_model…
                 continue
             if user_msg.lower() == '/clear':
                 agent.reset_conversation()

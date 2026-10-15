@@ -16,6 +16,7 @@ from .flows import (
     DEFAULT_VISION_PROMPT,
     handle_plan_response,
     handle_skill_draft_response,
+    run_analysis_turn,
     run_turn,
     start_plan_flow,
 )
@@ -148,11 +149,11 @@ class ConsoleHandler(BaseHTTPRequestHandler):
             # 「/」選單的內容：功能開關／指令 + SKILLS.md 技能清單（含分類）
             self._send_json({"commands": SLASH_COMMANDS, "skills": agent.list_skills()})
             return
-        if self.path.startswith("/api/code/"):
-            self._handle_code_get()
+        if self.path.startswith("/api/analysis/"):
+            self._handle_analysis_get()
             return
         if self.path == "/api/models":
-            # 🧠 三個角色（主對話、Coding 規劃、Coding worker）的模型與 thinking 開關
+            # 🧠 四個角色（主對話、數據分析 Orchestrator／Worker／Synthesizer）的模型與 thinking 開關
             from .models import model_view
             self._send_json(model_view())
             return
@@ -190,48 +191,37 @@ class ConsoleHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _handle_code_get(self):
-        """🧑‍💻 Coding 面板的查詢：state（輪詢）、diff、report、worker（某一項某次嘗試的完整紀錄）。"""
+    def _handle_analysis_get(self):
+        """📊 數據分析面板的查詢：state（job 清單與目前這個 job 的計畫、worker、報告；分析進行中輪詢）、file（job 資料夾裡的檔案）。"""
         from urllib.parse import parse_qs, urlparse
-        from .coding import code_diff, code_report, code_state, code_worker_log
+        from .analysis import analysis_file, analysis_state
         url = urlparse(self.path)
-        q = {k: v[-1] for k, v in parse_qs(url.query).items()}
-        what = url.path[len("/api/code/"):]
+        q = {k: v[0] for k, v in parse_qs(url.query).items()}
+        what = url.path[len("/api/analysis/"):]
         try:
             if what == "state":
-                payload = code_state(q.get("job"), q.get("since") or 0)
-                payload["stats"] = build_stats()   # 順便帶回通知（job 完成等）與標題列狀態
-                self._send_json(payload)
-            elif what == "diff":
-                text = code_diff(q.get("job"), q.get("file"))
-                self._send_text(text if text is not None else "找不到 job", 200 if text is not None else 404)
-            elif what == "report":
-                text = code_report(q.get("job"))
-                self._send_text(text if text is not None else "找不到 job", 200 if text is not None else 404)
-            elif what == "worker":
-                text = code_worker_log(q.get("job"), q.get("item") or 1, q.get("try") or 1)
-                self._send_text(text if text is not None else "還沒有這個 worker 的紀錄", 200 if text is not None else 404)
+                self._send_json(analysis_state(q.get("job")))
+            elif what == "file":
+                text = analysis_file(q.get("job"), q.get("file"))
+                self._send_text(text if text is not None else "找不到這個檔案", 200 if text is not None else 404)
             else:
                 self.send_error(404)
         except Exception as e:
             traceback.print_exc()
-            self._send_json({"error": f"伺服器處理 coding 查詢時發生錯誤：{e}"}, status=500)
+            self._send_json({"error": f"伺服器處理數據分析查詢時發生錯誤：{e}"}, status=500)
 
-    def _handle_code_post(self, action):
-        """🧑‍💻 Coding 面板的操作（不串流、不進主對話的 lock；orchestrator 有自己的鎖）。"""
-        from .coding import code_action
-        data = self._read_json()
+    def _handle_analysis_post(self, action):
+        """📊 數據分析面板的設定（不串流、不進主對話的 lock）。"""
+        from .analysis import analysis_action
         try:
-            self._send_json(code_action(action, data))
-        except ValueError as e:
-            self._send_json({"ok": False, "error": str(e)}, status=400)
+            self._send_json(analysis_action(action, self._read_json()))
         except Exception as e:
             traceback.print_exc()
-            self._send_json({"ok": False, "error": f"伺服器處理 coding 操作時發生錯誤：{e}"}, status=500)
+            self._send_json({"ok": False, "error": f"伺服器處理數據分析設定時發生錯誤：{e}"}, status=500)
 
     def do_POST(self):
-        if self.path.startswith("/api/code/"):
-            self._handle_code_post(self.path[len("/api/code/"):])
+        if self.path.startswith("/api/analysis/"):
+            self._handle_analysis_post(self.path[len("/api/analysis/"):])
             return
         if self.path == "/api/models":
             from .models import model_update
@@ -255,6 +245,8 @@ class ConsoleHandler(BaseHTTPRequestHandler):
         data = self._read_json()
         with lock:
             stream = self._begin_stream()
+            # ⏳ 偽技能（analysis_run、ops_run）執行中的進度：推到右欄（analysis 的 worker 平行時由 analysis_job 上鎖後才呼叫）
+            agent.progress_callback = lambda text: stream.append({"channel": "progress", "text": text})
             try:
                 if self.path == "/api/send":
                     self._handle_send(data, stream)
@@ -266,6 +258,8 @@ class ConsoleHandler(BaseHTTPRequestHandler):
                 traceback.print_exc()
                 stream.error(f"伺服器處理時發生錯誤：{e}")
                 self._finish(stream, bool(pending["mode"]))
+            finally:
+                agent.progress_callback = None
 
     def _handle_skill(self, action):
         """📘 手動載入技能規格的 JSON 端點（不串流、不進 agent 的 lock，狀態在 pending_skills 自己的 lock）。"""
@@ -358,6 +352,16 @@ class ConsoleHandler(BaseHTTPRequestHandler):
             # 只附圖／只載入技能而不打字：用預設提示詞
             message = DEFAULT_VISION_PROMPT if vision_session.count() else DEFAULT_SKILL_PROMPT
 
+        if message.lower() == "/analyze" or message.lower().startswith("/analyze "):
+            # 📊 /analyze [問題]：直接交給數據診斷（跟主模型選用 analysis_run 一樣，報告進主對話、可以接著追問）
+            question = message[len("/analyze"):].strip()
+            stream.append({"channel": "chat", "role": "user", "text": message, "tokens": agent.count_tokens(message)})
+            clear_plan_for_new_task(stream)
+            agent.set_current_task(question or message)
+            agent.messages.append({'role': 'user', 'content': question or "找出這段數據的異常與根因。"})
+            self._finish_turn(stream, run_analysis_turn(question, stream))
+            return
+
         if handle_slash_command(message, stream):
             self._finish(stream, False)  # slash 指令不消耗附件
             return
@@ -395,11 +399,10 @@ class ConsoleHandler(BaseHTTPRequestHandler):
                 f"📘 隨訊息載入技能規格：{', '.join(name for name, _ in skill_items)}（≈{skill_tokens} tokens）"
             )})
 
-        if state.get("code_mode"):
-            # 🧑‍💻 Code 模式：任務直接交給 coding orchestrator（附圖的分析文字一起當成任務的一部分），不進主對話
-            from .coding import submit_from_chat
-            submit_from_chat(content, stream)
-            self._finish(stream, False)
+        if state.get("analysis_mode"):
+            # 📊 分析模式：問題直接交給數據診斷（附圖的分析文字一起當成問題的一部分）；報告照一般工具結果進主對話
+            agent.messages.append({'role': 'user', 'content': content})
+            self._finish_turn(stream, run_analysis_turn(content, stream))
             return
 
         if state["plan_mode"]:

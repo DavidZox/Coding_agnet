@@ -178,11 +178,7 @@ COMMON_FIXTURES = {
 }
 # 在臨時副本裡真的執行的腳本（不碰外部世界）
 REAL_SCRIPTS = {"result_grep_cmd.py", "result_view_cmd.py", "result_list_cmd.py", "modify_memory_cmd.py",
-                "ls_cmd.py", "cat_cmd.py", "grep_cmd.py", "find_file_cmd.py", "cd_cmd.py",
-                # 程式開發技能（只讀，或只寫進臨時副本的 logs/coding_jobs/inbox）
-                "repo_map_cmd.py", "code_view_cmd.py", "code_search_cmd.py", "code_refs_cmd.py", "code_check_cmd.py",
-                "code_test_cmd.py", "code_diff_cmd.py", "code_ast_reader_cmd.py", "code_job_send_cmd.py",
-                "code_job_status_cmd.py"}
+                "ls_cmd.py", "cat_cmd.py", "grep_cmd.py", "find_file_cmd.py", "cd_cmd.py", "code_ast_reader_cmd.py"}
 
 # ---------------------------------------------------------------- 預先放好的舊存檔（模擬上次啟動查過的東西）
 NODE_LIST_YESTERDAY = {
@@ -218,17 +214,53 @@ STALE_MEMORY = """# Long Term Memory
 [09-24 21:31] 診斷經驗 | 任務流程驗證 | 確認了所有核心 Topic (Costmap, Orchestrator, Cmd_vel) 均活躍，系統整體健康。
 """
 
-# ---------------------------------------------------------------- 情境
-CODING_PROJECT = "evals/coding_fixtures/inventory_app"   # 評測副本裡也有這個 fixture（evals/ 整個複製）
+# ---------------------------------------------------------------- 📊 數據解析的假資料（容器內的數據技能不真的執行）
+DATA_PATH = "/workspace/data/exp_20261014_084506"
+ROSOUT_DIGEST = """[PASS] Log 智慧過濾：31 則 Log → 9 個唯一訊號；層級：INFO 7、WARN 2
+來源：bag 的 /rosout（時間＝MCAP log_time，與其他 Topic 同一個時鐘）
+數據：exp_20261014_084506（1791967507.011 ～ 1791967558.900，51.9 秒）；[+秒] 是距離數據開頭的時間
+L15  INFO  ×1    1791967507.532[+0.52s]  blackbox_recorder：Configuring BlackboxRecorderNode...
+L28  WARN  ×1    1791967507.760[+0.75s]  safety_motion_controller：GATE mode=PROTECTIVE_STOP latched=False reasons=['NO_SAFETY_COMMAND_YET', 'NO_CMD_VEL_RAW'] reaction=''
+L29  WARN  ×1    1791967508.236[+1.22s]  safety_motion_controller：GATE mode=PROTECTIVE_STOP latched=False reasons=['MON_INITIALIZING', 'NO_CMD_VEL_RAW'] reaction='INIT'
+L30  INFO  ×1    1791967522.547[+15.54s]  safety_motion_controller：GATE mode=NORMAL latched=False reasons=['NO_CMD_VEL_RAW'] reaction='NONE'
+（略過錄製工具 rosbag2 自己的 Log 22 個訊號；--all-nodes 顯示）"""
+CMD_VEL_FEATURES = """[PASS] 特徵量測：/cmd_vel（geometry_msgs/msg/Twist）｜數據 exp_20261014_084506（1791967507.011 ～ 1791967558.900）
+整份數據：1791967507.011 ～ 1791967558.900（51.9 秒）（數據開頭 +0.00s ～ +51.89s）；[+秒] 是距離數據開頭的時間
+  訊息 1010 筆，平均 19.901 Hz，最大間隔 0.35 秒
+  ▸ linear.x（scalar，數值，double）
+     linear.x：min 0  max 0.42  mean 0.1137  std 0.1521  slope 0.0031/s  首 0→末 0（1010 筆）
+       最大跳變 0→0.42 @ 1791967530.102[+23.09s]
+異常指標（程式判斷）：沒有尖峰、沒有狀態跳轉、沒有訊息中斷"""
+ANALYSIS_REPORT = """[PASS] 📊 數據診斷報告（job 20261014_181445：4 個 worker、模型呼叫 18 次、74 秒）
+問題：安全閘為什麼一開始是 PROTECTIVE_STOP？什麼時候恢復？
+數據：exp_20261014_084506（51.889 秒）；時間窗：W1 +0.00s～+30.54s（L28 WARN safety_motion_controller）
+結論：安全閘在 +0.75s 因為還沒收到安全指令與速度輸入而進入 PROTECTIVE_STOP，系統健康監控初始化完成後於 +15.54s 恢復 NORMAL。
+根因（信心 medium）：L28／L29 記錄 NO_SAFETY_COMMAND_YET、MON_INITIALIZING；/system/safety_command 的 primary_reaction 在 +15.53s 由 INIT 變成 NONE，緊接著 +15.54s 安全閘 mode 變成 NORMAL。
+時間線：
+- +0.75s｜L28｜進入 PROTECTIVE_STOP（NO_SAFETY_COMMAND_YET、NO_CMD_VEL_RAW）
+- +15.53s｜/system/safety_command｜primary_reaction INIT → NONE
+- +15.54s｜/system/safety_gate_status｜mode PROTECTIVE_STOP → NORMAL
+尚未確認：/cmd_vel_raw 不在數據裡，NO_CMD_VEL_RAW 無法由數據證實。
+建議：下次錄製加上 /cmd_vel_raw。
+各 worker：W1 /system/safety_gate_status（⚠️ 有異常）；W2 /system/safety_command（⚠️ 有異常）；W3 /cmd_vel（沒有異常）
+完整報告：logs/analysis_jobs/20261014_181445/report.md（各 worker 的局部報告在 workers/）"""
 
+# ---------------------------------------------------------------- 情境
 SCENARIOS = [
-    {"id": "coding_route_modify", "desc": "要修改程式：主對話要用 code_job_send 交給 coding orchestrator，不能自己用 host_runcmd 改檔",
-     "turns": [{"user": f"{CODING_PROJECT} 這個專案裡，Inventory 的 remove() 在要移除的數量大於庫存時要 raise ValueError，幫我改好並加上測試",
-                "expect": {"tools_any": ["code_job_send"], "tools_none": ["host_runcmd"]}}]},
-    {"id": "coding_route_question", "desc": "問程式的問題：用看程式的技能回答，不要派 coding job",
-     "turns": [{"user": f"{CODING_PROJECT} 這個專案裡，Inventory 類別定義在哪個檔案？它有哪些方法？",
-                "expect": {"tools_any": ["repo_map", "code_search", "code_refs", "code_view", "code_ast_reader", "find_file", "search_text"],
-                           "tools_none": ["code_job_send"], "reply_all": ["store.py"], "reply_any": ["remove", "total_value"]}}]},
+    {"id": "analysis_route_diagnose", "desc": "問「為什麼、什麼時候恢復」要同時看 Log 與多個 Topic：用 analysis_run（多 agent 數據診斷），依報告回答",
+     "state": {"target_container": "ros2_web", "analysis_data": DATA_PATH}, "pseudo": {"analysis_run": ANALYSIS_REPORT},
+     "turns": [{"user": "剛剛錄的那份數據裡，安全閘為什麼一開始是 PROTECTIVE_STOP？什麼時候恢復的？幫我找根因",
+                "expect": {"tools_any": ["analysis_run"], "reply_any": ["15.5"]}}]},
+    {"id": "analysis_route_single_key", "desc": "只問一個 Topic 的一個數值：直接用 mcap_feature_measure，不用派多 agent 的 analysis_run",
+     "state": {"target_container": "ros2_web", "analysis_data": DATA_PATH},
+     "fixtures": {"mcap_feature_measure_cmd.py": CMD_VEL_FEATURES}, "pseudo": {"analysis_run": ANALYSIS_REPORT},
+     "turns": [{"user": "這份數據裡 /cmd_vel 的 linear.x 最大是多少？",
+                "expect": {"tools_any": ["mcap_feature_measure"], "tools_none": ["analysis_run"], "reply_any": ["0.42"]}}]},
+    {"id": "analysis_route_log", "desc": "問 Log 裡有哪些警告：用 rosout_parser（去重後的唯一訊號），不用派 analysis_run",
+     "state": {"target_container": "ros2_web", "analysis_data": DATA_PATH},
+     "fixtures": {"rosout_parser_cmd.py": ROSOUT_DIGEST}, "pseudo": {"analysis_run": ANALYSIS_REPORT},
+     "turns": [{"user": "這份數據錄製期間有哪些 WARN 等級的 Log？",
+                "expect": {"tools_any": ["rosout_parser"], "tools_none": ["analysis_run"], "reply_any": ["PROTECTIVE_STOP"]}}]},
     {"id": "containers_basic", "desc": "小回傳：列容器並回答哪些在跑",
      "turns": [{"user": "目前有哪些容器？哪些正在跑？",
                 "expect": {"tools_any": ["docker_containers"], "reply_all": ["rmf_sim", "ros2_humble", "db_cache"],
@@ -290,7 +322,7 @@ SCENARIOS = [
 ]
 
 # ---------------------------------------------------------------- 穩健性情境（run_evals.py --suite robust）
-# 針對從 coding 框架移植到主對話的把關各設計一個「小模型容易出錯」的狀況；用 AGENT_ABLATE 關掉那些把關做對照組
+# 針對從 coding 框架移植到主對話的把關（卡住偵測、宣稱完成偵測、路徑建議）各設計一個「小模型容易出錯」的狀況；用 AGENT_ABLATE 關掉那些把關做對照組
 # （benchmark_study 的實驗 E6）。跟上面 14 個情境分開，預設不跑，主對話的回歸數字才不會變。
 import os as _os
 import shlex as _shlex
@@ -350,7 +382,7 @@ def _host_runcmd(args, agent):
 ROBUST_SCENARIOS = [
     {"id": "robust_typo_file", "desc": "檔名的大小寫打錯：找到正確的檔案並回答（路徑建議）",
      "turns": [{"user": "幫我看一下 agent_core/Turn_Guard.py 最上面的說明，它在防什麼問題？",
-                "expect": {"tools_any": ["view_file", "code_view", "code_ast_reader"], "reply_any": ["卡住", "重複", "宣稱", "沒有執行"]}}]},
+                "expect": {"tools_any": ["view_file", "code_ast_reader"], "reply_any": ["卡住", "重複", "宣稱", "沒有執行"]}}]},
     {"id": "robust_typo_dir", "desc": "目錄名稱少一個字：找到正確的目錄並算對數量（路徑建議＋腳本算數）",
      "turns": [{"user": "skills_system/script 這個資料夾裡有幾個檔名結尾是 _cmd.py 的檔案？",
                 "expect": {"args_any": ["skills_system/scripts"], "reply_any": [str(N_CMD_SCRIPTS)]}}]},

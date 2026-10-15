@@ -222,15 +222,12 @@ class PromptMixin:
                 "Workspace 時，先確認容器及路徑）"
             )
 
-        coding = getattr(self, "coding", None)
-        coding_line = coding.state_line() if coding is not None else ""
-
         blocks = [
             state,
             workspace_line,
+            self.analysis_state_line(),   # 📊 目前分析的數據、最近一次 analysis_run（analysis_job.py）
             self._build_objective_prompt(),
             self.plan_block(),
-            coding_line,
             self.tool_use_index_pointer(),
         ]
 

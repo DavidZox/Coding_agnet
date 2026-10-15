@@ -1,266 +1,236 @@
-
 #!/usr/bin/env python3
-"""Host-side entry point; slice MCAP inside the selected ROS 2 container."""
+"""mcap_slicer：依 Log 訊號（rosout_parser 的 L#）或指定的時間點，前後各取幾秒，切出局部的 MCAP。
 
-import argparse
-import base64
+輸出跟 diagnostics_package/toolkit 的 mcap_slicer.py 相同：實驗資料夾底下的 sliced_bag_<序號>_<秒>_<奈秒>/，內含 rosbag2.mcap、
+metadata.yaml（rosbag2_bagfile_information＋每個 Topic 的 available_keys 與 ai_features，toolkit 的 mcap_analyzer.py 讀得懂）、
+檔案級 Metadata「ai_slice_diagnostic_summary」（觸發的訊號、層級、Node、時間窗）；另外寫 topic_metadata.json（本系統的索引）。
+改成非互動：訊號編號跟 rosout_parser 同一套（依第一次出現排序、篩選前編號），一個訊號預設切第一次出現（--all-occurrences 每一次都切）。
+時間基準：bag 的 /rosout 用 MCAP log_time；rosout.log 用 Log 的 stamp（同一台機器的時鐘），時間點不在數據範圍內時回錯誤。"""
+import json
 import os
-import shlex
+import re
 import sys
-import uuid
-from pathlib import Path
 
-if os.environ.get("ROS2_TOOL_WORKER") != "1":
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from _docker_common import (
-        docker_exec,
-        parse_timeout,
-        resolve_container,
-        with_target_marker,
-        ROS2_ENV_FALLBACK,
-    )
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _ros2_data_common as rd  # noqa: E402
 
-DEFAULT_TIMEOUT = 180
+DEFAULT_TIMEOUT = 240
 MAX_TIMEOUT = 570
+MAX_SLICES = 20
+USAGE = ("scripts/mcap_slicer_cmd.py [數據] (--signal L#... | --at 時間...) [--before 秒] [--after 秒] [--all-occurrences] "
+         "[--source auto|bag|log] [--exact] [--out 輸出資料夾] [--container 名稱] [--timeout 秒]")
+
+
+def build_parser():
+    return (rd.CliParser(USAGE)
+            .add("data", nargs="?", default="")
+            .add("--data", dest="data_opt", default="")
+            .add("--data-root", default="")
+            .add("--signal", action="append", default=[])
+            .add("--at", action="append", default=[])
+            .add("--before", type=float, default=5.0)
+            .add("--after", type=float, default=5.0)
+            .add("--all-occurrences", action="store_true")
+            .add("--source", default="auto", choices=["auto", "bag", "log"])
+            .add("--exact", action="store_true")
+            .add("--out", default="")
+            .add("--json", action="store_true")
+            .add("--container", default="")
+            .add("--timeout", default=str(DEFAULT_TIMEOUT)))
+
+
+def _next_counter(parent):
+    nums = [int(m.group(1)) for n in os.listdir(parent) for m in [re.match(r"sliced_bag_(\d+)_", n)] if m]
+    return max(nums, default=0) + 1
+
+
+def _write_slice(data, idx, t_ns, start_ns, end_ns, trigger, out_dir):
+    """把 [start_ns, end_ns] 的訊息寫成 out_dir/rosbag2.mcap（同 toolkit：所有 schema 與 channel 都註冊、只複製時間窗內的訊息），
+    再寫 toolkit 格式的 metadata.yaml 與本系統的 topic_metadata.json。回傳 (訊息數, 每個 Topic 的筆數)。"""
+    from mcap.reader import make_reader
+    from mcap.writer import Writer
+    os.makedirs(out_dir)
+    out_file = os.path.join(out_dir, "rosbag2.mcap")
+    counts = {}
+    total = 0
+    with open(out_file, "wb") as f_out:
+        writer = Writer(f_out)
+        writer.start(profile="ros2", library="agent mcap_slicer")
+        schema_map, channel_map = {}, {}
+        for src in data["mcap_files"]:
+            with open(src, "rb") as f_in:
+                reader = make_reader(f_in)
+                summ = reader.get_summary()
+                for sc in (summ.schemas.values() if summ else []):
+                    key = (sc.name, sc.encoding, sc.data)
+                    if key not in schema_map:
+                        schema_map[key] = writer.register_schema(name=sc.name, encoding=sc.encoding, data=sc.data)
+                local = {}
+                for ch in (summ.channels.values() if summ else []):
+                    sc = summ.schemas.get(ch.schema_id)
+                    key = (ch.topic, ch.message_encoding)
+                    if key not in channel_map:
+                        sid = schema_map.get((sc.name, sc.encoding, sc.data), 0) if sc else 0
+                        channel_map[key] = writer.register_channel(topic=ch.topic, message_encoding=ch.message_encoding,
+                                                                   schema_id=sid, metadata=dict(ch.metadata or {}))
+                        counts.setdefault(ch.topic, 0)
+                    local[ch.id] = channel_map[key]
+                for schema, ch, m in reader.iter_messages(start_time=start_ns, end_time=end_ns + 1, log_time_order=True):
+                    cid = local.get(ch.id)
+                    if cid is None:
+                        key = (ch.topic, ch.message_encoding)
+                        if key not in channel_map:
+                            sid = 0
+                            if schema is not None:
+                                sk = (schema.name, schema.encoding, schema.data)
+                                if sk not in schema_map:
+                                    schema_map[sk] = writer.register_schema(name=schema.name, encoding=schema.encoding,
+                                                                            data=schema.data)
+                                sid = schema_map[sk]
+                            channel_map[key] = writer.register_channel(topic=ch.topic, message_encoding=ch.message_encoding,
+                                                                       schema_id=sid, metadata=dict(ch.metadata or {}))
+                        cid = local[ch.id] = channel_map[key]
+                    writer.add_message(channel_id=cid, log_time=m.log_time, data=m.data, publish_time=m.publish_time,
+                                       sequence=m.sequence)
+                    counts[ch.topic] = counts.get(ch.topic, 0) + 1
+                    total += 1
+        duration = (end_ns - start_ns) / 1e9
+        writer.add_metadata(name="ai_slice_diagnostic_summary", data={
+            "trigger_timestamp": f"{t_ns // 1_000_000_000}.{t_ns % 1_000_000_000:09d}",
+            "trigger_signal": trigger.get("id", ""), "trigger_level": trigger.get("level", ""),
+            "trigger_message": trigger.get("message", ""), "trigger_node": trigger.get("node", ""),
+            "window_start": f"{start_ns / 1e9:.9f}", "window_end": f"{end_ns / 1e9:.9f}",
+            "window_duration_sec": str(duration), "total_messages": str(total), "source": idx["label"]})
+        writer.finish()
+    # toolkit 格式的 metadata.yaml（toolkit 的 mcap_analyzer.py 讀 available_keys「名稱: 型別 [維度]」）
+    slice_data, _ = rd.resolve_data(out_dir)
+    sidx = rd.build_index(slice_data, refresh=True)
+    topics_info = []
+    for t in sidx["topics"]:
+        if not counts.get(t["topic"]):
+            continue
+        keys = [f"{k['key']}: {k['type']} [{k['dim'] if k['category'] in ('vector', 'matrix') else k['category']}]"
+                for k in t.get("keys", [])]
+        topics_info.append({"topic_metadata": {
+            "name": t["topic"], "type": t["type"], "message_count": counts[t["topic"]], "available_keys": keys,
+            "ai_features": {"avg_frequency_hz": round(counts[t["topic"]] / duration, 2) if duration > 0 else 0.0,
+                            "active_in_slice": True, "role": t["role"]}}})
+    meta = {"rosbag2_bagfile_information": {
+        "version": 9, "storage_identifier": "mcap", "duration": {"nanoseconds": end_ns - start_ns},
+        "starting_time": {"nanoseconds_since_epoch": start_ns}, "message_count": total,
+        "topics_with_message_count": topics_info, "files": [{"path": "rosbag2.mcap", "message_count": total}]}}
+    try:
+        import yaml
+        with open(os.path.join(out_dir, "metadata.yaml"), "w", encoding="utf-8") as f:
+            yaml.safe_dump(meta, f, allow_unicode=True, sort_keys=False, width=200)
+    except ImportError:
+        with open(os.path.join(out_dir, "metadata.json"), "w", encoding="utf-8") as f:
+            json.dump(meta, f, ensure_ascii=False, indent=1)
+    return total, counts
 
 
 def worker_main(argv):
-    import json
-    import statistics
-    import yaml
-    from collections import Counter, defaultdict
-    from mcap.reader import make_reader
-    from mcap.writer import Writer
-
-    p = argparse.ArgumentParser(description="Slice an MCAP around a verified timestamp.")
-    p.add_argument("--input", required=True, help="Input .mcap path inside the container")
-    p.add_argument("--output-dir", required=True, help="New output directory")
-    p.add_argument("--timestamp-ns", required=True, type=int,
-                   help="Verified timestamp in MCAP log_time nanoseconds")
-    p.add_argument("--event-id", type=int,
-                   help="Source rosout line number; stored for traceability")
-    p.add_argument("--before", type=float, default=5.0,
-                   help="Seconds before timestamp")
-    p.add_argument("--after", type=float, default=5.0,
-                   help="Seconds after timestamp")
-    args = p.parse_args(argv)
-
-    if args.timestamp_ns < 0:
-        p.error("--timestamp-ns must be >= 0")
-    if args.before < 0 or args.after < 0:
-        p.error("--before and --after must be >= 0")
-
-    input_path = Path(args.input).expanduser()
-    out_dir = Path(args.output_dir).expanduser()
-    if not input_path.is_file() or input_path.suffix.lower() != ".mcap":
-        print(f"[ERROR] Input must be an existing .mcap file: {input_path}")
+    args = build_parser().parse(argv)
+    if not args.signal and not args.at:
+        print(f"[ERROR] 要指定 --signal（rosout_parser 的 L#）或 --at（時間點）。\n用法：{USAGE}")
         return 2
-    if out_dir.exists():
-        print(f"[ERROR] Output path already exists; refusing to overwrite: {out_dir}")
+    if args.before < 0 or args.after < 0 or args.before + args.after <= 0:
+        print("[ERROR] --before／--after 要是 0 以上的秒數，而且不能都是 0")
         return 2
-    out_dir.mkdir(parents=True)
-    output_path = out_dir / input_path.name
-
-    start_ns = max(0, args.timestamp_ns - int(args.before * 1_000_000_000))
-    end_ns = args.timestamp_ns + int(args.after * 1_000_000_000)
-
-    topic_counts = Counter()
-    topic_times = defaultdict(list)
-    field_keys = defaultdict(set)
-    schemas_by_id = {}
-    channels_by_id = {}
-    written = 0
-    available_start = None
-    available_end = None
-
-    try:
-        with input_path.open("rb") as src, output_path.open("wb") as dst:
-            reader = make_reader(src)
-            writer = Writer(dst)
-            writer.start(profile="ros2")
-            for schema, channel, message in reader.iter_messages():
-                schemas_by_id[schema.id if schema else 0] = schema
-                channels_by_id[channel.id] = channel
-                if message.log_time < start_ns or message.log_time > end_ns:
-                    continue
-
-                schema_id = 0
-                if schema is not None:
-                    schema_id = writer.register_schema(
-                        name=schema.name,
-                        encoding=schema.encoding,
-                        data=schema.data,
-                    )
-                channel_id = writer.register_channel(
-                    topic=channel.topic,
-                    message_encoding=channel.message_encoding,
-                    schema_id=schema_id,
-                    metadata=channel.metadata or {},
-                )
-                writer.add_message(
-                    channel_id=channel_id,
-                    log_time=message.log_time,
-                    publish_time=message.publish_time,
-                    sequence=message.sequence,
-                    data=message.data,
-                )
-                written += 1
-                topic_counts[channel.topic] += 1
-                topic_times[channel.topic].append(message.log_time)
-                available_start = message.log_time if available_start is None else min(
-                    available_start, message.log_time
-                )
-                available_end = message.log_time if available_end is None else max(
-                    available_end, message.log_time
-                )
-            writer.finish()
-
-        if written == 0:
-            print(
-                "[ERROR] No messages found in the requested time window. "
-                "Check timestamp basis and input file."
-            )
+    data, err = rd.resolve_data(args.data or args.data_opt, args.data_root or None)
+    if err:
+        print(f"[ERROR] {err}")
+        return 2
+    idx = rd.build_index(data)
+    base = idx["start_ns"]
+    points = []   # (t_ns, trigger)
+    if args.signal:
+        events, source, err = rd.load_log_events(data, args.source)
+        if err:
+            print(f"[ERROR] {err}")
             return 3
-
-        # rclpy is imported only inside the container. If a message type cannot be
-        # loaded, the topic remains in metadata with a diagnostic rather than aborting.
+        groups = {g["id"].upper(): g for g in rd.dedup_events(events, merge_numbers=not args.exact)}
+        for sid in args.signal:
+            g = groups.get(sid.strip().upper())
+            if g is None:
+                print(f"[ERROR] 沒有訊號 {sid}（Log 來源：{source}；共 {len(groups)} 個訊號，先用 rosout_parser 查編號，"
+                      f"兩邊的 --source 要一樣）")
+                return 2
+            times = g["times_ns"] if args.all_occurrences else g["times_ns"][:1]
+            for t in times:
+                points.append((t, {"id": g["id"], "level": g["level"], "node": g["node"], "message": g["message"]}))
+    for a in args.at:
         try:
-            import rclpy.serialization
-            from rosidl_runtime_py.utilities import get_message
-        except Exception:
-            rclpy = None
-            get_message = None
-
-        if get_message is not None:
-            try:
-                with input_path.open("rb") as src:
-                    reader = make_reader(src)
-                    for schema, channel, message in reader.iter_messages(
-                        start_time=start_ns, end_time=end_ns
-                    ):
-                        if schema is None:
-                            continue
-                        try:
-                            cls = get_message(schema.name)
-                            obj = rclpy.serialization.deserialize_message(message.data, cls)
-                            keys = []
-                            if hasattr(obj, "get_fields_and_field_types"):
-                                keys = list(obj.get_fields_and_field_types().keys())
-                            elif hasattr(obj, "__slots__"):
-                                keys = [x.lstrip("_") for x in obj.__slots__]
-                            field_keys[channel.topic].update(keys)
-                        except Exception:
-                            # A topic-specific deserialization failure is recorded below.
-                            continue
-            except Exception as exc:
-                print(f"[WARN] Field extraction incomplete: {exc}")
-
-        topic_summary = {}
-        for topic, count in sorted(topic_counts.items()):
-            times = sorted(topic_times[topic])
-            frequency = None
-            if len(times) >= 2 and times[-1] > times[0]:
-                frequency = round((len(times) - 1) / ((times[-1] - times[0]) / 1e9), 6)
-            topic_summary[topic] = {
-                "message_count": count,
-                "approx_frequency_hz": frequency,
-                "available_keys": sorted(field_keys.get(topic, set())),
-            }
-
-        metadata = {
-            "input_mcap": str(input_path),
-            "output_mcap": str(output_path),
-            "window": {
-                "start_log_time_ns": start_ns,
-                "end_log_time_ns": end_ns,
-                "center_log_time_ns": args.timestamp_ns,
-                "timestamp_basis": "MCAP log_time nanoseconds; must be verified by caller",
-                "before_seconds": args.before,
-                "after_seconds": args.after,
-            },
-            "source_event_id": args.event_id,
-            "message_count": written,
-            "actual_message_time_range_ns": {
-                "start": available_start,
-                "end": available_end,
-            },
-            "topics": topic_summary,
-            "warnings": [
-                "Timestamp alignment with rosout is not inferred automatically.",
-                "available_keys may be empty when ROS message types cannot be loaded.",
-            ],
-        }
-        (out_dir / "metadata.yaml").write_text(
-            yaml.safe_dump(metadata, allow_unicode=True, sort_keys=False),
-            encoding="utf-8",
-        )
-        (out_dir / "metadata.json").write_text(
-            json.dumps(metadata, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
-        print(f"[PASS] Sliced {written} messages into {output_path}")
-        print(f"Topics: {len(topic_summary)}")
-        print(f"Metadata: {out_dir / 'metadata.yaml'}")
-        return 0
-    except Exception as exc:
-        print(f"[ERROR] MCAP slicing failed: {type(exc).__name__}: {exc}")
-        return 1
-
-
-def host_main(argv):
-    p = argparse.ArgumentParser(
-        description="Run MCAP slicing inside a Docker container."
-    )
-    p.add_argument("--container")
-    p.add_argument("--timeout", default=str(DEFAULT_TIMEOUT))
-    p.add_argument("--input", required=True, help="Container path to source .mcap")
-    p.add_argument("--output-dir", required=True, help="New container output directory")
-    p.add_argument("--timestamp-ns", type=int, required=True)
-    p.add_argument("--event-id", type=int)
-    p.add_argument("--before", type=float, default=5.0)
-    p.add_argument("--after", type=float, default=5.0)
-    args = p.parse_args(argv)
-
-    if args.timestamp_ns < 0 or args.before < 0 or args.after < 0:
-        p.error("timestamp and window values must be non-negative")
-    timeout, error = parse_timeout(args.timeout, DEFAULT_TIMEOUT, MAX_TIMEOUT)
-    if error:
-        print(error)
+            points.append((rd.parse_time(a, base), {"id": "", "level": "", "node": "", "message": f"指定時間 {a}"}))
+        except ValueError as e:
+            print(f"[ERROR] {e}")
+            return 2
+    if len(points) > MAX_SLICES:
+        print(f"[ERROR] 要切 {len(points)} 片，超過上限 {MAX_SLICES}：少選幾個訊號，或不要加 --all-occurrences")
         return 2
-    container, error = resolve_container(args.container)
-    if error:
-        print(error)
-        return 2
-
-    source = base64.b64encode(Path(__file__).read_bytes()).decode("ascii")
-    remote = f"/tmp/mcap_slicer_{uuid.uuid4().hex}.py"
-    worker_args = [
-        "--input", args.input, "--output-dir", args.output_dir,
-        "--timestamp-ns", str(args.timestamp_ns),
-        "--before", str(args.before), "--after", str(args.after),
-    ]
-    if args.event_id is not None:
-        worker_args += ["--event-id", str(args.event_id)]
-    command = (
-        f"printf %s {shlex.quote(source)} | base64 -d > {shlex.quote(remote)}"
-        f" && ROS2_TOOL_WORKER=1 python3 {shlex.quote(remote)} {shlex.join(worker_args)}"
-        f"; rc=$?; rm -f {shlex.quote(remote)}; exit $rc"
-    )
-    ok, stdout, error_message = docker_exec(
-        container, ROS2_ENV_FALLBACK + command, timeout,
-        interactive=True, what="ROS 2 MCAP slicer",
-        timeout_hint="請確認時間戳記是 MCAP log_time 的奈秒值，且輸出目錄尚不存在。",
-    )
-    if not ok:
-        print(error_message)
-        if stdout.strip():
-            print(stdout.rstrip())
-        return 1
-    print(with_target_marker(stdout.strip() or "[PASS] Slicer completed.", container))
+    parent = args.out or data["exp_dir"]
+    os.makedirs(parent, exist_ok=True)
+    counter = _next_counter(parent)
+    results, lines = [], []
+    for t, trig in points:
+        start = max(0, t - int(args.before * 1e9))
+        end = t + int(args.after * 1e9)
+        if end < idx["start_ns"] or start > idx["end_ns"]:
+            lines.append(f"✗ {trig['id'] or rd.fmt_t(t)}：時間 {rd.fmt_t(t)} 不在數據範圍內（{rd.fmt_t(idx['start_ns'])} ～ "
+                         f"{rd.fmt_t(idx['end_ns'])}），沒有切片（Log 的時鐘可能跟錄製的不同）")
+            continue
+        name = f"sliced_bag_{counter}_{t // 1_000_000_000}_{t % 1_000_000_000:09d}"
+        out_dir = os.path.join(parent, name)
+        total, counts = _write_slice(data, idx, t, start, end, trig, out_dir)
+        counter += 1
+        active = sorted((c, tp) for tp, c in counts.items() if c)
+        results.append({"dir": out_dir, "trigger": trig, "t_sec": rd.sec(t), "start_sec": rd.sec(start), "end_sec": rd.sec(end),
+                        "messages": total, "topics": {tp: c for c, tp in active}})
+        what = f"{trig['id']} {trig['level']} {trig['node']}：{rd.short(trig['message'], 60)}" if trig["id"] else trig["message"]
+        lines.append(f"✓ {name}：{what}\n   時間窗 {rd.fmt_t(start)} ～ {rd.fmt_t(end)}（{rd.fmt_rel(start, base)} ～ {rd.fmt_rel(end, base)}），"
+                     f"{total} 則訊息、{len(active)} 個 Topic 有資料\n   {out_dir}")
+    if not results:
+        print("[ERROR] 沒有切出任何切片：\n" + "\n".join(lines))
+        return 3
+    head = f"[PASS] 切片完成：{len(results)} 個（前 {args.before:g} 秒、後 {args.after:g} 秒）｜來源數據 {idx['label']}"
+    if args.json:
+        print(json.dumps({"slices": results}, ensure_ascii=False, indent=1))
+    else:
+        print("\n".join([head] + lines + ["（切片也是數據：mcap_analyzer／mcap_feature_measure 可以直接用切片資料夾）"]))
     return 0
 
 
+def host_main(argv):
+    cli = build_parser()
+    args = cli.parse(argv, lenient=True)
+    sys.path.insert(0, rd.HERE)
+    from _docker_common import parse_timeout, resolve_container
+    timeout, err = parse_timeout(args.timeout, DEFAULT_TIMEOUT, MAX_TIMEOUT)
+    if err:
+        print(err)
+        return 2
+    container, err = resolve_container(args.container)
+    if err:
+        print(err)
+        return 2
+    mounts = rd.container_mounts(container)
+    wargs = rd.host_common_args(container, args.data or args.data_opt, mounts)
+    for s in args.signal:
+        wargs += ["--signal", s]
+    for a in args.at:
+        wargs += ["--at", a]
+    wargs += ["--before", str(args.before), "--after", str(args.after), "--source", args.source]
+    if args.out:
+        wargs += ["--out", rd.to_container_path(args.out, mounts)]
+    wargs += [f for f, on in (("--all-occurrences", args.all_occurrences), ("--exact", args.exact), ("--json", args.json)) if on]
+    rc, out = rd.run_in_container(os.path.abspath(__file__), wargs, container=container, timeout=timeout,
+                                  what="mcap_slicer（時間切片）",
+                                  timeout_hint="來源 bag 很大時切片要讀完整份資料；可以加大 --timeout。")
+    print(rd.finalize_output(out) + cli.ignored_note())
+    return rc
+
+
 if __name__ == "__main__":
-    if os.environ.get("ROS2_TOOL_WORKER") == "1":
+    if rd.in_worker():
         raise SystemExit(worker_main(sys.argv[1:]))
     raise SystemExit(host_main(sys.argv[1:]))

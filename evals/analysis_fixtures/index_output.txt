@@ -1,0 +1,609 @@
+{
+ "version": 3,
+ "created": "2026-10-14 09:56:48",
+ "label": "exp_20261014_084506",
+ "bag_dir": "/workspace/app/diagnostics_package/toolkit/experiment_logs/exp_20261014_084506/bag",
+ "exp_dir": "/workspace/app/diagnostics_package/toolkit/experiment_logs/exp_20261014_084506",
+ "kind": "experiment",
+ "source_files": [
+  {
+   "path": "/workspace/app/diagnostics_package/toolkit/experiment_logs/exp_20261014_084506/bag/bag_0.mcap",
+   "size": 2423695,
+   "mtime": 1791967558
+  }
+ ],
+ "rosout_log": "/workspace/app/diagnostics_package/toolkit/experiment_logs/exp_20261014_084506/rosout.log",
+ "start_ns": 1791967507011698835,
+ "end_ns": 1791967558900941226,
+ "start_sec": 1791967507.011699,
+ "end_sec": 1791967558.900941,
+ "duration_sec": 51.889,
+ "message_count": 2592,
+ "topics": [
+  {
+   "topic": "/blackbox_recorder/transition_event",
+   "type": "lifecycle_msgs/msg/TransitionEvent",
+   "message_count": 4,
+   "first_sec": 1791967507.532077,
+   "last_sec": 1791967507.5405,
+   "avg_frequency_hz": 0.077,
+   "keys": [
+    {
+     "key": "timestamp",
+     "type": "uint64",
+     "category": "numeric",
+     "dim": "scalar",
+     "note": "整數、相異值少：量測時當狀態跳轉",
+     "values": [
+      "0"
+     ]
+    },
+    {
+     "key": "transition.id",
+     "type": "uint8",
+     "category": "state",
+     "dim": "scalar",
+     "values": [
+      "0"
+     ]
+    },
+    {
+     "key": "transition.label",
+     "type": "string",
+     "category": "state",
+     "dim": "scalar",
+     "values": [
+      ""
+     ]
+    },
+    {
+     "key": "start_state.id",
+     "type": "uint8",
+     "category": "state",
+     "dim": "scalar",
+     "values": [
+      "1",
+      "10",
+      "2",
+      "13"
+     ]
+    },
+    {
+     "key": "start_state.label",
+     "type": "string",
+     "category": "state",
+     "dim": "scalar",
+     "values": [
+      "unconfigured",
+      "configuring",
+      "inactive",
+      "activating"
+     ]
+    },
+    {
+     "key": "goal_state.id",
+     "type": "uint8",
+     "category": "state",
+     "dim": "scalar",
+     "values": [
+      "10",
+      "2",
+      "13",
+      "3"
+     ]
+    },
+    {
+     "key": "goal_state.label",
+     "type": "string",
+     "category": "state",
+     "dim": "scalar",
+     "values": [
+      "configuring",
+      "inactive",
+      "activating",
+      "active"
+     ]
+    }
+   ],
+   "role": "worker"
+  },
+  {
+   "topic": "/cmd_vel",
+   "type": "geometry_msgs/msg/Twist",
+   "message_count": 1010,
+   "first_sec": 1791967508.159757,
+   "last_sec": 1791967558.860126,
+   "avg_frequency_hz": 19.465,
+   "keys": [
+    {
+     "key": "linear",
+     "type": "geometry_msgs/Vector3",
+     "category": "vector",
+     "dim": "vector [3]",
+     "components": [
+      "x",
+      "y",
+      "z"
+     ]
+    },
+    {
+     "key": "angular",
+     "type": "geometry_msgs/Vector3",
+     "category": "vector",
+     "dim": "vector [3]",
+     "components": [
+      "x",
+      "y",
+      "z"
+     ]
+    }
+   ],
+   "role": "worker"
+  },
+  {
+   "topic": "/diagnostics_agg",
+   "type": "diagnostic_msgs/msg/DiagnosticArray",
+   "message_count": 514,
+   "first_sec": 1791967507.544415,
+   "last_sec": 1791967558.844555,
+   "avg_frequency_hz": 9.906,
+   "keys": [
+    {
+     "key": "header.stamp",
+     "type": "builtin_interfaces/Time",
+     "category": "time",
+     "dim": "scalar"
+    },
+    {
+     "key": "header.frame_id",
+     "type": "string",
+     "category": "state",
+     "dim": "scalar",
+     "values": [
+      ""
+     ]
+    },
+    {
+     "key": "status.level",
+     "type": "octet",
+     "category": "state",
+     "dim": "scalar",
+     "map_by": [
+      "status.name"
+     ],
+     "entries": 44,
+     "examples": [
+      "/Actuators",
+      "/Actuators/Drivetrain & Base Control",
+      "/Actuators/Drivetrain & Base Control/Base Drivers & Control"
+     ],
+     "values": [
+      "0"
+     ]
+    },
+    {
+     "key": "status.message",
+     "type": "string",
+     "category": "state",
+     "dim": "scalar",
+     "map_by": [
+      "status.name"
+     ],
+     "entries": 44,
+     "examples": [
+      "/Actuators",
+      "/Actuators/Drivetrain & Base Control",
+      "/Actuators/Drivetrain & Base Control/Base Drivers & Control"
+     ],
+     "values": [
+      "OK"
+     ]
+    },
+    {
+     "key": "status.hardware_id",
+     "type": "string",
+     "category": "state",
+     "dim": "scalar",
+     "map_by": [
+      "status.name"
+     ],
+     "entries": 44,
+     "examples": [
+      "/Actuators",
+      "/Actuators/Drivetrain & Base Control",
+      "/Actuators/Drivetrain & Base Control/Base Drivers & Control"
+     ],
+     "values": [
+      ""
+     ]
+    },
+    {
+     "key": "status.values",
+     "type": "sequence<diagnostic_msgs/KeyValue>",
+     "category": "kv",
+     "dim": "map",
+     "map_by": [
+      "status.name"
+     ],
+     "entries": 39,
+     "examples": [
+      "/Actuators",
+      "/Actuators/Drivetrain & Base Control",
+      "/Actuators/Energy System"
+     ],
+     "numeric_entries": 0
+    }
+   ],
+   "role": "worker"
+  },
+  {
+   "topic": "/diagnostics_toplevel_state",
+   "type": "diagnostic_msgs/msg/DiagnosticStatus",
+   "message_count": 514,
+   "first_sec": 1791967507.54445,
+   "last_sec": 1791967558.844619,
+   "avg_frequency_hz": 9.906,
+   "keys": [
+    {
+     "key": "level",
+     "type": "octet",
+     "category": "state",
+     "dim": "scalar",
+     "values": [
+      "0"
+     ]
+    },
+    {
+     "key": "name",
+     "type": "string",
+     "category": "state",
+     "dim": "scalar",
+     "values": [
+      "toplevel_state"
+     ]
+    },
+    {
+     "key": "message",
+     "type": "string",
+     "category": "state",
+     "dim": "scalar",
+     "values": [
+      ""
+     ]
+    },
+    {
+     "key": "hardware_id",
+     "type": "string",
+     "category": "state",
+     "dim": "scalar",
+     "values": [
+      ""
+     ]
+    },
+    {
+     "key": "values",
+     "type": "sequence<diagnostic_msgs/KeyValue>",
+     "category": "kv",
+     "dim": "map",
+     "numeric_entries": 0
+    }
+   ],
+   "role": "worker"
+  },
+  {
+   "topic": "/events/write_split",
+   "type": "rosbag2_interfaces/msg/WriteSplitEvent",
+   "message_count": 0,
+   "first_sec": null,
+   "last_sec": null,
+   "role": "empty"
+  },
+  {
+   "topic": "/parameter_events",
+   "type": "rcl_interfaces/msg/ParameterEvent",
+   "message_count": 0,
+   "first_sec": null,
+   "last_sec": null,
+   "role": "empty"
+  },
+  {
+   "topic": "/rosout",
+   "type": "rcl_interfaces/msg/Log",
+   "message_count": 31,
+   "first_sec": 1791967507.011699,
+   "last_sec": 1791967558.900941,
+   "avg_frequency_hz": 0.597,
+   "role": "log"
+  },
+  {
+   "topic": "/system/safety_command",
+   "type": "diagnostics_package/msg/SystemSafetyStatus",
+   "message_count": 514,
+   "first_sec": 1791967507.544962,
+   "last_sec": 1791967558.844821,
+   "avg_frequency_hz": 9.906,
+   "keys": [
+    {
+     "key": "header.stamp",
+     "type": "builtin_interfaces/Time",
+     "category": "time",
+     "dim": "scalar"
+    },
+    {
+     "key": "header.frame_id",
+     "type": "string",
+     "category": "state",
+     "dim": "scalar",
+     "values": [
+      ""
+     ]
+    },
+    {
+     "key": "primary_reaction",
+     "type": "string",
+     "category": "state",
+     "dim": "scalar",
+     "values": [
+      "NONE",
+      "INIT"
+     ]
+    },
+    {
+     "key": "winning_task",
+     "type": "string",
+     "category": "state",
+     "dim": "scalar",
+     "values": [
+      "Unknown",
+      "SystemHealthMonitor"
+     ]
+    },
+    {
+     "key": "winning_level",
+     "type": "uint8",
+     "category": "state",
+     "dim": "scalar",
+     "values": [
+      "0"
+     ]
+    },
+    {
+     "key": "winning_reason",
+     "type": "string",
+     "category": "state",
+     "dim": "scalar",
+     "values": [
+      "",
+      "System is in initialization phase. Diag…"
+     ]
+    },
+    {
+     "key": "action_params.value",
+     "type": "double",
+     "category": "numeric",
+     "dim": "scalar",
+     "map_by": [
+      "action_params.name"
+     ],
+     "entries": 0
+    },
+    {
+     "key": "active_error_tasks",
+     "type": "sequence<string>",
+     "category": "state",
+     "dim": "set"
+    },
+    {
+     "key": "active_warn_tasks",
+     "type": "sequence<string>",
+     "category": "state",
+     "dim": "set"
+    },
+    {
+     "key": "active_error_codes",
+     "type": "sequence<uint32>",
+     "category": "state",
+     "dim": "set"
+    },
+    {
+     "key": "active_warn_codes",
+     "type": "sequence<uint32>",
+     "category": "state",
+     "dim": "set"
+    },
+    {
+     "key": "active_reasons",
+     "type": "sequence<string>",
+     "category": "state",
+     "dim": "set"
+    }
+   ],
+   "role": "worker"
+  },
+  {
+   "topic": "/system/safety_gate_status",
+   "type": "diagnostics_package/msg/SafetyGateStatus",
+   "message_count": 3,
+   "first_sec": 1791967508.16434,
+   "last_sec": 1791967522.547375,
+   "avg_frequency_hz": 0.058,
+   "keys": [
+    {
+     "key": "header.stamp",
+     "type": "builtin_interfaces/Time",
+     "category": "time",
+     "dim": "scalar"
+    },
+    {
+     "key": "header.frame_id",
+     "type": "string",
+     "category": "state",
+     "dim": "scalar",
+     "values": [
+      ""
+     ]
+    },
+    {
+     "key": "mode",
+     "type": "string",
+     "category": "state",
+     "dim": "scalar",
+     "values": [
+      "PROTECTIVE_STOP",
+      "NORMAL"
+     ]
+    },
+    {
+     "key": "estop_latched",
+     "type": "boolean",
+     "category": "state",
+     "dim": "scalar",
+     "values": [
+      "False"
+     ]
+    },
+    {
+     "key": "stop_reasons",
+     "type": "sequence<string>",
+     "category": "state",
+     "dim": "set",
+     "values": [
+      "NO_CMD_VEL_RAW",
+      "NO_SAFETY_COMMAND_YET",
+      "MON_INITIALIZING"
+     ]
+    },
+    {
+     "key": "latest_reaction",
+     "type": "string",
+     "category": "state",
+     "dim": "scalar",
+     "values": [
+      "",
+      "INIT",
+      "NONE"
+     ]
+    },
+    {
+     "key": "reset_request_count",
+     "type": "uint32",
+     "category": "numeric",
+     "dim": "scalar",
+     "note": "整數、相異值少：量測時當狀態跳轉",
+     "values": [
+      "0"
+     ]
+    },
+    {
+     "key": "last_reset_source",
+     "type": "string",
+     "category": "state",
+     "dim": "scalar",
+     "values": [
+      ""
+     ]
+    },
+    {
+     "key": "last_reset_accepted",
+     "type": "boolean",
+     "category": "state",
+     "dim": "scalar",
+     "values": [
+      "False"
+     ]
+    },
+    {
+     "key": "last_reset_reason",
+     "type": "string",
+     "category": "state",
+     "dim": "scalar",
+     "values": [
+      ""
+     ]
+    }
+   ],
+   "role": "worker"
+  },
+  {
+   "topic": "/system_health_monitor/transition_event",
+   "type": "lifecycle_msgs/msg/TransitionEvent",
+   "message_count": 2,
+   "first_sec": 1791967507.525636,
+   "last_sec": 1791967507.525783,
+   "avg_frequency_hz": 0.039,
+   "keys": [
+    {
+     "key": "timestamp",
+     "type": "uint64",
+     "category": "numeric",
+     "dim": "scalar",
+     "note": "整數、相異值少：量測時當狀態跳轉",
+     "values": [
+      "0"
+     ]
+    },
+    {
+     "key": "transition.id",
+     "type": "uint8",
+     "category": "state",
+     "dim": "scalar",
+     "values": [
+      "0"
+     ]
+    },
+    {
+     "key": "transition.label",
+     "type": "string",
+     "category": "state",
+     "dim": "scalar",
+     "values": [
+      ""
+     ]
+    },
+    {
+     "key": "start_state.id",
+     "type": "uint8",
+     "category": "state",
+     "dim": "scalar",
+     "values": [
+      "2",
+      "13"
+     ]
+    },
+    {
+     "key": "start_state.label",
+     "type": "string",
+     "category": "state",
+     "dim": "scalar",
+     "values": [
+      "inactive",
+      "activating"
+     ]
+    },
+    {
+     "key": "goal_state.id",
+     "type": "uint8",
+     "category": "state",
+     "dim": "scalar",
+     "values": [
+      "13",
+      "3"
+     ]
+    },
+    {
+     "key": "goal_state.label",
+     "type": "string",
+     "category": "state",
+     "dim": "scalar",
+     "values": [
+      "activating",
+      "active"
+     ]
+    }
+   ],
+   "role": "worker"
+  }
+ ],
+ "cached": true
+}
+[ANALYSIS_DATA] /workspace/app/diagnostics_package/toolkit/experiment_logs/exp_20261014_084506

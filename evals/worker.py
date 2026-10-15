@@ -111,15 +111,18 @@ def main():
     fixtures = {**COMMON_FIXTURES, **(sc.get("fixtures") or {})}
     real_exec = agent._exec_script
 
-    def fixture_exec(script_name, script_path, clean_args):
+    def fixture_exec(script_name, script_path, clean_args, extra_env=None):
         fx = fixtures.get(script_name)
         if fx is not None:
             return fx(list(clean_args), agent) if callable(fx) else fx
         if script_name in REAL_SCRIPTS:
-            return real_exec(script_name, script_path, clean_args)
+            return real_exec(script_name, script_path, clean_args, extra_env=extra_env)
         return (f"[ERROR] （評測環境）沒有為 {script_name} {' '.join(clean_args)} 準備假資料：這個情境用不到它，請換別的做法。")
 
     agent._exec_script = fixture_exec
+    # 偽技能（analysis_run 這種在 harness 裡呼叫模型的）：情境給固定的回傳，只測主對話有沒有選對技能、會不會依結果回答
+    for name, fx in (sc.get("pseudo") or {}).items():
+        setattr(agent, name, (lambda fx: lambda remainder="": fx(remainder, agent) if callable(fx) else fx)(fx))
     skill_map = agent._script_skill_map()
     started = time.time()
     turns, all_calls = [], []

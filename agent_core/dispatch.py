@@ -5,8 +5,6 @@ import subprocess
 import sys
 from .config import SKILL_DOC_PREFIX, SKILL_LOADED_MARKER, TOOL_EXEC_TIMEOUT
 
-# 只給 coding worker 用的腳本（agent_core/coding_worker.py）：主對話呼叫時擋下，改用 code_job_send
-CODING_WORKER_ONLY = {"code_edit_cmd.py", "code_write_cmd.py", "code_run_cmd.py"}
 from .protocol import action_text, is_procedure_doc, parse_agent_reply
 
 # 流程技能（/make_skill 依對話整理的規格，沒有自己的腳本）載入後，下一步怎麼做：照步驟一步一步來
@@ -18,6 +16,8 @@ PROCEDURE_NEXT_STEP = ("這是流程技能，沒有自己的腳本：照規格�
 
 # 非編碼的多步驟任務（agent_core/ops_job.py）：在 _run_tool_once 裡攔下、交給 OpsMixin
 OPS_PSEUDO_SCRIPTS = ("ops_plan_cmd.py", "ops_run_cmd.py")
+# 數據解析的多 agent 協同（agent_core/analysis_job.py）：同上，交給 AnalysisMixin
+ANALYSIS_PSEUDO_SCRIPTS = ("analysis_run_cmd.py",)
 
 
 class DispatchMixin:
@@ -105,6 +105,12 @@ class DispatchMixin:
             # 抓取 [CONTAINER_CWD] 標記的下一行作為路徑
             if line.startswith("[CONTAINER_CWD]") and i + 1 < len(lines):
                 self.container_cwd = lines[i + 1].strip()
+
+            # 目前分析的數據（ROS 2 數據技能成功操作某份數據後印的末行標記，比照目標容器）
+            if line.startswith("[ANALYSIS_DATA]"):
+                path = line[len("[ANALYSIS_DATA]"):].strip()
+                if path:
+                    self.analysis_data = path
 
             # 目標容器：沿用既有狀態同步機制
             if line.startswith("[TARGET_CONTAINER]"):
@@ -197,11 +203,6 @@ class DispatchMixin:
                 # process 內做；核心邏輯都在 agent_core，見 doc/架構說明.md），必須在存在性檢查前攔截，
                 # 否則會落入下面「找不到腳本」的分支。規格文件走一般的兩階段揭露，不受影響。
                 return self._result_recall(remainder)
-            if script_name in CODING_WORKER_ONLY:
-                # 改檔與在專案裡執行指令只給 coding worker 用（它在使用者核准的計畫裡、有備份與驗證）；主對話要改程式交給 orchestrator
-                return (f"[ERROR] 主對話不直接修改程式碼（{script_name} 是 coding worker 專用的工具）：請用 code_job_send 把使用者的要求"
-                        f"交給 coding orchestrator——action.command 填 `scripts/code_job_send_cmd.py`、args 填使用者要求的原話"
-                        f"（有專案路徑時前面加 --workspace <路徑>）。它會先規劃、等使用者核准，再派 worker 修改並驗證。")
             script_path = os.path.join(self.base_path, "scripts", script_name)
 
             print(f"🛠️  Agent 啟動工具: {script_name}")
@@ -245,6 +246,12 @@ class DispatchMixin:
                 output_text = self.ops_plan(remainder) if script_name == "ops_plan_cmd.py" else self.ops_run(remainder)
                 self._record_trajectory(script_name, clean_args, output_text, cwd_before, container_before, target_before)
                 return output_text
+            if script_name in ANALYSIS_PSEUDO_SCRIPTS:
+                # 偽技能：Orchestrator／Workers／Synthesizer 都要呼叫模型，在本 process 內做（agent_core/analysis_job.py）；
+                # 報告記一筆軌跡並存檔（#編號），之後可以 result_recall
+                output_text = self.analysis_run(remainder)
+                self._record_trajectory(script_name, clean_args, output_text, cwd_before, container_before, target_before)
+                return output_text
             self._raw_args = remainder          # 原始的參數字串（file_ops 的內容含引號時，shlex 拆過的參數會壞掉）
             try:
                 output_text = self._exec_script(script_name, script_path, clean_args)
@@ -257,21 +264,23 @@ class DispatchMixin:
         except Exception as e:
             return f"解析指令失敗: {e}"
 
-    def _exec_script(self, script_name, script_path, clean_args):
+    def _exec_script(self, script_name, script_path, clean_args, extra_env=None):
         """執行一支腳本、回傳 output_text；不記軌跡、不同步狀態（呼叫端負責）——run_tool() 的正常派發，
         與 summarize_tool_result() 的自動追問（直接跑 result_grep_cmd.py，跳過整個 run_tool，不印
-        「Agent 啟動工具」這種暗示模型主動執行的訊息）共用同一個執行原語。"""
+        「Agent 啟動工具」這種暗示模型主動執行的訊息）共用同一個執行原語。analysis worker 平行呼叫時用 extra_env
+        帶自己的數據、Topic 與時間窗（這裡只讀 agent 的狀態、不改，平行呼叫是安全的）。"""
         env = os.environ.copy()
         env["CONTAINER_CWD"] = self.container_cwd
         env["TARGET_CONTAINER"] = self.target_container  # 容器技能省略容器名稱時的預設（比照 cwd）
         env["TOOL_RESULTS_DIR"] = self.results_dir()     # result_list／result_grep／result_view 的存檔目錄
         env["HARNESS_SESSION"] = self.session_id         # 讓 result_grep 16 優先解析成目前 session 的 #16
         env["HARNESS_RAW_ARGS"] = getattr(self, "_raw_args", "") or ""   # action.args 原文（給要自己解析內容的技能）
-        coding = getattr(self, "coding", None)
-        if coding is not None:                           # code_job_send 省略 --workspace 時用的 coding 工作區（/code_ws）
-            env["CODING_DEFAULT_WORKSPACE"] = coding.workspace_default()
-            if getattr(coding, "python", ""):            # Coding 面板設定的測試用 Python（code_test 在主對話也照用）
-                env["CODE_PYTHON"] = coding.python
+        ws = getattr(self, "current_ros2_workspace", None) or {}
+        env["ROS2_WORKSPACE"] = ws.get("path", "")                 # ROS 2 數據技能在容器內載入這個 Workspace（自訂訊息型別）
+        env["ROS2_WORKSPACE_CONTAINER"] = ws.get("container", "")
+        env.update(self.analysis_env())                  # 目前分析的數據、數據根目錄（ROS 2 數據技能省略數據路徑時用）
+        if extra_env:
+            env.update(extra_env)
         try:
             res = subprocess.run(
                 [sys.executable, script_path] + clean_args,

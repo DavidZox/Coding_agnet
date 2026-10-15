@@ -90,8 +90,9 @@ def build_stats():
         "skill_model": agent.skill_model,
         "skill_draft": agent.pending_skill_draft["name"] if agent.pending_skill_draft else None,
         "parallel_cal": state["parallel_cal"],
-        "code_mode": state.get("code_mode", False),
-        "coding": _coding_header(),
+        "analysis_mode": state.get("analysis_mode", False),   # 📊 分析模式
+        "analysis": _analysis_header(),                         # 最近一次數據分析 job
+        "analysis_data": agent.analysis_data,                   # 目前分析的數據（CURRENT_ANALYSIS_DATA）
         "compressing": agent.compression_in_progress(),
         "last_compression": agent.last_compression,
         # 背景壓縮完成／失敗的通知：每次組 stats 時取走（stats 會隨每個事件與 /api/status 送到前端，
@@ -100,8 +101,8 @@ def build_stats():
     }
 
 
-def _coding_header():
-    from .coding import header_label   # coding.py 依賴 state 裡已建立的 orchestrator，延後匯入
+def _analysis_header():
+    from .analysis import header_label   # analysis.py 匯入 state，延後匯入避免循環
     return header_label()
 
 
@@ -364,6 +365,24 @@ def run_turn(events):
 
     events.append({"channel": "system", "text": "⚠️ 已達安全上限（連續執行過多輪工具），本回合自動中止。"})
     return False
+
+
+def run_analysis_turn(question, events, data=None):
+    """📊 /analyze 與分析模式：不經過主模型決定，直接執行 analysis_run（同主模型選用它時的 action），報告照一般工具結果
+    進主對話（auto 直接加入、manual／hybrid 等你決定），之後主模型依報告回答、可以接著追問。回傳是否在等使用者決策。"""
+    from agent_core.protocol import quote_cli_arg
+    import json
+    data = data or agent.analysis_data or "latest"
+    args = f"--data {quote_cli_arg(data)}" + (f" {quote_cli_arg(question)}" if question else "")
+    action = {"command": "scripts/analysis_run_cmd.py", "args": args}
+    reply = "交給數據診斷（Orchestrator → Workers → Synthesizer）。"
+    agent.messages.append({"role": "assistant", "content": json.dumps(
+        {"thought": "使用者要求數據診斷，直接交給 analysis_run", "reply": reply, "action": action}, ensure_ascii=False)})
+    events.append({"channel": "chat", "role": "assistant", "text": reply, "action": action_text(action)})
+    outcome = _handle_tool_result(agent.run_tool({"action": action}, approved=True), events)
+    if outcome == "continue":
+        return run_turn(events)
+    return outcome == "await"
 
 
 def apply_decision(action, events):

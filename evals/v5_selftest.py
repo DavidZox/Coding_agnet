@@ -2,14 +2,12 @@
 
     python3 evals/v5_selftest.py
 
-測的是 harness 的程式把關（不是模型能力；模型能力用 evals/ops_suite、evals/small_projects 量）：
+測的是 harness 的程式把關（不是模型能力；模型能力用 evals/ops_suite 量）：
 - 🧭 非編碼的多步驟任務（ops_plan／ops_run）：規劃的程式檢查與修正、確認關卡的說明是整份計畫、沒確認不執行、
   每一步一個 worker、計畫沒核准的狀態變更擋下（[DENIED]）、沒用技能就說做完推回去一次、做完由程式檢查、
   檢查沒過換 worker 重試一次、還是不行就停下來（後面的步驟不做）、報告與存檔；
 - file_ops（建目錄、寫入含引號的內容、附加、取代要剛好一次、複製不覆蓋、移動、備份、系統目錄不能寫）；
 - 新技能的確認關卡：docker_ctl／ROS2_param／rmf_handshake 的唯讀用法不用問、會改變狀態的要問；
-- 寫測試的工作：覆蓋率（Python：coverage.py；C++：gcovr）、沒有收集到任何測試、只寫測試的任務判斷、
-  開工前的測試基準與回歸檢查。
 每一個情境都在臨時目錄複製一份專案，不碰正式的 logs/。"""
 import json
 import os
@@ -20,7 +18,7 @@ import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROJECT = os.path.dirname(HERE)
-COPY = ["agent_core", "skills_system", "coding_agents", "ops_agents", "context_modes", "AGENT.md", "Memory.md"]
+COPY = ["agent_core", "skills_system", "analysis_agents", "ops_agents", "context_modes", "AGENT.md", "Memory.md"]
 
 
 class FakeOps:
@@ -308,98 +306,6 @@ def t_guard_new_skills(agent, ollama, tmp, home):
 
 
 # ---------------------------------------------------------------- 寫測試
-def t_coverage_python(agent, ollama, tmp, home):
-    scripts = os.path.join(agent.script_dir, "skills_system", "scripts")
-    ws = os.path.join(tmp, "calc_py")
-    os.makedirs(os.path.join(ws, "tests"))
-    with open(os.path.join(ws, "calc.py"), "w", encoding="utf-8") as f:
-        f.write("def add(a, b):\n    return a + b\n\n\ndef sign(x):\n    if x > 0:\n        return 1\n    if x < 0:\n        return -1\n"
-                "    return 0\n")
-    with open(os.path.join(ws, "tests", "test_calc.py"), "w", encoding="utf-8") as f:
-        f.write("from calc import add, sign\n\n\ndef test_add():\n    assert add(1, 2) == 3\n\n\ndef test_sign_pos():\n    assert sign(5) == 1\n")
-    env = dict(os.environ, CODE_WORKSPACE=ws, PYTHONPATH=ws)
-    r = subprocess.run([sys.executable, os.path.join(scripts, "code_test_cmd.py"), "tests/test_calc.py", "--coverage"], cwd=ws, env=env,
-                       capture_output=True, text=True, timeout=300)
-    out = r.stdout + r.stderr
-    assert out.startswith("[PASS]") and "2 passed" in out, out[:600]
-    assert "── 覆蓋率" in out and "calc.py｜" in out, out[-800:]
-    row = next(ln for ln in out.splitlines() if ln.startswith("calc.py｜"))
-    assert "8-10" in row.split("｜")[3] and "＊6" in row, f"沒測到的行（負數、零）與只測到一邊的分支：{row}"
-    assert "test_calc" not in out.split("── 覆蓋率", 1)[1], "測試檔不算進覆蓋率"
-    left = [n for n in os.listdir(ws) if n.startswith(".coverage")]
-    assert not left, f"工作區不能留下覆蓋率的檔案：{left}"
-
-
-def t_coverage_cpp(agent, ollama, tmp, home):
-    scripts = os.path.join(agent.script_dir, "skills_system", "scripts")
-    ws = os.path.join(tmp, "geometry_cpp")
-    shutil.copytree(os.path.join(HERE, "coding_fixtures", "geometry_cpp"), ws)
-    env = dict(os.environ, CODE_WORKSPACE=ws)
-    r = subprocess.run([sys.executable, os.path.join(scripts, "code_test_cmd.py"), "--coverage"], cwd=ws, env=env,
-                       capture_output=True, text=True, timeout=600)
-    out = r.stdout + r.stderr
-    assert out.startswith("[PASS]") and "7 passed" in out, out[:600]
-    cov = out.split("── 覆蓋率", 1)[1] if "── 覆蓋率" in out else ""
-    assert cov and "沒有量到" not in cov.split("\n", 1)[0], out[-800:]
-    assert "src/" in cov and "tests/" not in cov and "CMakeFiles" not in cov, cov[:800]
-    leftovers = [os.path.join(dp, f) for dp, _, fs in os.walk(ws) for f in fs if f.endswith((".gcda", ".gcno"))]
-    assert not leftovers, f"工作區不能留下 gcov 的檔案：{leftovers[:3]}"
-
-
-def t_zero_tests_and_tests_only(agent, ollama, tmp, home):
-    sys.path.insert(0, os.path.join(agent.script_dir, "skills_system", "scripts"))
-    import _code_common as cc
-    assert cc.zero_tests("collected 0 items\n\n==== no tests ran in 0.01s ====")
-    assert cc.zero_tests("Ran 0 tests in 0.000s\n\nOK")
-    assert cc.zero_tests("[==========] Running 0 tests from 0 test suites.\n[  PASSED  ] 0 tests.")
-    assert cc.zero_tests("collected 3 items\n\n... 3 passed in 0.02s") is None
-    assert cc.zero_tests("Ran 4 tests in 0.01s\n\nOK") is None
-    ws = os.path.join(tmp, "empty_proj")
-    os.makedirs(os.path.join(ws, "tests"))
-    with open(os.path.join(ws, "mod.py"), "w", encoding="utf-8") as f:
-        f.write("def f():\n    return 1\n")
-    r = subprocess.run([sys.executable, os.path.join(agent.script_dir, "skills_system", "scripts", "code_run_cmd.py"),
-                        f"{sys.executable} -m pytest -q tests"], cwd=ws, env=dict(os.environ, CODE_WORKSPACE=ws),
-                       capture_output=True, text=True, timeout=120)
-    assert (r.stdout + r.stderr).startswith("[ERROR] 沒有收集到任何測試"), (r.stdout + r.stderr)[:300]
-    for text, want in [("幫 readtime 補單元測試，提高覆蓋率，不要修改正式程式", True), ("write test cases for utils.py and check coverage", True),
-                       ("修正 parse() 的 bug 並補測試", False), ("新增 --json 選項並寫測試", False),
-                       ("幫我寫 test case，確認測試覆蓋率有涵蓋到 store.py 的分支", True), ("實作 restock_below 並加上單元測試", False)]:
-        assert cc.tests_only_task(text) is want, (text, want)
-    t = os.path.join(ws, "tests", "test_bare.py")
-    with open(t, "w", encoding="utf-8") as f:
-        f.write("import pytest\nfrom mod import f\n\n\ndef test_calls_only():\n    f()\n\n\ndef test_ok():\n    assert f() == 1\n\n\n"
-                "def test_raises():\n    with pytest.raises(ZeroDivisionError):\n        1 / 0\n")
-    assert cc.tests_without_assertions(t) == ["test_calls_only"], cc.tests_without_assertions(t)
-    assert cc.is_test_path("tests/test_a.py") and cc.is_test_path("pkg/test/helper.py") and not cc.is_test_path("pkg/testing_utils.py")
-
-
-def t_regression_baseline(agent, ollama, tmp, home):
-    orch = agent.enable_coding()
-    try:
-        ws = os.path.join(tmp, "inventory_app")
-        shutil.copytree(os.path.join(HERE, "coding_fixtures", "inventory_app"), ws, ignore=shutil.ignore_patterns("__pycache__"))
-        job = {"id": 951, "workspace": ws, "items": [], "task": "t", "test_files": 1, "events": []}
-        orch.take_baseline(job)
-        base = job["baseline"]["cases"]
-        assert base and all(v == "passed" for v in base.values()), base
-        assert job["files_before"] and "inventory/store.py" in job["files_before"], job["files_before"]
-        broken, now, out = orch.regressions(job)
-        assert broken == [], broken
-        src = read(os.path.join(ws, "inventory", "store.py"))
-        assert "self.items[name].qty += qty" in src
-        with open(os.path.join(ws, "inventory", "store.py"), "w", encoding="utf-8") as f:
-            f.write(src.replace("self.items[name].qty += qty", "self.items[name].qty += qty + 1", 1))
-        broken, now, out = orch.regressions(job)
-        assert broken, "開工前通過、現在失敗的測試要列出來"
-        assert orch.regression_text(broken, now, out).startswith("[ERROR] 回歸：開工前通過的"), broken
-        with open(os.path.join(ws, "debug_tmp.py"), "w", encoding="utf-8") as f:
-            f.write("print(1)\n")
-        assert "debug_tmp.py" in orch.stray_files(job), "計畫以外新增的檔案要列出來"
-    finally:
-        orch.stop_service()
-
-
 def main():
     results = []
     for name, fn in [("🧭 ops：規劃的程式檢查與修正、確認關卡是整份計畫、沒確認不執行、每一步一個 worker、檢查、報告與存檔", t_ops_plan_and_run),
@@ -409,11 +315,7 @@ def main():
                      ("🧭 ops：worker 用完步數時請它總結：做完了就算完成（交給檢查）", t_ops_step_cap_wrapup),
                      ("🧭 ops：任務太短、規劃不出步驟、步驟太多（最多 6 步）、/clear 清掉草稿", t_ops_plan_errors),
                      ("file_ops：建目錄、含引號的內容、附加、取代要剛好一次、複製不覆蓋、移動、備份、系統目錄、不提供刪除", t_file_ops),
-                     ("新技能的確認關卡：唯讀的用法不用問、會改變狀態的要問", t_guard_new_skills),
-                     ("覆蓋率（Python）：沒測到的行與部分分支、測試檔不算、工作區不留檔", t_coverage_python),
-                     ("覆蓋率（C++／CMake）：gcovr、只算正式程式、工作區不留 .gcda", t_coverage_cpp),
-                     ("沒有收集到任何測試、只寫測試的任務判斷、沒有斷言的測試", t_zero_tests_and_tests_only),
-                     ("開工前的測試基準、回歸檢查、計畫以外新增的檔案", t_regression_baseline)]:
+                     ("新技能的確認關卡：唯讀的用法不用問、會改變狀態的要問", t_guard_new_skills)]:
         scenario(name, fn, results)
     failed = [r for r in results if not r[1]]
     for name, _, tb in failed:

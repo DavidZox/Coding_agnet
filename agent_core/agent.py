@@ -4,6 +4,7 @@ import ollama
 import os
 import threading
 import time
+from .analysis_job import AnalysisMixin
 from .archive import ArchiveMixin
 from .compression import CompressionMixin
 from .config import (
@@ -36,7 +37,7 @@ from .turn_guard import TurnGuardMixin
 
 class SkillAgent(ConversationMixin, PromptMixin, DispatchMixin, GuardMixin, ContextModeMixin, PlanMixin,
                  ToolSummaryMixin, ToolUseIndexMixin, ArchiveMixin, TrajectoryMixin, CompressionMixin,
-                 MakeSkillMixin, PerfMixin, TurnGuardMixin, OpsMixin):
+                 MakeSkillMixin, PerfMixin, TurnGuardMixin, OpsMixin, AnalysisMixin):
     def __init__(self, model="gemma4:e4b", max_history=None, summary_model=None):
         # max_history：訊息「則數」滑動視窗，預設停用（None）。上下文大小統一以 token 門檻
         # （TOKEN_THRESHOLD）觸發壓縮歸檔；這個參數只保留作為極端情境的保險絲，需要時再開。
@@ -192,21 +193,22 @@ class SkillAgent(ConversationMixin, PromptMixin, DispatchMixin, GuardMixin, Cont
         self._skill_follows_summary = not SKILL_MODEL
         self.pending_skill_draft = None
         self.last_reply_retry = None  # 最近一次 ask_ai 是否因「空白回覆」自動重試過（給 UI 顯示的說明），見 ask_ai
-        # 🧑‍💻 coding orchestrator（agent_core/coding_job.py）：Web Console／CLI 啟動時用 enable_coding() 建立並啟動背景服務；
-        # 評測與其他只用主對話的呼叫端不需要它（None 時動態區不顯示 coding job、code_job_send 只把任務放進收件匣）
-        self.coding = None
-
-    def enable_coding(self):
-        """建立 coding orchestrator 並啟動它的背景服務（收件匣、規劃、派 worker）。回傳 orchestrator。"""
-        if self.coding is None:
-            from .coding_job import CodingOrchestrator
-            self.coding = CodingOrchestrator(self)
-        self.coding.start_service()
-        return self.coding
+        # 📊 數據解析（analysis_job.py）：目前分析的數據（容器內路徑；ROS 2 數據技能末行的 [ANALYSIS_DATA] 同步，比照目標容器）、
+        # 各角色的模型與數據根目錄（logs/analysis_settings.json）、最近一次 analysis_run、平行的 worker 共用的鎖，
+        # 以及執行中回報進度的 callback（Web 執行工具時設定，把進度推到右欄；CLI 直接 print）
+        self.analysis_data = ""
+        self.analysis_cfg = self.load_analysis_settings()
+        if not self.target_container and self.analysis_cfg.get("container"):
+            self.target_container = self.analysis_cfg["container"]   # 📊 面板設定的預設容器（數據技能都在容器內執行）
+        self.analysis_last = None
+        self.analysis_mark_interrupted()   # 上一次沒做完就結束的 job 標成中斷（面板才不會一直顯示分析中）
+        self._analysis_lock = threading.RLock()
+        self.progress_callback = None
 
     # ---------------------------------------------------------------- 🧠 主對話的模型與 thinking（Web Console 的「🧠 模型」）
     def set_main_model(self, model):
-        """換主對話（非 coding）的模型；下一次呼叫開始生效。摘要模型（與 /make_skill 的草擬模型）原本跟著主模型的話一起換。"""
+        """換主對話的模型；下一次呼叫開始生效。摘要模型（與 /make_skill 的草擬模型）原本跟著主模型的話一起換；
+        數據分析的各角色沒有另外設定時也跟著主模型。"""
         model = (model or "").strip()
         if not model:
             raise ValueError("模型名稱是空的")

@@ -1,237 +1,195 @@
-
 #!/usr/bin/env python3
-"""Host-side entry point; execute ROS 2 recording inside the selected container."""
+"""mcap_recorder：在目標容器內錄製 ROS 2 Topic，產生跟 diagnostics_package/toolkit 相同的實驗資料夾，並在錄完時建立全域 Topic
+Metadata 索引（之後的分析直接用，不用再掃一次）。
 
-import argparse
-import base64
+<數據根目錄>/exp_YYYYmmdd_HHMMSS/
+├── bag/                 ros2 bag record -s mcap 的輸出（*.mcap、metadata.yaml）＋ topic_metadata.json／.yaml（本工具建立的索引）
+├── rosout.log           ros2 topic echo /rosout 經 rosout_formatter.py 整理成一行一則（[LEVEL] [sec.nanosec] [node]: msg）
+├── terminal.log         錄製程序的終端輸出
+└── recording_info.json  錄製參數、時間、Topic 與檔案清單
+
+移植自 toolkit 的 mcap_recorder.py 與 ros2_toolkit.sh 的錄製流程（預設核心 Topic 組合、同步錄 /rosout、SIGINT 安全停止並封裝），
+改成非互動、一定要指定時長（agent 不能靠 Ctrl+C 停）。"""
+import glob
+import json
 import os
 import shlex
+import signal
+import subprocess
 import sys
-import uuid
-from pathlib import Path
+import time
 
-if os.environ.get("ROS2_TOOL_WORKER") != "1":
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from _docker_common import (
-        docker_exec,
-        parse_timeout,
-        resolve_container,
-        with_target_marker,
-        ROS2_ENV_FALLBACK,
-    )
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _ros2_data_common as rd  # noqa: E402
 
-DEFAULT_TIMEOUT = 120
+MAX_DURATION = 480
 MAX_TIMEOUT = 570
+USAGE = ("scripts/mcap_recorder_cmd.py (--topics TOPIC... | --preset core | --all) --duration 秒 [--out-root 數據根目錄] "
+         "[--name 實驗名稱] [--no-rosout] [--no-index] [--container 名稱] [--timeout 秒]")
+
+
+def build_parser():
+    return (rd.CliParser(USAGE)
+            .add("--topics", nargs="+", default=[])
+            .add("--preset", default="", choices=["", "core"])
+            .add("--all", action="store_true")
+            .add("--duration", type=float, default=0)
+            .add("--out-root", default="")
+            .add("--data-root", default="")
+            .add("--name", default="")
+            .add("--no-rosout", action="store_true")
+            .add("--no-index", action="store_true")
+            .add("--container", default="")
+            .add("--timeout", default=""))
+
+
+def _stop_group(proc, first=signal.SIGINT, wait=20):
+    """同 toolkit 的 stop_recording：先 SIGINT（rosbag2 收到會把快取寫完、封裝 mcap），等不到再 SIGTERM，最後才 SIGKILL。"""
+    if proc is None or proc.poll() is not None:
+        return
+    for sig, w in ((first, wait), (signal.SIGTERM, 5), (signal.SIGKILL, 3)):
+        try:
+            os.killpg(proc.pid, sig)
+        except ProcessLookupError:
+            return
+        try:
+            proc.wait(timeout=w)
+            return
+        except subprocess.TimeoutExpired:
+            continue
 
 
 def worker_main(argv):
-    """Runs only inside the ROS 2 container."""
-    import json
-    import subprocess
-    import time
-    from datetime import datetime, timezone
+    args = build_parser().parse(argv)
+    modes = sum(bool(x) for x in (args.topics, args.preset, args.all))
+    if modes != 1:
+        print(f"[ERROR] --topics、--preset core、--all 三選一。\n用法：{USAGE}")
+        return 2
+    if not 0 < args.duration <= MAX_DURATION:
+        print(f"[ERROR] --duration 要介於 0～{MAX_DURATION} 秒（agent 沒辦法手動按 Ctrl+C 停止，一定要定時）")
+        return 2
+    topics = rd.CORE_TOPICS[:] if args.preset == "core" else [t if t.startswith("/") else "/" + t for t in args.topics]
+    root = args.out_root or args.data_root or rd.autodetect_data_root()
+    if not root:
+        print("[ERROR] 不知道要錄到哪裡：用 --out-root 指定數據根目錄（容器內路徑，建議放在已掛載到主機的資料夾，例如 "
+              "…/toolkit/experiment_logs）。")
+        return 2
+    name = args.name or "exp_" + time.strftime("%Y%m%d_%H%M%S")
+    target = os.path.join(root, name)
+    if os.path.exists(target):
+        print(f"[ERROR] {target} 已經存在，不覆寫；換一個 --name")
+        return 2
+    os.makedirs(target)
+    bag_dir = os.path.join(target, "bag")
+    record_topics = [] if args.all else list(dict.fromkeys(topics + ([] if args.no_rosout else ["/rosout", "/rosout_agg"])))
 
-    p = argparse.ArgumentParser(
-        description="Record ROS 2 topics and capture /rosout."
-    )
-    mode = p.add_mutually_exclusive_group(required=True)
-    mode.add_argument("--topics", nargs="+", help="Topics to record")
-    mode.add_argument("--all", action="store_true", help="Record all topics")
-    p.add_argument("--duration", type=float, required=True)
-    p.add_argument("--output-dir", required=True)
-    p.add_argument("--rosout", action="store_true",
-                   help="Capture /rosout to a separate text file")
-    args = p.parse_args(argv)
-
-    if args.duration <= 0:
-        p.error("--duration must be greater than zero")
-
-    out_dir = Path(args.output_dir).expanduser()
-    if out_dir.exists() and any(out_dir.iterdir()):
-        p.error(f"output directory is not empty: {out_dir}")
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    bag_dir = out_dir / f"bag_{stamp}"
-    bag_dir.mkdir()
-
-    topics = args.topics or []
-    if topics:
-        for topic in topics:
-            if not topic.startswith("/"):
-                p.error(f"topic must be absolute, got: {topic}")
-
-    command = ["ros2", "bag", "record", "-o", str(bag_dir)]
-    if args.all:
-        command.append("-a")
-    else:
-        command.extend(topics)
-
-    rosout_file = None
-    rosout_proc = None
-    if args.rosout:
-        rosout_file = open(out_dir / "rosout.log", "w", encoding="utf-8")
-        rosout_proc = subprocess.Popen(
-            ["ros2", "topic", "echo", "/rosout"],
-            stdout=rosout_file,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
-
-    terminal_path = out_dir / "terminal.log"
-    started = time.monotonic()
     try:
-        with open(terminal_path, "w", encoding="utf-8") as log:
-            log.write("Command: " + shlex.join(command) + "\n")
-            log.flush()
-            proc = subprocess.Popen(
-                command,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1,
-            )
-            try:
-                while True:
-                    line = proc.stdout.readline()
-                    if line:
-                        print(line, end="", flush=True)
-                        log.write(line)
-                        log.flush()
-                    elif proc.poll() is not None:
-                        break
-                    if time.monotonic() - started >= args.duration:
-                        proc.terminate()
-                        try:
-                            proc.wait(timeout=5)
-                        except subprocess.TimeoutExpired:
-                            proc.kill()
-                            proc.wait()
-                        break
-                rc = proc.wait()
-            finally:
-                if proc.poll() is None:
-                    proc.terminate()
-                    try:
-                        proc.wait(timeout=5)
-                    except subprocess.TimeoutExpired:
-                        proc.kill()
-                        proc.wait()
+        live = subprocess.run(["ros2", "topic", "list"], capture_output=True, text=True, timeout=20).stdout.split()
+    except Exception:   # noqa: BLE001
+        live = []
+    missing = [t for t in record_topics if live and t not in live and t != "/rosout_agg"]
 
-        if rosout_proc is not None:
-            rosout_proc.terminate()
-            try:
-                rosout_proc.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                rosout_proc.kill()
-                rosout_proc.wait()
-        if rosout_file is not None:
-            rosout_file.close()
-
-        mcap_files = sorted(str(x) for x in bag_dir.rglob("*.mcap"))
-        if not mcap_files:
-            print("[ERROR] ros2 bag record ended without producing an MCAP file.")
-            return 2
-
-        metadata = {
-            "created_utc": stamp,
-            "duration_requested_seconds": args.duration,
-            "duration_elapsed_seconds": round(time.monotonic() - started, 3),
-            "topics": topics if topics else ["<all>"],
-            "rosout_captured": bool(args.rosout),
-            "record_command": command,
-            "mcap_files": mcap_files,
-            "recorder_exit_code": rc,
-        }
-        (out_dir / "recording_metadata.json").write_text(
-            json.dumps(metadata, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
-        print(f"[PASS] Recording output: {out_dir}")
-        print(f"MCAP files: {len(mcap_files)}")
-        print(f"Metadata: {out_dir / 'recording_metadata.json'}")
-        return 0
-    except KeyboardInterrupt:
-        print("[ERROR] Recording interrupted.")
-        return 130
-    finally:
-        if rosout_proc is not None and rosout_proc.poll() is None:
-            rosout_proc.kill()
-        if rosout_file is not None and not rosout_file.closed:
-            rosout_file.close()
-
-
-def host_main(argv):
-    parser = argparse.ArgumentParser(
-        description="Run the ROS 2 MCAP recorder inside a Docker container."
-    )
-    parser.add_argument("--container", help="Container name; defaults to current target")
-    parser.add_argument("--timeout", default=str(DEFAULT_TIMEOUT),
-                        help=f"Host tool timeout in seconds (1-{MAX_TIMEOUT})")
-    parser.add_argument("--topics", nargs="+")
-    parser.add_argument("--all", action="store_true")
-    parser.add_argument("--duration", type=float, required=True)
-    parser.add_argument("--output-dir", required=True,
-                        help="Output path inside the container")
-    parser.add_argument("--rosout", action="store_true")
-    args = parser.parse_args(argv)
-
-    if bool(args.topics) == bool(args.all):
-        parser.error("specify exactly one of --topics or --all")
-    if args.topics and any(not t.startswith("/") for t in args.topics):
-        parser.error("every topic must start with '/'")
-    if args.duration <= 0:
-        parser.error("--duration must be greater than zero")
-
-    timeout, error = parse_timeout(args.timeout, DEFAULT_TIMEOUT, MAX_TIMEOUT)
-    if error:
-        print(error)
-        return 2
-    container, error = resolve_container(args.container)
-    if error:
-        print(error)
-        return 2
-
-    # Transfer this same file into the container, then re-execute worker_main there.
-    source = Path(__file__).read_bytes()
-    payload = base64.b64encode(source).decode("ascii")
-    remote = f"/tmp/mcap_recorder_{uuid.uuid4().hex}.py"
-    worker_args = []
-    if args.topics:
-        worker_args += ["--topics", *args.topics]
-    else:
-        worker_args.append("--all")
-    worker_args += [
-        "--duration", str(args.duration),
-        "--output-dir", args.output_dir,
-    ]
-    if args.rosout:
-        worker_args.append("--rosout")
-
-    command = (
-        f"printf %s {shlex.quote(payload)} | base64 -d > {shlex.quote(remote)}"
-        f" && ROS2_TOOL_WORKER=1 python3 {shlex.quote(remote)} "
-        f"{shlex.join(worker_args)}; rc=$?; rm -f {shlex.quote(remote)}; exit $rc"
-    )
-    ok, stdout, error_message = docker_exec(
-        container,
-        ROS2_ENV_FALLBACK + command,
-        timeout,
-        interactive=True,
-        what="ROS 2 MCAP recorder",
-        timeout_hint="請確認錄製時長與工具逾時設定相容。",
-    )
-    if not ok:
-        print(error_message)
-        if stdout.strip():
-            print(stdout.rstrip())
-        return 1
-    output = stdout.strip() or "[PASS] Recorder completed with no output."
-    print(with_target_marker(output, container))
+    rosout_proc = None
+    if not args.no_rosout:
+        fmt = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rosout_formatter.py")
+        pipe = (f"ros2 topic echo /rosout 2>/dev/null | python3 -u {shlex.quote(fmt)} > {shlex.quote(os.path.join(target, 'rosout.log'))}"
+                if os.path.exists(fmt) else f"ros2 topic echo /rosout > {shlex.quote(os.path.join(target, 'rosout.log'))} 2>/dev/null")
+        rosout_proc = subprocess.Popen(["bash", "-c", pipe], start_new_session=True)
+    cmd = ["ros2", "bag", "record", "-s", "mcap", "-o", bag_dir] + (["-a"] if args.all else record_topics)
+    started = time.time()
+    with open(os.path.join(target, "terminal.log"), "w", encoding="utf-8") as term:
+        term.write("Command: " + shlex.join(cmd) + "\n")
+        term.flush()
+        rec = subprocess.Popen(cmd, stdout=term, stderr=subprocess.STDOUT, start_new_session=True)
+        t0 = time.monotonic()
+        while time.monotonic() - t0 < args.duration and rec.poll() is None:
+            time.sleep(0.2)
+        early = rec.poll() is not None
+        _stop_group(rec)
+    _stop_group(rosout_proc, first=signal.SIGINT, wait=5)
+    elapsed = round(time.time() - started, 2)
+    mcaps = sorted(glob.glob(os.path.join(bag_dir, "*.mcap")))
+    with open(os.path.join(target, "terminal.log"), encoding="utf-8", errors="replace") as f:
+        term_tail = "".join(f.readlines()[-15:])
+    if not mcaps:
+        print(f"[ERROR] ros2 bag record 沒有產生 .mcap（{'錄製程序提早結束' if early else '停止後沒有檔案'}）。"
+              f"terminal.log 最後幾行：\n{term_tail}")
+        return 3
+    info = {"created": time.strftime("%Y-%m-%d %H:%M:%S"), "duration_requested_sec": args.duration,
+            "duration_elapsed_sec": elapsed, "topics": ["<all>"] if args.all else record_topics,
+            "preset": args.preset or None, "rosout_log": not args.no_rosout, "record_command": cmd,
+            "mcap_files": mcaps, "recorder_exited_early": early, "missing_at_start": missing}
+    with open(os.path.join(target, "recording_info.json"), "w", encoding="utf-8") as f:
+        json.dump(info, f, ensure_ascii=False, indent=1)
+    lines = [f"[PASS] 錄製完成：{name}（要求 {args.duration:g} 秒，實際 {elapsed} 秒）" + ("；⚠️ 錄製程序提早結束" if early else ""),
+             f"資料夾：{target}（bag/ {len(mcaps)} 個 mcap、terminal.log"
+             + ("、rosout.log" if not args.no_rosout else "") + "）"]
+    if not args.no_rosout:
+        try:
+            with open(os.path.join(target, "rosout.log"), encoding="utf-8", errors="replace") as f:
+                n = sum(1 for ln in f if ln.startswith("["))
+            lines[-1] += f"；rosout.log {n} 則 Log"
+        except OSError:
+            pass
+    data, err = rd.resolve_data(target)
+    if data and not args.no_index:
+        idx = rd.build_index(data, refresh=True)
+        got = [f"{t['topic']} {t['message_count']}" for t in idx["topics"] if t["message_count"]]
+        recorded = {t["topic"] for t in idx["topics"] if t["message_count"]}
+        none = [t for t in (record_topics or [t["topic"] for t in idx["topics"]]) if t not in recorded]
+        lines.append(f"錄到的 Topic（則數）：{'、'.join(got) or '（沒有）'}")
+        if none:
+            lines.append(f"沒有錄到訊息：{'、'.join(none)}（錄製期間沒有 publisher）")
+        lines.append(f"全域 Topic Metadata 索引：{idx.get('index_file') or '（沒有寫入權限）'}（worker 可分析 "
+                     f"{sum(1 for t in idx['topics'] if t['role'] == 'worker')} 個 Topic；mcap_analyzer 直接讀）")
+    print("\n".join(lines) + (rd.marker_line(data) if data else ""))
     return 0
 
 
+def host_main(argv):
+    args = build_parser().parse(argv)
+    sys.path.insert(0, rd.HERE)
+    from _docker_common import parse_timeout, resolve_container
+    if not 0 < args.duration <= MAX_DURATION:
+        print(f"[ERROR] --duration 要介於 0～{MAX_DURATION} 秒（一定要定時）。\n用法：{USAGE}")
+        return 2
+    default_timeout = min(MAX_TIMEOUT, int(args.duration) + 90)
+    timeout, err = parse_timeout(args.timeout or str(default_timeout), default_timeout, MAX_TIMEOUT)
+    if err:
+        print(err)
+        return 2
+    if timeout < args.duration + 30:
+        print(f"[ERROR] --timeout {timeout} 秒太短：至少要錄製時長加 30 秒（停止、封裝與建立索引）")
+        return 2
+    container, err = resolve_container(args.container)
+    if err:
+        print(err)
+        return 2
+    mounts = rd.container_mounts(container)
+    wargs = []
+    root = (os.environ.get("ANALYSIS_DATA_ROOT") or "").strip()   # harness 設定的數據根目錄（/analysis_root）
+    if root:
+        wargs += ["--data-root", rd.to_container_path(root, mounts)]
+    if args.topics:
+        wargs += ["--topics", *args.topics]
+    if args.preset:
+        wargs += ["--preset", args.preset]
+    if args.all:
+        wargs.append("--all")
+    wargs += ["--duration", str(args.duration)]
+    if args.out_root:
+        wargs += ["--out-root", rd.to_container_path(args.out_root, mounts)]
+    if args.name:
+        wargs += ["--name", args.name]
+    wargs += [f for f, on in (("--no-rosout", args.no_rosout), ("--no-index", args.no_index)) if on]
+    rc, out = rd.run_in_container(os.path.abspath(__file__), wargs, container=container, timeout=timeout,
+                                  what="mcap_recorder（錄製）", extra_files=[os.path.join(rd.HERE, "rosout_formatter.py")],
+                                  timeout_hint="確認錄製時長與 --timeout 相容；容器內的 ros2 bag record 可能仍在執行，請用 docker_runcmd 確認。")
+    print(rd.finalize_output(out))
+    return rc
+
+
 if __name__ == "__main__":
-    if os.environ.get("ROS2_TOOL_WORKER") == "1":
+    if rd.in_worker():
         raise SystemExit(worker_main(sys.argv[1:]))
     raise SystemExit(host_main(sys.argv[1:]))

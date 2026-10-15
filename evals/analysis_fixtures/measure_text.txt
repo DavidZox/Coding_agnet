@@ -1,0 +1,12 @@
+[PASS] 特徵量測：/system/safety_gate_status（diagnostics_package/msg/SafetyGateStatus）｜數據 exp_20261014_084506（1791967507.011 ～ 1791967558.900）
+時間窗：1791967507.011 ～ 1791967527.011（20.0 秒）（數據開頭 +0.00s ～ +20.00s）；[+秒] 是距離數據開頭的時間
+  訊息 3 筆，平均 0.139 Hz，最大間隔 14.311 秒；時間窗開始後 1.153 秒才有第一筆
+  ▸ mode（scalar，狀態，string）
+     mode：狀態跳轉 1 次（首 PROTECTIVE_STOP → 末 NORMAL；占比 PROTECTIVE_STOP 76%、NORMAL 24%）
+       1791967522.547[+15.54s] PROTECTIVE_STOP → NORMAL
+  ▸ stop_reasons（set，狀態，sequence<string>）
+     stop_reasons：狀態跳轉 2 次（首 [NO_CMD_VEL_RAW, NO_SAFETY_COMMAND_YET] → 末 [NO_CMD_VEL_RAW]；占比 [MON_INITIALIZING, NO_CMD_VEL_RAW] 76%、[NO_CMD_VEL_RAW] 24%、[NO_CMD_VEL_RAW, NO_SAFETY_COMMAND_YET] 0%）
+       1791967508.236[+1.22s] [NO_CMD_VEL_RAW, NO_SAFETY_COMMAND_YET] → [MON_INITIALIZING, NO_CMD_VEL_RAW]（+MON_INITIALIZING；-NO_SAFETY_COMMAND_YET）
+       1791967522.547[+15.54s] [MON_INITIALIZING, NO_CMD_VEL_RAW] → [NO_CMD_VEL_RAW]（-MON_INITIALIZING）
+異常指標（程式判斷）：時間窗 mode 狀態跳轉 1 次；時間窗 stop_reasons 狀態跳轉 2 次
+[ANALYSIS_DATA] /workspace/app/diagnostics_package/toolkit/experiment_logs/exp_20261014_084506
