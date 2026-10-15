@@ -155,6 +155,10 @@ def run_cases(cases, args, root):
         agent.analysis_cfg[f"{role.strip()}_ctx"] = int(n)
     if args.slice in ("on", "off"):
         agent.analysis_cfg["slice"] = args.slice == "on"
+    if args.source is not None:
+        agent.analysis_cfg["source_root"] = "" if args.source == "-" else args.source
+    if args.hints in ("on", "off"):
+        agent.analysis_cfg["program_hints"] = args.hints == "on"
     runs = []
     for case in cases:
         for i in range(args.runs):
@@ -209,6 +213,8 @@ def main():
     p.add_argument("--think-roles", default="", help="開 thinking 的角色（逗號分隔，例如 synthesizer 或 orchestrator,synthesizer）")
     p.add_argument("--ctx", nargs="*", default=[], help="角色的上下文長度，例如 synthesizer=12288（省略＝NUM_CTX）")
     p.add_argument("--slice", default="", choices=["", "on", "off"])
+    p.add_argument("--source", default=None, help="源碼目錄（受測系統的 ROS 2 工作區 src；- ＝不用；省略＝照設定）")
+    p.add_argument("--hints", default="", choices=["", "on", "off"], help="程式的推理提示（off：只給數據與源碼的事實）")
     p.add_argument("--container", default="ros2_web_container")
     p.add_argument("--data-root", default="")
     p.add_argument("--score", nargs="*", default=None, help="只評分這些 job 編號")

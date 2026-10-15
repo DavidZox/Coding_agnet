@@ -46,7 +46,7 @@ class FakeChat:
         return q.pop(0) if q else default
 
     def __call__(self, model=None, messages=None, format=None, **kw):
-        if format is self.s["plan"]:
+        if format is self.s["plan"] or format is self.s.get("plan_src"):
             role, default = "plan", {}
         elif format is self.s["worker"]:
             role, default = "worker", {"thought": "量測夠了", "reply": "完成", "action": None}
@@ -60,6 +60,113 @@ class FakeChat:
         out = self._next(role, default)
         content = out if isinstance(out, str) else json.dumps(out, ensure_ascii=False)
         return {"message": {"content": content}, "prompt_eval_count": 100, "eval_count": 20}
+
+
+DEMO_WS = {   # 源碼索引用的小工作區：Python 的 GATE、C++ 的 MON、沒編譯的舊版 GATE、沒在執行的 teleop（也發布 /cmd_vel）、launch 檔
+    "demo/package.xml": "<package><name>demo_pkg</name></package>\n",
+    "demo/CMakeLists.txt": ("cmake_minimum_required(VERSION 3.8)\nproject(demo_pkg)\nadd_executable(monitor_node src/monitor_node.cpp)\n"
+                            "# add_executable(old_gate_node src/old_gate.cpp)\ninstall(PROGRAMS demo_pkg/gate.py DESTINATION lib/${PROJECT_NAME})\n"),
+    "demo/demo_pkg/gate.py": '''import rclpy
+from rclpy.node import Node
+from geometry_msgs.msg import Twist
+
+PROTECT = frozenset({'SAFETY_TIMEOUT', 'NO_SAFETY_YET'})
+
+
+class Gate(Node):
+    def __init__(self):
+        super().__init__('safety_motion_controller')
+        self.timeout = self.declare_parameter('raw_timeout_sec', 0.5).value
+        self.last_raw_ns = None
+        self.reaction = None
+        self.sub_raw = self.create_subscription(Twist, '/cmd_vel_raw', self.on_raw, 10)
+        self.sub_cmd = self.create_subscription(Twist, '/system/safety_command', self.on_safety, 10)
+        self.pub = self.create_publisher(Twist, '/cmd_vel', 10)
+        self.timer = self.create_timer(0.05, self.on_timer)
+
+    def _fresh(self, t, now):
+        return t is not None and now - t < self.timeout
+
+    def on_raw(self, msg):
+        self.last_raw_ns = 1
+        self.latest = msg
+
+    def on_safety(self, msg):
+        self.reaction = msg
+
+    def _reasons(self, now):
+        reasons = []
+        if not self._fresh(self.last_raw_ns, now):
+            reasons.append('NO_CMD_VEL_RAW')
+        if self.reaction is None:
+            reasons.append('NO_SAFETY_YET')
+        return reasons
+
+    def on_timer(self):
+        reasons = self._reasons(0)
+        out = Twist()
+        if not reasons:
+            out = self.latest
+        self.pub.publish(out)
+        if PROTECT.intersection(reasons):
+            self.get_logger().warn(f'mode=PROTECTIVE_STOP reasons={reasons}')
+''',
+    "demo/src/old_gate.cpp": ('#include <rclcpp/rclcpp.hpp>\nclass OldGate : public rclcpp::Node {\npublic:\n'
+                              '  OldGate() : Node("safety_motion_controller") {\n'
+                              '    pub_ = this->create_publisher<geometry_msgs::msg::Twist>("/cmd_vel", 10);\n  }\n};\n'),
+    "demo/src/monitor_node.cpp": '''#include <rclcpp/rclcpp.hpp>
+// 註解裡的 create_publisher<X>("/fake", 10) 不算
+class Monitor : public rclcpp::Node {
+public:
+  explicit Monitor(const rclcpp::NodeOptions & options = rclcpp::NodeOptions())
+  : Node("system_health_monitor", options) {
+    sub_ = this->create_subscription<diagnostic_msgs::msg::DiagnosticArray>(
+      "/diagnostics_agg", 10, std::bind(&Monitor::diagCallback, this, std::placeholders::_1));
+    pub_ = this->create_publisher<Status>("/system/safety_command", 10);
+    raw_ = this->create_subscription<Twist>("/cmd_vel_raw", 10, [this](const Twist::SharedPtr m) { onRaw(m); });
+  }
+
+private:
+  void onRaw(const Twist::SharedPtr) { last_raw_ = 1; }
+
+  void diagCallback(const diagnostic_msgs::msg::DiagnosticArray::SharedPtr msg) {
+    if (msg->status.empty()) {
+      RCLCPP_WARN(get_logger(), "%s",
+                  "event=MON_EMPTY");
+      return;
+    }
+    Status out;
+    if (state_ == 0) {
+      out.primary_reaction = "INIT";
+    }
+    pub_->publish(out);
+  }
+
+  int state_ = 0;
+  int last_raw_ = 0;
+};
+''',
+    "demo/launch/demo.launch.py": ("from launch import LaunchDescription\nfrom launch_ros.actions import Node\n\n\n"
+                                   "def generate_launch_description():\n    return LaunchDescription([\n"
+                                   "        Node(package='demo_pkg', executable='gate.py', name='safety_motion_controller'),\n"
+                                   "        Node(package='demo_pkg', executable='monitor_node', name='system_health_monitor'),\n"
+                                   "        Node(package='diagnostic_aggregator', executable='aggregator_node', name='diagnostic_aggregator'),\n"
+                                   "    ])\n"),
+    "other/package.xml": "<package><name>other_pkg</name></package>\n",
+    "other/setup.py": "from setuptools import setup\nsetup(name='other_pkg', entry_points={'console_scripts': ['teleop = other_pkg.teleop:main']})\n",
+    "other/other_pkg/teleop.py": ("from rclpy.node import Node\n\n\nclass Teleop(Node):\n    def __init__(self):\n"
+                                 "        super().__init__('teleop')\n        self.pub = self.create_publisher(Twist, '/cmd_vel', 10)\n"
+                                 "        self.key = self.create_publisher(Twist, '/key_event', 10)\n"),
+}
+
+
+def make_demo_ws(root):
+    for rel, text in DEMO_WS.items():
+        path = os.path.join(root, rel)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text)
+    return root
 
 
 def fake_exec_factory(agent, calls):
@@ -123,7 +230,8 @@ def main():
         from agent_core.protocol import is_exempt_result
         from web_app.state import agent, state
         from web_app import flows
-        schemas = {"plan": ANALYSIS_PLAN_SCHEMA, "worker": ANALYSIS_WORKER_REPLY_SCHEMA,
+        from agent_core.schemas import ANALYSIS_PLAN_SCHEMA_SOURCE
+        schemas = {"plan": ANALYSIS_PLAN_SCHEMA, "plan_src": ANALYSIS_PLAN_SCHEMA_SOURCE, "worker": ANALYSIS_WORKER_REPLY_SCHEMA,
                    "report": ANALYSIS_WORKER_REPORT_SCHEMA, "synth": ANALYSIS_REPORT_SCHEMA}
         agent.target_container = "ros2_web_container"
         agent.analysis_cfg.update(parallel=1, max_workers=3)
@@ -584,6 +692,78 @@ def main():
             km["W1"]["stop_reasons"]["first"] = "[]"
             assert _background_codes(ws, ["NO_CMD_VEL_RAW"]) == {}
 
+        def t_source_index():
+            # 源碼索引：Python（ast）與 C++（遮掉註解、字串之後配對大括號）的發布／訂閱／計時器／參數／publish 位置；CMake 沒編譯的檔案不算；
+            # /rosout 的 file（建置路徑、安裝路徑）對回源碼；在執行的節點＝Log 的節點＋transition_event＋同一個 launch 檔
+            from agent_core import source_index as si
+            ws = make_demo_ws(os.path.join(tmp, "demo_ws"))
+            idx = si.load(ws, cache_dir=os.path.join(tmp, "logs", "source_index"))
+            gate, mon = "demo/demo_pkg/gate.py", "demo/src/monitor_node.cpp"
+            g, m = idx.code(gate), idx.code(mon)
+            assert {x["topic"] for x in g["subs"]} == {"/cmd_vel_raw", "/system/safety_command"} and g["timers"][0]["cb"] == "on_timer"
+            assert g["params"][0]["name"] == "raw_timeout_sec" and g["params"][0]["var"] == "timeout", g["params"]
+            assert [p[2] for p in g["publish"]] == ["Gate.on_timer"] and g["writes"]["Gate.on_raw"] == ["last_raw_ns", "latest"]
+            assert [x["cb"] for x in m["subs"]] == ["diagCallback", "onRaw"], "std::bind 與 lambda 的 callback"
+            assert [x["topic"] for x in m["pubs"]] == ["/system/safety_command"], "註解裡的 create_publisher 不算"
+            assert m["publish"][0][2] == "Monitor::diagCallback" and m["nodes"][0][0] == "system_health_monitor"
+            warn_c = next(a for a, b in m["logs"] if b > a)   # 跨兩行的 RCLCPP_WARN：行號是最後一行也算 Log 呼叫
+            assert idx.is_log_site(mon, warn_c + 1)
+            assert idx.built(mon) and idx.built(gate) and not idx.built("demo/src/old_gate.cpp"), "CMake 註解掉的不算有編譯"
+            assert idx.resolve("/workspace/ws/src/demo/src/monitor_node.cpp") == mon
+            assert idx.resolve("/workspace/ws/install/demo_pkg/lib/demo_pkg/gate.py") == gate, "安裝後的路徑：套件名稱對得上"
+            assert idx.resolve("./src/rosbag2_transport/recorder.cpp") is None
+            warn_line = next(i for i, ln in enumerate(DEMO_WS[gate].splitlines(), 1) if "get_logger().warn" in ln)
+            sig = [{"id": "L1", "level": "WARN", "node": "safety_motion_controller", "message": "mode=PROTECTIVE_STOP reasons=['NO_CMD_VEL_RAW', 'NO_SAFETY_YET']",
+                    "sources": [{"file": "/ws/install/demo_pkg/lib/demo_pkg/gate.py", "function": "on_timer", "line": warn_line}]},
+                   {"id": "L2", "level": "INFO", "node": "safety_motion_controller", "message": "x",
+                    "sources": [{"file": "/ws/install/demo_pkg/lib/demo_pkg/gate.py", "function": "on_timer", "line": 3}]}]
+            topics = {"/cmd_vel": {"count": 10}, "/system/safety_command": {"count": 5}, "/diagnostics_agg": {"count": 5},
+                      "/system_health_monitor/transition_event": {"count": 0}}
+            js = si.JobSource(idx, topics, sig)
+            assert js.impl == {"safety_motion_controller": gate, "system_health_monitor": mon}, js.impl   # teleop 也發布 /cmd_vel，但沒在執行
+            assert [n["name"] for n in js.external_nodes()] == ["diagnostic_aggregator"]
+            assert js.log_sites["L1"]["ok"] and "版本" in js.log_sites["L2"]["note"], js.log_sites
+            line = js.topic_source_line("/cmd_vel")
+            assert "safety_motion_controller 發布（on_timer ← 計時器 on_timer（週期 0.05））" in line, line
+            assert "依賴的輸入：/cmd_vel_raw（✗數據裡沒有）、/system/safety_command" in line, line
+            assert "收到 /diagnostics_agg（diagCallback）" in js.topic_source_line("/system/safety_command")
+            assert js.topic_source_line("/system_health_monitor/transition_event") == "", "框架的 Topic 不列"
+            assert ("/cmd_vel_raw", ["safety_motion_controller.on_raw", "system_health_monitor.onRaw"]) in js.missing_inputs()
+            tl = "\n".join(js.token_lines(["NO_CMD_VEL_RAW", "INIT"]))
+            assert "條件 `if not self._fresh(self.last_raw_ns, now)`" in tl and "_fresh：`return t is not None and now - t < self.timeout`" in tl, tl
+            assert "last_raw_ns ← on_raw（收到 /cmd_vel_raw（✗數據裡沒有））" in tl, tl
+            assert "INIT（monitor_node.cpp:" in tl and "條件 `if (state_ == 0)`" in tl, tl
+            js2 = si.JobSource(idx, topics, sig)   # 第二次讀快取
+            assert idx.parsed and si.load(ws, cache_dir=os.path.join(tmp, "logs", "source_index")).parsed == 0 and js2.impl == js.impl
+
+        def t_source_context_pipeline():
+            # 設定源碼目錄、關閉程式提示：三個角色都拿到源碼脈絡（Topic Metadata 每個 Topic 的發布者與依賴的輸入、Worker 自己的 Topic、
+            # Synthesizer 的 Topic 關係與程式碼），計畫的每個指派多 source_context，沒有【程式檢查】的提示；產物有 source_context.md
+            ws = make_demo_ws(os.path.join(tmp, "demo_ws2"))
+            plan = json.loads(json.dumps(GOOD_PLAN))
+            plan["assignments"][0]["source_context"] = "gate.py:31 _reasons"
+            fake, calls = setup(plans=[plan], synth=[SYNTH])
+            agent.analysis_cfg.update(source_root=ws, program_hints=False)
+            try:
+                agent.analysis_run(f'--data {DATA} "安全閘為什麼停下來"')
+            finally:
+                agent.analysis_cfg.update(source_root="", program_hints=True)
+            plan_prompt = fake.seen["plan"][0][1]["content"]
+            # Orchestrator：源碼只在 Topic Metadata（每個 Topic 的源碼一行）與一行 source_context 說明（整段【源碼脈絡】會讓它漏挑狀態改變）
+            assert "  源碼：safety_motion_controller 發布" in plan_prompt and "source_context 填這個子任務根據的源碼線索" in plan_prompt, plan_prompt[-2500:]
+            assert "依賴的輸入：/cmd_vel_raw（✗數據裡沒有）" in plan_prompt and "【程式檢查" not in plan_prompt and "【源碼脈絡" not in plan_prompt
+            brief = fake.seen["worker"][0][1]["content"]
+            assert "【源碼脈絡：/system/safety_gate_status" in brief and "Orchestrator 指出的源碼線索：gate.py:31 _reasons" in brief, brief[-1500:]
+            synth = fake.seen["synth"][0][1]["content"]
+            assert "Topic 之間的關係" in synth and "【程式檢查" not in synth, synth[-3000:]
+            d = os.path.join(agent.analysis_jobs_dir(), agent.analysis_last["id"])
+            job = json.load(open(os.path.join(d, "job.json"), encoding="utf-8"))
+            assert job["source"]["nodes"]["safety_motion_controller"] == "demo/demo_pkg/gate.py" and not job["program_hints"], job.get("source")
+            assert job["plan"]["assignments"][0]["source_context"] == "gate.py:31 _reasons" and job["synth_raw"]["conclusion"]
+            assert os.path.exists(os.path.join(d, "source_context.md")) and os.path.exists(os.path.join(d, "prompts", "orchestrator.md"))
+            md = open(os.path.join(d, "workers", "W1_system_safety_gate_status.md"), encoding="utf-8").read()
+            assert 'source_context: "gate.py:31 _reasons"' in md and "source_root:" in open(os.path.join(d, "report.md"), encoding="utf-8").read()
+
         for name, fn in [("Orchestrator：不存在的 L#／Topic、Log Topic、重複的 Topic 交回修一次（程式列出具體的問題）", t_plan_repair),
                          ("Orchestrator：同一個 L# 列兩次只合併、不交回修正", t_plan_duplicate_signal),
                          ("訊息流：一段完整的發布不強制算異常、交給 Synthesizer「完整的發布」；中斷照樣強制", t_segment_not_fault),
@@ -598,7 +778,11 @@ def main():
                          ("程式重新啟動：沒做完的 job（進度很久沒更新）標成中斷，剛更新的不動", t_mark_interrupted),
                          ("錄製：資料夾名稱放錯在 --out-root 改當 --name；含 / 的相對路徑、--name 帶路徑擋下", t_recorder_target),
                          ("量測：中途開始／停止發布（一段連續的寫成一句）、狀態沿用、數值切換、時間窗帶切片", t_features),
-                         ("Synthesizer：L# 的時間校正、補上訊息流事件、同時中斷的 Topic；背景條件與程式更正", t_timeline_fix)]:
+                         ("Synthesizer：L# 的時間校正、補上訊息流事件、同時中斷的 Topic；背景條件與程式更正", t_timeline_fix),
+                         ("源碼索引：Python／C++ 的發布、訂閱、計時器、參數；沒編譯的不算；Log 的路徑對回源碼；在執行的節點；依賴的輸入與代碼的條件",
+                          t_source_index),
+                         ("源碼脈絡：Orchestrator 的 Topic 帶源碼一行、Worker 與 Synthesizer 拿到【源碼脈絡】、計畫多 source_context、關閉程式提示時沒有【程式檢查】；產物 source_context.md、prompts/",
+                          t_source_context_pipeline)]:
             check(name, fn)
     finally:
         os.chdir(cwd)

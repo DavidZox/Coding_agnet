@@ -35,11 +35,15 @@ from .config import (
     ANALYSIS_MAX_WORKERS,
     ANALYSIS_ORCHESTRATOR_MODEL,
     ANALYSIS_PARALLEL_WORKERS,
+    ANALYSIS_PROGRAM_HINTS,
     ANALYSIS_REPORT_HEAD,
     ANALYSIS_SETTINGS_NAME,
     ANALYSIS_SIGNAL_OCCURRENCES,
     ANALYSIS_SLICE,
     ANALYSIS_SLICES_DIRNAME,
+    ANALYSIS_SOURCE_CACHE_DIRNAME,
+    ANALYSIS_SOURCE_MAX_CHARS,
+    ANALYSIS_SOURCE_ROOT,
     ANALYSIS_SYNTHESIZER_MODEL,
     ANALYSIS_THINK_DEFAULT,
     ANALYSIS_TOOL_RESULT_MAX_CHARS,
@@ -52,9 +56,11 @@ from .config import (
     PROJECT_ROOT,
     THINK_EXTRA_PREDICT,
 )
+from . import source_index
 from .model_caps import think_arg
 from .protocol import parse_agent_reply
-from .schemas import ANALYSIS_PLAN_SCHEMA, ANALYSIS_REPORT_SCHEMA, ANALYSIS_WORKER_REPLY_SCHEMA, ANALYSIS_WORKER_REPORT_SCHEMA
+from .schemas import (ANALYSIS_PLAN_SCHEMA, ANALYSIS_PLAN_SCHEMA_SOURCE, ANALYSIS_REPORT_SCHEMA, ANALYSIS_WORKER_REPLY_SCHEMA,
+                      ANALYSIS_WORKER_REPORT_SCHEMA)
 
 _PROMPTS = os.path.join(PROJECT_ROOT, ANALYSIS_AGENTS_DIRNAME)
 ROLES = ("orchestrator", "worker", "synthesizer")
@@ -184,6 +190,7 @@ class AnalysisMixin:
                "orchestrator_ctx": None, "worker_ctx": None, "synthesizer_ctx": None,
                "data_root": ANALYSIS_DATA_ROOT,
                "container": "",
+               "source_root": ANALYSIS_SOURCE_ROOT, "program_hints": ANALYSIS_PROGRAM_HINTS,
                "max_workers": ANALYSIS_MAX_WORKERS, "parallel": ANALYSIS_PARALLEL_WORKERS,
                "before": ANALYSIS_WINDOW_BEFORE, "after": ANALYSIS_WINDOW_AFTER, "slice": ANALYSIS_SLICE}
         try:
@@ -258,7 +265,7 @@ class AnalysisMixin:
     def _job_save(self, job):
         d = self._job_dir(job)
         os.makedirs(d, exist_ok=True)
-        keep = {k: v for k, v in job.items() if k not in ("index", "events")}
+        keep = {k: v for k, v in job.items() if k not in ("index", "events") and not k.startswith("_")}
         tmp = os.path.join(d, "job.json.tmp")
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(keep, f, ensure_ascii=False, indent=1, default=str)
@@ -370,7 +377,7 @@ class AnalysisMixin:
             toks = shlex.split(remainder or "")
         except ValueError:
             toks = (remainder or "").replace('"', " ").split()
-        opts = {"data": "", "workers": None, "before": None, "after": None, "topics": []}
+        opts = {"data": "", "workers": None, "before": None, "after": None, "topics": [], "source": None}
         words, i = [], 0
         while i < len(toks):
             t = toks[i]
@@ -381,6 +388,12 @@ class AnalysisMixin:
             if t == "--topic" and nxt:
                 opts["topics"].append(nxt if nxt.startswith("/") else "/" + nxt)
                 i += 2
+                continue
+            if t == "--source" and nxt:   # 這一次用的源碼目錄（覆蓋設定）
+                opts["source"], i = nxt, i + 2
+                continue
+            if t == "--no-source":
+                opts["source"], i = "", i + 1
                 continue
             if t in ("--workers", "--before", "--after") and nxt:
                 try:
@@ -402,7 +415,7 @@ class AnalysisMixin:
                "models": {r: self.analysis_model(r) for r in ROLES},
                "model_options": {r: {"think": self.analysis_think(r), "ctx": self.analysis_ctx(r)} for r in ROLES},
                "max_workers": max(1, min(8, opts["workers"] or int(cfg.get("max_workers") or ANALYSIS_MAX_WORKERS))),
-               "model_calls": 0}
+               "program_hints": bool(cfg.get("program_hints", True)), "model_calls": 0}
         while os.path.exists(self._job_dir(job)):
             job["id"] += "_1"
         t0 = time.time()
@@ -444,6 +457,10 @@ class AnalysisMixin:
     def _analysis_session(self, job, kind, role, system, user, schema, predict):
         model, want = self.analysis_model(role), self.analysis_think(role)
         think = think_arg(model, want)
+        with self._analysis_lock:   # 交給模型的輸入留在 job 資料夾（prompts/）：對照、重播（只換 prompt 重跑一個角色）用
+            n = job.setdefault("_prompt_n", {}).get(role, 0) + 1
+            job["_prompt_n"][role] = n
+        self._job_write(job, f"prompts/{role}{'' if n == 1 else f'_{n}'}.md", f"# system\n{system}\n\n# user\n{user}\n")
         res = self._timed_chat(kind, model=model, messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
                                format=schema, options={"temperature": 0.2, "num_ctx": self.analysis_ctx(role),
                                                        "num_predict": predict + (THINK_EXTRA_PREDICT if think else 0)},
@@ -482,7 +499,7 @@ class AnalysisMixin:
         else:
             job["signals"], job["log_source"] = [], None
             job["log_error"] = _short(out, 300)
-        digest = self._digest_text(job, limit=None, include_recorder=True)
+        digest = self._digest_text(job, limit=None, include_recorder=True, with_source=True)
         self._job_write(job, "log_digest.md", f"# 去重後的 Log（{job.get('log_source') or job.get('log_error')}）\n\n{digest}\n")
         self._job_write(job, "topic_metadata.md", f"# 全域 Topic Metadata：{idx.get('label')}\n\n{self._topics_text(job)}\n")
         workers_ok = sum(1 for t in idx["topics"] if t["role"] == "worker")
@@ -491,14 +508,46 @@ class AnalysisMixin:
                                  + (f"（{job['log_error']}）" if job.get("log_error") else ""))
         if not workers_ok:
             return "[ERROR] 這份數據沒有可以分析的 Topic（都是 Log、沒有訊息，或訊息型別無法解碼：自訂訊息要先用 ROS2_workspace_env 確認 Workspace）。"
+        self._analysis_source(job)
         return None
+
+    def _analysis_source(self, job):
+        """源碼脈絡（有設定源碼目錄時）：Log 的源碼位置（/rosout 的 file:line，錄製時就在 MCAP 裡）對回程式碼、這次在執行的節點的
+        發布／訂閱關係、Log 裡的代碼在源碼的條件。程式整理（source_index），不呼叫模型；失敗不影響分析（照沒有源碼的流程）。"""
+        opt = job["options"].get("source")
+        root = (opt if opt is not None else (self.analysis_cfg.get("source_root") or "")).strip()
+        if not root:
+            return
+        t0 = time.time()
+        try:
+            idx = source_index.load(root, cache_dir=os.path.join(self.script_dir, "logs", ANALYSIS_SOURCE_CACHE_DIRNAME))
+            if idx is None:
+                job["source_error"] = f"源碼目錄不存在：{root}"
+                self._analysis_note(job, f"🧬 源碼脈絡：{job['source_error']}（照沒有源碼的流程分析）")
+                return
+            topics = {t["topic"]: {"type": t.get("type"), "count": t.get("message_count")} for t in job["index"]["topics"]}
+            js = source_index.JobSource(idx, topics, job.get("signals"), job["index"].get("msg_definitions"))
+        except Exception as e:   # noqa: BLE001  源碼解析的問題不能中斷分析
+            job["source_error"] = f"{type(e).__name__}: {e}"
+            self._analysis_note(job, f"🧬 源碼脈絡失敗：{job['source_error']}（照沒有源碼的流程分析）")
+            return
+        job["_source"] = js
+        job["source"] = js.summary()
+        self._job_write(job, "source_context.md", _source_doc(job, js))
+        sites = len(js.log_sites)
+        logged = sum(1 for s in job.get("signals") or [] if s.get("sources") and not is_recorder_node(s["node"]))
+        self._analysis_note(job, f"🧬 源碼脈絡（{time.time() - t0:.1f} 秒；索引 {len(idx.files)} 個檔案，新解析 {idx.parsed} 個）："
+                                 f"在執行的節點 {'、'.join(c['name'] for c in js.nodes) or '（源碼裡找不到）'}；"
+                                 f"Log 的源碼位置對到 {sites}/{logged} 個訊號"
+                                 + (f"；對不到的檔案 {len(js.unresolved)} 個" if js.unresolved else ""))
 
     def _signal_ns(self, s, key="first_sec"):
         return int(round(float(s[key]) * 1e9))
 
-    def _digest_text(self, job, limit=ANALYSIS_DIGEST_MAX_SIGNALS, include_recorder=False):
+    def _digest_text(self, job, limit=ANALYSIS_DIGEST_MAX_SIGNALS, include_recorder=False, with_source=False):
         """去重後的 Log（給 Orchestrator 與 Synthesizer）：略過錄製工具自己的 Log；WARN 以上全部，其餘依時間補到上限。
-        include_recorder：給人看的 log_digest.md 連 rosbag2 的 Log 也列（標明是錄製工具的）。"""
+        include_recorder：給人看的 log_digest.md 連 rosbag2 的 Log 也列（標明是錄製工具的）。
+        with_source：每個訊號後面接 Log 的源碼位置（＠檔名:行 函式；有源碼脈絡時用對到的檔案，源碼版本可能不同時標出來）。"""
         base = job["index"]["start_ns"]
         all_sigs = job.get("signals") or []
         sigs = [s for s in all_sigs if include_recorder or not is_recorder_node(s["node"])]
@@ -519,7 +568,8 @@ class AnalysisMixin:
                 when += f"～{_rel(self._signal_ns(s, 'last_sec'), base)}"
             var = f"（{len(s['variants'])} 種寫法）" if s.get("variants") else ""
             rec = "（錄製工具 rosbag2 自己的 Log）" if is_recorder_node(s["node"]) else ""
-            lines.append(f"{s['id']} {s['level']} ×{s['count']} {when} {s['node']}：{_short(s['message'], 200)}{var}{rec}")
+            src = _signal_source(job, s) if with_source and not rec else ""
+            lines.append(f"{s['id']} {s['level']} ×{s['count']} {when} {s['node']}：{_short(s['message'], 200)}{var}{rec}{src}")
         hidden = len(sigs) - len(chosen)
         if hidden > 0:
             lines.append(f"（另有 {hidden} 個 INFO 訊號沒有列出）")
@@ -540,8 +590,18 @@ class AnalysisMixin:
                 span = f"｜{_rel(int(t['first_sec'] * 1e9), base)}～{_rel(int(t['last_sec'] * 1e9), base)}"
             lines.append(f"- {t['topic']}｜{t['type']}｜{t['message_count']} 則｜{t.get('avg_frequency_hz', '-')} Hz{span}｜"
                          f"Key：{key_line_summary(t)}")
+            src = job["_source"].topic_source_line(t["topic"]) if job.get("_source") else ""
+            if src:   # 源碼的維度：誰發布、什麼時候、依賴哪些輸入 Topic、誰訂閱
+                lines.append(f"  {src}")
         if others:
             lines.append("（不能指派給 worker：" + "、".join(others) + "）")
+        if job.get("_source"):
+            miss = job["_source"].missing_inputs()
+            if miss:
+                have = {x["topic"] for x in job["index"]["topics"]}
+                lines.append("（數據裡沒有、但在執行的節點會訂閱的 Topic——沒有被錄到，不能量測："
+                             + "；".join(f"{t}{'（有這個 Topic，但沒有訊息）' if t in have else ''} → {'、'.join(cbs)}"
+                                        for t, cbs in miss) + "）")
         return "\n".join(lines)
 
     # ---------------------------------------------------------------- 1. Orchestrator
@@ -554,21 +614,27 @@ class AnalysisMixin:
         forced = [t for t in job["options"]["topics"] if any(x["topic"] == t and x["role"] == "worker" for x in idx["topics"])]
         user = (f"【使用者的問題】\n{job['question']}\n\n"
                 f"【數據】{idx.get('label')}：共 {idx.get('duration_sec')} 秒（時間都寫成距離數據開頭的秒數，+秒）\n\n"
-                f"【去重後的 Log（唯一訊號；L# 是編號，×N 是出現次數）】\n{self._digest_text(job)}\n\n"
-                f"【全域 Topic Metadata（可以指派給 worker 的 Topic 與它們的 Key）】\n{self._topics_text(job)}\n\n"
-                + _gap_text_for_plan(job, self._coverage_gaps(job, all_signals=True))
+                f"【去重後的 Log（唯一訊號；L# 是編號，×N 是出現次數"
+                + ("；＠檔名:行 函式＝印出這則 Log 的源碼位置" if job.get("_source") else "")
+                + f"）】\n{self._digest_text(job, with_source=bool(job.get('_source')))}\n\n"
+                f"【全域 Topic Metadata（可以指派給 worker 的 Topic 與它們的 Key"
+                + ("；每個 Topic 下面一行是源碼：誰發布、依賴哪些輸入 Topic、誰訂閱" if job.get("_source") else "")
+                + f"）】\n{self._topics_text(job)}\n\n"
+                + (_gap_text_for_plan(job, self._coverage_gaps(job, all_signals=True)) if _name_hints(job) else "")
                 + f"【限制】最多指派 {job['max_workers']} 個 worker，每個 worker 一個不同的 Topic；Log（/rosout）不能指派——Log 由你負責看。"
                 f"時間窗預設訊號前 {before:g} 秒、後 {after:g} 秒（before_sec、after_sec 可以依問題調整，0.5～60 秒）。"
                 + (f"\n使用者指定一定要分析的 Topic：{'、'.join(forced)}（要指派）" if forced else "")
+                + (f"\n{_SOURCE_PLAN_LINE}" if job.get("_source") else "")
                 + "\n（每個欄位都用繁體中文寫）")
         system = _read_prompt("orchestrator.md")
-        data = self._analysis_session(job, "analysis_orchestrator", "orchestrator", system, user, ANALYSIS_PLAN_SCHEMA, 3072)
+        schema = ANALYSIS_PLAN_SCHEMA_SOURCE if job.get("_source") else ANALYSIS_PLAN_SCHEMA
+        data = self._analysis_session(job, "analysis_orchestrator", "orchestrator", system, user, schema, 3072)
         plan, issues = self._clean_plan(job, data, before, after, forced)
         if issues:
             fix = (user + "\n\n【上一版計畫】\n" + json.dumps(data or {}, ensure_ascii=False)[:3500]
                    + "\n\n【程式檢查發現的問題：修正後輸出完整的計畫】\n" + "\n".join(f"- {x}" for x in issues))
             self._analysis_note(job, f"🧭 Orchestrator 的計畫有 {len(issues)} 個問題，交回修正一次：{'；'.join(issues)[:200]}")
-            data2 = self._analysis_session(job, "analysis_orchestrator", "orchestrator", system, fix, ANALYSIS_PLAN_SCHEMA, 3072)
+            data2 = self._analysis_session(job, "analysis_orchestrator", "orchestrator", system, fix, schema, 3072)
             plan2, issues2 = self._clean_plan(job, data2, before, after, forced)
             if plan2["assignments"] and (len(issues2) <= len(issues) or not plan["assignments"]):
                 plan, issues = plan2, issues2
@@ -626,7 +692,11 @@ class AnalysisMixin:
             seen.add(name)
             sigs = [sig_by_id[s.strip().upper()]["id"] for s in (a.get("signals") or []) if s.strip().upper() in sig_by_id]
             subtask = _short(a.get("subtask") or "", 400) or "檢查這個 Topic 在時間窗內的變化，跟問題有沒有關"
-            assigns.append({"topic": name, "subtask": subtask, "signals": sigs})
+            item = {"topic": name, "subtask": subtask, "signals": sigs}
+            sc = _short(a.get("source_context") or "", 240)
+            if sc and sc not in ("無", "沒有", "-", "（無）", "none", "None"):
+                item["source_context"] = sc
+            assigns.append(item)
         for t in forced:
             if t not in seen:
                 assigns.insert(0, {"topic": t, "subtask": "使用者指定要分析這個 Topic：檢查它在時間窗內的變化與異常", "signals": []})
@@ -804,16 +874,19 @@ class AnalysisMixin:
             s = sig_by_id.get(r["id"], {})
             if s:
                 rel_lines.append(f"- {s['id']} {s['level']} ×{s['count']} {_rel(self._signal_ns(s), base)} {s['node']}："
-                                 f"{_short(s['message'], 260)}（Orchestrator：{r['why']}）")
+                                 f"{_short(s['message'], 260)}（Orchestrator：{r['why']}）"
+                                 + (_signal_source(job, s) if job.get("_source") else ""))
         warn = [s for s in job.get("signals") or [] if _LEVEL_RANK.get(s["level"], 1) >= 2 and s["id"] not in {r["id"] for r in plan["related"]}
                 and not is_recorder_node(s["node"])]
         for s in warn[:10]:
-            rel_lines.append(f"- {s['id']} {s['level']} ×{s['count']} {_rel(self._signal_ns(s), base)} {s['node']}：{_short(s['message'], 200)}")
+            rel_lines.append(f"- {s['id']} {s['level']} ×{s['count']} {_rel(self._signal_ns(s), base)} {s['node']}：{_short(s['message'], 200)}"
+                             + (_signal_source(job, s) if job.get("_source") else ""))
         win_lines = [f"- {w['id']}：{_rel(w['start_ns'], base)}～{_rel(w['end_ns'], base)}" + (f"（錨點 {w['label']}，{_rel(w['anchor_ns'], base)}）" if w.get("anchor_ns") else "")
                      for w in job["windows"]]
         all_topics = "、".join(f"{t['topic']}（{t['message_count']} 則）" for t in job["index"]["topics"])
+        hints = job["program_hints"]   # off：不給程式的推理提示（缺口、名稱相近、背景條件、共同的上游、一段完整的發布），也不事後更正
         gaps = self._coverage_gaps(job)
-        flow_text = _flow_block(job["workers"], base, job.get("signals"))
+        flow_text = _flow_block(job["workers"], base, job.get("signals"), hints=hints, upstream_hint=_name_hints(job))
         bg = _background_codes(job["workers"], [c for c, _, _ in gaps])
         job["coverage_gaps"] = [{"reason": c, "name": x, "signals": ids, "background": (bg.get(c) or {}).get("where"),
                                  "changed": (bg.get(c) or {}).get("changed")} for c, x, ids in gaps]
@@ -823,9 +896,9 @@ class AnalysisMixin:
              f"根因看新增／移除的那一項" if c in bg else
              f"- {c}（{'、'.join(ids)}）：數據裡沒有名稱含「{x}」的 Topic——沒有被量測，不能拿其他 Topic（例如名稱相近的輸出）"
              f"證明它；寫進 unknowns，信心最多 medium")
-            + _similar_note(job, c, x) for c, x, ids in gaps)
+            + (_similar_note(job, c, x) if _name_hints(job) else "") for c, x, ids in gaps)
         reports = []
-        reminders = _proxy_reminders(job, gaps)
+        reminders = _proxy_reminders(job, gaps) if _name_hints(job) else {}
         for w in job["workers"]:
             if w.get("status") == "failed":
                 reports.append(f"### W{w['n']} {w['topic']}\n（這個 worker 失敗：{w.get('error')}）")
@@ -843,12 +916,14 @@ class AnalysisMixin:
                 f"【Log（Orchestrator 的宏觀視角：相關的訊號與其他 WARN 以上的訊號）】\n" + ("\n".join(rel_lines) or "（沒有相關的 Log）")
                 + "\n\n【時間窗】\n" + "\n".join(win_lines)
                 + f"\n\n【數據裡有的 Topic（全部）】\n{all_topics}"
-                + (f"\n\n【程式檢查：Log 提到、但數據裡沒有對應 Topic 的輸入】\n{gap_text}" if gaps else "")
+                + _source_text(job, "synthesizer", related=[r["id"] for r in plan["related"]])
+                + (f"\n\n【程式檢查：Log 提到、但數據裡沒有對應 Topic 的輸入】\n{gap_text}" if gaps and hints else "")
                 + (f"\n\n【程式整理：訊息流（Topic 的中斷、中途開始或停止發布）】\n{flow_text}" if flow_text else "")
                 + "\n\n【各 Worker 的局部報告（每個 worker 一個 Topic）】\n" + "\n\n".join(reports)
                 + "\n\n（每個欄位都用繁體中文寫；時間寫成 +秒）")
         data = self._analysis_session(job, "analysis_synthesizer", "synthesizer", _read_prompt("synthesizer.md"), user,
                                       ANALYSIS_REPORT_SCHEMA, 4096)
+        job["synth_raw"] = json.loads(json.dumps(data, ensure_ascii=False)) if data else None   # 模型原本寫的（程式更正之前）
         if not data:
             data = self._fallback_report(job)
         # 時間線：L# 的時間校正、補上訊息流的事件、依時間排序（模型偶爾排錯；寫不出數字的放最後，其餘順序不變）
@@ -862,7 +937,7 @@ class AnalysisMixin:
         data["timeline"] = sorted(data["timeline"], key=_timeline_key)
         # 背景條件（每次跳轉前後都在）：結論、根因沒有拿它當原因就不列 unknowns、不限制信心（實測：提醒反而把 Synthesizer 引到它身上）；
         # 拿它當原因（實測 e4b 3 次：「缺少速度指令」），程式在後面附更正——恢復之後仍在的原因不可能是這次變化的原因——並照一般的缺口處理
-        relied = [c for c in bg if _relies_on(data.get("root_cause"), c) or _relies_on(data.get("conclusion"), c)]
+        relied = [c for c in bg if _relies_on(data.get("root_cause"), c) or _relies_on(data.get("conclusion"), c)] if hints else []
         for c in relied:
             changed = "、".join(bg[c]["changed"]) or "別的項目"
             fix = f"（程式更正：{c} 在 {bg[c]['where']} 每次跳轉前後都在、恢復之後仍在，不可能是這次變化的原因；跳轉時新增／移除的是 {changed}，根因要看這幾項）"
@@ -872,7 +947,7 @@ class AnalysisMixin:
             job.setdefault("corrections", []).append({"reason": c, "where": bg[c]["where"], "changed": bg[c]["changed"]})
             self._analysis_note(job, f"🛠 根因更正：{c} 是背景條件（恢復之後仍在），報告拿它當原因，附上程式更正")
         gaps = [g for g in gaps if g[0] not in bg or g[0] in relied]
-        if gaps:   # 程式保證：缺的輸入一定列在「尚未確認」、信心最多 medium（模型常忽略這條規則，2.18）
+        if gaps and hints:   # 程式保證：缺的輸入一定列在「尚未確認」、信心最多 medium（模型常忽略這條規則，2.18）
             unknowns = list(data.get("unknowns") or [])
             for c, x, ids in gaps:
                 if not any(x in str(u).lower() or c.lower() in str(u).lower() for u in unknowns):
@@ -908,6 +983,11 @@ class AnalysisMixin:
               "confidence": data.get("confidence"), "models": job["models"]}
         if job.get("slices"):
             fm["slices"] = {k: v.get("host_dir") or v["dir"] for k, v in job["slices"].items()}
+        if job.get("source"):
+            fm["source_root"] = job["source"]["root"]
+            fm["source_nodes"] = job["source"]["nodes"]
+        if not job["program_hints"]:
+            fm["program_hints"] = False
         lines = [frontmatter(fm), f"# 數據診斷報告\n\n**問題**：{job['question']}\n\n**數據**：{job.get('data_label')}（{job['data']}，"
                                   f"{job.get('duration_sec')} 秒）\n",
                  f"## 結論\n{data.get('conclusion') or '-'}\n", f"## 根因（信心：{data.get('confidence')}）\n{data.get('root_cause') or '-'}\n"]
@@ -1012,6 +1092,9 @@ class AnalysisWorker:
                  "【這個 Topic 可以量測的 Key】（Key｜類別｜維度｜ROS 型別｜抽樣看到的）\n" + "\n".join(kl)]
         if skip:
             parts.append(f"【不量測的欄位】{'、'.join(skip)}（文字或時間；Log 與自由文字由 Orchestrator 負責）")
+        src = _source_text(self.job, "worker", topic=self.topic, assignment=self.asg)
+        if src:
+            parts.append(src.strip())
         return "\n\n".join(parts)
 
     def _chat(self, msgs, schema, predict):
@@ -1147,7 +1230,7 @@ class AnalysisWorker:
         flow = _flow_events(metrics, self.job["index"]["start_ns"])
         broken = _flow_events(metrics, self.job["index"]["start_ns"], segments=False)
         if flow:   # 訊息流中斷（停發、中途開始／停止）本身就是異常：實測 e4b 看到 10 秒的中斷仍以「狀態沒變」判沒有異常
-            if broken and not anomaly:   # 一段完整的發布（中途開始又中途停止、中間沒有中斷）不強制：實測 /cmd_vel_raw 一次指令被當成故障
+            if broken and not anomaly and self.job["program_hints"]:   # 一段完整的發布（中途開始又中途停止、中間沒有中斷）不強制：實測 /cmd_vel_raw 一次指令被當成故障
                 anomaly = True
                 summary += "（程式判斷：" + "；".join(f"{t} {what}" for t, what in broken) + "——訊息流中斷本身就是異常）"
             have = " ".join(str(e.get("time")) for e in evidence)
@@ -1159,6 +1242,8 @@ class AnalysisWorker:
                   "evidence": evidence[:8], "program_flags": flags, "flow_events": flow,
                   "data_type": data_type, "steps": steps, "calls": len(self.calls),
                   "key_metrics": metrics}   # 程式量的數字也留在 job 裡：Synthesizer 前的程式檢查要用（_background_codes）
+        if self.asg.get("source_context"):
+            result["source_context"] = self.asg["source_context"]
         result["file"] = self._write(result, metrics, ev_ts, msgs)
         mark = "⚠️ 有異常" if result["anomaly_detected"] else "沒有異常"
         a._analysis_note(job, f"✅ {self.tag}：{mark}（{'、'.join(analyzed) or '沒有量測'}；{steps} 輪）", kind="worker_done", worker=self.n)
@@ -1175,6 +1260,8 @@ class AnalysisWorker:
               "anomaly_detected": result["anomaly_detected"], "confidence": result["confidence"],
               "program_flags": result["program_flags"], "key_metrics": metrics, "evidence_timestamps": ev_ts[:12],
               "model": self.model, "steps": result["steps"]}
+        if result.get("source_context"):   # Orchestrator 給這個子任務的源碼線索（不是已證實的根因）
+            fm["source_context"] = result["source_context"]
         slices = {w["id"]: w.get("slice_host") or w["slice"] for w in self.windows if w.get("slice")}
         if slices:   # 這個 worker 讀的切片（沒有＝讀原本的數據）
             fm["data_slices"] = slices
@@ -1319,6 +1406,159 @@ def _gap_text_for_plan(job, gaps):
     return "【程式檢查：Log 提到、但數據裡沒有的輸入】\n" + "\n".join(rows) + "\n\n"
 
 
+# ---------------------------------------------------------------------------------------------------------------------
+# 源碼脈絡（agent_core/source_index.py 整理的事實）→ 各角色的文字
+# ---------------------------------------------------------------------------------------------------------------------
+_SOURCE_GUIDE = ("看法：Topic 之間的因果方向看「訂閱的 Topic → callback 寫入的變數 → 什麼時候發布」；Log 裡的代碼看它在源碼裡成立的條件，"
+                 "以及條件讀的變數由哪個 Topic（callback）或參數寫入。源碼是線索，不是已經發生的事——發生了什麼、什麼時候，要看 Log 與數據；"
+                 "標（✗數據裡沒有）的 Topic 沒有被錄到，不能量測。")
+
+
+def _name_hints(job):
+    """用名稱猜 Topic 關係的程式提示（Orchestrator 的缺口檢查、名稱相近的 Topic、報告旁的提醒、「通常是共同的上游」）：
+    有源碼脈絡時不用——誰發布、依賴哪些輸入 Topic、哪些輸入沒錄到，源碼已經給了真正的關係（實測 26b：只靠源碼，有事件的數據拿
+    /cmd_vel 當 /cmd_vel_raw 的證據 20 次 1 次，名稱提示 2 次、都沒有 15 次）。一段完整的發布、背景條件這類判斷照 program_hints。"""
+    return bool(job["program_hints"]) and not job.get("_source")
+
+
+def _signal_source(job, s):
+    """Log 訊號後面接的源碼位置：「  ＠檔名:行 函式」（源碼版本可能不同、源碼目錄裡找不到時標出來）。"""
+    js = job.get("_source")
+    site = js.log_sites.get(s["id"]) if js else None
+    if site:
+        return f"  ＠{os.path.basename(site['file'])}:{site['line']} {site['func']}" + ("（源碼版本可能不同）" if site.get("note") else "")
+    src = (s.get("sources") or [None])[0]
+    if not src:
+        return ""
+    return f"  ＠{os.path.basename(str(src.get('file')))}:{src.get('line')} {src.get('function')}" + ("（源碼目錄裡找不到）" if js else "")
+
+
+def _fit(rows, cap):
+    """文字超過上限：先拿掉參數列，再從後面整行截掉（附省略說明）。"""
+    text = "\n".join(rows)
+    if len(text) <= cap:
+        return text
+    rows = [r for r in rows if not r.startswith("  參數：")]
+    out, n = [], 0
+    for r in rows:
+        if n + len(r) + 1 > cap - 40:
+            out.append(f"…（源碼脈絡超過 {cap} 字，後面省略；完整內容在 job 資料夾的 source_context.md）")
+            break
+        out.append(r)
+        n += len(r) + 1
+    return "\n".join(out)
+
+
+def _msg_consts(js, mtype, limit=14):
+    """msg 定義（MCAP 的 schema）裡的常數：NAME=值（狀態、原因代碼的全集）。"""
+    out = []
+    for ln in (js.msg_defs.get(mtype) or "").splitlines():
+        m = re.match(r"^\s*[\w/]+\s+([A-Z][A-Z0-9_]*)\s*=\s*(.+?)\s*$", ln)
+        if m:
+            out.append(f"{m.group(1)}={m.group(2).strip()}")
+    return out[:limit] + ([f"…共 {len(out)} 個"] if len(out) > limit else [])
+
+
+def _metric_tokens(workers):
+    """worker 量到的狀態值裡的代碼（stop_reasons 的 [A, B]、mode 的值…）。"""
+    toks = []
+    for w in workers or []:
+        toks += source_index.tokens_in(json.dumps(w.get("key_metrics") or {}, ensure_ascii=False))
+    return list(dict.fromkeys(toks))
+
+
+# Orchestrator 的源碼脈絡只放在 Log（＠檔名:行 函式）與 Topic Metadata（每個 Topic 的源碼一行、沒錄到的輸入）裡，加這一行說明
+# source_context：實測（gemma4:26b，只重跑 Orchestrator）再給一整段【源碼脈絡】（節點卡、代碼的條件）時，cmdvel 數據挑指令開始的
+# L15 從 20/20 掉到 7/20（時間窗看不到開始）；只留 Topic 的源碼一行＋這一行：18/20，/cmd_vel 的子任務寫成驗證輸入一樣少
+_SOURCE_PLAN_LINE = "source_context 填這個子任務根據的源碼線索（Log 後面的 ＠檔名:行 函式、Topic 的源碼一行），沒有就寫「無」。"
+
+
+def _source_text(job, role, topic=None, assignment=None, related=None):
+    """各角色的【源碼脈絡】：Worker＝自己的 Topic 的發布者、依賴的輸入、訂閱者、msg 定義的說明與常數、發布的程式碼；
+    Synthesizer＝每個 Topic 的源碼一行、在執行的節點、相關 Log 的源碼位置、代碼的條件（Log 與 worker 量到的狀態值）、相關函式的程式碼。
+    Orchestrator 不用這一段（見 _SOURCE_PLAN_LINE）。沒有源碼脈絡回空字串。"""
+    js = job.get("_source")
+    if not js:
+        return ""
+    cap = ANALYSIS_SOURCE_MAX_CHARS.get(role, 6000)
+    head = f"【源碼脈絡（程式從源碼目錄 {js.idx.root} 整理：這次在執行的節點）】"
+    if role == "worker":
+        rows = [f"【源碼脈絡：{topic}（程式從源碼目錄整理；源碼是線索，數字以量測為準）】",
+                "- " + js.topic_source_line(topic)]
+        pubs = [(c, p) for c in js.nodes for p in c["pubs"] if p["topic"] == topic]
+        mtype = (js.topics.get(topic) or {}).get("type")
+        comment = js.msg_comment(mtype, 400) if mtype else ""
+        if comment:
+            rows.append(f"- msg 定義的說明（{mtype}，錄製時存在 MCAP 裡）：{comment}")
+        consts = _msg_consts(js, mtype) if mtype else []
+        if consts:
+            rows.append("- msg 定義的常數：" + "、".join(consts))
+        if (assignment or {}).get("source_context"):
+            rows.append(f"- Orchestrator 指出的源碼線索：{assignment['source_context']}")
+        for c, p in pubs[:1]:
+            for x in p["sites"][:1]:
+                code = js.function_code(c["file"], x["func"], mark=(x["line"],), max_lines=24)
+                if code:
+                    rows.append(f"發布的程式碼（{c['file']}）：\n{code}")
+        return _fit(rows, cap)
+    # synthesizer
+    warn = {s["id"] for s in js.signals if s.get("level") in ("WARN", "ERROR", "FATAL")}
+    ids = set(related or []) | warn
+    toks = list(dict.fromkeys(js.signal_tokens(ids=ids) + _metric_tokens(job.get("workers"))))
+    topics = [w["topic"] for w in job.get("workers") or []]
+    topics += [t["topic"] for t in job["index"]["topics"] if t.get("role") == "worker" and t["topic"] not in topics]
+    rows = [head, _SOURCE_GUIDE, "Topic 之間的關係（每個 Topic：誰發布、什麼時候、依賴哪些輸入 Topic、誰訂閱）："]
+    rows += [f"- {t}：{js.topic_source_line(t)}" for t in topics if js.topic_source_line(t)]
+    miss = js.missing_inputs()
+    if miss:
+        rows.append("- 數據裡沒有、但在執行的節點會訂閱的 Topic（沒有被錄到，不能量測）：" + "；".join(f"{t} → {'、'.join(cbs)}" for t, cbs in miss))
+    rows += ["在執行的節點："] + js.node_lines(compact=True) + js.orphan_lines()
+    ll = js.log_lines(ids=ids)
+    if ll:
+        rows += ["相關 Log 的源碼位置："] + ll
+    tl = js.token_lines(toks, limit=10)
+    if tl:
+        rows += ["代碼在源碼的條件："] + tl
+    text = _fit(rows, cap - 2500)
+    # 相關的程式碼：WARN 以上的代碼產生的函式 → 指派的 Topic 的發布函式（短的：直接看得出輸出怎麼算）→ 其他代碼的函式
+    warn_toks = js.signal_tokens(ids=warn)
+    token_funcs, pub_funcs = [], []
+    for tok in toks:
+        for site in js.token_info(tok, limit=1)["sites"]:
+            if site["func"]:
+                token_funcs.append((tok in warn_toks, site["file"], site["func"], (site["line"], site.get("cond_line") or site["line"])))
+    for w in job.get("workers") or []:
+        for c in js.nodes:
+            for p in c["pubs"]:
+                if p["topic"] == w["topic"] and p["sites"]:
+                    pub_funcs.append((c["file"], p["sites"][0]["func"], (p["sites"][0]["line"],)))
+    funcs = ([f[1:] for f in token_funcs if f[0]] + pub_funcs + [f[1:] for f in token_funcs if not f[0]])
+    seen, code_rows = set(), []
+    for rel, func, marks in funcs:
+        if (rel, func) in seen or len(seen) >= 5:
+            continue
+        seen.add((rel, func))
+        code = js.function_code(rel, func, mark=marks, max_lines=36)
+        if code and len(text) + sum(len(x) for x in code_rows) + len(code) + 80 <= cap:
+            code_rows.append(f"（{rel}：{func}；▶＝相關的行）\n{code}")
+    if code_rows:
+        text += "\n相關的程式碼：\n" + "\n".join(code_rows)
+    return "\n\n" + text
+
+
+def _source_doc(job, js):
+    """job 資料夾的 source_context.md（給人看的完整版）。"""
+    s = js.summary()
+    rows = [f"# 源碼脈絡：{s['root']}", "",
+            f"- 索引：{s['files']} 個檔案；在執行的節點：" + "、".join(f"{k}（{v}）" for k, v in s["nodes"].items()),
+            f"- 判斷在執行的依據：Log 的節點、數據裡的 /<節點>/transition_event、同一個 launch 檔啟動的節點；名稱：{'、'.join(s['running'])}",
+            "", "## 節點與 Topic", *js.node_lines(), *js.orphan_lines(), "", "## Log 的源碼位置", *(js.log_lines() or ["（沒有）"]),
+            "", "## 代碼在源碼的條件", *(js.token_lines(js.signal_tokens(), limit=30) or ["（沒有）"])]
+    if s["unresolved"]:
+        rows += ["", "## 對不到源碼的 Log 位置", *[f"- {u['id']}：{u['file']}" for u in s["unresolved"]]]
+    return "\n".join(rows) + "\n"
+
+
 def _segment_notes(workers, base_ns, signals):
     """一段完整的發布（中途開始又中途停止、中間沒有中斷）的程式判斷，接在「訊息流」後面給 Synthesizer：
     - 它是一次指令或一個動作從開始到結束，不是中斷；
@@ -1356,9 +1596,11 @@ def _segment_notes(workers, base_ns, signals):
     return notes
 
 
-def _flow_block(workers, base_ns=None, signals=None):
+def _flow_block(workers, base_ns=None, signals=None, hints=True, upstream_hint=True):
     """交給 Synthesizer 的「程式整理：訊息流」：每個 Topic 的中斷與開始／停止，加上同一時間一起中斷的 Topic（共同的上游）；
-    有數據開頭（base_ns）時，一段完整的發布再接程式的判斷（_segment_notes）。"""
+    有數據開頭（base_ns）時，一段完整的發布再接程式的判斷（_segment_notes）。
+    hints=False：只列事實（哪些 Topic 在什麼時候中斷、一起中斷），不附「通常是共同的上游」與一段完整的發布的判斷；
+    upstream_hint=False：不附「通常是共同的上游」（有源碼脈絡時，誰發布、依賴哪些輸入已經寫在 Topic 的關係裡）。"""
     rows, starts = [], []
     for w in workers:
         for t, what in w.get("flow_events") or []:
@@ -1373,9 +1615,10 @@ def _flow_block(workers, base_ns=None, signals=None):
             together.append([(t, tp, what)])
     for g in together:
         if len({tp for _, tp, _ in g}) >= 2:
-            rows.append(f"- 同一時間（+{g[0][0]:.2f}s）一起中斷：{'、'.join(tp for _, tp, _ in g)}——好幾個 Topic 同時停發，"
-                        "通常是共同的上游（發布它們的節點，或它們共同依賴的輸入）出了問題")
-    if base_ns is not None:
+            rows.append(f"- 同一時間（+{g[0][0]:.2f}s）一起中斷：{'、'.join(tp for _, tp, _ in g)}"
+                        + ("——好幾個 Topic 同時停發，通常是共同的上游（發布它們的節點，或它們共同依賴的輸入）出了問題"
+                           if hints and upstream_hint else ""))
+    if base_ns is not None and hints:
         rows += _segment_notes(workers, base_ns, signals)
     return "\n".join(rows)
 

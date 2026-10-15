@@ -1,4 +1,5 @@
 """給 Ollama format= 的 JSON schema：主對話回覆、滾動摘要、工具摘要、技能草稿。"""
+import json
 
 
 # 🧷 回覆協議：模型每次回覆都是一個 JSON 物件 {thought, reply, action}。執行與否只看 action 欄位，
@@ -265,6 +266,12 @@ ANALYSIS_PLAN_SCHEMA = {
     },
     "required": ["understanding", "related_signals", "before_sec", "after_sec", "assignments", "report_focus"],
 }
+
+# 有源碼脈絡時的計畫：每個指派多一個 source_context（這個子任務根據的源碼線索：檔案:行 函式、代碼的條件），
+# 交給 worker、寫進局部報告的 Frontmatter
+ANALYSIS_PLAN_SCHEMA_SOURCE = json.loads(json.dumps(ANALYSIS_PLAN_SCHEMA))
+ANALYSIS_PLAN_SCHEMA_SOURCE["properties"]["assignments"]["items"]["properties"]["source_context"] = _text(240)
+ANALYSIS_PLAN_SCHEMA_SOURCE["properties"]["assignments"]["items"]["required"] = ["topic", "subtask", "signals", "source_context"]
 
 # worker 每一步的決定：同主對話的 {thought, reply, action}，字串有上限
 ANALYSIS_WORKER_REPLY_SCHEMA = {

@@ -23,5 +23,5 @@ dependencies: ["docker", "rclpy", "mcap"]
 `EXECUTE: scripts/rosout_parser_cmd.py exp_20261014_084506 --level WARN --level ERROR`
 
 # 回傳
-標頭算好：幾則 Log → 幾個唯一訊號、各層級的數量、來源與時間基準。每一行：`L# 層級 ×次數 首次[+秒] ～ 末次 Node：訊息`（[+秒]＝距離數據開頭）。
+標頭算好：幾則 Log → 幾個唯一訊號、各層級的數量、來源與時間基準。每一行：`L# 層級 ×次數 首次[+秒] ～ 末次 Node：訊息`（[+秒]＝距離數據開頭）；bag 的 /rosout 有記源碼位置時，行尾接 `＠檔名:行 函式`（rcl_interfaces/msg/Log 的 file、line、function：印出這則 Log 的程式位置，`--json` 的 `sources`）。
 要看某個訊號前後的數據：`mcap_feature_measure --around <秒>` 或 `mcap_slicer --signal L#`。

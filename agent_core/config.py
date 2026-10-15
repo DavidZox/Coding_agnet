@@ -302,3 +302,11 @@ ANALYSIS_DIGEST_MAX_SIGNALS = 60         # 交給 Orchestrator 的去重後 Log 
 ANALYSIS_TOOL_RESULT_MAX_CHARS = 5000    # worker 的工具回傳進上下文的上限（超過保留頭尾）
 # worker 可以用的腳本（其餘一律拒絕）：特徵量測與 Key／原始值檢視；Topic 由系統固定成指派的那一個
 ANALYSIS_WORKER_SCRIPTS = {"mcap_feature_measure_cmd.py", "mcap_analyzer_cmd.py"}
+# 源碼脈絡：受測系統的源碼目錄（ROS 2 工作區的 src，主機路徑）。設定了就把 Log 的源碼位置（/rosout 的 file:line）對回程式碼，
+# 整理在執行的節點的發布／訂閱關係與代碼的條件，交給 Orchestrator、Worker、Synthesizer（agent_core/source_index.py）。空＝不用
+ANALYSIS_SOURCE_ROOT = os.environ.get("AGENT_ANALYSIS_SOURCE_ROOT", "").strip()
+ANALYSIS_SOURCE_CACHE_DIRNAME = "source_index"   # logs/ 下：源碼索引的快取（檔案大小、mtime 沒變就沿用）
+ANALYSIS_SOURCE_MAX_CHARS = {"worker": 2500, "synthesizer": 11000}   # 各角色的【源碼脈絡】上限（字）；Orchestrator 只在 Log 與 Topic Metadata 裡帶源碼
+# 程式的推理提示：Log 提到、數據裡沒有的輸入（名稱比對）、名稱相近的 Topic、背景條件的更正、共同的上游、一段完整的發布……
+# off：只給數據與源碼的事實，因果由模型自己推（量源碼脈絡能不能取代這些提示時用）。量測、切片、時間校正等事實處理不受影響
+ANALYSIS_PROGRAM_HINTS = os.environ.get("AGENT_ANALYSIS_PROGRAM_HINTS", "1").strip().lower() not in ("0", "false", "off", "no")

@@ -57,6 +57,8 @@ SLASH_COMMANDS = [
     {"cmd": "/analysis_model ", "desc": "設定 orchestrator／worker／synthesizer（或 all）的模型，例如 all gemma4:26b", "group": "數據分析", "args": True},
     {"cmd": "/analysis_workers ", "desc": "一次最多派幾個 worker（1～8）", "group": "數據分析", "args": True},
     {"cmd": "/analysis_slice ", "desc": "動態時間切片 on|off（每個時間窗先切片、worker 只讀切片）", "group": "數據分析", "args": True},
+    {"cmd": "/analysis_source ", "desc": "受測系統的源碼目錄（ROS 2 工作區的 src；- 不用）：源碼脈絡交給三個角色", "group": "數據分析", "args": True},
+    {"cmd": "/analysis_hints ", "desc": "程式的推理提示 on|off（off：只給數據與源碼的事實）", "group": "數據分析", "args": True},
     {"cmd": "/analysis_mode on", "desc": "📊 分析模式：送出的問題直接交給數據診斷", "group": "數據分析"},
     {"cmd": "/analysis_mode off", "desc": "關閉分析模式（訊息回到主對話）", "group": "數據分析"},
     {"cmd": "/analysis_help", "desc": "數據分析的全部指令說明", "group": "數據分析"},

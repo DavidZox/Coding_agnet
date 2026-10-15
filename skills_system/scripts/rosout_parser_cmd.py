@@ -107,7 +107,8 @@ def worker_main(argv):
         lines.append(f"數據：{rd.data_label(data)}（{rd.fmt_t(ov['start_ns'])} ～ {rd.fmt_t(ov['end_ns'])}，"
                      f"{(ov['end_ns'] - ov['start_ns']) / 1e9:.1f} 秒）；[+秒] 是距離數據開頭的時間")
     lines.append("編號 L# 依第一次出現的時間排序（mcap_slicer --signal L# 依它切片）；×N 是出現次數，只差在數字的訊息算同一個訊號"
-                 + ("（--exact：逐字比對）" if args.exact else ""))
+                 + ("（--exact：逐字比對）" if args.exact else "")
+                 + ("；＠檔名:行 函式＝印出這則 Log 的源碼位置" if any(g.get("sources") for g in groups) else ""))
     if args.events:
         id_of = {}
         for g in groups:
@@ -125,7 +126,8 @@ def worker_main(argv):
             if g["count"] > 1:
                 when += f" ～ {rd.fmt_t(g['last_ns'])}[{rd.fmt_rel(g['last_ns'], base)}]"
             var = f"（{len(g['variants'])} 種寫法）" if len(g["variants"]) > 1 else ""
-            lines.append(f"{g['id']:<4} {g['level']:<5} ×{g['count']:<4} {when}  {g['node']}：{rd.short(g['message'], 200)}{var}")
+            src = f"  {rd.source_text(g)}" if g.get("sources") else ""
+            lines.append(f"{g['id']:<4} {g['level']:<5} ×{g['count']:<4} {when}  {g['node']}：{rd.short(g['message'], 200)}{var}{src}")
         if len(shown) > top:
             lines.append(f"…還有 {len(shown) - top} 個訊號（--top 調整，或用 --level／--node／--grep 篩選）")
         rec = 0 if args.all_nodes else sum(1 for g in groups if rd.is_recorder_node(g["node"]))

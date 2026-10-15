@@ -33,7 +33,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 WORKER_ENV = "ROS2_TOOL_WORKER"
 ANALYSIS_DATA_MARKER = "[ANALYSIS_DATA]"   # 末行狀態標記：harness 據此同步「目前分析的數據」（比照 [TARGET_CONTAINER]）
 INDEX_NAME = "topic_metadata"             # 全域 Topic Metadata 索引的檔名（.json 給程式、.yaml 給人看），放在 bag 資料夾
-INDEX_VERSION = 3                         # Key 分類規則改了就加一（舊的快取自動重建）
+INDEX_VERSION = 4                         # Key 分類規則改了就加一（舊的快取自動重建）；4：加 msg 定義（MCAP 的 schema，含註解與常數）
+MSG_DEFINITION_MAX = 2400                 # 每個型別的 msg 定義最多存幾個字（只存最上層，不含巢狀型別的 MSG: 段落）
 LOG_TOPICS = ("/rosout", "/rosout_agg")
 SAMPLES_PER_TOPIC = 120                   # 建索引時每個 Topic 反序列化幾筆來判斷 Key 的類別（平均分散在整段錄製裡）
 STATE_MAX_DISTINCT = 12                   # 字串欄位相異值不超過這個數、而且都很短 → 當列舉（state），否則是自由文字（text）
@@ -827,10 +828,31 @@ def build_index(data, refresh=False, write=True):
            "source_files": _files_signature(data["mcap_files"]), "rosout_log": data["rosout_log"],
            "start_ns": ov["start_ns"], "end_ns": ov["end_ns"], "start_sec": sec(ov["start_ns"]), "end_sec": sec(ov["end_ns"]),
            "duration_sec": round((ov["end_ns"] - ov["start_ns"]) / 1e9, 3) if ov["start_ns"] is not None else 0,
-           "message_count": ov["message_count"], "topics": topics}
+           "message_count": ov["message_count"], "topics": topics,
+           "msg_definitions": msg_definitions(data["mcap_files"])}
     if write:
         idx["index_file"] = write_index(data, idx)
     return idx
+
+
+def msg_definitions(mcap_files):
+    """MCAP 的 schema（ros2msg＝.msg 原文，含註解與常數）→ {型別: 最上層的定義}：錄製時就存在 MCAP 裡的源碼脈絡
+    （例如 SystemSafetyStatus 的註解寫「MON 在 active 時每收到一筆 /diagnostics_agg 就發布一筆」）。巢狀型別的「MSG: …」段落不存。"""
+    from mcap.reader import make_reader
+    out = {}
+    for f in mcap_files:
+        try:
+            with open(f, "rb") as stream:
+                summ = make_reader(stream).get_summary()
+        except Exception:   # noqa: BLE001  沒有 summary 的 MCAP：不影響其他索引
+            continue
+        for sc in (summ.schemas.values() if summ else ()):
+            if sc.name in out or sc.encoding != "ros2msg":
+                continue
+            text = sc.data.decode("utf-8", errors="replace")
+            top = re.split(r"^={10,}\s*$", text, maxsplit=1, flags=re.M)[0].strip()
+            out[sc.name] = top[:MSG_DEFINITION_MAX]
+    return out
 
 
 def write_index(data, idx):
@@ -974,8 +996,11 @@ def rosout_from_bag(mcap_files):
                 continue
             lv = log.level
             lv = lv[0] if isinstance(lv, (bytes, bytearray)) else int(lv)
-            events.append({"t_ns": m.log_time, "level": LEVEL_NAMES.get(lv, "INFO"), "node": str(log.name),
-                           "msg": " ".join(str(log.msg).split()), "stamp_ns": log.stamp.sec * 1_000_000_000 + log.stamp.nanosec})
+            e = {"t_ns": m.log_time, "level": LEVEL_NAMES.get(lv, "INFO"), "node": str(log.name),
+                 "msg": " ".join(str(log.msg).split()), "stamp_ns": log.stamp.sec * 1_000_000_000 + log.stamp.nanosec}
+            if log.file:   # Log 的源碼位置（rcl_interfaces/msg/Log 的 file、function、line）：源碼索引用它對回程式碼
+                e["src"] = (str(log.file), str(log.function), int(log.line))
+            events.append(e)
         if events:
             return events, topic
     return [], None
@@ -1021,12 +1046,14 @@ def dedup_events(events, merge_numbers=True):
         g = groups.get(k)
         if g is None:
             g = groups[k] = {"level": e["level"], "node": e["node"], "message": msg, "count": 0, "times_ns": [],
-                             "variants": []}
+                             "variants": [], "sources": []}
             order.append(g)
         g["count"] += 1
         g["times_ns"].append(e["t_ns"])
         if msg not in g["variants"] and len(g["variants"]) < 4:
             g["variants"].append(msg)
+        if e.get("src") and tuple(e["src"]) not in g["sources"] and len(g["sources"]) < 3:
+            g["sources"].append(tuple(e["src"]))
     for i, g in enumerate(order, 1):
         g["id"] = f"L{i}"
         g["first_ns"], g["last_ns"] = g["times_ns"][0], g["times_ns"][-1]
@@ -1041,7 +1068,15 @@ def signal_json(g, base_ns=None, max_times=50):
         d["first_rel"] = round((g["first_ns"] - base_ns) / 1e9, 3)
     if len(g["variants"]) > 1:
         d["variants"] = g["variants"]
+    if g.get("sources"):
+        d["sources"] = [{"file": f, "function": fn, "line": ln} for f, fn, ln in g["sources"]]
     return d
+
+
+def source_text(g):
+    """Log 訊號的源碼位置一行：「＠檔名:行 函式」（只有 bag 的 /rosout 有；rosout.log 沒有）。"""
+    srcs = g.get("sources") or []
+    return "；".join(f"＠{os.path.basename(f)}:{ln} {fn}".rstrip() for f, fn, ln in srcs[:2])
 
 
 # =====================================================================================================================

@@ -26,6 +26,7 @@ def settings_view():
     return {"data_root": cfg.get("data_root") or "", "container": cfg.get("container") or "",
             "max_workers": cfg.get("max_workers"), "parallel": cfg.get("parallel"),
             "before": cfg.get("before"), "after": cfg.get("after"),
+            "source_root": cfg.get("source_root") or "", "program_hints": bool(cfg.get("program_hints", True)),
             "models": {r: agent.analysis_model(r) for r in ROLES},
             "think": {r: agent.analysis_think(r) for r in ROLES},
             "follows_main": {r: not cfg.get(r) for r in ROLES}}
@@ -82,6 +83,12 @@ def analysis_action(action, data):
                 cfg["after"] = _num(data["after"], float, 0.5, 60)
             if "slice" in data:
                 cfg["slice"] = str(data["slice"]).strip().lower() in ("1", "true", "on", "yes")
+            if "source_root" in data:   # 受測系統的源碼目錄（ROS 2 工作區的 src）：源碼脈絡
+                cfg["source_root"] = os.path.expanduser(str(data.get("source_root") or "").strip())
+                msgs.append(f"源碼目錄：{cfg['source_root'] or '（沒有：不用源碼脈絡）'}")
+            if "program_hints" in data:
+                cfg["program_hints"] = str(data["program_hints"]).strip().lower() in ("1", "true", "on", "yes")
+                msgs.append(f"程式的推理提示：{'開' if cfg['program_hints'] else '關'}")
         except ValueError as e:
             return {"ok": False, "error": str(e)}
         agent.save_analysis_settings()
@@ -115,6 +122,8 @@ ANALYSIS_HELP = """📊 數據分析指令：
 /analysis_model <角色|all> <模型> orchestrator／worker／synthesizer 的模型（- 改回跟著主對話）
 /analysis_workers <N>           一次最多派幾個 worker（1～8）
 /analysis_slice on|off          動態時間切片：每個時間窗先用 mcap_slicer 切一片，worker 只讀切片（預設開；整段數據不切）
+/analysis_source <源碼目錄>|-     受測系統的源碼目錄（ROS 2 工作區的 src）：Log 的源碼位置、在執行的節點的發布／訂閱關係、代碼的條件交給三個角色（- 不用）
+/analysis_hints on|off          程式的推理提示（名稱比對的缺口、背景條件、共同的上游、一段完整的發布）；off＝只給數據與源碼的事實
 /analysis_mode on|off          📊 分析模式（同輸入框旁的按鈕）：送出的問題直接交給 analysis_run
 右欄「📊 數據分析」面板：計畫（相關的 Log 訊號、時間窗、每個 worker 的 Topic）、每個 worker 的局部報告、最後的報告。"""
 
@@ -165,6 +174,21 @@ def handle_analysis_command(text, events):
                                                          "用法：/analysis_slice on|off"})
         else:
             res = analysis_action("settings", {"slice": arg.lower() == "on"})
+            events.append({"channel": "system", "text": res.get("message") or "⚠️ " + res.get("error", "")})
+    elif cmd == "/analysis_source":
+        if arg:
+            res = analysis_action("settings", {"source_root": "" if arg == "-" else arg})
+            events.append({"channel": "system", "text": res.get("message") or "⚠️ " + res.get("error", "")})
+        else:
+            root = cfg.get("source_root") or ""
+            events.append({"channel": "system", "text": f"📊 源碼目錄：{root or '（沒有：不用源碼脈絡）'}"
+                                                         + ("（目錄不存在）" if root and not os.path.isdir(root) else "")})
+    elif cmd == "/analysis_hints":
+        if arg.lower() not in ("on", "off"):
+            on = cfg.get("program_hints", True)
+            events.append({"channel": "system", "text": f"📊 程式的推理提示目前{'開' if on else '關'}。用法：/analysis_hints on|off"})
+        else:
+            res = analysis_action("settings", {"program_hints": arg.lower() == "on"})
             events.append({"channel": "system", "text": res.get("message") or "⚠️ " + res.get("error", "")})
     elif cmd == "/analysis_model":
         bits = arg.split()

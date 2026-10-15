@@ -24,4 +24,4 @@ dependencies: ["docker", "mcap", "rclpy", "rosidl_runtime_py"]
 `EXECUTE: scripts/mcap_analyzer_cmd.py --topic /cmd_vel --key linear.x --preview 20 --window +10,+20`
 
 # 回傳
-索引：時間範圍、Topic 總表（型別｜訊息數｜頻率｜起訖｜角色｜Key 摘要）、切片的檔案級 Metadata。量測特徵用 mcap_feature_measure。
+索引：時間範圍、Topic 總表（型別｜訊息數｜頻率｜起訖｜角色｜Key 摘要）、切片的檔案級 Metadata；`--json` 另有 `msg_definitions`（每個型別的 .msg 原文，錄製時存在 MCAP 的 schema 裡，含註解與常數）。量測特徵用 mcap_feature_measure。

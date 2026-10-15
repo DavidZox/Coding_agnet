@@ -1,4 +1,6 @@
 """CLI 介面（python3 Agent_Runner.py）：互動迴圈、slash 指令、Plan 模式與 /make_skill 的終端機流程。"""
+import os
+
 from .agent import SkillAgent
 from .config import (
     NUM_CTX,
@@ -109,6 +111,17 @@ def _handle_analysis_command(agent, text):
             if agent.analysis_cfg["container"] and not agent.target_container:
                 agent.target_container = agent.analysis_cfg["container"]
         print(f"📊 預設容器：{agent.analysis_cfg.get('container') or '（沒有）'}；目前的目標容器：{agent.target_container or '（沒有）'}")
+    elif cmd == "/analysis_source":
+        if arg:
+            agent.analysis_cfg["source_root"] = "" if arg == "-" else os.path.expanduser(arg)
+            agent.save_analysis_settings()
+        root = agent.analysis_cfg.get("source_root") or ""
+        print(f"📊 源碼目錄：{root or '（沒有：不用源碼脈絡）'}" + ("（目錄不存在）" if root and not os.path.isdir(root) else ""))
+    elif cmd == "/analysis_hints":
+        if arg.lower() in ("on", "off"):
+            agent.analysis_cfg["program_hints"] = arg.lower() == "on"
+            agent.save_analysis_settings()
+        print(f"📊 程式的推理提示：{'開' if agent.analysis_cfg.get('program_hints', True) else '關（只給數據與源碼的事實）'}")
     elif cmd == "/analysis_model":
         bits = arg.split()
         if len(bits) == 2 and bits[0].lower() in ROLES + ("all",):
@@ -124,7 +137,7 @@ def _handle_analysis_command(agent, text):
             print("📊 還沒有數據分析 job：/analyze [問題] 開始。")
     else:
         print("📊 /analyze [問題]、/analysis（最近的 job）、/analysis_data <數據>、/analysis_root <路徑>、"
-              "/analysis_container <容器>、/analysis_model <角色|all> <模型>")
+              "/analysis_container <容器>、/analysis_model <角色|all> <模型>、/analysis_source <源碼目錄|->、/analysis_hints on|off")
     return True
 
 

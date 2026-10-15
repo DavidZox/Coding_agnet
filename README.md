@@ -17,16 +17,20 @@ harness 本身（技能系統的索引＋按需載入的規格＋既有腳本、
                     ▼
 ① 資料預備（程式，不用模型）
    mcap_analyzer：全域 Topic Metadata（Topic、型別、筆數、頻率、起訖、每個 Key 的類別）——錄製時建好的索引直接讀
-   rosout_parser：/rosout 去重成唯一訊號 L#（層級、Node、次數、每一次的時間戳）
-② Orchestrator（一次模型呼叫）——同時看「去重後的 Log」與「全域 Topic Metadata」
+   rosout_parser：/rosout 去重成唯一訊號 L#（層級、Node、次數、每一次的時間戳、＠印出它的源碼位置 檔名:行 函式）
+   源碼脈絡（有設定源碼目錄時，agent_core/source_index.py）：Log 的 file:line 對回程式碼；這次在執行的節點的發布／訂閱、
+   每個 Topic 依賴哪些輸入 Topic、沒錄到的輸入；Log 裡的代碼在源碼的條件（條件讀的變數由哪個 Topic 或參數寫入）
+② Orchestrator（一次模型呼叫）——同時看「去重後的 Log」與「全域 Topic Metadata」（有源碼時每個 Topic 多一行：誰發布、依賴哪些輸入）
    對齊問題 → 只挑相關的 L#（精確的時間窗由程式換算：前後各幾秒、重疊的合併）→ 每個 worker 一個不同的 Topic
    程式檢查計畫：L#／Topic 要存在、可分析、不重複、不派 Log——有問題交回修一次，修不好由程式依關聯度補指派
 ③ 動態時間切片（程式）——每個時間窗用 mcap_slicer 切一片：只含指派的 Topic＋/rosout，
    每個 Topic 再帶上時間窗之前的最後一則（狀態接得上）；整段數據不切
 ④ Workers（每個 Topic 一個乾淨的 session，可以平行）——只讀自己時間窗的切片，看不到 Log 字串
    自己決定量哪些 Key（mcap_feature_measure：數值統計、狀態跳轉、訊息中斷）→ Frontmatter Markdown 的局部報告
+   有源碼時多看自己 Topic 的源碼脈絡：發布者與時機、依賴的輸入、msg 定義的註解與常數、發布的程式碼、Orchestrator 給的 source_context
    程式：frontmatter 的數字用 --json 重量一次填入（模型只寫判斷與說明）；訊息流中斷一定算異常、列進證據（一段完整的發布不算）
 ⑤ Synthesizer（一次模型呼叫）——相關的 Log＋全部局部報告＋程式整理（沒錄到的輸入、背景條件、同時中斷的 Topic、一段完整的發布）
+   ＋源碼脈絡（Topic 之間的關係、相關 Log 的源碼位置、代碼的條件、相關函式的程式碼）
    → 結論、根因與信心、時間線、證據、尚未確認、建議
    程式：L# 的時間照 Log 校正、補上訊息流事件、時間線排序、拿背景條件當原因時附更正、沒錄到的輸入信心最多 medium
 ⑥ 報告——report.md（Frontmatter Markdown）＋存成主對話的 #編號 → 主對話的 AI 依報告回答；Web 面板看每一步
@@ -38,12 +42,12 @@ harness 本身（技能系統的索引＋按需載入的規格＋既有腳本、
 
 | 步驟 | 誰做 | 產物 |
 |---|---|---|
-| ① 資料預備 | 程式 | `topic_metadata.md`（全域 Topic Metadata）、`log_digest.md`（去重後的 Log；rosbag2 自己的 Log 也列出並標明） |
+| ① 資料預備 | 程式 | `topic_metadata.md`（全域 Topic Metadata）、`log_digest.md`（去重後的 Log；rosbag2 自己的 Log 也列出並標明）、`source_context.md`（有源碼目錄時：在執行的節點、Topic 關係、Log 位置、代碼的條件） |
 | ② Orchestrator | 模型＋程式檢查 | `plan.json`（對問題的理解、相關訊號、時間窗、每個 worker 的 Topic 與子任務） |
 | ③ 動態時間切片 | 程式 | `<數據>/analysis_slices/<編號>/sliced_bag_*`（toolkit 格式，Foxglove 也能開；路徑記在 `job.json` 的 `slices`） |
 | ④ Workers | 模型決定、程式量測 | `workers/W<n>_<topic>.md`（局部報告）、`workers/W<n>_<topic>.transcript.md`（worker 的完整對話） |
 | ⑤ Synthesizer | 模型＋程式檢查 | `report.md`（最後的報告；程式附的更正、檢查說明會標「程式更正／程式檢查」） |
-| 全程 | 程式 | `job.json`（狀態、計畫、時間窗、切片、每個 worker 的結果與量測數字、報告、更正）、`events.jsonl`（進度，Web 的卡片與面板讀它） |
+| 全程 | 程式 | `job.json`（狀態、計畫、時間窗、切片、每個 worker 的結果與量測數字、報告、更正、`synth_raw`＝Synthesizer 原本寫的）、`events.jsonl`（進度，Web 的卡片與面板讀它）、`prompts/<角色>.md`（交給模型的完整輸入，對照與重播用） |
 
 | 資料類型 | 誰處理 | 怎麼處理 |
 |---|---|---|
@@ -78,6 +82,7 @@ primary_reaction 從 INIT 轉向 NONE，發生在 +15.53s……
 - **時間戳由程式換算**：Orchestrator 只填訊號編號（L28），程式用去重後的時間戳算時間窗；worker 用 `--window W1` 這種編號（或不寫，系統帶入），不用抄 19 位數的時間。所有輸出的 `[+秒]` 都是「距離數據開頭」（Log、Topic、時間窗同一個基準）。
 - **能由程式做的就不交給模型**：Log 去重、Key 的型別／維度／類別、統計數字、狀態跳轉、訊息中斷、異常指標、計畫的檢查（不存在的 L#／Topic、重複的 Topic 會具體列出、交回 Orchestrator 修一次，修不好由程式依關聯度補指派）。
 - **worker 只能量自己的 Topic**：`--topic` 由系統固定、只准用量測技能；實測 e4b 常把動作的 JSON 寫進 `reply`，worker 的工具都是唯讀的量測，所以照做；一個 Key 都沒量時系統代選（狀態優先）。Key 目錄的類別寫中文（英文的 `state` 每一列都有，實測 26b 把它當成 Key 送 `--key state`，140 個 worker 15 次 → 0）；不存在的 Key 照量認得的、最後說明。
+- **源碼脈絡**（設定源碼目錄時，〈[設計筆記 2.19](doc/設計筆記與已知限制.md)〉）：MCAP 的 /rosout 本來就記了每一則 Log 的 file:line、schema 是 .msg 原文；程式再讀受測系統的源碼（不呼叫模型），整理這次在執行的節點（Log 的節點、lifecycle 的 transition_event、同一個 launch 檔；同名的好幾個實作用 Log 的源碼位置決定，沒編譯的不算）、每個 Topic 誰發布、什麼時候、**依賴哪些輸入 Topic**（發布時讀的變數由哪個訂閱寫入）、Log 裡的代碼在源碼成立的條件。Topic 之間的關係有了，模型不再拿輸出 Topic 當輸入的證據（有事件的數據 15/20 → 1/20，不用名稱比對）；「正常的操作」這類判斷仍要下面的程式提示。
 - **「數據範圍」的程式檢查**：Log 說某個輸入沒有／逾時（`NO_CMD_VEL_RAW`、`IMU_TIMEOUT`…），數據裡卻沒有對得上的 Topic 時，程式保證報告把它列在「尚未確認」、信心最多 medium——小模型常拿名稱相近的輸出 Topic 當證據。Orchestrator 規劃時也拿到這個檢查，名稱相近的 Topic（沒錄到 `/cmd_vel_raw` 時的 `/cmd_vel`）點名不能代替；Synthesizer 讀到那個 Topic 的局部報告時旁邊再附一次提醒（實測 26b 拿 `/cmd_vel` 排除指令中斷：有事件的數據 20 次 15 次 → 2 次）。
 - **動態時間切片**：worker 只讀自己時間窗的切片（實測 180 秒的錄製只讀約 14% 的訊息），讀切片量到的跟讀原本的數據逐字相同；worker 自己抄的時間窗有四捨五入時，換成指派的那個。
 - **訊息流中斷本身就是異常**：Topic 停發、中途開始或停止由程式量、程式判定，列進證據、交給 Synthesizer 時列出同一時間一起中斷的 Topic（共同的上游），時間線缺了程式補上——實測 e4b 會以「狀態沒變」忽略 10 秒的中斷。
@@ -110,7 +115,7 @@ python3 web_console.py      # Web：http://127.0.0.1:8765（只綁本機）
 python3 Agent_Runner.py     # CLI（同樣有 /analyze 與 /analysis_* 指令）
 ```
 
-1. **設定**：右欄「📊 數據分析」→ ⚙️ 設定：預設容器（數據技能都在容器內執行，例如 `ros2_web_container`）、數據根目錄（錄製位置，空白＝在容器的 /workspace 底下找 `experiment_logs`）、worker 上限、時間窗前後秒數。各角色的模型在標題列的 🧠（主對話、分析 Orchestrator／Worker／Synthesizer；沒有另外設定時跟著主對話）。
+1. **設定**：右欄「📊 數據分析」→ ⚙️ 設定：預設容器（數據技能都在容器內執行，例如 `ros2_web_container`）、數據根目錄（錄製位置，空白＝在容器的 /workspace 底下找 `experiment_logs`）、worker 上限、時間窗前後秒數、源碼目錄（受測系統的 ROS 2 工作區 src，例如 `~/fih_humanoid_amr/amr_base/src`；空白＝不用源碼脈絡）。各角色的模型在標題列的 🧠（主對話、分析 Orchestrator／Worker／Synthesizer；沒有另外設定時跟著主對話）。
 2. **數據**：跟 AI 說「錄 30 秒的核心 Topic」（mcap_recorder），或用現有的實驗資料夾（「看一下 exp_20261014_084506」）。
 3. **問問題**：直接跟 AI 說（「底盤為什麼在錄製中途停下來？」，它會選 analysis_run；只問一個值或 Log 時直接用對應的技能），或 `/analyze <問題>`，或按輸入框旁的 **📊 分析** 進入分析模式。
 4. **看結果**：左欄是 AI 依報告的回答；右欄的進度卡片即時顯示每一個階段；「📊 數據分析」面板列出 Orchestrator 的計畫（相關的 Log 訊號、時間窗、每個 worker 的 Topic）、每個 worker 的局部報告與完整對話、最後的報告。
@@ -122,6 +127,8 @@ python3 Agent_Runner.py     # CLI（同樣有 /analyze 與 /analysis_* 指令）
 | `/analysis_data <數據>`、`/analysis_root <路徑>`、`/analysis_container <容器>` | 目前的數據、數據根目錄、預設容器（`-` 清除） |
 | `/analysis_model <orchestrator\|worker\|synthesizer\|all> <模型>`、`/analysis_workers N` | 各角色的模型（`-` 跟著主對話）、worker 上限 |
 | `/analysis_slice on\|off` | 動態時間切片（預設開；關掉時 worker 直接讀原本的數據） |
+| `/analysis_source <源碼目錄>`（`-` 不用） | 受測系統的源碼目錄（ROS 2 工作區的 src，主機路徑）：源碼脈絡交給三個角色；`/analyze` 也可以加 `--source <目錄>`／`--no-source` |
+| `/analysis_hints on\|off` | 程式的推理提示（名稱比對的缺口、背景條件更正、共同的上游、一段完整的發布）；off＝只給數據與源碼的事實 |
 | `/analysis_mode on\|off` | 📊 分析模式（同輸入框旁的按鈕） |
 
 | 數據分析設定（環境變數） | 預設 | 說明 |
@@ -132,6 +139,8 @@ python3 Agent_Runner.py     # CLI（同樣有 /analyze 與 /analysis_* 指令）
 | `AGENT_ANALYSIS_MAX_WORKERS`／`AGENT_ANALYSIS_PARALLEL` | 4／2 | 最多派幾個 worker／同時跑幾個（同一個模型在 Ollama 只有一個 slot 時，模型呼叫仍會排隊） |
 | `AGENT_ANALYSIS_WORKER_STEPS` | 6 | 一個 worker 最多幾個動作 |
 | `AGENT_ANALYSIS_SLICE` | 開 | 動態時間切片（Web：`/analysis_slice`） |
+| `AGENT_ANALYSIS_SOURCE_ROOT` | （空：不用） | 受測系統的源碼目錄（Web：`/analysis_source` 或 ⚙️ 設定；索引快取在 `logs/source_index/`） |
+| `AGENT_ANALYSIS_PROGRAM_HINTS` | 開 | 程式的推理提示（Web：`/analysis_hints`） |
 | （設定檔）`<角色>_ctx` | 同 `AGENT_NUM_CTX` | 各角色的上下文長度（`logs/analysis_settings.json`；8 GB 顯卡上換大一點的模型時調小，見設計筆記限制 54） |
 
 ## 實測（2026-10-14，這台筆電：RTX 5060 Laptop GPU 8 GB、Ollama；數據 `toolkit/experiment_logs/exp_20261014_084506`，52 秒、10 個 Topic、/rosout 31 則）
@@ -145,7 +154,8 @@ python3 Agent_Runner.py     # CLI（同樣有 /analyze 與 /analysis_* 指令）
 | 主對話的路由（`evals/run_evals.py` 的 3 個 analysis 情境，e4b、harness 模式） | 3/3：根因問題用 analysis_run、單一數值用 mcap_feature_measure、Log 問題用 rosout_parser，回答引用工具的數字 |
 | 數據技能的實機測試（`evals/analysis_tools_live.py --record`） | 20/20（含真的錄 6 秒、切片、`ros2 bag info` 讀切片資料夾、讀切片＝讀原本的數據、混了不存在的 Key、錯誤處理） |
 | 數據解析的回歸評分（`evals/analysis_regression.py`，2026-10-15） | 6 份數據（穩定、開機、/cmd_vel_raw 事件、重啟 monitor、凍結 aggregator 的真故障、180 秒長錄製）× 3 次：e4b 時間線全對、真故障的根因 3/3；開機範例仍會拿 NO_CMD_VEL_RAW 當原因（程式附更正）。Synthesizer 換 deepseek-r1:8b 沒有比較好、慢 2～3 倍（見 `test_data/README.md`） |
-| 離線自我測試 | `analysis_selftest.py` 15/15、`main_selftest.py` 12/12、`v5_selftest.py` 8/8 |
+| 源碼脈絡（2026-10-15 晚上，同一台、同一批數據，26b，每份 5 次；源碼 `~/fih_humanoid_amr/amr_base/src`） | 有事件的數據拿 /cmd_vel 證明或排除 /cmd_vel_raw：沒有提示 15/20、名稱提示 2/20、**只給源碼 1/20**（Orchestrator 的子任務 11/21 → 2/25：錯誤的源頭就修好）；aggregator 凍結的上游、lifecycle 的整條鏈都寫得出來。「一次指令的開始與結束是正常的操作」只給源碼 0/10——判斷類的問題源碼解決不了，仍要程式的判斷提示：源碼＋判斷提示 135/140（人工複核；名稱提示 139/140）。一次約 27 秒（多 3 秒）。細節：〈設計筆記 2.19〉、`evals/results/analysis_5090_summary.md` |
+| 離線自我測試 | `analysis_selftest.py` 17/17、`main_selftest.py` 12/12、`v5_selftest.py` 8/8 |
 | toolkit 相容 | toolkit 的 `mcap_analyzer.py` 讀得懂 mcap_slicer 產生的切片（包括巢狀的 Key）；切片的 `metadata.yaml` 是 rosbag2 的格式，`ros2 bag info／play <切片資料夾>` 也讀得到 |
 
 **已知的限制**：e4b 的 Synthesizer 會把「輸出 Topic 是 0」當成「輸入缺失」的證據（Log 的 NO_CMD_VEL_RAW 指的是 /cmd_vel_raw，它不在這份數據裡）——程式檢查會把這種情況列進「尚未確認」並把信心壓到 medium，但推理文字本身仍可能這樣寫；

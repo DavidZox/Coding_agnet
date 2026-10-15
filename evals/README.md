@@ -81,11 +81,12 @@ python3 evals/perf_report.py                # 平常使用 CLI／Web 累積的 l
 ## 數據解析的評測（2026-10-14）
 
 ```bash
-python3 evals/analysis_selftest.py          # 離線：假模型照劇本回答、數據技能用錄下的真實輸出（analysis_fixtures/）——15 個情境，幾秒
+python3 evals/analysis_selftest.py          # 離線：假模型照劇本回答、數據技能用錄下的真實輸出（analysis_fixtures/）——17 個情境，幾秒
 python3 evals/analysis_tools_live.py --container ros2_web_container \
     --data /workspace/app/diagnostics_package/toolkit/experiment_logs/exp_20261014_084506 [--record]   # 實機：五支數據技能（不需要 Ollama）
 python3 evals/run_evals.py --modes harness --only analysis_route_diagnose,analysis_route_single_key,analysis_route_log   # 真模型：主對話的路由
-python3 evals/analysis_regression.py --run --runs 3 [--model gemma4:26b] [--synthesizer deepseek-r1:8b] [--think-roles synthesizer]   # 真模型：6 份數據的回歸評分
+python3 evals/analysis_regression.py --run --runs 3 [--model gemma4:26b] [--synthesizer deepseek-r1:8b] [--think-roles synthesizer] \
+    [--source ~/ros2_ws/src|-] [--hints on|off]   # 真模型：6 份數據的回歸評分（--source 源碼脈絡、--hints 程式的推理提示）
 python3 evals/analysis_regression.py --score-file test_data/repeat_runs.json   # 只評分已經跑過的 job
 ```
 
@@ -93,7 +94,7 @@ python3 evals/analysis_regression.py --score-file test_data/repeat_runs.json   #
   時間窗（前後秒數、合併、限制在數據範圍內）、worker 的規則（reply 裡的動作、`--topic` 固定、只准量測技能、第三次相同的量測擋下、系統代選 Key）、
   局部報告的 Frontmatter 數字來自程式、Synthesizer 壞掉的退路、dispatch 與 Web 的回合；
   錄製的資料夾名稱（`--out-root` 放錯成名稱時改當 `--name`）、量測的特徵（中途開始／停止發布、狀態沿用時間窗之前的最後一則、
-  只有幾種值的數值列每次切換、`3.37s-31.79s` 的時間窗寫法）、時間線 L# 的時間校正、覆蓋缺口的背景條件判斷、一段完整的發布不強制算異常（交給 Synthesizer 的程式判斷：逾時、正常的操作序列）、Log 提到但數據裡沒有的輸入（Orchestrator 與 Synthesizer 都拿到，名稱相近的 Topic 點名不能代替、它的報告旁附提醒）、Key 目錄的類別寫中文與工具略過不存在的 Key。`analysis_fixtures/` 是從 `exp_20261014_084506`
+  只有幾種值的數值列每次切換、`3.37s-31.79s` 的時間窗寫法）、時間線 L# 的時間校正、覆蓋缺口的背景條件判斷、一段完整的發布不強制算異常（交給 Synthesizer 的程式判斷：逾時、正常的操作序列）、Log 提到但數據裡沒有的輸入（Orchestrator 與 Synthesizer 都拿到，名稱相近的 Topic 點名不能代替、它的報告旁附提醒）、Key 目錄的類別寫中文與工具略過不存在的 Key；源碼索引（一個小工作區：Python 與 C++ 的發布／訂閱／計時器／參數、沒編譯的檔案不算、Log 的路徑對回源碼、在執行的節點、依賴的輸入與代碼的條件）與源碼脈絡交給三個角色、關閉程式提示時沒有【程式檢查】。`analysis_fixtures/` 是從 `exp_20261014_084506`
   錄下的 `mcap_analyzer --json`、`rosout_parser --json`、`mcap_feature_measure` 輸出；換了 Key 的分類或輸出格式時重錄一次（指令見 `analysis_tools_live.py` 的說明）。
 - **`analysis_tools_live.py`** 在真的容器裡跑：全域索引、Key 檢視、特徵量測（含寬鬆的時間寫法、不認識的參數、混了不存在的 Key 或「類別.Key」）、原始值、錯誤處理、Log 去重、
   切片（寫到容器的 /tmp、測完刪掉；切片資料夾 `ros2 bag info` 讀得到）、`--record` 真的錄 6 秒。
@@ -101,7 +102,7 @@ python3 evals/analysis_regression.py --score-file test_data/repeat_runs.json   #
   6 份數據（穩定、開機範例、/cmd_vel_raw 事件、重啟 monitor、凍結 aggregator 的真故障、180 秒長錄製）各跑 N 次，
   依 `analysis_regression_cases.json` 自動評分：(a) 時間線有沒有該有的事件（時間±容許＋關鍵字）、(b) 根因、(c) 沒有錯誤說法
   （禁用的說法、拿背景條件當原因；程式附的更正不算模型寫的）、(d) 定性、上游（故障追不追得到共同的上游）、切片（長錄製）、沒有事件（穩定）。
-  模型可以分角色指定（`--model`／`--orchestrator`／`--worker`／`--synthesizer`、`--think-roles`），只改這次執行、不寫回設定，
+  模型可以分角色指定（`--model`／`--orchestrator`／`--worker`／`--synthesizer`、`--think-roles`），源碼目錄（`--source`）與程式提示（`--hints`）也一樣，只改這次執行、不寫回設定，
   換到 DGX Spark／5090 跑 26b 時用同一套比較。結果在 `evals/results/analysis_<時間>/scorecard.md`。
   評分是關鍵字與時間的比對：抓得到缺事件、拿背景條件當原因、「間歇性」這類錯；措辭換了的對錯仍要人看報告（scorecard 列出每一項沒過的原因）。
   換機器時把 `test_data/recordings/` 複製到那台的數據根目錄（或 `--data-root`）。
