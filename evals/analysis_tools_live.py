@@ -9,6 +9,7 @@
 import argparse
 import json
 import os
+import shlex
 import subprocess
 import sys
 
@@ -80,6 +81,12 @@ def main():
             out = run("mcap_analyzer_cmd.py", slice_dir, env=env)
             check("切片本身也是數據（檔案級 Metadata ai_slice_diagnostic_summary）", out.startswith("[PASS]")
                   and "ai_slice_diagnostic_summary" in out, out)
+            # metadata.yaml 是 rosbag2 的格式：ros2 bag info／play 直接給切片資料夾就讀得到（舊版缺 serialization_format 等欄位）
+            r = subprocess.run(["docker", "exec", a.container, "bash", "-c",
+                                f'for f in /opt/ros/*/setup.bash; do source "$f"; done; ros2 bag info {shlex.quote(slice_dir)}'],
+                               capture_output=True, text=True, timeout=120)
+            check("切片資料夾 rosbag2 讀得到（ros2 bag info <切片資料夾>）", r.returncode == 0 and "Messages:" in r.stdout,
+                  r.stdout + r.stderr)
     out = run("mcap_slicer_cmd.py", a.data, "--at", "+999999", "--out", "/tmp/agent_live_slices", env=env)
     check("時間點不在數據範圍內：不切、回錯誤", out.startswith("[ERROR]") and "不在數據範圍內" in out, out)
     # analysis_run 的動態時間切片：明確的時間窗、只切指定的 Topic、帶時間窗之前的最後一則；讀切片量到的要跟讀原本的數據一樣

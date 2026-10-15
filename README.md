@@ -25,8 +25,8 @@ harness 本身（技能系統的索引＋按需載入的規格＋既有腳本、
    每個 Topic 再帶上時間窗之前的最後一則（狀態接得上）；整段數據不切
 ④ Workers（每個 Topic 一個乾淨的 session，可以平行）——只讀自己時間窗的切片，看不到 Log 字串
    自己決定量哪些 Key（mcap_feature_measure：數值統計、狀態跳轉、訊息中斷）→ Frontmatter Markdown 的局部報告
-   程式：frontmatter 的數字用 --json 重量一次填入（模型只寫判斷與說明）；訊息流中斷一定算異常、列進證據
-⑤ Synthesizer（一次模型呼叫）——相關的 Log＋全部局部報告＋程式整理（沒錄到的輸入、背景條件、同時中斷的 Topic）
+   程式：frontmatter 的數字用 --json 重量一次填入（模型只寫判斷與說明）；訊息流中斷一定算異常、列進證據（一段完整的發布不算）
+⑤ Synthesizer（一次模型呼叫）——相關的 Log＋全部局部報告＋程式整理（沒錄到的輸入、背景條件、同時中斷的 Topic、一段完整的發布）
    → 結論、根因與信心、時間線、證據、尚未確認、建議
    程式：L# 的時間照 Log 校正、補上訊息流事件、時間線排序、拿背景條件當原因時附更正、沒錄到的輸入信心最多 medium
 ⑥ 報告——report.md（Frontmatter Markdown）＋存成主對話的 #編號 → 主對話的 AI 依報告回答；Web 面板看每一步
@@ -81,6 +81,7 @@ primary_reaction 從 INIT 轉向 NONE，發生在 +15.53s……
 - **「數據範圍」的程式檢查**：Log 說某個輸入沒有／逾時（`NO_CMD_VEL_RAW`、`IMU_TIMEOUT`…），數據裡卻沒有對得上的 Topic 時，程式保證報告把它列在「尚未確認」、信心最多 medium——小模型常拿名稱相近的輸出 Topic 當證據。
 - **動態時間切片**：worker 只讀自己時間窗的切片（實測 180 秒的錄製只讀約 14% 的訊息），讀切片量到的跟讀原本的數據逐字相同；worker 自己抄的時間窗有四捨五入時，換成指派的那個。
 - **訊息流中斷本身就是異常**：Topic 停發、中途開始或停止由程式量、程式判定，列進證據、交給 Synthesizer 時列出同一時間一起中斷的 Topic（共同的上游），時間線缺了程式補上——實測 e4b 會以「狀態沒變」忽略 10 秒的中斷。
+  **一段完整的發布不算中斷**：中途開始又中途停止、中間沒有中斷（例如一次 /cmd_vel_raw 指令）不強制算異常；程式在訊息流後面附判斷——結束後出現、原因代碼對得上這個 Topic 的 NO_X／X_TIMEOUT 是逾時判斷的結果，整份 Log 沒有 WARN 以上、也沒有別的中斷時寫成正常的操作序列（實測 26b 5/5、e4b 4/5 把指令的結束寫成「指令中斷」「間歇性」；改了之後 26b 10/10 寫成正常的操作，e4b 只到 3/10）。
 - **背景條件的更正**：每次跳轉前後都在的原因（例如恢復之後仍在的 `NO_CMD_VEL_RAW`）不可能是這次變化的原因；報告拿它當原因時，程式附更正並點名真正新增／移除的項目。
 - **回歸評分**：`evals/analysis_regression.py` 用 6 份錄好的數據與 ground truth 自動評分（只讀上面的產物，不改），換模型、改 prompt 前後用同一套比較（見 `test_data/README.md`）。
 
@@ -95,7 +96,7 @@ primary_reaction 從 INIT 轉向 NONE，發生在 +15.53s……
 | `rosout_parser` | `rosout_parser.py`、`mcap_slicer.py` 步驟 1～3 | Log 智慧過濾：去重成唯一訊號 L#（只差在數字也算同一句），篩層級／Node／關鍵字；預設用 bag 裡的 /rosout（時間跟其他 Topic 同一個時鐘），沒有就用 `rosout.log`；略過 rosbag2 自己的 Log |
 | `mcap_analyzer` | `mcap_analyzer.py`（Metadata 摘要、欄位維度、原始值預覽） | 全域索引（時間範圍、每個 Topic 的型別、筆數、頻率、起訖、角色），`--topic` 看每個 Key 的型別／維度／類別，`--key --preview` 看原始值；索引快取在 bag 資料夾的 `topic_metadata.json` |
 | `mcap_feature_measure` | `mcap_feature_measure.py`（`compute_features`） | 按需量測 Key 的特徵（同 toolkit：尖峰 >2.5σ、整數相異值 ≤10 當狀態跳轉），加上最大跳變、訊息頻率與中斷、依名稱展開的序列 |
-| `mcap_slicer` | `mcap_slicer.py` 步驟 4～5 | 依 L# 或時間點前後各取幾秒（預設 5 秒），或明確的時間窗（`--window`），可以只切指定的 Topic（`--topics`）、帶上時間窗之前的狀態（`--with-state`）；輸出 toolkit 格式的 `sliced_bag_*`（`metadata.yaml` 的 available_keys、`ai_slice_diagnostic_summary`）——toolkit 的 `mcap_analyzer.py` 讀得懂。analysis_run 用它做動態時間切片 |
+| `mcap_slicer` | `mcap_slicer.py` 步驟 4～5 | 依 L# 或時間點前後各取幾秒（預設 5 秒），或明確的時間窗（`--window`），可以只切指定的 Topic（`--topics`）、帶上時間窗之前的狀態（`--with-state`）；輸出 toolkit 格式的 `sliced_bag_*`（`metadata.yaml` 的 available_keys、`ai_slice_diagnostic_summary`）——toolkit 的 `mcap_analyzer.py` 讀得懂；`metadata.yaml` 是 rosbag2 的格式，`ros2 bag info／play <切片資料夾>` 也讀得到。analysis_run 用它做動態時間切片 |
 | `analysis_run` | （新增） | 上面的多 agent 數據診斷 |
 
 改得跟 toolkit 不一樣的地方：全部非互動（agent 要用參數）、字串欄位分成「列舉」（相異值少 → 狀態）與「自由文字」（只給 Orchestrator）、
@@ -140,11 +141,12 @@ python3 Agent_Runner.py     # CLI（同樣有 /analyze 與 /analysis_* 指令）
 | `analysis_run`（e4b，問「安全閘為什麼一開始進入 PROTECTIVE_STOP、什麼時候恢復」） | 63～74 秒、模型呼叫 16～18 次、4 個 worker（safety_gate_status、safety_command、cmd_vel、diagnostics_toplevel_state）；時間線正確（+0.75s 進入保護停止、+15.53s primary_reaction INIT→NONE、+15.54s mode→NORMAL）；「尚未確認」列出 /cmd_vel_raw 不在數據裡 |
 | Web 的完整流程（HTTP 照瀏覽器的方式、auto 模式、e4b） | 主模型自己選 analysis_run（先載規格再執行）、進度即時推到右欄、面板讀得到 job；追問直接用報告回答 |
 | gemma4:26b | 這台 GPU 8 GB 放不下（18.7 GB，大部分在 CPU）：Orchestrator 一次約 2 分鐘，20 分鐘內做不完；worker 的交叉比對看得出比 e4b 好，要在 ≥24 GB 的機器上量 |
+| gemma4:26b 在 RTX 5090 32 GB（2026-10-15，全部角色 26b，這台重錄的 6 份數據＋驗證集，每份 5 次） | 一次 14～22 秒、約 15 次模型呼叫、約 20 GB VRAM；回歸評分 115/120（e4b 同一批數據 94/120），根因 25/25（e4b 16/25），報告裡的「+秒」都對得上真實事件；程式產物每次逐字相同。修正一段完整的發布、重複 L#、切片 metadata 之後 26b 134/140（修改前 129/140）。細節：`evals/results/analysis_5090_summary.md`、`test_data/README.md`（這台的數據） |
 | 主對話的路由（`evals/run_evals.py` 的 3 個 analysis 情境，e4b、harness 模式） | 3/3：根因問題用 analysis_run、單一數值用 mcap_feature_measure、Log 問題用 rosout_parser，回答引用工具的數字 |
-| 數據技能的實機測試（`evals/analysis_tools_live.py --record`） | 16/16（含真的錄 6 秒、切片、讀切片＝讀原本的數據、錯誤處理） |
+| 數據技能的實機測試（`evals/analysis_tools_live.py --record`） | 17/17（含真的錄 6 秒、切片、`ros2 bag info` 讀切片資料夾、讀切片＝讀原本的數據、錯誤處理） |
 | 數據解析的回歸評分（`evals/analysis_regression.py`，2026-10-15） | 6 份數據（穩定、開機、/cmd_vel_raw 事件、重啟 monitor、凍結 aggregator 的真故障、180 秒長錄製）× 3 次：e4b 時間線全對、真故障的根因 3/3；開機範例仍會拿 NO_CMD_VEL_RAW 當原因（程式附更正）。Synthesizer 換 deepseek-r1:8b 沒有比較好、慢 2～3 倍（見 `test_data/README.md`） |
-| 離線自我測試 | `analysis_selftest.py` 11/11、`main_selftest.py` 12/12、`v5_selftest.py` 8/8 |
-| toolkit 相容 | toolkit 的 `mcap_analyzer.py` 讀得懂 mcap_slicer 產生的切片（包括巢狀的 Key） |
+| 離線自我測試 | `analysis_selftest.py` 13/13、`main_selftest.py` 12/12、`v5_selftest.py` 8/8 |
+| toolkit 相容 | toolkit 的 `mcap_analyzer.py` 讀得懂 mcap_slicer 產生的切片（包括巢狀的 Key）；切片的 `metadata.yaml` 是 rosbag2 的格式，`ros2 bag info／play <切片資料夾>` 也讀得到 |
 
 **已知的限制**：e4b 的 Synthesizer 會把「輸出 Topic 是 0」當成「輸入缺失」的證據（Log 的 NO_CMD_VEL_RAW 指的是 /cmd_vel_raw，它不在這份數據裡）——程式檢查會把這種情況列進「尚未確認」並把信心壓到 medium，但推理文字本身仍可能這樣寫；
 worker 的平行度受 Ollama 的 slot 限制；Topic Metadata 的 Key 分類是抽樣（每個 Topic 120 筆）判斷的。

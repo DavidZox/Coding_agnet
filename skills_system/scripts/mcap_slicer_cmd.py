@@ -2,7 +2,7 @@
 """mcap_slicer：依 Log 訊號（rosout_parser 的 L#）或指定的時間點，前後各取幾秒，切出局部的 MCAP。
 
 輸出跟 diagnostics_package/toolkit 的 mcap_slicer.py 相同：實驗資料夾底下的 sliced_bag_<序號>_<秒>_<奈秒>/，內含 rosbag2.mcap、
-metadata.yaml（rosbag2_bagfile_information＋每個 Topic 的 available_keys 與 ai_features，toolkit 的 mcap_analyzer.py 讀得懂）、
+metadata.yaml（rosbag2 的格式＋每個 Topic 的 available_keys 與 ai_features：rosbag2 與 toolkit 的 mcap_analyzer.py 都讀得懂）、
 檔案級 Metadata「ai_slice_diagnostic_summary」（觸發的訊號、層級、Node、時間窗）；另外寫 topic_metadata.json（本系統的索引）。
 改成非互動：訊號編號跟 rosout_parser 同一套（依第一次出現排序、篩選前編號），一個訊號預設切第一次出現（--all-occurrences 每一次都切）。
 時間基準：bag 的 /rosout 用 MCAP log_time；rosout.log 用 Log 的 stamp（同一台機器的時鐘），時間點不在數據範圍內時回錯誤。"""
@@ -48,9 +48,22 @@ def _next_counter(parent):
     return max(nums, default=0) + 1
 
 
+def _qos_profiles(ch_meta):
+    """rosbag2 寫 MCAP 時，channel metadata 的 offered_qos_profiles 是 YAML 字串；metadata.yaml 要的是清單（解不開或沒有時是空清單，
+    同 toolkit 的 mcap_slicer.py）。"""
+    text = (ch_meta or {}).get("offered_qos_profiles", "")
+    try:
+        import yaml
+        profiles = yaml.safe_load(text) if text else []
+    except Exception:   # noqa: BLE001  沒有 PyYAML 或格式不對：照 rosbag2 的預設（空清單）
+        profiles = []
+    return profiles if isinstance(profiles, list) else []
+
+
 def _write_slice(data, idx, t_ns, start_ns, end_ns, trigger, out_dir, topics=None, with_state=False):
     """把 [start_ns, end_ns] 的訊息寫成 out_dir/rosbag2.mcap（同 toolkit：所有 schema 與 channel 都註冊、只複製時間窗內的訊息），
-    再寫 toolkit 格式的 metadata.yaml 與本系統的 topic_metadata.json。回傳 (訊息數, 每個 Topic 的筆數, 狀態快照筆數)。
+    再寫 metadata.yaml（rosbag2 的格式＋toolkit 的 available_keys、ai_features）與本系統的 topic_metadata.json。
+    回傳 (訊息數, 每個 Topic 的筆數, 狀態快照筆數)。
     topics：只切這些 Topic（analysis_run 只切指派的 Topic）。with_state：每個 Topic 另外帶上時間窗之前的最後一則（保留原本的
     時間戳），只在狀態改變時才發布的 Topic 在切片裡才接得上時間窗開始時的狀態（mcap_feature_measure 的沿用）。"""
     from mcap.reader import make_reader
@@ -61,6 +74,13 @@ def _write_slice(data, idx, t_ns, start_ns, end_ns, trigger, out_dir, topics=Non
     total = 0
     state_total = 0
     wanted = set(topics) if topics else None
+    chan_meta = {}       # Topic → (message_encoding, channel metadata)：metadata.yaml 的 serialization_format、QoS、型別雜湊
+    span = [None, None]  # 寫進切片的第一則、最後一則 log_time（rosbag2 的 starting_time／duration）
+
+    def note(ch, m):
+        chan_meta.setdefault(ch.topic, (ch.message_encoding, dict(ch.metadata or {})))
+        span[0] = m.log_time if span[0] is None else min(span[0], m.log_time)
+        span[1] = m.log_time if span[1] is None else max(span[1], m.log_time)
     with open(out_file, "wb") as f_out:
         writer = Writer(f_out)
         writer.start(profile="ros2", library="agent mcap_slicer")
@@ -86,6 +106,7 @@ def _write_slice(data, idx, t_ns, start_ns, end_ns, trigger, out_dir, topics=Non
             for schema, ch, m in sorted(snaps, key=lambda r: r[2].log_time):
                 writer.add_message(channel_id=channel_for(schema, ch), log_time=m.log_time, data=m.data,
                                    publish_time=m.publish_time, sequence=m.sequence)
+                note(ch, m)
                 counts[ch.topic] = counts.get(ch.topic, 0) + 1
                 state_total += 1
         for src in data["mcap_files"]:
@@ -126,6 +147,7 @@ def _write_slice(data, idx, t_ns, start_ns, end_ns, trigger, out_dir, topics=Non
                         cid = local[ch.id] = channel_map[key]
                     writer.add_message(channel_id=cid, log_time=m.log_time, data=m.data, publish_time=m.publish_time,
                                        sequence=m.sequence)
+                    note(ch, m)
                     counts[ch.topic] = counts.get(ch.topic, 0) + 1
                     total += 1
         duration = (end_ns - start_ns) / 1e9
@@ -138,7 +160,11 @@ def _write_slice(data, idx, t_ns, start_ns, end_ns, trigger, out_dir, topics=Non
             "source_start": f"{idx['start_ns'] / 1e9:.9f}", "topics_filter": ",".join(sorted(wanted)) if wanted else "",
             "state_snapshot_messages": str(state_total)})
         writer.finish()
-    # toolkit 格式的 metadata.yaml（toolkit 的 mcap_analyzer.py 讀 available_keys「名稱: 型別 [維度]」）
+    # metadata.yaml：rosbag2 的格式（version 9：每個 Topic 有 serialization_format、offered_qos_profiles、type_description_hash，
+    # message_count 跟 topic_metadata 同一層），`ros2 bag info／play <切片資料夾>` 讀得到；topic_metadata 另外帶 toolkit 的
+    # available_keys（「名稱: 型別 [維度]」）與 ai_features（rosbag2 不讀這兩個鍵；toolkit 的 mcap_analyzer.py 兩種位置的 message_count 都讀）。
+    # 同 toolkit 2026-10-15 的 mcap_slicer.py：starting_time／duration 是第一則到最後一則訊息，時間窗與觸發的訊號寫在 custom_data（值都是字串）。
+    # 舊版只寫 name、type 與 topic_metadata 裡的 message_count，rosbag2 回「invalid node; first invalid key: serialization_format」。
     slice_data, _ = rd.resolve_data(out_dir)
     sidx = rd.build_index(slice_data, refresh=True)
     topics_info = []
@@ -147,14 +173,30 @@ def _write_slice(data, idx, t_ns, start_ns, end_ns, trigger, out_dir, topics=Non
             continue
         keys = [f"{k['key']}: {k['type']} [{k['dim'] if k['category'] in ('vector', 'matrix') else k['category']}]"
                 for k in t.get("keys", [])]
+        encoding, ch_meta = chan_meta.get(t["topic"], ("cdr", {}))
         topics_info.append({"topic_metadata": {
-            "name": t["topic"], "type": t["type"], "message_count": counts[t["topic"]], "available_keys": keys,
+            "name": t["topic"], "type": t["type"], "serialization_format": encoding or "cdr",
+            "offered_qos_profiles": _qos_profiles(ch_meta), "type_description_hash": ch_meta.get("topic_type_hash", ""),
+            "available_keys": keys,
             "ai_features": {"avg_frequency_hz": round(counts[t["topic"]] / duration, 2) if duration > 0 else 0.0,
-                            "active_in_slice": True, "role": t["role"]}}})
+                            "active_in_slice": True, "role": t["role"]}},
+            "message_count": counts[t["topic"]]})
+    n_msgs = total + state_total
+    first_ns = span[0] if n_msgs else start_ns
+    dur_ns = (span[1] - span[0]) if n_msgs else 0
+    custom = {"window_start_ns": str(start_ns), "window_end_ns": str(end_ns), "window_duration_sec": str(duration),
+              "trigger_timestamp": f"{t_ns // 1_000_000_000}.{t_ns % 1_000_000_000:09d}", "trigger_signal": str(trigger.get("id", "")),
+              "trigger_level": str(trigger.get("level", "")), "trigger_node": str(trigger.get("node", "")),
+              "trigger_message": str(trigger.get("message", "")), "source": str(idx["label"]),
+              "state_snapshot_messages": str(state_total)}
     meta = {"rosbag2_bagfile_information": {
-        "version": 9, "storage_identifier": "mcap", "duration": {"nanoseconds": end_ns - start_ns},
-        "starting_time": {"nanoseconds_since_epoch": start_ns}, "message_count": total,
-        "topics_with_message_count": topics_info, "files": [{"path": "rosbag2.mcap", "message_count": total}]}}
+        "version": 9, "storage_identifier": "mcap", "duration": {"nanoseconds": dur_ns},
+        "starting_time": {"nanoseconds_since_epoch": first_ns}, "message_count": n_msgs,
+        "topics_with_message_count": topics_info, "compression_format": "", "compression_mode": "",
+        "relative_file_paths": ["rosbag2.mcap"],
+        "files": [{"path": "rosbag2.mcap", "starting_time": {"nanoseconds_since_epoch": first_ns},
+                   "duration": {"nanoseconds": dur_ns}, "message_count": n_msgs}],
+        "custom_data": custom, "ros_distro": os.environ.get("ROS_DISTRO", "")}}
     try:
         import yaml
         with open(os.path.join(out_dir, "metadata.yaml"), "w", encoding="utf-8") as f:

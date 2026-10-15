@@ -4,7 +4,7 @@
     python3 evals/analysis_selftest.py
 
 測的是 harness 的程式把關（模型能力用真模型量：evals/run_evals.py 的 analysis_* 情境，或直接 /analyze）：
-- Orchestrator 的計畫檢查：不存在的 L#／Topic、Log Topic、重複的 Topic → 交回修一次；修不好由程式依關聯度補指派；
+- Orchestrator 的計畫檢查：不存在的 L#／Topic、Log Topic、重複的 Topic → 交回修一次（重複的 L# 只合併）；修不好由程式依關聯度補指派；
 - 時間窗：訊號的時間戳前後各取幾秒、重疊的合併、限制在數據範圍內；沒有相關訊號＝整段數據；
 - Worker：只准量測技能、--topic 固定成指派的 Topic、reply 裡的動作 JSON 也照做、同一個量測第三次擋下、一個 Key 都沒量時系統代選；
   局部報告的 Frontmatter 數字來自程式量測（模型寫的 analyzed_keys 只留真的量過的）；
@@ -184,6 +184,45 @@ def main():
             assert "Log" not in agent._digest_text({"index": json.loads(fixture("index_output.txt").split("\n[ANALYSIS_DATA]")[0]),
                                                     "signals": []})[:2], "沒有 Log 時說明"
             assert any(c["script"] == "rosout_parser_cmd.py" and "--all-nodes" in c["args"] for c in calls)
+
+        def t_plan_duplicate_signal():
+            # 同一個 L# 列兩次（大小寫不同也算）：合併就好，不交回修正（實測 26b 重複列 L17，舊版報成「L17 不存在」退回一次）
+            dup = dict(GOOD_PLAN, related_signals=[{"id": "L28", "why": "a"}, {"id": "l28", "why": "b"}, {"id": "L30", "why": "c"}])
+            fake, calls = setup(plans=[dup], synth=[SYNTH])
+            agent.analysis_run(f'--data {DATA} "安全閘為什麼停下來"')
+            assert len(fake.seen["plan"]) == 1, "重複的 L# 不交回修正"
+            job = json.load(open(os.path.join(agent.analysis_jobs_dir(), agent.analysis_last["id"], "job.json"), encoding="utf-8"))
+            assert [r["id"] for r in job["plan"]["related"]] == ["L28", "L30"] and not job["plan"]["issues"], job["plan"]
+
+        def t_segment_not_fault():
+            # 一段完整的發布（中途開始又中途停止、中間沒有中斷）：worker 不因此強制算異常、Synthesizer 拿到「完整的發布」；
+            # 真的中斷照樣強制算異常（實測 e4b 看到 10 秒的中斷仍以「狀態沒變」判沒有異常）
+            base_js = json.loads(fixture("measure_json.txt").split("\n[ANALYSIS_DATA]")[0])
+            rate = base_js["windows"][0]["rate"]
+            seg = json.loads(json.dumps(base_js))
+            seg["windows"][0]["rate"].update(single_session=True, started_late=True, stopped_early=True, gaps=[])
+            gap = json.loads(json.dumps(base_js))
+            gap["windows"][0]["rate"]["gaps"] = [{"start_sec": rate["first_sec"] + 2, "duration_sec": 5.0}]
+            measure = {"thought": "量 mode", "reply": "", "action": {"command": "scripts/mcap_feature_measure_cmd.py", "args": "--key mode"}}
+            calm = {"analyzed_keys": ["mode"], "anomaly_detected": False, "summary": "mode 照預期變化", "evidence": [], "confidence": "medium"}
+            for js, forced in ((seg, False), (gap, True)):
+                fake, calls = setup(plans=[GOOD_PLAN], worker=[measure], reports=[calm], synth=[SYNTH])
+                plain = agent._exec_script
+
+                def exec_with(script_name, script_path, clean_args, extra_env=None, _js=js, _plain=plain):
+                    if script_name == "mcap_feature_measure_cmd.py" and "--json" in clean_args:
+                        return json.dumps(_js, ensure_ascii=False) + f"\n[ANALYSIS_DATA] {DATA}"
+                    return _plain(script_name, script_path, clean_args, extra_env)
+                agent._exec_script = exec_with
+                agent.analysis_run(f'--data {DATA} "安全閘為什麼停下來"')
+                job = json.load(open(os.path.join(agent.analysis_jobs_dir(), agent.analysis_last["id"], "job.json"), encoding="utf-8"))
+                w = job["workers"][0]
+                assert w["anomaly_detected"] is forced and ("訊息流中斷本身就是異常" in w["summary"]) is forced, (forced, w)
+                assert w["flow_events"], "兩種都列進訊息流（證據、時間線）"
+                synth_prompt = fake.seen["synth"][0][1]["content"]
+                assert ("是一段完整的發布" in synth_prompt) is (not forced), synth_prompt[-1500:]
+                # 範例數據有 WARN（L28 PROTECTIVE_STOP）：不下「正常的操作序列」的判斷
+                assert "正常的操作序列（不是故障）" not in synth_prompt
 
         def t_auto_assign_and_whole_window():
             fake, calls = setup(plans=[{}, "不是 JSON"], synth=[SYNTH])
@@ -458,6 +497,27 @@ def main():
             tl3 = [{"time": "+150.29s", "source": "Topic/Message Flow", "event": "/system/safety_command 和 /diagnostics_toplevel_state 訊息中斷"}]
             assert _ensure_flow_events(tl3, ws2) == 0, "模型寫在同一列（事件裡有 Topic）就不重複補"
             assert _flow_block([{"topic": "/a", "flow_events": fe}]).count("一起中斷") == 0, "只有一個 Topic 不算同時中斷"
+            from agent_core.analysis_job import _segment_notes
+            km_seg = {"W1": {"_rate": {"published_only": [114.11, 121.21], "started_at": 114.11, "stopped_after": 121.21}}}
+            assert _flow_events(km_seg, 100 * s1, segments=False) == [], "一段完整的發布不算中斷"
+            info = [{"id": "L15", "level": "INFO", "node": "safety_motion_controller", "times_sec": [114.01],
+                     "message": "event=GATE_STATE_CHANGED mode=NORMAL reasons=[]"},
+                    {"id": "L17", "level": "INFO", "node": "safety_motion_controller", "times_sec": [121.76],
+                     "message": "event=GATE_STATE_CHANGED mode=NORMAL reasons=[NO_CMD_VEL_RAW]"},
+                    {"id": "L3", "level": "WARN", "node": "rosbag2_recorder", "times_sec": [100.5], "message": "錄製工具自己的 WARN 不算"}]
+            ws_seg = [{"topic": "/cmd_vel_raw", "flow_events": _flow_events(km_seg, 100 * s1), "key_metrics": km_seg}]
+            note = "\n".join(_segment_notes(ws_seg, 100 * s1, info))
+            assert "+14.11s～+21.21s 是一段完整的發布" in note and "L17（+21.76s，NO_CMD_VEL_RAW）是逾時判斷的結果" in note, note
+            assert "正常的操作序列（不是故障）" in note, "Log 沒有 WARN 以上、別的 Topic 沒有中斷：交給 Synthesizer 正常操作的判斷"
+            warn = info + [{"id": "L20", "level": "WARN", "node": "x", "times_sec": [125.0], "message": "something"}]
+            assert "正常的操作序列" not in "\n".join(_segment_notes(ws_seg, 100 * s1, warn)), "有 WARN：不下正常操作的判斷"
+            with_gap = ws_seg + [{"topic": "/diagnostics_agg", "key_metrics": {"W1": {"_rate": {"gaps": [{"start_sec": 130.0,
+                                                                                                    "duration_sec": 5.0}]}}}}]
+            assert "正常的操作序列" not in "\n".join(_segment_notes(with_gap, 100 * s1, info)), "別的 Topic 中斷：不下正常操作的判斷"
+            burst = [{"topic": "/system_health_monitor/transition_event",
+                      "key_metrics": {"W1": {"_rate": {"published_only": [121.0, 121.01]}}}}]
+            assert "逾時判斷" not in "\n".join(_segment_notes(burst, 100 * s1, info)), "原因代碼對不上這個 Topic：不當成它的逾時"
+            assert "一段完整的發布" in _flow_block(ws_seg, 100 * s1, info) and "一段完整的發布" not in _flow_block(ws2), "沒給數據開頭：照舊"
             from agent_core.analysis_job import _relies_on
             assert _relies_on("直接原因是 MON_INITIALIZING 和缺乏原始速度指令（NO_CMD_VEL_RAW）。", "NO_CMD_VEL_RAW")
             assert _relies_on("原因包括 'NO_SAFETY_COMMAND_YET' 和 'NO_CMD_VEL_RAW'", "NO_CMD_VEL_RAW")
@@ -479,6 +539,8 @@ def main():
             assert _background_codes(ws, ["NO_CMD_VEL_RAW"]) == {}
 
         for name, fn in [("Orchestrator：不存在的 L#／Topic、Log Topic、重複的 Topic 交回修一次（程式列出具體的問題）", t_plan_repair),
+                         ("Orchestrator：同一個 L# 列兩次只合併、不交回修正", t_plan_duplicate_signal),
+                         ("訊息流：一段完整的發布不強制算異常、交給 Synthesizer「完整的發布」；中斷照樣強制", t_segment_not_fault),
                          ("Orchestrator 給不出計畫：程式依關聯度補指派（不重複、不派 Log）；沒有相關訊號＝整段數據；預設問題", t_auto_assign_and_whole_window),
                          ("時間窗：訊號前後各取幾秒、重疊的合併、限制在數據範圍內；Log 的時間不在範圍內退回整段", t_windows),
                          ("Worker：reply 裡的動作照做、--topic 固定、只准量測技能、第三次相同量測擋下；Frontmatter 數字來自程式；動態時間切片", t_worker_rules),

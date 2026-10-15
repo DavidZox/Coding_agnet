@@ -157,11 +157,11 @@ def worker_main(argv):
             r += "；中斷 " + "、".join(f"{rd.fmt_t(int(g['start_sec'] * 1e9))}[{rd.fmt_rel(int(g['start_sec'] * 1e9), rel_base)}] 起 "
                                      f"{g['duration_sec']} 秒" for g in rate["gaps"])
             all_flags.append(f"{wname} 訊息中斷 {len(rate['gaps'])} 次（最長 {rate['max_gap_sec']} 秒）")
-        if rate.get("single_session"):   # 一段連續的發布寫成一句（分開寫，模型會讀成「間歇性」）
+        if rate.get("single_session"):   # 一段連續的發布寫成一句（分開寫，模型會讀成「間歇性」）；寫明是完整的發布（實測會被說成「指令中斷」）
             span = (times[-1] - times[0]) / 1e9
-            r += (f"；只在 {first}～{last} 連續發布 {span:.2f} 秒（中間沒有中斷；之前 {rate['starts_after_window_sec']} 秒、"
+            r += (f"；只在 {first}～{last} 連續發布 {span:.2f} 秒（一段完整的發布，中間沒有中斷；之前 {rate['starts_after_window_sec']} 秒、"
                   f"之後 {rate['ends_before_window_sec']} 秒都沒有訊息）")
-            all_flags.append(f"{wname} 只在 {first}～{last} 連續發布 {span:.1f} 秒（中間沒有中斷，之前與之後都沒有訊息）")
+            all_flags.append(f"{wname} 只在 {first}～{last} 連續發布 {span:.1f} 秒（一段完整的發布，中間沒有中斷，之前與之後都沒有訊息）")
         elif rate.get("started_late"):
             r += f"；{first} 才開始發布（時間窗開始後 {rate['starts_after_window_sec']} 秒）"
             all_flags.append(f"{wname} {first} 才開始發布（時間窗開始後 {rate['starts_after_window_sec']} 秒沒有訊息）")

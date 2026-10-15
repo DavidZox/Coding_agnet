@@ -8,7 +8,7 @@ dependencies: ["docker", "mcap", "rclpy", "pyyaml"]
 
 # 用途
 把某個事件前後的數據切成獨立的小 bag，方便分享、用 Foxglove 看，或只分析那一段。
-輸出（同 diagnostics_package/toolkit）：實驗資料夾底下 `sliced_bag_<序號>_<秒>_<奈秒>/`：`rosbag2.mcap`、`metadata.yaml`（每個 Topic 的 available_keys、頻率）、檔案級 Metadata `ai_slice_diagnostic_summary`（觸發的訊號、層級、Node、時間窗）、`topic_metadata.json`。
+輸出（同 diagnostics_package/toolkit）：實驗資料夾底下 `sliced_bag_<序號>_<秒>_<奈秒>/`：`rosbag2.mcap`、`metadata.yaml`（rosbag2 的格式，`ros2 bag info／play <切片資料夾>` 讀得到；另外有每個 Topic 的 available_keys、頻率）、檔案級 Metadata `ai_slice_diagnostic_summary`（觸發的訊號、層級、Node、時間窗）、`topic_metadata.json`。
 訊號的時間：bag 的 /rosout 用 MCAP log_time；rosout.log 用 Log 的 stamp。時間點不在數據範圍內時不切、回錯誤。
 
 # 語法

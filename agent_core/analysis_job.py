@@ -596,7 +596,9 @@ class AnalysisMixin:
         related, seen_ids = [], set()
         for r in data.get("related_signals") or []:
             sid = str((r or {}).get("id", "")).strip().upper()
-            if sid in sig_by_id and sid not in seen_ids:
+            if sid in seen_ids:   # 同一個 L# 列兩次：合併就好，不算問題（實測 26b 重複列 L17，舊版報成「不存在」退回修正一次）
+                continue
+            if sid in sig_by_id:
                 seen_ids.add(sid)
                 related.append({"id": sig_by_id[sid]["id"], "why": _short((r or {}).get("why", ""), 160)})
             elif sid:
@@ -804,7 +806,7 @@ class AnalysisMixin:
                      for w in job["windows"]]
         all_topics = "、".join(f"{t['topic']}（{t['message_count']} 則）" for t in job["index"]["topics"])
         gaps = self._coverage_gaps(job)
-        flow_text = _flow_block(job["workers"])
+        flow_text = _flow_block(job["workers"], base, job.get("signals"))
         bg = _background_codes(job["workers"], [c for c, _, _ in gaps])
         job["coverage_gaps"] = [{"reason": c, "name": x, "signals": ids, "background": (bg.get(c) or {}).get("where"),
                                  "changed": (bg.get(c) or {}).get("changed")} for c, x, ids in gaps]
@@ -1133,10 +1135,11 @@ class AnalysisWorker:
         summary = _short(rep.get("summary"), 900) or "（worker 沒有寫摘要）"
         evidence = [e for e in rep.get("evidence") or [] if isinstance(e, dict)][:6]
         flow = _flow_events(metrics, self.job["index"]["start_ns"])
+        broken = _flow_events(metrics, self.job["index"]["start_ns"], segments=False)
         if flow:   # 訊息流中斷（停發、中途開始／停止）本身就是異常：實測 e4b 看到 10 秒的中斷仍以「狀態沒變」判沒有異常
-            if not anomaly:
+            if broken and not anomaly:   # 一段完整的發布（中途開始又中途停止、中間沒有中斷）不強制：實測 /cmd_vel_raw 一次指令被當成故障
                 anomaly = True
-                summary += "（程式判斷：" + "；".join(f"{t} {what}" for t, what in flow) + "——訊息流中斷本身就是異常）"
+                summary += "（程式判斷：" + "；".join(f"{t} {what}" for t, what in broken) + "——訊息流中斷本身就是異常）"
             have = " ".join(str(e.get("time")) for e in evidence)
             evidence += [{"time": t, "key": "（訊息流）", "observation": f"{what}（程式量測）"} for t, what in flow if t not in have]
         result = {"n": self.n, "topic": self.topic, "type": self.entry["type"], "subtask": self.asg["subtask"], "status": "done",
@@ -1234,8 +1237,9 @@ def _relies_on(text, code):
     return False
 
 
-def _flow_events(metrics, base_ns):
-    """key_metrics 的 _rate → 訊息流的事件 [(+秒, 說明)]：中斷（開始時間、多久）、只在一段時間連續發布、中途才開始、中途停止。"""
+def _flow_events(metrics, base_ns, segments=True):
+    """key_metrics 的 _rate → 訊息流的事件 [(+秒, 說明)]：中斷（開始時間、多久）、只在一段時間連續發布、中途才開始、中途停止。
+    segments=False：不列「只在一段時間連續發布」——那是一段完整的發布（例如一次指令從開始到結束），不是中斷，worker 不因此強制算異常。"""
     out = []
     base = base_ns / 1e9
     for wm in (metrics or {}).values():
@@ -1244,7 +1248,9 @@ def _flow_events(metrics, base_ns):
             out.append((f"+{g['start_sec'] - base:.2f}s", f"訊息中斷 {g['duration_sec']:.2f} 秒"))
         if r.get("published_only"):
             a, b = r["published_only"]
-            out.append((f"+{a - base:.2f}s", f"只在 +{a - base:.2f}s～+{b - base:.2f}s 連續發布（之前、之後都沒有訊息）"))
+            if segments:
+                out.append((f"+{a - base:.2f}s", f"只在 +{a - base:.2f}s～+{b - base:.2f}s 連續發布（一段完整的發布，中間沒有中斷；"
+                                                 "之前、之後都沒有訊息）"))
         else:
             if r.get("started_at"):
                 out.append((f"+{r['started_at'] - base:.2f}s", "中途才開始發布"))
@@ -1253,8 +1259,46 @@ def _flow_events(metrics, base_ns):
     return out
 
 
-def _flow_block(workers):
-    """交給 Synthesizer 的「程式整理：訊息流」：每個 Topic 的中斷與開始／停止，加上同一時間一起中斷的 Topic（共同的上游）。"""
+def _segment_notes(workers, base_ns, signals):
+    """一段完整的發布（中途開始又中途停止、中間沒有中斷）的程式判斷，接在「訊息流」後面給 Synthesizer：
+    - 它是一次指令或一個動作從開始到結束，不是中斷；
+    - Log 裡原因代碼對得上這個 Topic 的（NO_X、X_TIMEOUT…，X 在 Topic 名稱裡，同 _coverage_gaps），在它結束後 3 秒內出現＝逾時判斷的結果；
+    - 整份數據的 Log 沒有 WARN 以上、別的 Topic 也沒有中斷時，狀態變化都能用它解釋就寫成正常的操作序列（Synthesizer 規則 6）。
+    實測：/cmd_vel_raw 一次 0.1 m/s、8 秒的指令，26b 5/5 寫成「指令中斷」、沒說是正常的操作，e4b 4/5 寫成「間歇性」「波動」；
+    規則只寫在 prompt 裡擋不住。"""
+    base = base_ns / 1e9
+    sigs = [s for s in signals or [] if not is_recorder_node(s.get("node", ""))]
+    quiet = not any(_LEVEL_RANK.get(s.get("level"), 1) >= 2 for s in sigs) and not any(
+        _flow_events(w.get("key_metrics"), base_ns, segments=False) for w in workers)
+    notes = []
+    for w in workers:
+        name = w["topic"].lower().replace("/", "_")
+        for wm in (w.get("key_metrics") or {}).values():
+            seg = ((wm or {}).get("_rate") or {}).get("published_only")
+            if not seg:
+                continue
+            a, b = seg
+            text = (f"- {w['topic']} 在 +{a - base:.2f}s～+{b - base:.2f}s 是一段完整的發布（中途開始、中途停止、中間沒有中斷）："
+                    "一次指令或一個動作從開始到結束，不是中斷或間歇性丟失")
+            after = []
+            for s in sigs:
+                codes = [m.group(0) for m in _REASON_RE.finditer(s.get("message", ""))
+                         if len(m.group(1) or m.group(2) or "") >= 3 and (m.group(1) or m.group(2)).lower() in name]
+                t = next((t for t in s.get("times_sec") or [] if 0 <= t - b <= 3.0), None)
+                if codes and t is not None:
+                    after.append(f"{s['id']}（+{t - base:.2f}s，{codes[0]}）")
+            if after:
+                text += f"；它結束後的 {'、'.join(after)}是逾時判斷的結果（先停止、超過逾時才判定），不是另一個問題"
+            if quiet:
+                text += ("。這份數據的 Log 沒有 WARN 以上的訊號、其他 Topic 也沒有中斷：狀態變化都能用這段發布的開始與結束解釋時，"
+                         "結論寫成正常的操作序列（不是故障）；發布的來源、為什麼結束，數據看不出來就寫進 unknowns")
+            notes.append(text)
+    return notes
+
+
+def _flow_block(workers, base_ns=None, signals=None):
+    """交給 Synthesizer 的「程式整理：訊息流」：每個 Topic 的中斷與開始／停止，加上同一時間一起中斷的 Topic（共同的上游）；
+    有數據開頭（base_ns）時，一段完整的發布再接程式的判斷（_segment_notes）。"""
     rows, starts = [], []
     for w in workers:
         for t, what in w.get("flow_events") or []:
@@ -1271,6 +1315,8 @@ def _flow_block(workers):
         if len({tp for _, tp, _ in g}) >= 2:
             rows.append(f"- 同一時間（+{g[0][0]:.2f}s）一起中斷：{'、'.join(tp for _, tp, _ in g)}——好幾個 Topic 同時停發，"
                         "通常是共同的上游（發布它們的節點，或它們共同依賴的輸入）出了問題")
+    if base_ns is not None:
+        rows += _segment_notes(workers, base_ns, signals)
     return "\n".join(rows)
 
 
