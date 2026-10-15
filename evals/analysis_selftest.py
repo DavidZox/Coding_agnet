@@ -36,9 +36,10 @@ def fixture(name):
 class FakeChat:
     """依 format（schema）分辨角色：Orchestrator／Worker 的每一步／Worker 的局部報告／Synthesizer／主對話。各自照劇本依序回答。"""
 
-    def __init__(self, schemas, plans=(), worker=(), reports=(), synth=(), main=()):
+    def __init__(self, schemas, plans=(), assigns=(), worker=(), reports=(), synth=(), main=()):
         self.s = schemas
-        self.q = {"plan": list(plans), "worker": list(worker), "report": list(reports), "synth": list(synth), "main": list(main)}
+        self.q = {"plan": list(plans), "assign": list(assigns), "worker": list(worker), "report": list(reports), "synth": list(synth),
+                  "main": list(main)}
         self.seen = {k: [] for k in self.q}
 
     def _next(self, role, default):
@@ -48,6 +49,8 @@ class FakeChat:
     def __call__(self, model=None, messages=None, format=None, **kw):
         if format is self.s["plan"] or format is self.s.get("plan_src"):
             role, default = "plan", {}
+        elif format is self.s.get("assign"):   # Orchestrator 的第二步（有源碼脈絡時：帶源碼分派）
+            role, default = "assign", {}
         elif format is self.s["worker"]:
             role, default = "worker", {"thought": "量測夠了", "reply": "完成", "action": None}
         elif format is self.s["report"]:
@@ -230,9 +233,9 @@ def main():
         from agent_core.protocol import is_exempt_result
         from web_app.state import agent, state
         from web_app import flows
-        from agent_core.schemas import ANALYSIS_PLAN_SCHEMA_SOURCE
-        schemas = {"plan": ANALYSIS_PLAN_SCHEMA, "plan_src": ANALYSIS_PLAN_SCHEMA_SOURCE, "worker": ANALYSIS_WORKER_REPLY_SCHEMA,
-                   "report": ANALYSIS_WORKER_REPORT_SCHEMA, "synth": ANALYSIS_REPORT_SCHEMA}
+        from agent_core.schemas import ANALYSIS_ASSIGN_SCHEMA, ANALYSIS_PLAN_SCHEMA_SOURCE
+        schemas = {"plan": ANALYSIS_PLAN_SCHEMA, "plan_src": ANALYSIS_PLAN_SCHEMA_SOURCE, "assign": ANALYSIS_ASSIGN_SCHEMA,
+                   "worker": ANALYSIS_WORKER_REPLY_SCHEMA, "report": ANALYSIS_WORKER_REPORT_SCHEMA, "synth": ANALYSIS_REPORT_SCHEMA}
         agent.target_container = "ros2_web_container"
         agent.analysis_cfg.update(parallel=1, max_workers=3)
         GOOD_PLAN = {"understanding": "安全閘在開頭進入保護停止，之後恢復", "before_sec": 5, "after_sec": 5,
@@ -738,31 +741,58 @@ def main():
 
         def t_source_context_pipeline():
             # 設定源碼目錄、關閉程式提示：三個角色都拿到源碼脈絡（Topic Metadata 每個 Topic 的發布者與依賴的輸入、Worker 自己的 Topic、
-            # Synthesizer 的 Topic 關係與程式碼），計畫的每個指派多 source_context，沒有【程式檢查】的提示；產物有 source_context.md
+            # Synthesizer 的 Topic 關係與程式碼），計畫的每個指派多 source_context，沒有【程式檢查】的提示；產物有 source_context.md。
+            # Orchestrator 分兩步：第一步的源碼只在 Log 與 Topic Metadata（整段【源碼脈絡】會讓它漏挑狀態改變），第二步訊號不變、
+            # 帶整段源碼分派（第一步的指派留在 draft_assignments）；第二步給不出可用的指派就用第一步的
             ws = make_demo_ws(os.path.join(tmp, "demo_ws2"))
             plan = json.loads(json.dumps(GOOD_PLAN))
-            plan["assignments"][0]["source_context"] = "gate.py:31 _reasons"
-            fake, calls = setup(plans=[plan], synth=[SYNTH])
-            agent.analysis_cfg.update(source_root=ws, program_hints=False)
-            try:
-                agent.analysis_run(f'--data {DATA} "安全閘為什麼停下來"')
-            finally:
-                agent.analysis_cfg.update(source_root="", program_hints=True)
+            plan["assignments"][0]["source_context"] = "第一步的線索"
+            assign = {"source_reading": "NO_CMD_VEL_RAW 是 gate.py 的 _reasons 裡 /cmd_vel_raw 逾時；/cmd_vel 是輸出",
+                      "assignments": [{"topic": "/system/safety_gate_status", "subtask": "看 stop_reasons 的跳轉", "signals": ["L28", "L30"],
+                                       "source_context": "gate.py:31 _reasons"}]}
+
+            def run(**kw):
+                fake, _ = setup(**kw)
+                agent.analysis_cfg.update(source_root=ws, program_hints=False)
+                try:
+                    agent.analysis_run(f'--data {DATA} "安全閘為什麼停下來"')
+                finally:
+                    agent.analysis_cfg.update(source_root="", program_hints=True)
+                d = os.path.join(agent.analysis_jobs_dir(), agent.analysis_last["id"])
+                return fake, d, json.load(open(os.path.join(d, "job.json"), encoding="utf-8"))
+            fake, d, job = run(plans=[plan], assigns=[assign], synth=[SYNTH])
             plan_prompt = fake.seen["plan"][0][1]["content"]
-            # Orchestrator：源碼只在 Topic Metadata（每個 Topic 的源碼一行）與一行 source_context 說明（整段【源碼脈絡】會讓它漏挑狀態改變）
             assert "  源碼：safety_motion_controller 發布" in plan_prompt and "source_context 填這個子任務根據的源碼線索" in plan_prompt, plan_prompt[-2500:]
             assert "依賴的輸入：/cmd_vel_raw（✗數據裡沒有）" in plan_prompt and "【程式檢查" not in plan_prompt and "【源碼脈絡" not in plan_prompt
+            assert len(fake.seen["assign"]) == 1, "第二步：帶源碼分派"
+            assign_prompt = fake.seen["assign"][0][1]["content"]
+            assert assign_prompt.startswith(plan_prompt.split("【限制】")[0]), "第二步沿用第一步的問題、Log、Topic Metadata"
+            assert "【源碼脈絡（" in assign_prompt and "NO_CMD_VEL_RAW（gate.py:" in assign_prompt and "【程式檢查" not in assign_prompt, assign_prompt[-3000:]
+            assert "【第一步已經決定（這一步不改）】" in assign_prompt and "- L28 +" in assign_prompt and "source_reading" in assign_prompt
             brief = fake.seen["worker"][0][1]["content"]
             assert "【源碼脈絡：/system/safety_gate_status" in brief and "Orchestrator 指出的源碼線索：gate.py:31 _reasons" in brief, brief[-1500:]
             synth = fake.seen["synth"][0][1]["content"]
             assert "Topic 之間的關係" in synth and "【程式檢查" not in synth, synth[-3000:]
-            d = os.path.join(agent.analysis_jobs_dir(), agent.analysis_last["id"])
-            job = json.load(open(os.path.join(d, "job.json"), encoding="utf-8"))
             assert job["source"]["nodes"]["safety_motion_controller"] == "demo/demo_pkg/gate.py" and not job["program_hints"], job.get("source")
-            assert job["plan"]["assignments"][0]["source_context"] == "gate.py:31 _reasons" and job["synth_raw"]["conclusion"]
-            assert os.path.exists(os.path.join(d, "source_context.md")) and os.path.exists(os.path.join(d, "prompts", "orchestrator.md"))
+            p = job["plan"]
+            assert p["steps"] == 2 and p["assignments"][0]["source_context"] == "gate.py:31 _reasons" and p["source_reading"].startswith("NO_CMD_VEL_RAW")
+            assert p["draft_assignments"][0]["source_context"] == "第一步的線索" and [r["id"] for r in p["related"]] == ["L28", "L30"], p
+            assert job["synth_raw"]["conclusion"] and os.path.exists(os.path.join(d, "source_context.md"))
+            assert all(os.path.exists(os.path.join(d, "prompts", f)) for f in ("orchestrator.md", "orchestrator_assign.md"))
             md = open(os.path.join(d, "workers", "W1_system_safety_gate_status.md"), encoding="utf-8").read()
             assert 'source_context: "gate.py:31 _reasons"' in md and "source_root:" in open(os.path.join(d, "report.md"), encoding="utf-8").read()
+            # 第二步給不出可用的指派（交回修一次也沒有）：沿用第一步的
+            fake, d, job = run(plans=[plan], synth=[SYNTH])
+            assert len(fake.seen["assign"]) == 2 and "steps" not in job["plan"], job["plan"]
+            assert job["plan"]["assignments"][0]["source_context"] == "第一步的線索" and any("沿用第一步" in x for x in job["plan"]["issues"])
+            # 關掉兩步（AGENT_ANALYSIS_PLAN_TWO_STEP=0）：照一步做
+            from agent_core import analysis_job as aj
+            aj.ANALYSIS_PLAN_TWO_STEP = False
+            try:
+                fake, d, job = run(plans=[plan], assigns=[assign], synth=[SYNTH])
+            finally:
+                aj.ANALYSIS_PLAN_TWO_STEP = True
+            assert not fake.seen["assign"] and job["plan"]["assignments"][0]["source_context"] == "第一步的線索"
 
         for name, fn in [("Orchestrator：不存在的 L#／Topic、Log Topic、重複的 Topic 交回修一次（程式列出具體的問題）", t_plan_repair),
                          ("Orchestrator：同一個 L# 列兩次只合併、不交回修正", t_plan_duplicate_signal),
@@ -781,7 +811,7 @@ def main():
                          ("Synthesizer：L# 的時間校正、補上訊息流事件、同時中斷的 Topic；背景條件與程式更正", t_timeline_fix),
                          ("源碼索引：Python／C++ 的發布、訂閱、計時器、參數；沒編譯的不算；Log 的路徑對回源碼；在執行的節點；依賴的輸入與代碼的條件",
                           t_source_index),
-                         ("源碼脈絡：Orchestrator 的 Topic 帶源碼一行、Worker 與 Synthesizer 拿到【源碼脈絡】、計畫多 source_context、關閉程式提示時沒有【程式檢查】；產物 source_context.md、prompts/",
+                         ("源碼脈絡：Orchestrator 分兩步（先挑訊號、再帶【源碼脈絡】分派；給不出就用第一步的）、Worker 與 Synthesizer 拿到【源碼脈絡】、計畫多 source_context、關閉程式提示時沒有【程式檢查】；產物 source_context.md、prompts/",
                           t_source_context_pipeline)]:
             check(name, fn)
     finally:

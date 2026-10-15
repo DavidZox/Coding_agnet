@@ -7,6 +7,8 @@ ROS 2／MCAP 智慧診斷的 Orchestrator → Workers → Synthesizer（Map-Redu
    Log 訊號、時間窗前後幾秒，把不同的 Topic 指派給不同的 worker（廣度優先）。程式檢查：訊號編號要存在、Topic 要存在而且可分析、
    同一個 Topic 只給一個 worker、最多 N 個；有問題把具體的問題交回修一次，還是不行由程式依關聯度補指派。精確的時間窗由程式依訊號的
    時間戳算（前後秒數、重疊的合併、限制在數據範圍內），模型只填訊號編號、不必抄 19 位數的時間。String／Log 只有 Orchestrator 看。
+   有源碼脈絡時分兩步：上面這一步的源碼只在 Log（＠檔名:行 函式）與 Topic Metadata（每個 Topic 的源碼一行）裡；第二步
+   （format=ANALYSIS_ASSIGN_SCHEMA）訊號與時間窗不變，帶整段【源碼脈絡】重新分派 Topic（給不出可用的指派就用第一步的）。
 2. Workers（AnalysisWorker：每個一個乾淨的 session，可以平行）：只看得到自己的 Topic、時間窗、Key 目錄與子任務（不給 Log 字串）；
    用 mcap_feature_measure 自己決定量哪些 Key（數據、Topic、時間窗由系統帶入）；做完寫局部報告（format=ANALYSIS_WORKER_REPORT_SCHEMA）。
    程式再用 --json 把分析過的 Key 量一次，數字填進 Frontmatter（key_metrics、program_flags）——模型只寫判斷與說明。
@@ -35,6 +37,7 @@ from .config import (
     ANALYSIS_MAX_WORKERS,
     ANALYSIS_ORCHESTRATOR_MODEL,
     ANALYSIS_PARALLEL_WORKERS,
+    ANALYSIS_PLAN_TWO_STEP,
     ANALYSIS_PROGRAM_HINTS,
     ANALYSIS_REPORT_HEAD,
     ANALYSIS_SETTINGS_NAME,
@@ -59,8 +62,8 @@ from .config import (
 from . import source_index
 from .model_caps import think_arg
 from .protocol import parse_agent_reply
-from .schemas import (ANALYSIS_PLAN_SCHEMA, ANALYSIS_PLAN_SCHEMA_SOURCE, ANALYSIS_REPORT_SCHEMA, ANALYSIS_WORKER_REPLY_SCHEMA,
-                      ANALYSIS_WORKER_REPORT_SCHEMA)
+from .schemas import (ANALYSIS_ASSIGN_SCHEMA, ANALYSIS_PLAN_SCHEMA, ANALYSIS_PLAN_SCHEMA_SOURCE, ANALYSIS_REPORT_SCHEMA,
+                      ANALYSIS_WORKER_REPLY_SCHEMA, ANALYSIS_WORKER_REPORT_SCHEMA)
 
 _PROMPTS = os.path.join(PROJECT_ROOT, ANALYSIS_AGENTS_DIRNAME)
 ROLES = ("orchestrator", "worker", "synthesizer")
@@ -454,13 +457,14 @@ class AnalysisMixin:
         path = os.path.join(self.base_path, "scripts", script)
         return self._exec_script(script, path, list(args), extra_env=extra_env)
 
-    def _analysis_session(self, job, kind, role, system, user, schema, predict):
+    def _analysis_session(self, job, kind, role, system, user, schema, predict, label=None):
         model, want = self.analysis_model(role), self.analysis_think(role)
         think = think_arg(model, want)
+        name = label or role   # prompts/ 的檔名（Orchestrator 的第二步：orchestrator_assign）
         with self._analysis_lock:   # 交給模型的輸入留在 job 資料夾（prompts/）：對照、重播（只換 prompt 重跑一個角色）用
-            n = job.setdefault("_prompt_n", {}).get(role, 0) + 1
-            job["_prompt_n"][role] = n
-        self._job_write(job, f"prompts/{role}{'' if n == 1 else f'_{n}'}.md", f"# system\n{system}\n\n# user\n{user}\n")
+            n = job.setdefault("_prompt_n", {}).get(name, 0) + 1
+            job["_prompt_n"][name] = n
+        self._job_write(job, f"prompts/{name}{'' if n == 1 else f'_{n}'}.md", f"# system\n{system}\n\n# user\n{user}\n")
         res = self._timed_chat(kind, model=model, messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
                                format=schema, options={"temperature": 0.2, "num_ctx": self.analysis_ctx(role),
                                                        "num_predict": predict + (THINK_EXTRA_PREDICT if think else 0)},
@@ -610,24 +614,26 @@ class AnalysisMixin:
         idx = job["index"]
         before = job["options"]["before"] if job["options"]["before"] is not None else float(cfg.get("before") or ANALYSIS_WINDOW_BEFORE)
         after = job["options"]["after"] if job["options"]["after"] is not None else float(cfg.get("after") or ANALYSIS_WINDOW_AFTER)
-        self._analysis_note(job, f"🧭 Orchestrator（{self.analysis_model('orchestrator')}）：對齊問題、挑 Log 訊號、分派 Topic…")
+        src = bool(job.get("_source"))
+        two_step = src and ANALYSIS_PLAN_TWO_STEP
+        self._analysis_note(job, f"🧭 Orchestrator（{self.analysis_model('orchestrator')}）：對齊問題、挑 Log 訊號、分派 Topic"
+                                 + ("（分兩步：先挑訊號，再帶源碼脈絡分派）" if two_step else "") + "…")
         forced = [t for t in job["options"]["topics"] if any(x["topic"] == t and x["role"] == "worker" for x in idx["topics"])]
-        user = (f"【使用者的問題】\n{job['question']}\n\n"
+        head = (f"【使用者的問題】\n{job['question']}\n\n"
                 f"【數據】{idx.get('label')}：共 {idx.get('duration_sec')} 秒（時間都寫成距離數據開頭的秒數，+秒）\n\n"
                 f"【去重後的 Log（唯一訊號；L# 是編號，×N 是出現次數"
-                + ("；＠檔名:行 函式＝印出這則 Log 的源碼位置" if job.get("_source") else "")
-                + f"）】\n{self._digest_text(job, with_source=bool(job.get('_source')))}\n\n"
+                + ("；＠檔名:行 函式＝印出這則 Log 的源碼位置" if src else "")
+                + f"）】\n{self._digest_text(job, with_source=src)}\n\n"
                 f"【全域 Topic Metadata（可以指派給 worker 的 Topic 與它們的 Key"
-                + ("；每個 Topic 下面一行是源碼：誰發布、依賴哪些輸入 Topic、誰訂閱" if job.get("_source") else "")
+                + ("；每個 Topic 下面一行是源碼：誰發布、依賴哪些輸入 Topic、誰訂閱" if src else "")
                 + f"）】\n{self._topics_text(job)}\n\n"
-                + (_gap_text_for_plan(job, self._coverage_gaps(job, all_signals=True)) if _name_hints(job) else "")
-                + f"【限制】最多指派 {job['max_workers']} 個 worker，每個 worker 一個不同的 Topic；Log（/rosout）不能指派——Log 由你負責看。"
+                + (_gap_text_for_plan(job, self._coverage_gaps(job, all_signals=True)) if _name_hints(job) else ""))
+        must = f"\n使用者指定一定要分析的 Topic：{'、'.join(forced)}（要指派）" if forced else ""
+        user = (head + f"【限制】最多指派 {job['max_workers']} 個 worker，每個 worker 一個不同的 Topic；Log（/rosout）不能指派——Log 由你負責看。"
                 f"時間窗預設訊號前 {before:g} 秒、後 {after:g} 秒（before_sec、after_sec 可以依問題調整，0.5～60 秒）。"
-                + (f"\n使用者指定一定要分析的 Topic：{'、'.join(forced)}（要指派）" if forced else "")
-                + (f"\n{_SOURCE_PLAN_LINE}" if job.get("_source") else "")
-                + "\n（每個欄位都用繁體中文寫）")
+                + must + (f"\n{_SOURCE_PLAN_LINE}" if src else "") + "\n（每個欄位都用繁體中文寫）")
         system = _read_prompt("orchestrator.md")
-        schema = ANALYSIS_PLAN_SCHEMA_SOURCE if job.get("_source") else ANALYSIS_PLAN_SCHEMA
+        schema = ANALYSIS_PLAN_SCHEMA_SOURCE if src else ANALYSIS_PLAN_SCHEMA
         data = self._analysis_session(job, "analysis_orchestrator", "orchestrator", system, user, schema, 3072)
         plan, issues = self._clean_plan(job, data, before, after, forced)
         if issues:
@@ -638,6 +644,8 @@ class AnalysisMixin:
             plan2, issues2 = self._clean_plan(job, data2, before, after, forced)
             if plan2["assignments"] and (len(issues2) <= len(issues) or not plan["assignments"]):
                 plan, issues = plan2, issues2
+        if two_step:
+            self._analysis_assign(job, system, head, must, plan, issues, forced)
         if not plan["assignments"]:
             plan["assignments"] = self._auto_assignments(job, plan["related"], job["max_workers"], forced)
             plan["auto_assigned"] = True
@@ -657,6 +665,33 @@ class AnalysisMixin:
                                  f"時間窗 {wtxt}；指派 {atxt}" + ("（程式補指派）" if plan.get("auto_assigned") else ""),
                             kind="plan")
 
+    def _analysis_assign(self, job, system, head, must, plan, issues, forced):
+        """Orchestrator 的第二步（有源碼脈絡時）：第一步挑的訊號、時間窗、對問題的理解不變，帶整段【源碼脈絡】（在執行的節點、
+        Log 裡的代碼在源碼的條件）重新分派 Topic。實測 gemma4:26b（只重跑 Orchestrator）：一步做完時整段源碼讓它漏挑指令開始的
+        訊號（20/20 → 7/20）；只在 Topic Metadata 帶源碼，/cmd_vel 的子任務又常寫成驗證 /cmd_vel_raw（11/25，整段源碼 2/25）。
+        指派有問題交回修一次；還是給不出可用的指派就用第一步的（第一步的留在 plan 的 draft_assignments）。"""
+        self._analysis_note(job, "🧭 Orchestrator 第二步：訊號與時間窗不變，帶源碼脈絡（在執行的節點、代碼的條件）分派 Topic…")
+        user = _assign_user(job, head, plan, must)
+        data = self._analysis_session(job, "analysis_orchestrator_assign", "orchestrator", system, user, ANALYSIS_ASSIGN_SCHEMA, 3072,
+                                      label="orchestrator_assign")
+        assigns, problems = self._clean_assignments(job, (data or {}).get("assignments"), forced)
+        if problems:
+            fix = (user + "\n\n【上一版指派】\n" + json.dumps((data or {}).get("assignments") or [], ensure_ascii=False)[:3500]
+                   + "\n\n【程式檢查發現的問題：修正後輸出完整的指派】\n" + "\n".join(f"- {x}" for x in problems))
+            self._analysis_note(job, f"🧭 第二步的指派有 {len(problems)} 個問題，交回修正一次：{'；'.join(problems)[:200]}")
+            data2 = self._analysis_session(job, "analysis_orchestrator_assign", "orchestrator", system, fix, ANALYSIS_ASSIGN_SCHEMA, 3072,
+                                           label="orchestrator_assign")
+            assigns2, problems2 = self._clean_assignments(job, (data2 or {}).get("assignments"), forced)
+            if assigns2 and (len(problems2) <= len(problems) or not assigns):
+                data, assigns, problems = data2, assigns2, problems2
+        if not assigns:
+            issues.append("第二步（帶源碼脈絡）沒有給出可用的指派，沿用第一步的指派")
+            self._analysis_note(job, "🧭 第二步沒有給出可用的指派，沿用第一步的")
+            return
+        plan.update(draft_assignments=plan["assignments"], assignments=assigns, steps=2,
+                    source_reading=_short((data or {}).get("source_reading"), 400))
+        issues += [f"第二步：{x}" for x in problems]
+
     def _clean_plan(self, job, data, before, after, forced):
         """模型的計畫 → 檢查過的計畫與問題清單（程式檢查，問題會交回 Orchestrator 修一次）。"""
         data = data or {}
@@ -672,10 +707,28 @@ class AnalysisMixin:
                 related.append({"id": sig_by_id[sid]["id"], "why": _short((r or {}).get("why", ""), 160)})
             elif sid:
                 issues.append(f"Log 訊號 {sid} 不存在（只能用去重後 Log 裡的 L# 編號）")
+        assigns, problems = self._clean_assignments(job, data.get("assignments"), forced)
+        issues += problems
+
+        def _sec(v, default):
+            try:
+                v = float(v)
+            except (TypeError, ValueError):
+                return default
+            return min(60.0, max(0.5, v)) if v == v else default
+        plan = {"understanding": _short(data.get("understanding"), 500), "related": related,
+                "before": _sec(data.get("before_sec"), before), "after": _sec(data.get("after_sec"), after),
+                "assignments": assigns, "report_focus": _short(data.get("report_focus"), 300)}
+        return plan, issues
+
+    def _clean_assignments(self, job, items, forced):
+        """模型的指派 → 檢查過的指派與問題清單：Topic 要在數據裡、可以分析、不重複，最多 N 個；使用者指定的 Topic 一定有。"""
+        issues = []
+        sig_by_id = {str(s["id"]).upper(): s for s in job.get("signals") or []}
         topics = {t["topic"]: t for t in job["index"]["topics"]}
         lower = {k.lower(): k for k in topics}
         assigns, seen = [], set()
-        for a in data.get("assignments") or []:
+        for a in items or []:
             raw = str((a or {}).get("topic", "")).strip()
             name = raw if raw.startswith("/") else "/" + raw
             name = lower.get(name.lower(), name)
@@ -706,17 +759,7 @@ class AnalysisMixin:
             assigns = assigns[: job["max_workers"]]
         if not assigns:
             issues.append("沒有任何有效的指派：至少把一個可分析的 Topic 指派給 worker")
-
-        def _sec(v, default):
-            try:
-                v = float(v)
-            except (TypeError, ValueError):
-                return default
-            return min(60.0, max(0.5, v)) if v == v else default
-        plan = {"understanding": _short(data.get("understanding"), 500), "related": related,
-                "before": _sec(data.get("before_sec"), before), "after": _sec(data.get("after_sec"), after),
-                "assignments": assigns, "report_focus": _short(data.get("report_focus"), 300)}
-        return plan, issues
+        return assigns, issues
 
     def _auto_assignments(self, job, related, n, forced):
         """Orchestrator 沒給出可用的指派時：依「跟相關 Log 的 Node／訊息共用的詞」排 Topic，同分看可量測的 Key 與筆數。"""
@@ -1467,21 +1510,49 @@ def _metric_tokens(workers):
     return list(dict.fromkeys(toks))
 
 
-# Orchestrator 的源碼脈絡只放在 Log（＠檔名:行 函式）與 Topic Metadata（每個 Topic 的源碼一行、沒錄到的輸入）裡，加這一行說明
-# source_context：實測（gemma4:26b，只重跑 Orchestrator）再給一整段【源碼脈絡】（節點卡、代碼的條件）時，cmdvel 數據挑指令開始的
-# L15 從 20/20 掉到 7/20（時間窗看不到開始）；只留 Topic 的源碼一行＋這一行：18/20，/cmd_vel 的子任務寫成驗證輸入一樣少
+# Orchestrator 第一步（挑訊號）的源碼只放在 Log（＠檔名:行 函式）與 Topic Metadata（每個 Topic 的源碼一行、沒錄到的輸入）裡，
+# 加這一行說明 source_context：實測（gemma4:26b，只重跑 Orchestrator）再給一整段【源碼脈絡】（節點卡、代碼的條件）時，cmdvel 數據
+# 挑指令開始的 L15 從 20/20 掉到 7/20（時間窗看不到開始）；只留 Topic 的源碼一行＋這一行：18/20。整段源碼留給第二步（分派）
 _SOURCE_PLAN_LINE = "source_context 填這個子任務根據的源碼線索（Log 後面的 ＠檔名:行 函式、Topic 的源碼一行），沒有就寫「無」。"
+# Orchestrator 第二步（分派）的說明：先寫從源碼讀到的（source_reading），再照發布／訂閱關係寫子任務
+_ASSIGN_LINE = ("先在 source_reading 寫你從源碼讀到的：相關訊號裡的代碼由哪段程式、在什麼條件下產生，條件讀的變數由哪個 Topic 寫入；"
+                "哪些 Topic 是那個節點的輸入、哪些是它的輸出。再分派：子任務要確認的因果，照源碼的發布／訂閱關係寫；"
+                "signals 填上面相關訊號的 L#；source_context 填這個子任務根據的源碼線索（檔名:行 函式、代碼的條件），沒有就寫「無」。")
+
+
+def _assign_user(job, head, plan, must=""):
+    """Orchestrator 第二步的輸入：第一步的問題、Log、Topic Metadata（head）＋整段【源碼脈絡】＋第一步的決定（不再改）＋分派的說明。"""
+    base = job["index"]["start_ns"]
+    sig_by_id = {s["id"]: s for s in job.get("signals") or []}
+    rows = [f"- {r['id']} {_rel(int(round(float(sig_by_id[r['id']]['first_sec']) * 1e9)), base)}：{r['why']}"
+            for r in plan["related"] if r["id"] in sig_by_id]
+    return (head + _source_text(job, "orchestrator", related=[r["id"] for r in plan["related"]]).lstrip("\n")
+            + f"\n\n【第一步已經決定（這一步不改）】\n對問題的理解：{plan['understanding']}\n"
+            f"相關的 Log 訊號（時間窗的錨點；每個訊號前 {plan['before']:g} 秒、後 {plan['after']:g} 秒）：\n"
+            + ("\n".join(rows) or "（沒有，分析整段數據）")
+            + f"\n\n【這一步：分派 Topic】最多指派 {job['max_workers']} 個 worker，每個 worker 一個不同的 Topic；Log（/rosout）不能指派。"
+            + _ASSIGN_LINE + must + "\n（每個欄位都用繁體中文寫）")
 
 
 def _source_text(job, role, topic=None, assignment=None, related=None):
-    """各角色的【源碼脈絡】：Worker＝自己的 Topic 的發布者、依賴的輸入、訂閱者、msg 定義的說明與常數、發布的程式碼；
+    """各角色的【源碼脈絡】：Orchestrator（第二步：分派）＝在執行的節點、Log 裡的代碼在源碼的條件（每個 Topic 的源碼一行已經在
+    Topic Metadata）；Worker＝自己的 Topic 的發布者、依賴的輸入、訂閱者、msg 定義的說明與常數、發布的程式碼；
     Synthesizer＝每個 Topic 的源碼一行、在執行的節點、相關 Log 的源碼位置、代碼的條件（Log 與 worker 量到的狀態值）、相關函式的程式碼。
-    Orchestrator 不用這一段（見 _SOURCE_PLAN_LINE）。沒有源碼脈絡回空字串。"""
+    沒有源碼脈絡回空字串。"""
     js = job.get("_source")
     if not js:
         return ""
     cap = ANALYSIS_SOURCE_MAX_CHARS.get(role, 6000)
     head = f"【源碼脈絡（程式從源碼目錄 {js.idx.root} 整理：這次在執行的節點）】"
+    if role == "orchestrator":   # 代碼：相關訊號的 → WARN 以上的 → 其他訊號的
+        warn = {s["id"] for s in js.signals if s.get("level") in ("WARN", "ERROR", "FATAL")}
+        toks = list(dict.fromkeys(js.signal_tokens(ids=set(related or [])) + js.signal_tokens(ids=warn) + js.signal_tokens()))
+        rows = [head, _SOURCE_GUIDE, "在執行的節點（每個 Topic 的發布／訂閱寫在上面的 Topic Metadata）："]
+        rows += js.node_lines(compact=True) + js.orphan_lines()
+        tl = js.token_lines(toks, limit=6)
+        if tl:
+            rows += ["Log 裡的代碼在源碼的條件："] + tl
+        return "\n\n" + _fit(rows, cap)
     if role == "worker":
         rows = [f"【源碼脈絡：{topic}（程式從源碼目錄整理；源碼是線索，數字以量測為準）】",
                 "- " + js.topic_source_line(topic)]

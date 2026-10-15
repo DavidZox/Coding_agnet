@@ -273,6 +273,17 @@ ANALYSIS_PLAN_SCHEMA_SOURCE = json.loads(json.dumps(ANALYSIS_PLAN_SCHEMA))
 ANALYSIS_PLAN_SCHEMA_SOURCE["properties"]["assignments"]["items"]["properties"]["source_context"] = _text(240)
 ANALYSIS_PLAN_SCHEMA_SOURCE["properties"]["assignments"]["items"]["required"] = ["topic", "subtask", "signals", "source_context"]
 
+# Orchestrator 第二步（有源碼脈絡時分兩步）：訊號與時間窗是第一步定的，這一步先寫從源碼讀到的（相關訊號的代碼在什麼條件下產生、
+# 條件讀的變數由哪個 Topic 寫入），再分派 Topic
+ANALYSIS_ASSIGN_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "source_reading": _text(400),
+        "assignments": ANALYSIS_PLAN_SCHEMA_SOURCE["properties"]["assignments"],
+    },
+    "required": ["source_reading", "assignments"],
+}
+
 # worker 每一步的決定：同主對話的 {thought, reply, action}，字串有上限
 ANALYSIS_WORKER_REPLY_SCHEMA = {
     "type": "object",
