@@ -745,9 +745,13 @@ class AnalysisMixin:
                      for w in job["windows"]]
         all_topics = "、".join(f"{t['topic']}（{t['message_count']} 則）" for t in job["index"]["topics"])
         gaps = self._coverage_gaps(job)
-        job["coverage_gaps"] = [{"reason": c, "name": x, "signals": ids} for c, x, ids in gaps]
-        gap_text = "\n".join(f"- {c}（{'、'.join(ids)}）：數據裡沒有名稱含「{x}」的 Topic——沒有被量測，不能拿其他 Topic（例如名稱相近的輸出）"
-                              f"證明它；寫進 unknowns，信心最多 medium" for c, x, ids in gaps)
+        bg = _background_codes(job["workers"], [c for c, _, _ in gaps])
+        job["coverage_gaps"] = [{"reason": c, "name": x, "signals": ids, "background": bg.get(c)} for c, x, ids in gaps]
+        gap_text = "\n".join(
+            f"- {c}（{'、'.join(ids)}）：數據裡沒有名稱含「{x}」的 Topic，沒有被量測；不過 {bg[c]} 在每次跳轉前後都有 {c}"
+            f"（跳轉時新增／移除的是別的項目）——它是背景條件，不是這次變化的原因，根因看新增／移除的那一項" if c in bg else
+            f"- {c}（{'、'.join(ids)}）：數據裡沒有名稱含「{x}」的 Topic——沒有被量測，不能拿其他 Topic（例如名稱相近的輸出）"
+            f"證明它；寫進 unknowns，信心最多 medium" for c, x, ids in gaps)
         reports = []
         for w in job["workers"]:
             if w.get("status") == "failed":
@@ -773,7 +777,13 @@ class AnalysisMixin:
         if not data:
             data = self._fallback_report(job)
         if data.get("timeline"):   # 時間線依時間排序（模型偶爾排錯；寫不出數字的放最後，其餘順序不變）
+            fixed = _fix_signal_times(data["timeline"], sig_by_id, base)
+            if fixed:
+                self._analysis_note(job, f"🛠 時間線：{fixed} 個 Log 訊號（L#）的時間跟 Log 對不上，照 Log 的時間戳校正")
             data["timeline"] = sorted(data["timeline"], key=_timeline_key)
+        # 背景條件（每次跳轉前後都在）：根因沒有用到它就不列 unknowns、不限制信心（實測：提醒反而把 Synthesizer 引到它身上）；
+        # 根因還是寫了它（拿沒量測的輸入當原因），照一般的缺口處理
+        gaps = [g for g in gaps if g[0] not in bg or g[0].lower() in str(data.get("root_cause") or "").lower()]
         if gaps:   # 程式保證：缺的輸入一定列在「尚未確認」、信心最多 medium（模型常忽略這條規則，2.18）
             unknowns = list(data.get("unknowns") or [])
             for c, x, ids in gaps:
@@ -1043,7 +1053,8 @@ class AnalysisWorker:
                   "anomaly_detected": bool(rep.get("anomaly_detected")) if rep else bool(flags),
                   "confidence": rep.get("confidence") or "low", "summary": _short(rep.get("summary"), 900) or "（worker 沒有寫摘要）",
                   "evidence": [e for e in rep.get("evidence") or [] if isinstance(e, dict)][:6], "program_flags": flags,
-                  "data_type": data_type, "steps": steps, "calls": len(self.calls)}
+                  "data_type": data_type, "steps": steps, "calls": len(self.calls),
+                  "key_metrics": metrics}   # 程式量的數字也留在 job 裡：Synthesizer 前的程式檢查要用（_background_codes）
         result["file"] = self._write(result, metrics, ev_ts, msgs)
         mark = "⚠️ 有異常" if result["anomaly_detected"] else "沒有異常"
         a._analysis_note(job, f"✅ {self.tag}：{mark}（{'、'.join(analyzed) or '沒有量測'}；{steps} 輪）", kind="worker_done", worker=self.n)
@@ -1072,6 +1083,60 @@ class AnalysisWorker:
         tr = "\n\n".join(f"### {m['role']}\n{m['content']}" for m in msgs)
         self.a._job_write(self.job, f"workers/W{self.n}_{_slug(self.topic)}.transcript.md", tr)
         return rel
+
+
+def _set_items(text):
+    """key_metrics 裡集合狀態的寫法「[A, B]」→ {A, B}；不是集合（或被截短）回 None。"""
+    t = str(text or "").strip()
+    if not (t.startswith("[") and t.endswith("]")):
+        return None
+    return {x.strip() for x in t[1:-1].split(",") if x.strip()}
+
+
+def _background_codes(workers, codes):
+    """程式判斷：worker 量到的集合狀態（stop_reasons、active_error_codes…）有跳轉，但這個代碼在每次跳轉前後都在＝背景條件，
+    不是這次變化的原因。實測 exp_event_lifecycle：stop_reasons [NO_CMD_VEL_RAW] → [MON_INITIALIZING, NO_CMD_VEL_RAW] → [NO_CMD_VEL_RAW]，
+    /cmd_vel_raw 沒錄到，覆蓋缺口的提醒反而讓 Synthesizer 把根因寫成 NO_CMD_VEL_RAW。只看 key_metrics 列全的跳轉（≤5 次）。
+    回傳 {代碼: 「Topic 的 Key」}。"""
+    out = {}
+    for w in workers:
+        for win in (w.get("key_metrics") or {}).values():
+            for key, f in (win or {}).items():
+                if not isinstance(f, dict) or not f.get("transitions") or f["transitions"] > len(f.get("changes") or []):
+                    continue
+                states = [_set_items(f.get("first")), _set_items(f.get("last"))]
+                for ch in f["changes"]:
+                    a, _, rest = str(ch).partition(" → ")
+                    states += [_set_items(a), _set_items(rest.rsplit(" @", 1)[0])]
+                if any(x is None for x in states):
+                    continue
+                for c in codes:
+                    if all(c in x for x in states):
+                        out.setdefault(c, f"{w['topic']} 的 {key}")
+    return out
+
+
+def _fix_signal_times(timeline, sig_by_id, base_ns):
+    """程式校正：來源是一個 Log 訊號（L#）的時間線項目，時間要是那則 Log 真的出現的時間。實測 e4b 把 L17（+18.71s）寫成
+    時間窗的開頭 +8.71s，主模型照抄給使用者。差超過 0.05 秒就換成最接近的出現時間；出現次數比記下的時間戳多、而模型的時間
+    落在第一次～最後一次之間的不動（可能是沒記下的那幾次）。回傳校正了幾個。"""
+    fixed = 0
+    for item in timeline:
+        ids = re.findall(r"\bL\d+\b", str((item or {}).get("source") or ""))
+        s = sig_by_id.get(ids[0]) if len(ids) == 1 else None
+        if not s or s.get("first_sec") is None:
+            continue
+        base = base_ns / 1e9
+        occ = [t - base for t in (s.get("times_sec") or [s["first_sec"]])]
+        m = re.search(r"[+-]?\d+(?:\.\d+)?", str(item.get("time", "")))
+        t = float(m.group()) if m else None
+        if t is not None and s.get("count", 1) > len(occ) and s["first_sec"] - base - 0.05 <= t <= s["last_sec"] - base + 0.05:
+            continue
+        best = min(occ, key=lambda o: abs(o - t)) if t is not None else occ[0]
+        if t is None or abs(best - t) > 0.05:
+            item["time"] = f"+{best:.2f}s"
+            fixed += 1
+    return fixed
 
 
 def _timeline_key(item):
@@ -1107,7 +1172,9 @@ def _compact_features(f):
             out["spike_timestamp"] = first.get("t_sec")
             out["spike_value"] = _num(first.get("value"))
         j = f.get("max_jump")
-        if j and j.get("delta"):
+        if f.get("steps"):
+            out["changes"] = [f"{_num(s.get('from'))} → {_num(s.get('to'))} @{s.get('t_sec')}" for s in f["steps"][:5]]
+        elif j and j.get("delta"):
             out["max_jump"] = {"from": _num(j.get("from")), "to": _num(j.get("to")), "t": j.get("t_sec")}
         return out
     if f.get("kind") == "state":
@@ -1138,6 +1205,12 @@ def _metrics_from_measure(js, analyzed):
             if rate.get("gaps"):
                 wm["_rate"]["gaps"] = rate["gaps"]
                 ev_ts += [g.get("start_sec") for g in rate["gaps"]]
+            if rate.get("started_late"):   # 中途才開始／中途停止發布：時間點進證據（時間線排得到）
+                wm["_rate"]["started_at"] = rate.get("first_sec")
+                ev_ts.append(rate.get("first_sec"))
+            if rate.get("stopped_early"):
+                wm["_rate"]["stopped_after"] = rate.get("last_sec")
+                ev_ts.append(rate.get("last_sec"))
         for key in analyzed:
             kd = (w.get("keys") or {}).get(key)
             if not kd:
@@ -1154,6 +1227,8 @@ def _metrics_from_measure(js, analyzed):
                     ev_ts += [t.get("t_sec") for t in f.get("transitions") or []][:3]
                 if f.get("kind") == "numeric" and f.get("spike_count"):
                     ev_ts.append((f.get("spikes") or [{}])[0].get("t_sec"))
+                if f.get("kind") == "numeric" and f.get("steps"):
+                    ev_ts += [s.get("t_sec") for s in f["steps"]][:3]
         metrics[wid] = wm
     return metrics, list(js.get("flags") or []), data_type, sorted({t for t in ev_ts if t is not None})
 

@@ -119,27 +119,50 @@ def worker_main(argv):
         lines.append(f"{wname}：{rd.window_text(w, base)}" + ("（已限制在數據範圍內）" if w.get("clamped") else "")
                      + "；[+秒] 是距離數據開頭的時間")
         if not times:
-            lines.append("  時間窗內沒有這個 Topic 的訊息（Topic 沒有在發布，或時間窗不在數據範圍內）")
-            all_flags.append(f"{wname} 沒有訊息")
+            carry = (rd.carry_in_values(data["mcap_files"], entry["topic"], entry["type"], keys, w["start_ns"])
+                     if w["start_ns"] > idx["start_ns"] else {})
+            held = [(k, lab, t, v) for k in keys for lab, (t, v) in carry.get(k, {}).items()]
+            if held:   # 只在狀態改變時才發布的 Topic：沒有新訊息＝狀態沒變，照之前的最後一則
+                t_last = held[0][2]
+                lines.append(f"  時間窗內沒有新訊息；最後一則在 {rd.fmt_t(t_last)}[{rd.fmt_rel(t_last, rel_base)}]"
+                             "（只在狀態改變時才發布的 Topic，這段期間的狀態就是那一則的值）：")
+                for k, lab, t, v in held[:12]:
+                    lines.append(f"     {rd.entry_name(k, lab, rd.find_key(entry, k))} = {rd.short(rd.state_text(v), 80)}")
+                all_flags.append(f"{wname} 沒有新訊息（最後一則在 {rd.fmt_rel(t_last, rel_base)}）")
+            else:
+                lines.append("  時間窗內沒有這個 Topic 的訊息（Topic 沒有在發布，或時間窗不在數據範圍內）")
+                all_flags.append(f"{wname} 沒有訊息")
             results.append({"window": rd.jsonable(w), "rate": rate, "keys": {}})
             continue
-        r = f"  訊息 {rate['messages']} 筆"
+        first, last = rd.fmt_rel(times[0], rel_base), rd.fmt_rel(times[-1], rel_base)
+        r = f"  訊息 {rate['messages']} 筆（第一筆 {first}、最後一筆 {last}）"
         if rate.get("avg_hz"):
             r += f"，平均 {rate['avg_hz']} Hz，最大間隔 {rate['max_gap_sec']} 秒"
         if rate.get("gaps"):
             r += "；中斷 " + "、".join(f"{rd.fmt_t(int(g['start_sec'] * 1e9))}[{rd.fmt_rel(int(g['start_sec'] * 1e9), rel_base)}] 起 "
                                      f"{g['duration_sec']} 秒" for g in rate["gaps"])
             all_flags.append(f"{wname} 訊息中斷 {len(rate['gaps'])} 次（最長 {rate['max_gap_sec']} 秒）")
-        if rate.get("starts_after_window_sec", 0) > 1.0:
+        if rate.get("started_late"):
+            r += f"；{first} 才開始發布（時間窗開始後 {rate['starts_after_window_sec']} 秒）"
+            all_flags.append(f"{wname} {first} 才開始發布（時間窗開始後 {rate['starts_after_window_sec']} 秒沒有訊息）")
+        elif rate.get("starts_after_window_sec", 0) > 1.0:
             r += f"；時間窗開始後 {rate['starts_after_window_sec']} 秒才有第一筆"
+        if rate.get("stopped_early"):
+            r += f"；{last} 之後停止發布（到時間窗結束 {rate['ends_before_window_sec']} 秒沒有訊息）"
+            all_flags.append(f"{wname} {last} 之後停止發布（到時間窗結束 {rate['ends_before_window_sec']} 秒沒有訊息）")
+        if rate["messages"] < rd.EDGE_MIN_MESSAGES:
+            r += "；筆數少：可能只在狀態改變時才發布，看狀態跳轉，不要用頻率或間隔判斷中斷"
         lines.append(r)
+        # 狀態沿用時間窗開始前的最後一則（只在改變時才發布的 Topic）；時間窗從數據開頭起算就沒有「之前」
+        carry = (rd.carry_in_values(data["mcap_files"], entry["topic"], entry["type"], keys, w["start_ns"])
+                 if w["start_ns"] > idx["start_ns"] else {})
         wkeys = {}
         for k, d in zip(keys, descs):
             entries = series[k]
             is_map = bool(d.get("map_by")) or d["category"] == "kv"
             if args.filter and is_map:   # --filter 只篩「依名稱展開」的項目；一般的 Key 照常量（實測 worker 對一般 Key 也加 --filter）
                 entries = {lab: pts for lab, pts in entries.items() if args.filter.lower() in lab.lower()}
-            feats, flags = rd.measure_key(entries, d, w, k)
+            feats, flags = rd.measure_key(entries, d, w, k, carry=carry.get(k))
             all_flags += [f"{wname} {x}" for x in flags]
             dim = d.get("dim", "scalar")
             lines.append(f"  ▸ {k}（{dim}，{rd.CATEGORY_LABELS.get(d['category'], d['category'])}，{d['type']}）")

@@ -81,7 +81,7 @@ python3 evals/perf_report.py                # 平常使用 CLI／Web 累積的 l
 ## 數據解析的評測（2026-10-14）
 
 ```bash
-python3 evals/analysis_selftest.py          # 離線：假模型照劇本回答、數據技能用錄下的真實輸出（analysis_fixtures/）——7 個情境，幾秒
+python3 evals/analysis_selftest.py          # 離線：假模型照劇本回答、數據技能用錄下的真實輸出（analysis_fixtures/）——11 個情境，幾秒
 python3 evals/analysis_tools_live.py --container ros2_web_container \
     --data /workspace/app/diagnostics_package/toolkit/experiment_logs/exp_20261014_084506 [--record]   # 實機：五支數據技能（不需要 Ollama）
 python3 evals/run_evals.py --modes harness --only analysis_route_diagnose,analysis_route_single_key,analysis_route_log   # 真模型：主對話的路由
@@ -89,10 +89,13 @@ python3 evals/run_evals.py --modes harness --only analysis_route_diagnose,analys
 
 - **`analysis_selftest.py`** 測 harness 的程式把關：Orchestrator 的計畫檢查與修正（不存在的 L#／Topic、Log Topic、重複的 Topic）、補指派、
   時間窗（前後秒數、合併、限制在數據範圍內）、worker 的規則（reply 裡的動作、`--topic` 固定、只准量測技能、第三次相同的量測擋下、系統代選 Key）、
-  局部報告的 Frontmatter 數字來自程式、Synthesizer 壞掉的退路、dispatch 與 Web 的回合。`analysis_fixtures/` 是從 `exp_20261014_084506`
+  局部報告的 Frontmatter 數字來自程式、Synthesizer 壞掉的退路、dispatch 與 Web 的回合；
+  錄製的資料夾名稱（`--out-root` 放錯成名稱時改當 `--name`）、量測的特徵（中途開始／停止發布、狀態沿用時間窗之前的最後一則、
+  只有幾種值的數值列每次切換、`3.37s-31.79s` 的時間窗寫法）、時間線 L# 的時間校正、覆蓋缺口的背景條件判斷。`analysis_fixtures/` 是從 `exp_20261014_084506`
   錄下的 `mcap_analyzer --json`、`rosout_parser --json`、`mcap_feature_measure` 輸出；換了 Key 的分類或輸出格式時重錄一次（指令見 `analysis_tools_live.py` 的說明）。
 - **`analysis_tools_live.py`** 在真的容器裡跑：全域索引、Key 檢視、特徵量測（含寬鬆的時間寫法與不認識的參數）、原始值、錯誤處理、Log 去重、
   切片（寫到容器的 /tmp、測完刪掉）、`--record` 真的錄 6 秒。
+- **實機事件測試**（2026-10-15）的錄製、ground truth、每次分析與對照結果在 `test_data/`（見 `test_data/README.md`）。
 - **報告的品質**（根因對不對）目前只能人工看：`/analyze <問題>` 跑一次，看 `logs/analysis_jobs/<編號>/report.md` 與各 worker 的局部報告；
   建「已知根因」的錄製當評測資料是待辦（`doc/待辦清單.md`）。
 

@@ -6,7 +6,7 @@
 ## Data Analysis / 數據解析
 - **數據在哪裡**：數據技能都在目標容器內讀檔；「數據」可以是實驗資料夾、bag 資料夾、切片資料夾、`.mcap`、實驗名稱（相對於數據根目錄）或 `latest`（最新的實驗），主機路徑會自動換成容器內路徑。使用者沒指定時用 Current Agent State 的 CURRENT_ANALYSIS_DATA；兩者都沒有時用 `latest`，或先用 list_dir 看實驗資料夾再問使用者要哪一份。
 - **依問題選技能**（一兩步做得完的直接用對應的技能）：
-  - 錄數據：`mcap_recorder`（一定要有時長；使用者沒說錄多久、錄哪些 Topic 才先問）：「全部／所有 Topic」用 `--all`、「核心 Topic」用 `--preset core`、點名的用 `--topics`。
+  - 錄數據：`mcap_recorder`（一定要有時長；使用者沒說錄多久、錄哪些 Topic 才先問）：「全部／所有 Topic」用 `--all`、「核心 Topic」用 `--preset core`、點名的用 `--topics`；資料夾名稱用 `--name`。
   - 數據裡有什麼、有哪些 Topic／Key：`mcap_analyzer`（`--topic` 看某個 Topic 的 Key）。
   - Log、錯誤訊息、事件發生的時間點：`rosout_parser`（重複的 Log 已合併成唯一訊號 L#）。
   - 某個 Topic／Key 的數值範圍、尖峰、狀態有沒有跳轉、有沒有中斷：`mcap_feature_measure`（Key 名稱不知道就先 `mcap_analyzer --topic`）。

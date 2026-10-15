@@ -12,7 +12,8 @@ dependencies: ["docker", "mcap", "rclpy", "rosidl_runtime_py"]
 - 向量（vector [n]）：每個分量各自量；也可以只量一個分量（`linear.x`）。
 - 狀態（uint8／bool／列舉字串／代碼集合，或相異值 ≤10 的整數）：狀態跳轉（時間、從哪個值到哪個值、集合增減）、各狀態的時間占比。
 - 依名稱展開的 Key（DiagnosticArray 的 status.level、status.values）：每個名稱各自量，只列有變化的。
-- 每個時間窗另外量訊息頻率與中斷（間隔超過正常週期 3 倍）。
+- 每個時間窗另外量訊息頻率與中斷（間隔超過正常週期 3 倍），列出第一筆、最後一筆的時間；固定頻率的 Topic 在時間窗頭尾沒有訊息超過正常週期 10 倍（且 ≥1 秒）標成「中途才開始發布」／「中途停止發布」。
+- 狀態 Key：時間窗開頭的狀態沿用時間窗之前的最後一則（只在狀態改變時才發布的 Topic 才不會少算跳轉）；時間窗內沒有新訊息時列出那一則的值。
 文字與時間欄位不量測（Log 與自由文字由 rosout_parser 處理）。
 
 # 語法
@@ -26,4 +27,4 @@ dependencies: ["docker", "mcap", "rclpy", "rosidl_runtime_py"]
 `EXECUTE: scripts/mcap_feature_measure_cmd.py --topic /diagnostics_agg --key status.level --filter Battery --window +10,+40`
 
 # 回傳
-每個時間窗：訊息筆數／頻率／中斷，每個 Key 的特徵；最後一行「異常指標（程式判斷）」彙整尖峰、狀態跳轉與中斷。[+秒]＝距離數據開頭（跟 rosout_parser 同一個基準）。
+每個時間窗：訊息筆數（第一筆、最後一筆）／頻率／中斷／中途開始或停止發布，每個 Key 的特徵；最後一行「異常指標（程式判斷）」彙整尖峰、狀態跳轉、中斷與開始／停止發布。[+秒]＝距離數據開頭（跟 rosout_parser 同一個基準）。

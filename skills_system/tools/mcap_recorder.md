@@ -18,12 +18,14 @@ dependencies: ["docker", "ros2", "rosbag2-storage-mcap", "mcap"]
   - 使用者說「核心 Topic」→ `--preset core`＝toolkit 的預設核心組合（/sensor_scan /cmd_vel /cmd_vel_raw /diagnostics /diagnostics_agg /system/safety_command /tf /tf_static）。
   - 使用者點名 Topic → `--topics /a /b`。
 * `--duration`：一定要定時（1～480 秒）。
-* `--out-root`：省略＝系統設定的數據根目錄；沒設定時在容器的 /workspace 底下找 `experiment_logs`。主機路徑會自動換成容器內路徑。
+* `--name`：實驗資料夾的名稱（建在數據根目錄底下；省略＝`exp_年月日_時分秒`）。使用者說「資料夾名稱用 X」「命名為 X」→ `--name X`。
+* `--out-root`：換數據根目錄（絕對路徑）。省略＝系統設定的數據根目錄；沒設定時在容器的 /workspace 底下找 `experiment_logs`。主機路徑會自動換成容器內路徑。資料夾名稱不要放這裡。
 * 預設會加錄 /rosout；`--no-rosout` 不錄 Log。
 
 # 範例
 `EXECUTE: scripts/mcap_recorder_cmd.py --all --duration 30`（全部 Topic）
 `EXECUTE: scripts/mcap_recorder_cmd.py --preset core --duration 30`（核心 Topic）
+`EXECUTE: scripts/mcap_recorder_cmd.py --all --duration 40 --name exp_event_test`（全部 Topic，資料夾名稱 exp_event_test）
 `EXECUTE: scripts/mcap_recorder_cmd.py --topics /cmd_vel /odom /battery_state --duration 20 --name exp_battery_test`
 
 # 回傳

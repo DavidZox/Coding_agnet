@@ -10,3 +10,6 @@ skills_system/drafts/
 
 # 評測結果（evals/run_evals.py 產生，每次一個時間戳資料夾）
 evals/results/
+
+# 實機測試資料（錄製檔、分析 job 的複本、對話紀錄，約 13 MB，見 test_data/README.md）：只留在本機
+test_data/

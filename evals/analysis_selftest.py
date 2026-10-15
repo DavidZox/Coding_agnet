@@ -154,8 +154,18 @@ def main():
                 assert issue in fix_prompt, (issue, fix_prompt[-800:])
             job = json.load(open(os.path.join(agent.analysis_jobs_dir(), agent.analysis_last["id"], "job.json"), encoding="utf-8"))
             assert [a["topic"] for a in job["plan"]["assignments"]] == ["/system/safety_gate_status"], job["plan"]
-            assert job["report"]["confidence"] == "medium" and "程式檢查" in job["report"]["root_cause"], "缺的輸入：信心最多 medium"
+            # NO_CMD_VEL_RAW 在 stop_reasons 每次跳轉前後都在（[NO_CMD_VEL_RAW, NO_SAFETY_COMMAND_YET] → [MON_INITIALIZING, NO_CMD_VEL_RAW]
+            # → [NO_CMD_VEL_RAW]）＝背景條件：根因沒用到它就不列、不限制信心
+            assert job["coverage_gaps"][0]["background"] == "/system/safety_gate_status 的 stop_reasons", job["coverage_gaps"]
+            assert "背景條件" in fake.seen["synth"][0][1]["content"]
+            assert job["report"]["confidence"] == "high" and "程式檢查" not in job["report"]["root_cause"], job["report"]
+            assert not any("cmd_vel_raw" in u for u in job["report"]["unknowns"]), job["report"]["unknowns"]
             assert [t["time"] for t in job["report"]["timeline"]] == ["+0.75s", "+15.54s"], "時間線依時間排序"
+            # 根因還是寫了沒量測的輸入：照一般的缺口處理（列進尚未確認、信心最多 medium）
+            fake, calls = setup(plans=[GOOD_PLAN], synth=[dict(SYNTH, confidence="high", unknowns=[], root_cause="NO_CMD_VEL_RAW 造成停車")])
+            out = agent.analysis_run(f'--data {DATA} "安全閘為什麼停下來"')
+            job = json.load(open(os.path.join(agent.analysis_jobs_dir(), agent.analysis_last["id"], "job.json"), encoding="utf-8"))
+            assert job["report"]["confidence"] == "medium" and "程式檢查" in job["report"]["root_cause"], "缺的輸入：信心最多 medium"
             assert any("cmd_vel_raw" in u for u in job["report"]["unknowns"]) and "尚未確認：" in out
             assert "Log" not in agent._digest_text({"index": json.loads(fixture("index_output.txt").split("\n[ANALYSIS_DATA]")[0]),
                                                     "signals": []})[:2], "沒有 Log 時說明"
@@ -228,6 +238,7 @@ def main():
             assert "safety_command」的 Topic" not in synth_prompt, "NO_SAFETY_COMMAND_YET 對得上 /system/safety_command，不算缺"
             job = json.load(open(os.path.join(job_dir, "job.json"), encoding="utf-8"))
             assert [g["reason"] for g in job["coverage_gaps"]] == ["NO_CMD_VEL_RAW"], job["coverage_gaps"]
+            assert job["workers"][0]["key_metrics"] == metrics, "程式量的數字也留在 job 裡（Synthesizer 前的程式檢查要用）"
             assert "→ NORMAL" in out and "rightarrow" not in out
 
         def t_worker_fallback_and_synth_fallback():
@@ -240,7 +251,9 @@ def main():
             nudges = [m["content"] for m in fake.seen["worker"][1] if m["role"] == "user"]
             assert any("你還沒有量測任何 Key" in t for t in nudges), "沒量測就說完成：先推回去一次"
             assert job["report"]["confidence"] == "low" and out.startswith(ANALYSIS_REPORT_HEAD), job["report"]
-            assert any("cmd_vel_raw" in u for u in job["report"]["unknowns"]), "缺的輸入一定列在尚未確認"
+            gap = job["coverage_gaps"][0]
+            assert gap["reason"] == "NO_CMD_VEL_RAW" and (gap["background"] or any("cmd_vel_raw" in u for u in job["report"]["unknowns"])), \
+                "缺的輸入：不是背景條件就一定列在尚未確認"
             assert is_exempt_result(out, 5000), "報告不再交給摘要 session"
 
         def t_dispatch_and_state():
@@ -314,6 +327,73 @@ def main():
             shutil.rmtree(d)
             shutil.rmtree(fresh)
 
+        def t_recorder_target():
+            import importlib.util
+            spec = importlib.util.spec_from_file_location(
+                "mcap_recorder_cmd", os.path.join(tmp, "skills_system", "scripts", "mcap_recorder_cmd.py"))
+            rec = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(rec)
+            out_root, name, note, err = rec.normalize_target("exp_event_cmdvel", "")   # 實測：模型把資料夾名稱放進 --out-root
+            assert (out_root, name, err) == ("", "exp_event_cmdvel", "") and "--name exp_event_cmdvel" in note, note
+            assert rec.normalize_target("/data/logs", "exp_a") == ("/data/logs", "exp_a", "", "")
+            assert rec.normalize_target("", "") == ("", "", "", "")
+            assert rec.normalize_target("logs/exp", "")[3].startswith("[ERROR]"), "含 / 的相對路徑擋下"
+            assert rec.normalize_target("exp_x", "exp_y")[3].startswith("[ERROR]"), "已經給了 --name 就不猜"
+            assert rec.normalize_target("", "../escape")[3].startswith("[ERROR]"), "--name 不能帶路徑"
+
+        def t_features():
+            sys.path.insert(0, os.path.join(tmp, "skills_system", "scripts"))
+            import _ros2_data_common as rd
+            s = 1_000_000_000
+            win = {"start_ns": 0, "end_ns": 30 * s}
+            # 實測 /cmd_vel_raw：10 Hz 只在 +10～+18s 發布 → 相鄰間隔都正常，但中途才開始、中途停止
+            mid = [10 * s + i * s // 10 for i in range(81)]
+            r = rd.rate_features(mid, win)
+            assert r["started_late"] and r["stopped_early"] and not r["gaps"], r
+            full = [i * s // 10 for i in range(301)]
+            r = rd.rate_features(full, win)
+            assert not r["started_late"] and not r["stopped_early"], r
+            assert "started_late" not in rd.rate_features([12 * s, 20 * s, 25 * s], win), "筆數少（狀態改變才發布）不判斷頭尾"
+            # 實測 /system/safety_gate_status：只在狀態改變時發布 → 時間窗開頭沿用之前的最後一則，兩次跳轉都算到
+            pts = [(13 * s, ()), (21 * s, ("NO_CMD_VEL_RAW",))]
+            f = rd.state_features(pts, 30 * s, initial=(int(0.5 * s), ("NO_CMD_VEL_RAW",)), window_start_ns=3 * s)
+            assert f["transition_count"] == 2 and f["first"] == "[NO_CMD_VEL_RAW]" and f["samples"] == 2, f
+            assert f["carried_age_sec"] == 2.5 and "沿用" in rd.feature_lines("stop_reasons", f, 0)[0]
+            assert rd.state_features(pts, 30 * s)["transition_count"] == 1, "沒給 initial 維持原本的算法"
+            feats, flags = rd.measure_key({"value": pts}, {"category": "state"}, {"start_ns": 3 * s, "end_ns": 30 * s},
+                                          "stop_reasons", carry={"value": (int(0.5 * s), ("NO_CMD_VEL_RAW",))})
+            assert feats["value"]["transition_count"] == 2 and "狀態跳轉 2 次" in flags[0], (feats, flags)
+            # 實測 /cmd_vel 的 linear.x：0 → 0.1 → 0，最大跳變只看得到上去那次 → 列每次切換
+            f = rd.numeric_features([(0, 0.0), (s, 0.0), (2 * s, 0.1), (3 * s, 0.1), (4 * s, 0.0)])
+            assert f["step_count"] == 2 and f["levels"] == 2 and f["steps"][1]["t_ns"] == 4 * s, f
+            assert "數值切換 2 次" in "\n".join(rd.feature_lines("linear.x", f, 0))
+            noisy = rd.numeric_features([(i * s, 1.0 + i * 0.013) for i in range(20)])
+            assert "steps" not in noisy, "連續變化的數值不列切換"
+            w = rd.parse_window("3.37s-31.79s", 0)   # 實測 worker 的寫法；負號不能當分隔
+            assert (w["start_ns"], w["end_ns"]) == (3_370_000_000, 31_790_000_000), w
+            assert rd.parse_window("+10,+20", 0)["end_ns"] == 20 * s
+
+        def t_timeline_fix():
+            from agent_core.analysis_job import _fix_signal_times
+            base = 1_000_000_000_000_000_000
+            sigs = {"L17": {"id": "L17", "count": 1, "first_sec": 1e9 + 18.711, "last_sec": 1e9 + 18.711, "times_sec": [1e9 + 18.711]},
+                    "L5": {"id": "L5", "count": 40, "first_sec": 1e9 + 1.0, "last_sec": 1e9 + 30.0, "times_sec": [1e9 + 1.0, 1e9 + 2.0]}}
+            tl = [{"time": "+8.71s", "source": "L17", "event": "重啟"},           # 實測：模型寫成時間窗的開頭
+                  {"time": "+18.71s", "source": "L17 WARN", "event": "對的不動"},
+                  {"time": "+12.00s", "source": "L5", "event": "出現 40 次、只記 2 個時間戳：落在範圍內不動"},
+                  {"time": "+3.00s", "source": "L5、L17", "event": "兩個訊號：不判斷"},
+                  {"time": "+9.00s", "source": "/cmd_vel", "event": "Topic 不動"}]
+            assert _fix_signal_times(tl, sigs, base) == 1, tl
+            assert [x["time"] for x in tl] == ["+18.71s", "+18.71s", "+12.00s", "+3.00s", "+9.00s"], tl
+            from agent_core.analysis_job import _background_codes
+            km = {"W1": {"stop_reasons": {"transitions": 2, "first": "[NO_CMD_VEL_RAW]", "last": "[NO_CMD_VEL_RAW]", "changes": [
+                "[NO_CMD_VEL_RAW] → [MON_INITIALIZING, NO_CMD_VEL_RAW] @1.0", "[MON_INITIALIZING, NO_CMD_VEL_RAW] → [NO_CMD_VEL_RAW] @2.0"]}}}
+            ws = [{"topic": "/system/safety_gate_status", "key_metrics": km}]
+            assert _background_codes(ws, ["NO_CMD_VEL_RAW"]) == {"NO_CMD_VEL_RAW": "/system/safety_gate_status 的 stop_reasons"}
+            km["W1"]["stop_reasons"]["changes"][0] = "[] → [MON_INITIALIZING, NO_CMD_VEL_RAW] @1.0"   # 中途才出現：不是背景
+            km["W1"]["stop_reasons"]["first"] = "[]"
+            assert _background_codes(ws, ["NO_CMD_VEL_RAW"]) == {}
+
         for name, fn in [("Orchestrator：不存在的 L#／Topic、Log Topic、重複的 Topic 交回修一次（程式列出具體的問題）", t_plan_repair),
                          ("Orchestrator 給不出計畫：程式依關聯度補指派（不重複、不派 Log）；沒有相關訊號＝整段數據；預設問題", t_auto_assign_and_whole_window),
                          ("時間窗：訊號前後各取幾秒、重疊的合併、限制在數據範圍內；Log 的時間不在範圍內退回整段", t_windows),
@@ -321,7 +401,10 @@ def main():
                          ("Worker 沒量測：推回去一次、系統代選 Key；Synthesizer 壞掉：程式拼一份信心低的報告", t_worker_fallback_and_synth_fallback),
                          ("dispatch：analysis_run 偽技能存檔與軌跡、[ANALYSIS_DATA] 同步、省略 --data、腳本拿得到環境變數", t_dispatch_and_state),
                          ("Web：/analyze 的回合（進度、報告進主對話、主模型依報告回答）、面板 state、分析模式指令", t_web),
-                         ("程式重新啟動：沒做完的 job（進度很久沒更新）標成中斷，剛更新的不動", t_mark_interrupted)]:
+                         ("程式重新啟動：沒做完的 job（進度很久沒更新）標成中斷，剛更新的不動", t_mark_interrupted),
+                         ("錄製：資料夾名稱放錯在 --out-root 改當 --name；含 / 的相對路徑、--name 帶路徑擋下", t_recorder_target),
+                         ("量測：中途開始／停止發布、狀態沿用時間窗之前的最後一則、只有幾種值的數值列每次切換", t_features),
+                         ("Synthesizer：L# 的時間照 Log 的時間戳校正；清單狀態跳轉前後都在的缺口代碼當背景條件", t_timeline_fix)]:
             check(name, fn)
     finally:
         os.chdir(cwd)

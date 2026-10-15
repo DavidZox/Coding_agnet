@@ -43,6 +43,24 @@ def build_parser():
             .add("--timeout", default=""))
 
 
+def normalize_target(out_root, name):
+    """主機端：檢查 --out-root／--name，回傳 (out_root, name, 附註, 錯誤)。
+    實測：使用者說「資料夾名稱用 exp_event_cmdvel」，模型送 --out-root exp_event_cmdvel；相對路徑在容器裡落在工作目錄（/workspace）
+    底下——不在數據根目錄、主機也看不到。沒有斜線的名稱（也沒給 --name）就是資料夾名稱，改當 --name；其他相對路徑擋下。"""
+    note = ""
+    if out_root and not os.path.isabs(os.path.expanduser(out_root)):
+        bare = out_root.strip().strip("/")
+        if bare and "/" not in bare and bare not in (".", "..") and not name:
+            out_root, name = "", bare
+            note = f"\n（--out-root 只收數據根目錄的絕對路徑；「{bare}」是資料夾名稱，已改用 --name {bare}）"
+        else:
+            return out_root, name, "", (f"[ERROR] --out-root 要是數據根目錄的絕對路徑（收到「{out_root}」）；"
+                                        f"只想指定資料夾名稱請用 --name。\n用法：{USAGE}")
+    if name and ("/" in name or name.strip() in ("", ".", "..")):
+        return out_root, name, "", f"[ERROR] --name 只能是資料夾名稱（不能有 /）：收到「{name}」\n用法：{USAGE}"
+    return out_root, name, note, ""
+
+
 def _stop_group(proc, first=signal.SIGINT, wait=20):
     """同 toolkit 的 stop_recording：先 SIGINT（rosbag2 收到會把快取寫完、封裝 mcap），等不到再 SIGTERM，最後才 SIGKILL。"""
     if proc is None or proc.poll() is not None:
@@ -73,6 +91,9 @@ def worker_main(argv):
     if not root:
         print("[ERROR] 不知道要錄到哪裡：用 --out-root 指定數據根目錄（容器內路徑，建議放在已掛載到主機的資料夾，例如 "
               "…/toolkit/experiment_logs）。")
+        return 2
+    if not os.path.isabs(root):   # 主機端 normalize_target 已處理；這裡防直接呼叫 worker 時落在工作目錄底下
+        print(f"[ERROR] 數據根目錄要是絕對路徑（收到「{root}」）")
         return 2
     name = args.name or "exp_" + time.strftime("%Y%m%d_%H%M%S")
     target = os.path.join(root, name)
@@ -161,6 +182,10 @@ def host_main(argv):
     if timeout < args.duration + 30:
         print(f"[ERROR] --timeout {timeout} 秒太短：至少要錄製時長加 30 秒（停止、封裝與建立索引）")
         return 2
+    out_root, name, note, err = normalize_target(args.out_root, args.name)
+    if err:
+        print(err)
+        return 2
     container, err = resolve_container(args.container)
     if err:
         print(err)
@@ -177,15 +202,15 @@ def host_main(argv):
     if args.all:
         wargs.append("--all")
     wargs += ["--duration", str(args.duration)]
-    if args.out_root:
-        wargs += ["--out-root", rd.to_container_path(args.out_root, mounts)]
-    if args.name:
-        wargs += ["--name", args.name]
+    if out_root:
+        wargs += ["--out-root", rd.to_container_path(out_root, mounts)]
+    if name:
+        wargs += ["--name", name]
     wargs += [f for f, on in (("--no-rosout", args.no_rosout), ("--no-index", args.no_index)) if on]
     rc, out = rd.run_in_container(os.path.abspath(__file__), wargs, container=container, timeout=timeout,
                                   what="mcap_recorder（錄製）", extra_files=[os.path.join(rd.HERE, "rosout_formatter.py")],
                                   timeout_hint="確認錄製時長與 --timeout 相容；容器內的 ros2 bag record 可能仍在執行，請用 docker_runcmd 確認。")
-    print(rd.finalize_output(out))
+    print(rd.finalize_output(out) + note)
     return rc
 
 

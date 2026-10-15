@@ -40,6 +40,7 @@ STATE_MAX_DISTINCT = 12                   # 字串欄位相異值不超過這個
 STATE_MAX_LEN = 64
 STATE_FEW_DISTINCT = 8                    # 相異值只有這麼少的字串（即使是長句子，例如 winning_reason）也當狀態：變了就是一次狀態變遷
 INT_STATE_MAX_DISTINCT = 10               # 整數欄位相異值不超過這個數 → 量測時當狀態跳轉（同 toolkit 的判斷）
+STEP_MAX_LEVELS = 4                       # 浮點數只有這麼少種值（速度指令 0／0.1、設定值）→ 另外列每次切換的時間（像狀態跳轉）
 SET_MAX_LEN = 16                          # 整數／字串序列平均長度不超過這個數 → 當集合狀態（例如 active_error_codes）
 SPIKE_SIGMA = 2.5                         # 尖峰：離均值超過 2.5 個標準差（同 toolkit）
 MAX_DEPTH = 4
@@ -348,6 +349,25 @@ def iter_messages(mcap_files, topics=None, start_ns=None, end_ns=None):
             reader = make_reader(stream)
             yield from reader.iter_messages(topics=topics, start_time=start_ns,
                                             end_time=None if end_ns is None else end_ns + 1, log_time_order=True)
+
+
+def last_message_before(mcap_files, topic, t_ns):
+    """t_ns 之前（不含）這個 Topic 的最後一則原始訊息，沒有就 None。從後往前讀（mcap 的 reverse），讀到一則就停；
+    舊版 mcap 沒有 reverse 時從頭讀到 t_ns。"""
+    from mcap.reader import make_reader
+    for f in reversed(mcap_files):
+        with open(f, "rb") as stream:
+            reader = make_reader(stream)
+            try:
+                for _, _, m in reader.iter_messages(topics=[topic], end_time=t_ns, log_time_order=True, reverse=True):
+                    return m
+            except TypeError:
+                last = None
+                for _, _, m in reader.iter_messages(topics=[topic], end_time=t_ns, log_time_order=True):
+                    last = m
+                if last is not None:
+                    return last
+    return None
 
 
 def bag_overview(mcap_files):
@@ -1007,8 +1027,8 @@ def parse_window(text, base_ns=None):
     raw = str(text).strip()
     if "," in raw:
         parts = [p.strip() for p in raw.split(",")]
-    else:   # 「+0.00s～+30.54s」「0.00s_30.54s」「10 to 20」：模型常照抄畫面上的寫法
-        parts = [p.strip() for p in re.split(r"\s*(?:～|~|_|\bto\b|至|到)\s*", raw) if p.strip()]
+    else:   # 「+0.00s～+30.54s」「0.00s_30.54s」「10 to 20」「3.37s-31.79s」：模型常照抄畫面上的寫法（負號不算分隔）
+        parts = [p.strip() for p in re.split(r"\s*(?:～|~|_|\bto\b|至|到)\s*|(?<=[\ds])\s*-\s*(?=[+\d])", raw) if p.strip()]
     if len(parts) < 2:
         raise ValueError(f"時間窗要寫成「開始,結束」（epoch 秒或 +相對秒，例如 +10,+20），收到：{text}")
     start, end = parse_time(parts[0], base_ns), parse_time(parts[1], base_ns)
@@ -1063,8 +1083,35 @@ def collect_series(mcap_files, topic, type_name, keys, window):
     return times, series, errors
 
 
+def carry_in_values(mcap_files, topic, type_name, keys, t_ns):
+    """時間窗開始前這個 Topic 最後一則訊息、每個 Key 攤平後的值：{key: {項目: (t, 值)}}（沒有就空的）。
+    只在狀態改變時才發布的 Topic（例如 TRANSIENT_LOCAL 的狀態），時間窗開始時的狀態是之前的最後一則；不沿用的話，
+    窗內第一則被當成起始狀態、少算一次跳轉（實測 /system/safety_gate_status：[NO_CMD_VEL_RAW] → [] 沒有算到）。"""
+    m = last_message_before(mcap_files, topic, t_ns)
+    cls, _ = msg_class(type_name)
+    if m is None or cls is None:
+        return {}
+    try:
+        msg = deserialize(m.data, cls)
+    except Exception:   # noqa: BLE001
+        return {}
+    out = {}
+    for k in keys:
+        try:
+            out[k] = {entry: (m.log_time, v) for entry, v in flatten(extract(msg, k)).items()}
+        except Exception:   # noqa: BLE001
+            continue
+    return out
+
+
+EDGE_MIN_MESSAGES = 5        # 至少這麼多筆才看得出固定頻率；更少的多半只在狀態改變時才發布，頭尾沒有訊息不代表停止
+EDGE_SILENCE_PERIODS = 10    # 時間窗頭／尾沒有訊息超過「中位數週期 × 這個倍數」（且 ≥1 秒）＝中途才開始／中途停止發布
+
+
 def rate_features(times, window):
-    """訊息頻率與中斷：筆數、平均 Hz、最大間隔；間隔超過中位數週期 3 倍（且 ≥0.5 秒）的列出來。"""
+    """訊息頻率與中斷：筆數、平均 Hz、最大間隔；間隔超過中位數週期 3 倍（且 ≥0.5 秒）的列出來。
+    固定頻率的 Topic（≥EDGE_MIN_MESSAGES 筆）再看時間窗的頭尾：started_late＝中途才開始發布、stopped_early＝中途停止發布。
+    實測：/cmd_vel_raw 只在 +13～+21s 發布，只看相鄰訊息的間隔會得到「沒有訊息中斷」，worker 因此判斷指令整段持續發送。"""
     n = len(times)
     out = {"messages": n}
     if n == 0:
@@ -1081,6 +1128,10 @@ def rate_features(times, window):
         out["max_gap_sec"] = round(gaps[0][0] / 1e9, 3)
         thr = max(3 * median, 500_000_000)
         out["gaps"] = [{"start_sec": sec(t), "duration_sec": round(g / 1e9, 3)} for g, t in gaps[:3] if g > thr]
+        if n >= EDGE_MIN_MESSAGES:
+            edge = max(EDGE_SILENCE_PERIODS * median, 1_000_000_000)
+            out["started_late"] = times[0] - window["start_ns"] > edge
+            out["stopped_early"] = window["end_ns"] - times[-1] > edge
     return out
 
 
@@ -1109,9 +1160,15 @@ def numeric_features(points):
         i = max(range(n - 1), key=lambda k: abs(arr[k + 1] - arr[k]))
         jump = {"t_ns": ts[i + 1], "from": arr[i], "to": arr[i + 1], "delta": arr[i + 1] - arr[i]}
     constant = std <= 1e-9 * max(1.0, abs(mean))
-    return {"kind": "numeric", "samples": n, "min": mn, "max": mx, "mean": mean, "variance": var, "std": std,
-            "slope_per_sec": slope, "first": arr[0], "last": arr[-1], "constant": constant,
-            "spike_count": len(spikes), "spikes": spikes[:8], "max_jump": None if constant else jump}
+    out = {"kind": "numeric", "samples": n, "min": mn, "max": mx, "mean": mean, "variance": var, "std": std,
+           "slope_per_sec": slope, "first": arr[0], "last": arr[-1], "constant": constant,
+           "spike_count": len(spikes), "spikes": spikes[:8], "max_jump": None if constant else jump}
+    # 只有幾種值的數值（實測 /cmd_vel 的 linear.x：0 → 0.1 → 0）：尖峰、最大跳變只看得到一次，回到 0 的時間看不到 → 列每次切換
+    levels = len(set(arr))
+    if not constant and levels <= STEP_MAX_LEVELS:
+        steps = [{"t_ns": ts[i], "from": arr[i - 1], "to": arr[i]} for i in range(1, n) if arr[i] != arr[i - 1]]
+        out.update(levels=levels, step_count=len(steps), steps=steps[:12])
+    return out
 
 
 def _state_key(v):
@@ -1120,7 +1177,18 @@ def _state_key(v):
     return v
 
 
-def state_features(points, window_end_ns):
+def state_text(v):
+    """一個狀態值給人看的寫法（集合寫成 [a, b]、空字串寫成 ""），跟狀態跳轉的寫法一致。"""
+    return _state_str(_state_key(v))
+
+
+def state_features(points, window_end_ns, initial=None, window_start_ns=None):
+    """狀態的跳轉與占比。initial＝時間窗開始前最後一則的 (t, 值)：當成時間窗開頭的狀態（跳轉、占比從時間窗開頭算），
+    窗內第一則跟它不同就算一次跳轉。"""
+    carried = None
+    if initial is not None and window_start_ns is not None and initial[0] < points[0][0]:
+        carried = initial[0]
+        points = [(window_start_ns, initial[1])] + list(points)
     ts = [t for t, _ in points]
     vals = [_state_key(v) for _, v in points]
     transitions, dwell = [], {}
@@ -1138,9 +1206,13 @@ def state_features(points, window_end_ns):
     dwell[cur] = dwell.get(cur, 0) + (end - seg_start)
     total = sum(dwell.values()) or 1
     share = sorted(((_state_str(k), round(v / total, 3)) for k, v in dwell.items()), key=lambda x: -x[1])
-    return {"kind": "state", "samples": len(vals), "first": _state_str(vals[0]), "last": _state_str(vals[-1]),
-            "distinct": len(dwell), "transition_count": len(transitions), "transitions": transitions[:12],
-            "time_share": share[:6]}
+    out = {"kind": "state", "samples": len(vals) - (carried is not None), "first": _state_str(vals[0]),
+           "last": _state_str(vals[-1]), "distinct": len(dwell), "transition_count": len(transitions),
+           "transitions": transitions[:12], "time_share": share[:6]}
+    if carried is not None:
+        out["carried_from_ns"] = carried
+        out["carried_age_sec"] = round((window_start_ns - carried) / 1e9, 3)
+    return out
 
 
 def _state_str(v):
@@ -1193,8 +1265,9 @@ def entry_name(key, label, desc):
     return f"{key}.{label}"
 
 
-def measure_key(entries, desc, window, key=""):
-    """一個 Key 在一個時間窗的特徵：每個項目各自量（向量分量、對照表的每個名稱）。flags 是程式判斷的異常指標文字。"""
+def measure_key(entries, desc, window, key="", carry=None):
+    """一個 Key 在一個時間窗的特徵：每個項目各自量（向量分量、對照表的每個名稱）。flags 是程式判斷的異常指標文字。
+    carry＝carry_in_values 這個 Key 的部分（{項目: (t, 值)}）：狀態項目沿用成時間窗開頭的狀態。"""
     hint = desc.get("category") if desc else None
     out, flags = {}, []
     for label, points in entries.items():
@@ -1207,10 +1280,12 @@ def measure_key(entries, desc, window, key=""):
             f = numeric_features(pts)
             if f["spike_count"]:
                 flags.append(f"{entry_name(key, label, desc)} 尖峰 {f['spike_count']} 個")
+            if f.get("step_count"):
+                flags.append(f"{entry_name(key, label, desc)} 數值切換 {f['step_count']} 次（只有 {f['levels']} 種值）")
         elif kind == "array":
             f = array_features(points)
         else:
-            f = state_features(points, window["end_ns"])
+            f = state_features(points, window["end_ns"], initial=(carry or {}).get(label), window_start_ns=window["start_ns"])
             if f["transition_count"]:
                 flags.append(f"{entry_name(key, label, desc)} 狀態跳轉 {f['transition_count']} 次")
         out[label] = f
@@ -1250,7 +1325,12 @@ def feature_lines(label, f, base_ns, indent="     "):
             sp = "、".join(f"{fmt_t(s['t_ns'])}[{fmt_rel(s['t_ns'], base_ns)}]={fmt_num(s['value'])}" for s in f["spikes"][:4])
             lines.append(f"{indent}  尖峰（離均值 >{SPIKE_SIGMA}σ）{f['spike_count']} 個：{sp}")
         j = f.get("max_jump")
-        if j and abs(j["delta"]) > 0:
+        if f.get("step_count"):
+            st = "、".join(f"{fmt_t(s['t_ns'])}[{fmt_rel(s['t_ns'], base_ns)}] {fmt_num(s['from'])}→{fmt_num(s['to'])}"
+                          for s in f["steps"][:6])
+            lines.append(f"{indent}  數值切換 {f['step_count']} 次（只有 {f['levels']} 種值）：{st}"
+                         + (f"…其餘 {f['step_count'] - 6} 次見 --json" if f["step_count"] > 6 else ""))
+        elif j and abs(j["delta"]) > 0:
             lines.append(f"{indent}  最大跳變 {fmt_num(j['from'])}→{fmt_num(j['to'])} @ {fmt_t(j['t_ns'])}[{fmt_rel(j['t_ns'], base_ns)}]")
         return lines
     if f["kind"] == "array":
@@ -1265,9 +1345,13 @@ def feature_lines(label, f, base_ns, indent="     "):
                          f"std {fmt_num(em['std'])}" + (f"，尖峰 {em['spike_count']} 個" if em["spike_count"] else ""))
         return lines
     share = "、".join(f"{v} {round(p * 100)}%" for v, p in f["time_share"][:4])
+    # 沿用的那一則比時間窗開頭早 1 秒以上才註明（固定頻率的 Topic 沿用的是前一則，不用講）
+    carried = (f"；時間窗開始時的狀態沿用 {fmt_t(f['carried_from_ns'])}[{fmt_rel(f['carried_from_ns'], base_ns)}] 的最後一則"
+               if f.get("carried_age_sec", 0) > 1.0 else "")
     if not f["transition_count"]:
-        return [f"{indent}{label}：狀態不變 = {short(f['first'], 80)}（{f['samples']} 筆）"]
-    lines = [f"{indent}{label}：狀態跳轉 {f['transition_count']} 次（首 {short(f['first'], 60)} → 末 {short(f['last'], 60)}；占比 {share}）"]
+        return [f"{indent}{label}：狀態不變 = {short(f['first'], 80)}（{f['samples']} 筆{carried}）"]
+    lines = [f"{indent}{label}：狀態跳轉 {f['transition_count']} 次（首 {short(f['first'], 60)} → 末 {short(f['last'], 60)}；"
+             f"占比 {share}{carried}）"]
     for tr in f["transitions"][:6]:
         extra = ""
         if "added" in tr:
