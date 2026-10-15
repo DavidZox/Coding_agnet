@@ -464,7 +464,7 @@ class AnalysisMixin:
         else:
             job["signals"], job["log_source"] = [], None
             job["log_error"] = _short(out, 300)
-        digest = self._digest_text(job, limit=None)
+        digest = self._digest_text(job, limit=None, include_recorder=True)
         self._job_write(job, "log_digest.md", f"# 去重後的 Log（{job.get('log_source') or job.get('log_error')}）\n\n{digest}\n")
         self._job_write(job, "topic_metadata.md", f"# 全域 Topic Metadata：{idx.get('label')}\n\n{self._topics_text(job)}\n")
         workers_ok = sum(1 for t in idx["topics"] if t["role"] == "worker")
@@ -478,11 +478,17 @@ class AnalysisMixin:
     def _signal_ns(self, s, key="first_sec"):
         return int(round(float(s[key]) * 1e9))
 
-    def _digest_text(self, job, limit=ANALYSIS_DIGEST_MAX_SIGNALS):
-        """去重後的 Log（給 Orchestrator 與 Synthesizer）：略過錄製工具自己的 Log；WARN 以上全部，其餘依時間補到上限。"""
+    def _digest_text(self, job, limit=ANALYSIS_DIGEST_MAX_SIGNALS, include_recorder=False):
+        """去重後的 Log（給 Orchestrator 與 Synthesizer）：略過錄製工具自己的 Log；WARN 以上全部，其餘依時間補到上限。
+        include_recorder：給人看的 log_digest.md 連 rosbag2 的 Log 也列（標明是錄製工具的）。"""
         base = job["index"]["start_ns"]
-        sigs = [s for s in job.get("signals") or [] if not is_recorder_node(s["node"])]
+        all_sigs = job.get("signals") or []
+        sigs = [s for s in all_sigs if include_recorder or not is_recorder_node(s["node"])]
         if not sigs:
+            if all_sigs:   # 有 Log，只是全部是 rosbag2 自己的（實測：穩定狀態的 30 秒錄製，17 則全是 Subscribed to topic…）
+                n = sum(s["count"] for s in all_sigs)
+                return (f"（Log 共 {n} 則，全部是錄製工具 rosbag2 自己的訊息；受測系統在這段時間沒有輸出任何 Log——"
+                        "Log 有讀到，不是缺少 Log）")
             return "（沒有 Log：" + (job.get("log_error") or "這份數據沒有 /rosout，也沒有 rosout.log") + "）"
         important = [s for s in sigs if _LEVEL_RANK.get(s["level"], 1) >= 2]
         others = [s for s in sigs if _LEVEL_RANK.get(s["level"], 1) < 2]
@@ -494,12 +500,13 @@ class AnalysisMixin:
             if s["count"] > 1:
                 when += f"～{_rel(self._signal_ns(s, 'last_sec'), base)}"
             var = f"（{len(s['variants'])} 種寫法）" if s.get("variants") else ""
-            lines.append(f"{s['id']} {s['level']} ×{s['count']} {when} {s['node']}：{_short(s['message'], 200)}{var}")
+            rec = "（錄製工具 rosbag2 自己的 Log）" if is_recorder_node(s["node"]) else ""
+            lines.append(f"{s['id']} {s['level']} ×{s['count']} {when} {s['node']}：{_short(s['message'], 200)}{var}{rec}")
         hidden = len(sigs) - len(chosen)
         if hidden > 0:
             lines.append(f"（另有 {hidden} 個 INFO 訊號沒有列出）")
-        rec = sum(1 for s in job.get("signals") or [] if is_recorder_node(s["node"]))
-        if rec:
+        rec = sum(1 for s in all_sigs if is_recorder_node(s["node"]))
+        if rec and not include_recorder:
             lines.append(f"（略過錄製工具 rosbag2 自己的 Log {rec} 個訊號）")
         return "\n".join(lines)
 

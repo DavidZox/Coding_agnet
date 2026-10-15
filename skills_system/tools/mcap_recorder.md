@@ -13,13 +13,17 @@ dependencies: ["docker", "ros2", "rosbag2-storage-mcap", "mcap"]
 
 # 語法
 `EXECUTE: scripts/mcap_recorder_cmd.py (--topics TOPIC... | --preset core | --all) --duration 秒 [--out-root 數據根目錄] [--name 名稱] [--no-rosout]`
-* `--preset core`：toolkit 的預設核心 Topic（/sensor_scan /cmd_vel /cmd_vel_raw /diagnostics /diagnostics_agg /system/safety_command /tf /tf_static）。
+* 錄哪些 Topic（三選一，照使用者的說法）：
+  - 使用者說「全部」「所有 Topic」→ `--all`（錄得到的 Topic 全部錄，診斷時最完整）。
+  - 使用者說「核心 Topic」→ `--preset core`＝toolkit 的預設核心組合（/sensor_scan /cmd_vel /cmd_vel_raw /diagnostics /diagnostics_agg /system/safety_command /tf /tf_static）。
+  - 使用者點名 Topic → `--topics /a /b`。
 * `--duration`：一定要定時（1～480 秒）。
 * `--out-root`：省略＝系統設定的數據根目錄；沒設定時在容器的 /workspace 底下找 `experiment_logs`。主機路徑會自動換成容器內路徑。
 * 預設會加錄 /rosout；`--no-rosout` 不錄 Log。
 
 # 範例
-`EXECUTE: scripts/mcap_recorder_cmd.py --preset core --duration 30`
+`EXECUTE: scripts/mcap_recorder_cmd.py --all --duration 30`（全部 Topic）
+`EXECUTE: scripts/mcap_recorder_cmd.py --preset core --duration 30`（核心 Topic）
 `EXECUTE: scripts/mcap_recorder_cmd.py --topics /cmd_vel /odom /battery_state --duration 20 --name exp_battery_test`
 
 # 回傳

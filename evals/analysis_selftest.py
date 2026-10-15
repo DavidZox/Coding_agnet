@@ -184,6 +184,10 @@ def main():
             t30 = int(round(l30["first_sec"] * 1e9))
             assert w2["start_ns"] == t30 - 5_000_000_000 and w2["end_ns"] == t30 + 5_000_000_000 and w2["signals"] == ["L30"]
             assert w2["label"].startswith("L30 INFO safety_motion_controller")
+            rec_only = [s for s in sig if s["node"] == "rosbag2_recorder"]
+            text = agent._digest_text({"index": idx, "signals": rec_only})
+            assert "全部是錄製工具 rosbag2 自己的訊息" in text and "沒有 /rosout" not in text, "只有 rosbag2 的 Log：不能說成沒有 Log"
+            assert "（錄製工具 rosbag2 自己的 Log）" in agent._digest_text({"index": idx, "signals": rec_only}, limit=None, include_recorder=True)
             far = agent._make_windows({"index": idx, "signals": [dict(l30, times_sec=[1.0], first_sec=1.0)]}, [{"id": "L30"}], 5, 5)
             assert far[0]["label"].startswith("整段數據"), "Log 的時間不在數據範圍內：退回整段數據"
 
