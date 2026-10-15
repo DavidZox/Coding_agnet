@@ -1,2 +1,0 @@
-1
-user1 pwd1 name1 phone1 0 addr1 2

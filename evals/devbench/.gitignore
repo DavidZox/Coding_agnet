@@ -1,3 +1,0 @@
-# prepare.py 下載的 DevBench 資料與建立的虛擬環境（不進版本控制）
-data/
-.venv/
