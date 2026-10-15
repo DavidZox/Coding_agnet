@@ -118,7 +118,8 @@ python3 Agent_Runner.py     # CLI（同樣有 /analyze 與 /analysis_* 指令）
 | Web 的完整流程（HTTP 照瀏覽器的方式、auto 模式、e4b） | 主模型自己選 analysis_run（先載規格再執行）、進度即時推到右欄、面板讀得到 job；追問直接用報告回答 |
 | gemma4:26b | 這台 GPU 8 GB 放不下（18.7 GB，大部分在 CPU）：Orchestrator 一次約 2 分鐘，20 分鐘內做不完；worker 的交叉比對看得出比 e4b 好，要在 ≥24 GB 的機器上量 |
 | 主對話的路由（`evals/run_evals.py` 的 3 個 analysis 情境，e4b、harness 模式） | 3/3：根因問題用 analysis_run、單一數值用 mcap_feature_measure、Log 問題用 rosout_parser，回答引用工具的數字 |
-| 數據技能的實機測試（`evals/analysis_tools_live.py --record`） | 14/14（含真的錄 6 秒、切片、錯誤處理） |
+| 數據技能的實機測試（`evals/analysis_tools_live.py --record`） | 16/16（含真的錄 6 秒、切片、讀切片＝讀原本的數據、錯誤處理） |
+| 數據解析的回歸評分（`evals/analysis_regression.py`） | 6 份數據 × N 次，自動對照 ground truth（見 `test_data/README.md`） |
 | 離線自我測試 | `analysis_selftest.py` 11/11、`main_selftest.py` 12/12、`v5_selftest.py` 8/8 |
 | toolkit 相容 | toolkit 的 `mcap_analyzer.py` 讀得懂 mcap_slicer 產生的切片（包括巢狀的 Key） |
 

@@ -293,6 +293,10 @@ ANALYSIS_WORKER_MAX_STEPS = int(os.environ.get("AGENT_ANALYSIS_WORKER_STEPS", "6
 ANALYSIS_WINDOW_BEFORE = 5.0             # 時間窗：Log 訊號前後各取幾秒（同 toolkit 的預設）；Orchestrator 可以依問題調整
 ANALYSIS_WINDOW_AFTER = 5.0
 ANALYSIS_MAX_WINDOWS = 4                 # 時間窗最多幾個（重疊的會合併）；同一個訊號最多取前幾次出現
+# 動態時間切片：時間窗定好之後，每個時間窗先用 mcap_slicer 切一片（只含指派的 Topic＋每個 Topic 在時間窗之前的最後一則），
+# worker 只讀切片；整段數據（沒有相關訊號）不切。切片放在數據資料夾底下的 analysis_slices/<job 編號>/（容器裡寫得到、主機看得到）
+ANALYSIS_SLICE = os.environ.get("AGENT_ANALYSIS_SLICE", "1").strip().lower() not in ("0", "false", "off", "no")
+ANALYSIS_SLICES_DIRNAME = "analysis_slices"
 ANALYSIS_SIGNAL_OCCURRENCES = 2
 ANALYSIS_DIGEST_MAX_SIGNALS = 60         # 交給 Orchestrator 的去重後 Log 最多幾個訊號（WARN 以上全部，其餘依時間補到上限）
 ANALYSIS_TOOL_RESULT_MAX_CHARS = 5000    # worker 的工具回傳進上下文的上限（超過保留頭尾）

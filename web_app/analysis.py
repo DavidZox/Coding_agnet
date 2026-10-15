@@ -80,10 +80,13 @@ def analysis_action(action, data):
                 cfg["before"] = _num(data["before"], float, 0.5, 60)
             if "after" in data:
                 cfg["after"] = _num(data["after"], float, 0.5, 60)
+            if "slice" in data:
+                cfg["slice"] = str(data["slice"]).strip().lower() in ("1", "true", "on", "yes")
         except ValueError as e:
             return {"ok": False, "error": str(e)}
         agent.save_analysis_settings()
-        msgs.append(f"worker 上限 {cfg['max_workers']}、同時 {cfg['parallel']} 個、時間窗前 {cfg['before']} 秒／後 {cfg['after']} 秒")
+        msgs.append(f"worker 上限 {cfg['max_workers']}、同時 {cfg['parallel']} 個、時間窗前 {cfg['before']} 秒／後 {cfg['after']} 秒、"
+                    f"切片 {'開' if cfg.get('slice', True) else '關'}")
         return {"ok": True, "message": "📊 已更新：" + "；".join(msgs)}
     if action == "data":
         agent.analysis_data = str(data.get("path") or "").strip()
@@ -111,7 +114,8 @@ ANALYSIS_HELP = """📊 數據分析指令：
 /analysis_container <容器>|-     數據分析預設的容器（目標容器沒設定時用）
 /analysis_model <角色|all> <模型> orchestrator／worker／synthesizer 的模型（- 改回跟著主對話）
 /analysis_workers <N>           一次最多派幾個 worker（1～8）
-/analysis_mode on|off           📊 分析模式（同輸入框旁的按鈕）：送出的問題直接交給 analysis_run
+/analysis_slice on|off          動態時間切片：每個時間窗先用 mcap_slicer 切一片，worker 只讀切片（預設開；整段數據不切）
+/analysis_mode on|off          📊 分析模式（同輸入框旁的按鈕）：送出的問題直接交給 analysis_run
 右欄「📊 數據分析」面板：計畫（相關的 Log 訊號、時間窗、每個 worker 的 Topic）、每個 worker 的局部報告、最後的報告。"""
 
 
@@ -154,6 +158,14 @@ def handle_analysis_command(text, events):
     elif cmd == "/analysis_workers":
         res = analysis_action("settings", {"max_workers": arg})
         events.append({"channel": "system", "text": res.get("message") or "⚠️ " + res.get("error", "")})
+    elif cmd == "/analysis_slice":
+        if arg.lower() not in ("on", "off"):
+            on = agent.analysis_cfg.get("slice", True)
+            events.append({"channel": "system", "text": f"✂️ 動態時間切片目前{'開' if on else '關'}（每個時間窗先切片、worker 只讀切片）。"
+                                                         "用法：/analysis_slice on|off"})
+        else:
+            res = analysis_action("settings", {"slice": arg.lower() == "on"})
+            events.append({"channel": "system", "text": res.get("message") or "⚠️ " + res.get("error", "")})
     elif cmd == "/analysis_model":
         bits = arg.split()
         if len(bits) != 2 or bits[0].lower() not in ROLES + ("all",):

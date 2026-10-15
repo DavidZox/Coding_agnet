@@ -85,6 +85,8 @@ python3 evals/analysis_selftest.py          # 離線：假模型照劇本回答�
 python3 evals/analysis_tools_live.py --container ros2_web_container \
     --data /workspace/app/diagnostics_package/toolkit/experiment_logs/exp_20261014_084506 [--record]   # 實機：五支數據技能（不需要 Ollama）
 python3 evals/run_evals.py --modes harness --only analysis_route_diagnose,analysis_route_single_key,analysis_route_log   # 真模型：主對話的路由
+python3 evals/analysis_regression.py --run --runs 3 [--model gemma4:26b] [--synthesizer deepseek-r1:8b] [--think-roles synthesizer]   # 真模型：6 份數據的回歸評分
+python3 evals/analysis_regression.py --score-file test_data/repeat_runs.json   # 只評分已經跑過的 job
 ```
 
 - **`analysis_selftest.py`** 測 harness 的程式把關：Orchestrator 的計畫檢查與修正（不存在的 L#／Topic、Log Topic、重複的 Topic）、補指派、
@@ -95,6 +97,14 @@ python3 evals/run_evals.py --modes harness --only analysis_route_diagnose,analys
   錄下的 `mcap_analyzer --json`、`rosout_parser --json`、`mcap_feature_measure` 輸出；換了 Key 的分類或輸出格式時重錄一次（指令見 `analysis_tools_live.py` 的說明）。
 - **`analysis_tools_live.py`** 在真的容器裡跑：全域索引、Key 檢視、特徵量測（含寬鬆的時間寫法與不認識的參數）、原始值、錯誤處理、Log 去重、
   切片（寫到容器的 /tmp、測完刪掉）、`--record` 真的錄 6 秒。
+- **`analysis_regression.py`**（回歸評分，另一個方法——原本的產物照舊產生、照舊保留，評分只讀 `logs/analysis_jobs/<job>/` 不改）：
+  6 份數據（穩定、開機範例、/cmd_vel_raw 事件、重啟 monitor、凍結 aggregator 的真故障、180 秒長錄製）各跑 N 次，
+  依 `analysis_regression_cases.json` 自動評分：(a) 時間線有沒有該有的事件（時間±容許＋關鍵字）、(b) 根因、(c) 沒有錯誤說法
+  （禁用的說法、拿背景條件當原因；程式附的更正不算模型寫的）、(d) 定性、上游（故障追不追得到共同的上游）、切片（長錄製）、沒有事件（穩定）。
+  模型可以分角色指定（`--model`／`--orchestrator`／`--worker`／`--synthesizer`、`--think-roles`），只改這次執行、不寫回設定，
+  換到 DGX Spark／5090 跑 26b 時用同一套比較。結果在 `evals/results/analysis_<時間>/scorecard.md`。
+  評分是關鍵字與時間的比對：抓得到缺事件、拿背景條件當原因、「間歇性」這類錯；措辭換了的對錯仍要人看報告（scorecard 列出每一項沒過的原因）。
+  換機器時把 `test_data/recordings/` 複製到那台的數據根目錄（或 `--data-root`）。
 - **實機事件測試**（2026-10-15）的錄製、ground truth、每次分析與對照結果在 `test_data/`（見 `test_data/README.md`）。
 - **報告的品質**（根因對不對）目前只能人工看：`/analyze <問題>` 跑一次，看 `logs/analysis_jobs/<編號>/report.md` 與各 worker 的局部報告；
   建「已知根因」的錄製當評測資料是待辦（`doc/待辦清單.md`）。

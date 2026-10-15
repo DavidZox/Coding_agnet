@@ -82,6 +82,26 @@ def main():
                   and "ai_slice_diagnostic_summary" in out, out)
     out = run("mcap_slicer_cmd.py", a.data, "--at", "+999999", "--out", "/tmp/agent_live_slices", env=env)
     check("時間點不在數據範圍內：不切、回錯誤", out.startswith("[ERROR]") and "不在數據範圍內" in out, out)
+    # analysis_run 的動態時間切片：明確的時間窗、只切指定的 Topic、帶時間窗之前的最後一則；讀切片量到的要跟讀原本的數據一樣
+    st = next((t for t in workers if any(k["category"] == "state" for k in t["keys"])), None)
+    if st:
+        skey = next(k["key"] for k in st["keys"] if k["category"] == "state")
+        span = (idx["end_ns"] - idx["start_ns"]) / 1e9
+        out = run("mcap_slicer_cmd.py", a.data, "--window", f"+{span * 0.4:.2f},+{span * 0.9:.2f},,W1", "--topics", st["topic"],
+                  "--with-state", "--out", "/tmp/agent_live_slices", "--json", env=env)
+        try:
+            sj = json.loads(out[out.index("{"):out.rindex("}") + 1])["slices"][0]
+        except (ValueError, KeyError, IndexError):
+            sj = None
+        check(f"mcap_slicer --window --topics --with-state：只切 {st['topic']}、帶時間窗之前的最後一則",
+              bool(sj) and set(sj["topics"]) == {st["topic"]} and sj["trigger"]["id"] == "W1", out)
+        if sj:
+            win = {"id": "W1", "start_ns": int(round(sj["start_sec"] * 1e9)), "end_ns": int(round(sj["end_sec"] * 1e9)), "anchor_ns": None}
+            outs = [run("mcap_feature_measure_cmd.py", a.data, "--topic", st["topic"], "--key", skey, "--window", "W1",
+                        env=dict(env, ANALYSIS_WINDOWS=json.dumps([w]))) for w in (dict(win, slice=sj["dir"]), win)]
+            body = [[ln for ln in o.splitlines()[2:] if not ln.startswith("[")] for o in outs]
+            check(f"讀切片量到的＝讀原本的數據（{skey}：筆數、跳轉、沿用的狀態都一樣，只多「讀切片」）",
+                  "讀切片" in outs[0] and outs[0].startswith("[PASS]") and body[0] == body[1], outs[0] + "\n----\n" + outs[1])
     if a.record and workers:
         out = run("mcap_recorder_cmd.py", "--topics", workers[0]["topic"], "--duration", "6", "--out-root", "/tmp/agent_live_rec",
                   "--name", "exp_live", env=env)

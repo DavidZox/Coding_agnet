@@ -70,6 +70,11 @@ def fake_exec_factory(agent, calls):
             return fixture("index_output.txt")
         if script_name == "rosout_parser_cmd.py":
             return fixture("rosout_output.txt")
+        if script_name == "mcap_slicer_cmd.py":   # 每個 --window 回一片（標籤＝時間窗編號）
+            labels = [clean_args[i + 1].split(",")[3] for i in range(len(clean_args) - 1) if clean_args[i] == "--window"]
+            return json.dumps({"slices": [{"dir": f"/fake/analysis_slices/sliced_bag_{n}_x", "trigger": {"id": lab},
+                                           "messages": 100 * n, "state_messages": 2, "host_dir": f"/host/sliced_bag_{n}_x"}
+                                          for n, lab in enumerate(labels, 1)]}) + "\n[TARGET_CONTAINER] ros2_web_container"
         if script_name == "mcap_feature_measure_cmd.py":
             if "--json" in clean_args:
                 return fixture("measure_json.txt")
@@ -167,6 +172,15 @@ def main():
             job = json.load(open(os.path.join(agent.analysis_jobs_dir(), agent.analysis_last["id"], "job.json"), encoding="utf-8"))
             assert job["report"]["confidence"] == "medium" and "程式檢查" in job["report"]["root_cause"], "缺的輸入：信心最多 medium"
             assert any("cmd_vel_raw" in u for u in job["report"]["unknowns"]) and "尚未確認：" in out
+            # 而且它是背景條件（恢復之後仍在）：程式在根因後面附更正，指出跳轉時真正新增／移除的項目
+            assert "程式更正：NO_CMD_VEL_RAW" in job["report"]["root_cause"] and "MON_INITIALIZING" in job["report"]["root_cause"], job["report"]
+            assert job["corrections"][0]["changed"] == ["MON_INITIALIZING", "NO_SAFETY_COMMAND_YET"], job["corrections"]
+            # 排除它的寫法不算拿它當原因：不更正、不限制信心
+            fake, calls = setup(plans=[GOOD_PLAN], synth=[dict(SYNTH, confidence="high", unknowns=[],
+                                                               root_cause="初始化造成停車；NO_CMD_VEL_RAW 是背景條件，而非原因")])
+            agent.analysis_run(f'--data {DATA} "安全閘為什麼停下來"')
+            job = json.load(open(os.path.join(agent.analysis_jobs_dir(), agent.analysis_last["id"], "job.json"), encoding="utf-8"))
+            assert job["report"]["confidence"] == "high" and "程式更正" not in job["report"]["root_cause"], job["report"]
             assert "Log" not in agent._digest_text({"index": json.loads(fixture("index_output.txt").split("\n[ANALYSIS_DATA]")[0]),
                                                     "signals": []})[:2], "沒有 Log 時說明"
             assert any(c["script"] == "rosout_parser_cmd.py" and "--all-nodes" in c["args"] for c in calls)
@@ -181,6 +195,7 @@ def main():
             assert "/rosout" not in topics
             assert job["windows"] == [dict(job["windows"][0], id="W1", label="整段數據")], job["windows"]
             assert job["question"].startswith("這段錄製期間"), "沒有問題時用預設問題"
+            assert not any(c["script"] == "mcap_slicer_cmd.py" for c in calls) and not job.get("slices"), "整段數據不切片"
 
         def t_windows():
             idx = json.loads(fixture("index_output.txt").split("\n[ANALYSIS_DATA]")[0])
@@ -240,6 +255,29 @@ def main():
             assert [g["reason"] for g in job["coverage_gaps"]] == ["NO_CMD_VEL_RAW"], job["coverage_gaps"]
             assert job["workers"][0]["key_metrics"] == metrics, "程式量的數字也留在 job 裡（Synthesizer 前的程式檢查要用）"
             assert "→ NORMAL" in out and "rightarrow" not in out
+            # 動態時間切片：每個時間窗一片（只含指派的 Topic＋/rosout、帶狀態快照），worker 的時間窗帶著自己的切片
+            sl = [c for c in calls if c["script"] == "mcap_slicer_cmd.py"]
+            assert len(sl) == 1, [c["args"] for c in sl]
+            a = sl[0]["args"]
+            wins = [a[i + 1].split(",") for i in range(len(a) - 1) if a[i] == "--window"]
+            assert [w[3] for w in wins] == [w["id"] for w in job["windows"]] and "--with-state" in a, a
+            assert a[a.index("--topics") + 1:a.index("--with-state")] == ["/rosout", "/system/safety_gate_status"], a
+            assert a[a.index("--out") + 1].endswith(f"/analysis_slices/{job['id']}") and "--json" in a, a
+            assert job["slices"]["W1"]["dir"] == "/fake/analysis_slices/sliced_bag_1_x" and job["windows"][0]["slice"], job["slices"]
+            env_w = json.loads(measure[0]["env"]["ANALYSIS_WINDOWS"])
+            assert env_w[0]["slice"] == "/fake/analysis_slices/sliced_bag_1_x", env_w
+            assert json.loads(fm["data_slices"])["W1"] == "/host/sliced_bag_1_x", fm.get("data_slices")
+            assert "slices:" in report_md and "切片 W1" in report_md, report_md[-600:]
+            # 關掉切片：worker 直接讀原本的數據
+            agent.analysis_cfg["slice"] = False
+            try:
+                fake, calls = setup(plans=[GOOD_PLAN], synth=[SYNTH])
+                agent.analysis_run(f'--data {DATA} "安全閘為什麼停下來"')
+                assert not any(c["script"] == "mcap_slicer_cmd.py" for c in calls), "切片關閉"
+                assert all("slice" not in w for c in calls if c["script"] == "mcap_feature_measure_cmd.py"
+                           for w in json.loads(c["env"]["ANALYSIS_WINDOWS"]))
+            finally:
+                agent.analysis_cfg["slice"] = True
 
         def t_worker_fallback_and_synth_fallback():
             fake, calls = setup(plans=[GOOD_PLAN], worker=[{"thought": "a", "reply": "看起來沒事", "action": None}] * 3,
@@ -369,6 +407,27 @@ def main():
             assert "數值切換 2 次" in "\n".join(rd.feature_lines("linear.x", f, 0))
             noisy = rd.numeric_features([(i * s, 1.0 + i * 0.013) for i in range(20)])
             assert "steps" not in noisy, "連續變化的數值不列切換"
+            assert rd.rate_features(mid, win)["single_session"], "中途開始又中途停止、中間沒有中斷＝一段連續的發布"
+            warm = [int(1.15 * s) + i * s // 20 for i in range(200)]   # 實測開機的範例：/cmd_vel 在 +1.15s 才有第一筆
+            r = rd.rate_features(warm, win, data_start_ns=0)
+            assert r.get("warmup_start") and not r["started_late"], "錄製剛開始的延遲不算中途才開始"
+            assert rd.rate_features(warm, win)["started_late"], "不知道數據開頭時照舊判斷"
+            assert rd.rate_features(mid, win, data_start_ns=0)["started_late"], "+10s 才開始：超過錄製剛開始的範圍，照樣算中途才開始"
+            assert not rd.rate_features(full, win)["single_session"]
+            w = rd.parse_window("+1,+2,,W1,/x/sliced_bag_1_x", 0)
+            assert w["label"] == "W1" and w["data"] == "/x/sliced_bag_1_x" and rd.parse_window("+1,+2", 0)["data"] == ""
+            os.environ["ANALYSIS_WINDOWS"] = json.dumps([{"id": "W1", "start_ns": 5 * s, "end_ns": 20 * s, "anchor_ns": 10 * s,
+                                                          "slice": "/x/sliced_bag_1_x"}])
+            try:
+                assert rd.resolve_window_ids("w1") == f"{5 * s},{20 * s},{10 * s},W1,/x/sliced_bag_1_x"
+                assert rd.slice_for_window({"start_ns": 6 * s, "end_ns": 19 * s}) == "/x/sliced_bag_1_x", "落在切片的時間窗裡"
+                assert rd.slice_for_window({"start_ns": 4 * s, "end_ns": 19 * s}) == "", "超出切片的範圍：讀原本的數據"
+                assert rd.slice_for_window({"start_ns": 5 * s - 50_000_000, "end_ns": 20 * s}) == "/x/sliced_bag_1_x", "四捨五入的誤差"
+                aw = rd.matching_analysis_window({"start_ns": 5 * s + 300_000_000, "end_ns": 20 * s - 200_000_000})
+                assert aw and aw["id"] == "W1", "自己抄的時間窗跟指派的幾乎一樣＝那個時間窗"
+                assert rd.matching_analysis_window({"start_ns": 2 * s, "end_ns": 20 * s}) is None
+            finally:
+                del os.environ["ANALYSIS_WINDOWS"]
             w = rd.parse_window("3.37s-31.79s", 0)   # 實測 worker 的寫法；負號不能當分隔
             assert (w["start_ns"], w["end_ns"]) == (3_370_000_000, 31_790_000_000), w
             assert rd.parse_window("+10,+20", 0)["end_ns"] == 20 * s
@@ -385,11 +444,36 @@ def main():
                   {"time": "+9.00s", "source": "/cmd_vel", "event": "Topic 不動"}]
             assert _fix_signal_times(tl, sigs, base) == 1, tl
             assert [x["time"] for x in tl] == ["+18.71s", "+18.71s", "+12.00s", "+3.00s", "+9.00s"], tl
+            from agent_core.analysis_job import _ensure_flow_events, _flow_block, _flow_events
+            s1 = 1_000_000_000
+            fe = _flow_events({"W1": {"_rate": {"gaps": [{"start_sec": 250.29, "duration_sec": 10.018}]}}}, 100 * s1)
+            assert fe == [("+150.29s", "訊息中斷 10.02 秒")], fe
+            assert "只在 +13.47s～+21.28s 連續發布" in _flow_events({"W1": {"_rate": {"published_only": [113.47, 121.28]}}}, 100 * s1)[0][1]
+            ws2 = [{"topic": "/system/safety_command", "flow_events": fe},
+                   {"topic": "/diagnostics_toplevel_state", "flow_events": [("+150.30s", "訊息中斷 10.02 秒")]}]
+            block = _flow_block(ws2)
+            assert "同一時間（+150.29s）一起中斷：/system/safety_command、/diagnostics_toplevel_state" in block, block
+            tl2 = [{"time": "+150.82s", "source": "L17", "event": "保護停止"}]
+            assert _ensure_flow_events(tl2, ws2) == 2 and _ensure_flow_events(tl2, ws2) == 0, tl2   # 補過就不再補
+            tl3 = [{"time": "+150.29s", "source": "Topic/Message Flow", "event": "/system/safety_command 和 /diagnostics_toplevel_state 訊息中斷"}]
+            assert _ensure_flow_events(tl3, ws2) == 0, "模型寫在同一列（事件裡有 Topic）就不重複補"
+            assert _flow_block([{"topic": "/a", "flow_events": fe}]).count("一起中斷") == 0, "只有一個 Topic 不算同時中斷"
+            from agent_core.analysis_job import _relies_on
+            assert _relies_on("直接原因是 MON_INITIALIZING 和缺乏原始速度指令（NO_CMD_VEL_RAW）。", "NO_CMD_VEL_RAW")
+            assert _relies_on("原因包括 'NO_SAFETY_COMMAND_YET' 和 'NO_CMD_VEL_RAW'", "NO_CMD_VEL_RAW")
+            assert not _relies_on("雖然 Log 提到了 NO_CMD_VEL_RAW，但數據顯示此為背景條件，而非導致保護停止的關鍵因素。", "NO_CMD_VEL_RAW")
+            assert not _relies_on("初始化造成停車。", "NO_CMD_VEL_RAW") and not _relies_on(None, "X")
+            assert _relies_on("NO_CMD_VEL_RAW 不是唯一原因", "NO_CMD_VEL_RAW"), "「不是唯一」＝原因之一"
+            assert not _relies_on("雖然 Log 提到了 NO_CMD_VEL_RAW，但根據 W1 的數據，MON_INITIALIZING 是新增的關鍵原因", "NO_CMD_VEL_RAW"), "讓步子句"
+            assert not _relies_on("信心是中等，因為 NO_CMD_VEL_RAW 的具體來源未被量測", "NO_CMD_VEL_RAW"), "只說沒被量測"
+            assert _relies_on("數據證實了 NO_CMD_VEL_RAW 的情況，因為 /cmd_vel 持續為零", "NO_CMD_VEL_RAW")
+            assert _relies_on("雖然有診斷訊息，但直接原因是 NO_CMD_VEL_RAW", "NO_CMD_VEL_RAW"), "代碼在「但」之後＝原因"
             from agent_core.analysis_job import _background_codes
             km = {"W1": {"stop_reasons": {"transitions": 2, "first": "[NO_CMD_VEL_RAW]", "last": "[NO_CMD_VEL_RAW]", "changes": [
                 "[NO_CMD_VEL_RAW] → [MON_INITIALIZING, NO_CMD_VEL_RAW] @1.0", "[MON_INITIALIZING, NO_CMD_VEL_RAW] → [NO_CMD_VEL_RAW] @2.0"]}}}
             ws = [{"topic": "/system/safety_gate_status", "key_metrics": km}]
-            assert _background_codes(ws, ["NO_CMD_VEL_RAW"]) == {"NO_CMD_VEL_RAW": "/system/safety_gate_status 的 stop_reasons"}
+            assert _background_codes(ws, ["NO_CMD_VEL_RAW"]) == {"NO_CMD_VEL_RAW": {"where": "/system/safety_gate_status 的 stop_reasons",
+                                                                                   "changed": ["MON_INITIALIZING"]}}
             km["W1"]["stop_reasons"]["changes"][0] = "[] → [MON_INITIALIZING, NO_CMD_VEL_RAW] @1.0"   # 中途才出現：不是背景
             km["W1"]["stop_reasons"]["first"] = "[]"
             assert _background_codes(ws, ["NO_CMD_VEL_RAW"]) == {}
@@ -397,14 +481,14 @@ def main():
         for name, fn in [("Orchestrator：不存在的 L#／Topic、Log Topic、重複的 Topic 交回修一次（程式列出具體的問題）", t_plan_repair),
                          ("Orchestrator 給不出計畫：程式依關聯度補指派（不重複、不派 Log）；沒有相關訊號＝整段數據；預設問題", t_auto_assign_and_whole_window),
                          ("時間窗：訊號前後各取幾秒、重疊的合併、限制在數據範圍內；Log 的時間不在範圍內退回整段", t_windows),
-                         ("Worker：reply 裡的動作照做、--topic 固定、只准量測技能、第三次相同量測擋下；Frontmatter 數字來自程式", t_worker_rules),
+                         ("Worker：reply 裡的動作照做、--topic 固定、只准量測技能、第三次相同量測擋下；Frontmatter 數字來自程式；動態時間切片", t_worker_rules),
                          ("Worker 沒量測：推回去一次、系統代選 Key；Synthesizer 壞掉：程式拼一份信心低的報告", t_worker_fallback_and_synth_fallback),
                          ("dispatch：analysis_run 偽技能存檔與軌跡、[ANALYSIS_DATA] 同步、省略 --data、腳本拿得到環境變數", t_dispatch_and_state),
                          ("Web：/analyze 的回合（進度、報告進主對話、主模型依報告回答）、面板 state、分析模式指令", t_web),
                          ("程式重新啟動：沒做完的 job（進度很久沒更新）標成中斷，剛更新的不動", t_mark_interrupted),
                          ("錄製：資料夾名稱放錯在 --out-root 改當 --name；含 / 的相對路徑、--name 帶路徑擋下", t_recorder_target),
-                         ("量測：中途開始／停止發布、狀態沿用時間窗之前的最後一則、只有幾種值的數值列每次切換", t_features),
-                         ("Synthesizer：L# 的時間照 Log 的時間戳校正；清單狀態跳轉前後都在的缺口代碼當背景條件", t_timeline_fix)]:
+                         ("量測：中途開始／停止發布（一段連續的寫成一句）、狀態沿用、數值切換、時間窗帶切片", t_features),
+                         ("Synthesizer：L# 的時間校正、補上訊息流事件、同時中斷的 Topic；背景條件與程式更正", t_timeline_fix)]:
             check(name, fn)
     finally:
         os.chdir(cwd)

@@ -10,8 +10,9 @@ dependencies: []
 多 agent 協同的數據診斷，一個動作完成：
 1. 資料預備（程式）：Log 去重成唯一訊號、讀全域 Topic Metadata 索引。
 2. Orchestrator：同時看去重後的 Log 與 Topic Metadata，對齊問題、挑出相關的 Log 訊號（系統換成精確的時間窗）、把不同的 Topic 指派給不同的 worker。
-3. Workers：每個 worker 只負責一個 Topic，自己決定量測哪些 Key（數值統計、狀態跳轉），產出 Frontmatter Markdown 的局部報告；不看 Log 字串。
-4. Synthesizer：把 Log 的時間線與各 Topic 的量測結果做因果拼圖，寫根因診斷報告（結論、根因、時間線、證據、尚未確認、建議）。
+3. 動態時間切片（程式）：每個時間窗用 mcap_slicer 切一片（只含指派的 Topic，每個 Topic 再帶上時間窗之前的最後一則），worker 只讀切片——數據再長也只看關鍵的那幾段。整段數據（沒有相關訊號）不切。切片留在數據資料夾的 `analysis_slices/<job 編號>/`。
+4. Workers：每個 worker 只負責一個 Topic，自己決定量測哪些 Key（數值統計、狀態跳轉），產出 Frontmatter Markdown 的局部報告；不看 Log 字串。
+5. Synthesizer：把 Log 的時間線與各 Topic 的量測結果做因果拼圖，寫根因診斷報告（結論、根因、時間線、證據、尚未確認、建議）；程式再校正時間線、檢查沒錄到的輸入與背景條件。
 只讀不改，不用使用者確認；通常一到幾分鐘。只要查一個值、看一個 Topic 的問題，直接用 mcap_feature_measure／rosout_parser 就好。
 
 # 語法

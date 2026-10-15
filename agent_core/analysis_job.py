@@ -38,6 +38,8 @@ from .config import (
     ANALYSIS_REPORT_HEAD,
     ANALYSIS_SETTINGS_NAME,
     ANALYSIS_SIGNAL_OCCURRENCES,
+    ANALYSIS_SLICE,
+    ANALYSIS_SLICES_DIRNAME,
     ANALYSIS_SYNTHESIZER_MODEL,
     ANALYSIS_THINK_DEFAULT,
     ANALYSIS_TOOL_RESULT_MAX_CHARS,
@@ -174,10 +176,14 @@ class AnalysisMixin:
     def load_analysis_settings(self):
         cfg = {"orchestrator": ANALYSIS_ORCHESTRATOR_MODEL, "worker": ANALYSIS_WORKER_MODEL,
                "synthesizer": ANALYSIS_SYNTHESIZER_MODEL, "orchestrator_think": ANALYSIS_THINK_DEFAULT,
-               "worker_think": False, "synthesizer_think": ANALYSIS_THINK_DEFAULT, "data_root": ANALYSIS_DATA_ROOT,
+               "worker_think": False, "synthesizer_think": ANALYSIS_THINK_DEFAULT,
+               # 各角色的上下文長度（None＝NUM_CTX）。8 GB 顯卡上 deepseek-r1:8b 用 32k 時 KV cache 約 4.8 GB、四成跑到 CPU
+               # （10.6 token/s）；Synthesizer 的輸入約 3k、輸出幾千，12288 就放得下（7.2 GB 中 6.3 GB 在 GPU，26.7 token/s）
+               "orchestrator_ctx": None, "worker_ctx": None, "synthesizer_ctx": None,
+               "data_root": ANALYSIS_DATA_ROOT,
                "container": "",
                "max_workers": ANALYSIS_MAX_WORKERS, "parallel": ANALYSIS_PARALLEL_WORKERS,
-               "before": ANALYSIS_WINDOW_BEFORE, "after": ANALYSIS_WINDOW_AFTER}
+               "before": ANALYSIS_WINDOW_BEFORE, "after": ANALYSIS_WINDOW_AFTER, "slice": ANALYSIS_SLICE}
         try:
             with open(self.analysis_settings_file(), encoding="utf-8") as f:
                 saved = json.load(f)
@@ -203,6 +209,14 @@ class AnalysisMixin:
 
     def analysis_think(self, role):
         return bool(self.analysis_cfg.get(f"{role}_think"))
+
+    def analysis_ctx(self, role):
+        """各角色的上下文長度：有設定（正整數）就用，沒有就是 NUM_CTX。"""
+        try:
+            n = int(self.analysis_cfg.get(f"{role}_ctx") or 0)
+        except (TypeError, ValueError):
+            n = 0
+        return n if n > 0 else NUM_CTX
 
     def set_analysis_model(self, role, model=None, think=None):
         roles = ROLES if role == "all" else (role,)
@@ -384,6 +398,7 @@ class AnalysisMixin:
         job = {"id": time.strftime("%Y%m%d_%H%M%S"), "created": time.strftime("%Y-%m-%d %H:%M:%S"), "question": question,
                "data": data, "status": "preparing", "options": opts,
                "models": {r: self.analysis_model(r) for r in ROLES},
+               "model_options": {r: {"think": self.analysis_think(r), "ctx": self.analysis_ctx(r)} for r in ROLES},
                "max_workers": max(1, min(8, opts["workers"] or int(cfg.get("max_workers") or ANALYSIS_MAX_WORKERS))),
                "model_calls": 0}
         while os.path.exists(self._job_dir(job)):
@@ -401,6 +416,7 @@ class AnalysisMixin:
             self._job_status(job, "planning")
             self._analysis_orchestrate(job)
             self._job_status(job, "working")
+            self._analysis_slice(job)
             self._analysis_run_workers(job)
             self._job_status(job, "synthesizing")
             text = self._analysis_synthesize(job)
@@ -427,7 +443,7 @@ class AnalysisMixin:
         model, want = self.analysis_model(role), self.analysis_think(role)
         think = think_arg(model, want)
         res = self._timed_chat(kind, model=model, messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
-                               format=schema, options={"temperature": 0.2, "num_ctx": NUM_CTX,
+                               format=schema, options={"temperature": 0.2, "num_ctx": self.analysis_ctx(role),
                                                        "num_predict": predict + (THINK_EXTRA_PREDICT if think else 0)},
                                think=think)
         with self._analysis_lock:
@@ -690,6 +706,49 @@ class AnalysisMixin:
             w["label"] = f"{w['signals'][0]} {sig.get('level', '')} {sig.get('node', '')}".strip()
         return out
 
+    # ---------------------------------------------------------------- 1.5 動態時間切片
+    def _analysis_slice(self, job):
+        """設計的「動態時間切片」：Orchestrator 挑的訊號換算成時間窗之後，每個時間窗用 mcap_slicer 切一片——只含指派的 Topic
+        （和 /rosout，給人用 Foxglove 看），每個 Topic 再帶上時間窗之前的最後一則（狀態接得上）——worker 只讀自己時間窗的切片，
+        數據再長也只看關鍵的那幾段。整段數據（沒有相關訊號）不切；切片失敗就讀原本的數據（記在進度裡）。
+        切片留在數據資料夾的 analysis_slices/<job 編號>/。"""
+        wins = [w for w in job["windows"] if w.get("anchor_ns") is not None]
+        if not self.analysis_cfg.get("slice", True):
+            self._analysis_note(job, "✂️ 切片：設定關閉（/analysis_slice on 可以打開），worker 直接讀原本的數據")
+            return
+        if not wins:
+            self._analysis_note(job, "✂️ 切片：時間窗是整段數據，不切片（worker 直接讀原本的數據）")
+            return
+        have = {t["topic"] for t in job["index"]["topics"]}
+        topics = sorted({a["topic"] for a in job["plan"]["assignments"]} | ({"/rosout"} & have))
+        args = [job["data"]]
+        for w in wins:
+            args += ["--window", f"{_epoch(w['start_ns'])},{_epoch(w['end_ns'])},{_epoch(w['anchor_ns'])},{w['id']}"]
+        args += ["--topics", *topics, "--with-state", "--out", f"{job['data'].rstrip('/')}/{ANALYSIS_SLICES_DIRNAME}/{job['id']}", "--json"]
+        t0 = time.time()
+        out = self._analysis_tool("mcap_slicer_cmd.py", args)
+        js, _ = split_json_output(out)
+        by_id = {(sl.get("trigger") or {}).get("id"): sl for sl in (js or {}).get("slices") or []}
+        base = job["index"]["start_ns"]
+        made = []
+        for w in wins:
+            sl = by_id.get(w["id"])
+            if not sl:
+                continue
+            w.update(slice=sl["dir"], slice_host=sl.get("host_dir"), slice_messages=sl.get("messages"),
+                     slice_state_messages=sl.get("state_messages"))
+            made.append(f"{w['id']} {_rel(w['start_ns'], base)}～{_rel(w['end_ns'], base)} {sl.get('messages')} 則"
+                        f"＋狀態快照 {sl.get('state_messages')} 則")
+        job["slices"] = {w["id"]: {"dir": w["slice"], "host_dir": w.get("slice_host"), "messages": w.get("slice_messages"),
+                                   "state_messages": w.get("slice_state_messages")} for w in wins if w.get("slice")}
+        whole = sum(t.get("message_count") or 0 for t in job["index"]["topics"])
+        job["data_messages"] = whole   # 整份數據的訊息數（job.json 不存索引；回歸評分算切片比例用）
+        if made:
+            self._analysis_note(job, f"✂️ 切片（{time.time() - t0:.1f} 秒；只含 {len(topics)} 個 Topic，原本整份 {whole} 則）：" + "；".join(made))
+        else:
+            self._analysis_note(job, "✂️ 切片失敗，worker 改讀原本的數據：" + _short(out, 200))
+        self._job_save(job)
+
     # ---------------------------------------------------------------- 2. Workers
     def _analysis_run_workers(self, job):
         assigns = job["plan"]["assignments"]
@@ -745,11 +804,14 @@ class AnalysisMixin:
                      for w in job["windows"]]
         all_topics = "、".join(f"{t['topic']}（{t['message_count']} 則）" for t in job["index"]["topics"])
         gaps = self._coverage_gaps(job)
+        flow_text = _flow_block(job["workers"])
         bg = _background_codes(job["workers"], [c for c, _, _ in gaps])
-        job["coverage_gaps"] = [{"reason": c, "name": x, "signals": ids, "background": bg.get(c)} for c, x, ids in gaps]
+        job["coverage_gaps"] = [{"reason": c, "name": x, "signals": ids, "background": (bg.get(c) or {}).get("where"),
+                                 "changed": (bg.get(c) or {}).get("changed")} for c, x, ids in gaps]
         gap_text = "\n".join(
-            f"- {c}（{'、'.join(ids)}）：數據裡沒有名稱含「{x}」的 Topic，沒有被量測；不過 {bg[c]} 在每次跳轉前後都有 {c}"
-            f"（跳轉時新增／移除的是別的項目）——它是背景條件，不是這次變化的原因，根因看新增／移除的那一項" if c in bg else
+            f"- {c}（{'、'.join(ids)}）：數據裡沒有名稱含「{x}」的 Topic，沒有被量測；不過 {bg[c]['where']} 在每次跳轉前後都有 {c}"
+            f"（跳轉時新增／移除的是 {'、'.join(bg[c]['changed']) or '別的項目'}）——它是背景條件，不是這次變化的原因，"
+            f"根因看新增／移除的那一項" if c in bg else
             f"- {c}（{'、'.join(ids)}）：數據裡沒有名稱含「{x}」的 Topic——沒有被量測，不能拿其他 Topic（例如名稱相近的輸出）"
             f"證明它；寫進 unknowns，信心最多 medium" for c, x, ids in gaps)
         reports = []
@@ -770,20 +832,34 @@ class AnalysisMixin:
                 + "\n\n【時間窗】\n" + "\n".join(win_lines)
                 + f"\n\n【數據裡有的 Topic（全部）】\n{all_topics}"
                 + (f"\n\n【程式檢查：Log 提到、但數據裡沒有對應 Topic 的輸入】\n{gap_text}" if gaps else "")
+                + (f"\n\n【程式整理：訊息流（Topic 的中斷、中途開始或停止發布）】\n{flow_text}" if flow_text else "")
                 + "\n\n【各 Worker 的局部報告（每個 worker 一個 Topic）】\n" + "\n\n".join(reports)
                 + "\n\n（每個欄位都用繁體中文寫；時間寫成 +秒）")
         data = self._analysis_session(job, "analysis_synthesizer", "synthesizer", _read_prompt("synthesizer.md"), user,
                                       ANALYSIS_REPORT_SCHEMA, 4096)
         if not data:
             data = self._fallback_report(job)
-        if data.get("timeline"):   # 時間線依時間排序（模型偶爾排錯；寫不出數字的放最後，其餘順序不變）
-            fixed = _fix_signal_times(data["timeline"], sig_by_id, base)
-            if fixed:
-                self._analysis_note(job, f"🛠 時間線：{fixed} 個 Log 訊號（L#）的時間跟 Log 對不上，照 Log 的時間戳校正")
-            data["timeline"] = sorted(data["timeline"], key=_timeline_key)
-        # 背景條件（每次跳轉前後都在）：根因沒有用到它就不列 unknowns、不限制信心（實測：提醒反而把 Synthesizer 引到它身上）；
-        # 根因還是寫了它（拿沒量測的輸入當原因），照一般的缺口處理
-        gaps = [g for g in gaps if g[0] not in bg or g[0].lower() in str(data.get("root_cause") or "").lower()]
+        # 時間線：L# 的時間校正、補上訊息流的事件、依時間排序（模型偶爾排錯；寫不出數字的放最後，其餘順序不變）
+        data["timeline"] = [x for x in data.get("timeline") or [] if isinstance(x, dict)]
+        fixed = _fix_signal_times(data["timeline"], sig_by_id, base)
+        if fixed:
+            self._analysis_note(job, f"🛠 時間線：{fixed} 個 Log 訊號（L#）的時間跟 Log 對不上，照 Log 的時間戳校正")
+        added = _ensure_flow_events(data["timeline"], job["workers"])
+        if added:
+            self._analysis_note(job, f"🛠 時間線：補上 {added} 個訊息流的事件（Topic 的中斷、中途開始或停止）")
+        data["timeline"] = sorted(data["timeline"], key=_timeline_key)
+        # 背景條件（每次跳轉前後都在）：結論、根因沒有拿它當原因就不列 unknowns、不限制信心（實測：提醒反而把 Synthesizer 引到它身上）；
+        # 拿它當原因（實測 e4b 3 次：「缺少速度指令」），程式在後面附更正——恢復之後仍在的原因不可能是這次變化的原因——並照一般的缺口處理
+        relied = [c for c in bg if _relies_on(data.get("root_cause"), c) or _relies_on(data.get("conclusion"), c)]
+        for c in relied:
+            changed = "、".join(bg[c]["changed"]) or "別的項目"
+            fix = f"（程式更正：{c} 在 {bg[c]['where']} 每次跳轉前後都在、恢復之後仍在，不可能是這次變化的原因；跳轉時新增／移除的是 {changed}，根因要看這幾項）"
+            for field in ("root_cause", "conclusion"):
+                if _relies_on(data.get(field), c):
+                    data[field] = (data.get(field) or "") + fix
+            job.setdefault("corrections", []).append({"reason": c, "where": bg[c]["where"], "changed": bg[c]["changed"]})
+            self._analysis_note(job, f"🛠 根因更正：{c} 是背景條件（恢復之後仍在），報告拿它當原因，附上程式更正")
+        gaps = [g for g in gaps if g[0] not in bg or g[0] in relied]
         if gaps:   # 程式保證：缺的輸入一定列在「尚未確認」、信心最多 medium（模型常忽略這條規則，2.18）
             unknowns = list(data.get("unknowns") or [])
             for c, x, ids in gaps:
@@ -818,6 +894,8 @@ class AnalysisMixin:
                            "file": w.get("file")} for w in job["workers"]],
               "anomalies": [w["topic"] for w in job["workers"] if w.get("anomaly_detected")],
               "confidence": data.get("confidence"), "models": job["models"]}
+        if job.get("slices"):
+            fm["slices"] = {k: v.get("host_dir") or v["dir"] for k, v in job["slices"].items()}
         lines = [frontmatter(fm), f"# 數據診斷報告\n\n**問題**：{job['question']}\n\n**數據**：{job.get('data_label')}（{job['data']}，"
                                   f"{job.get('duration_sec')} 秒）\n",
                  f"## 結論\n{data.get('conclusion') or '-'}\n", f"## 根因（信心：{data.get('confidence')}）\n{data.get('root_cause') or '-'}\n"]
@@ -833,6 +911,8 @@ class AnalysisMixin:
         lines.append("## 分析過程\n" + f"- Orchestrator 的理解：{plan['understanding']}\n"
                      + "- 時間窗：" + "；".join(f"{w['id']} {_rel(w['start_ns'], base)}～{_rel(w['end_ns'], base)}" + (f"（{w['label']}）" if w.get("label") else "")
                                                for w in job["windows"]) + "\n"
+                     + "".join(f"- 切片 {k}：`{v.get('host_dir') or v['dir']}`（{v.get('messages')} 則＋狀態快照 {v.get('state_messages')} 則）\n"
+                               for k, v in (job.get("slices") or {}).items())
                      + "\n".join(f"- W{w['n']} {w['topic']}：{'⚠️ 有異常' if w.get('anomaly_detected') else '沒有異常' if w.get('anomaly_detected') is False else '失敗'}"
                                  f"（{'、'.join(w.get('analyzed_keys') or [])}）→ `{w.get('file') or '-'}`" for w in job["workers"]) + "\n")
         return "\n".join(lines)
@@ -873,8 +953,9 @@ class AnalysisWorker:
         self.model = agent.analysis_model("worker")
         self.think = think_arg(self.model, agent.analysis_think("worker"))
         self.env = {"ANALYSIS_DATA": job["data"], "ANALYSIS_TOPIC": self.topic,
-                    "ANALYSIS_WINDOWS": json.dumps([{"id": w["id"], "start_ns": w["start_ns"], "end_ns": w["end_ns"],
-                                                     "anchor_ns": w.get("anchor_ns")} for w in self.windows])}
+                    "ANALYSIS_WINDOWS": json.dumps([dict({"id": w["id"], "start_ns": w["start_ns"], "end_ns": w["end_ns"],
+                                                          "anchor_ns": w.get("anchor_ns")}, **({"slice": w["slice"]} if w.get("slice") else {}))
+                                                     for w in self.windows])}
         self.keys = {k["key"]: k for k in self.entry.get("keys", [])}
         self.measured = {}
         self.calls = []
@@ -921,7 +1002,7 @@ class AnalysisWorker:
 
     def _chat(self, msgs, schema, predict):
         res = self.a._timed_chat("analysis_worker", model=self.model, messages=msgs, format=schema,
-                                 options={"temperature": 0.2, "num_ctx": NUM_CTX,
+                                 options={"temperature": 0.2, "num_ctx": self.a.analysis_ctx("worker"),
                                           "num_predict": predict + (THINK_EXTRA_PREDICT if self.think else 0)}, think=self.think)
         with self.a._analysis_lock:
             self.job["model_calls"] += 1
@@ -1048,11 +1129,21 @@ class AnalysisWorker:
             js, _ = split_json_output(a._analysis_tool("mcap_feature_measure_cmd.py", args, extra_env=self.env))
             if js:
                 metrics, flags, data_type, ev_ts = _metrics_from_measure(js, analyzed)
+        anomaly = bool(rep.get("anomaly_detected")) if rep else bool(flags)
+        summary = _short(rep.get("summary"), 900) or "（worker 沒有寫摘要）"
+        evidence = [e for e in rep.get("evidence") or [] if isinstance(e, dict)][:6]
+        flow = _flow_events(metrics, self.job["index"]["start_ns"])
+        if flow:   # 訊息流中斷（停發、中途開始／停止）本身就是異常：實測 e4b 看到 10 秒的中斷仍以「狀態沒變」判沒有異常
+            if not anomaly:
+                anomaly = True
+                summary += "（程式判斷：" + "；".join(f"{t} {what}" for t, what in flow) + "——訊息流中斷本身就是異常）"
+            have = " ".join(str(e.get("time")) for e in evidence)
+            evidence += [{"time": t, "key": "（訊息流）", "observation": f"{what}（程式量測）"} for t, what in flow if t not in have]
         result = {"n": self.n, "topic": self.topic, "type": self.entry["type"], "subtask": self.asg["subtask"], "status": "done",
                   "windows": [w["id"] for w in self.windows], "analyzed_keys": analyzed, "key_selection": self.key_selection,
-                  "anomaly_detected": bool(rep.get("anomaly_detected")) if rep else bool(flags),
-                  "confidence": rep.get("confidence") or "low", "summary": _short(rep.get("summary"), 900) or "（worker 沒有寫摘要）",
-                  "evidence": [e for e in rep.get("evidence") or [] if isinstance(e, dict)][:6], "program_flags": flags,
+                  "anomaly_detected": anomaly,
+                  "confidence": rep.get("confidence") or "low", "summary": summary,
+                  "evidence": evidence[:8], "program_flags": flags, "flow_events": flow,
                   "data_type": data_type, "steps": steps, "calls": len(self.calls),
                   "key_metrics": metrics}   # 程式量的數字也留在 job 裡：Synthesizer 前的程式檢查要用（_background_codes）
         result["file"] = self._write(result, metrics, ev_ts, msgs)
@@ -1071,11 +1162,14 @@ class AnalysisWorker:
               "anomaly_detected": result["anomaly_detected"], "confidence": result["confidence"],
               "program_flags": result["program_flags"], "key_metrics": metrics, "evidence_timestamps": ev_ts[:12],
               "model": self.model, "steps": result["steps"]}
+        slices = {w["id"]: w.get("slice_host") or w["slice"] for w in self.windows if w.get("slice")}
+        if slices:   # 這個 worker 讀的切片（沒有＝讀原本的數據）
+            fm["data_slices"] = slices
         ev = "\n".join(f"- {x.get('time')}｜`{x.get('key')}`｜{x.get('observation')}" for x in result["evidence"]) or "（沒有）"
         calls = "\n".join(f"- {'✅' if c['ok'] else '❌'} `{c['script'].replace('_cmd.py', '')} {' '.join(c['args'][2:])}`：{c['head']}"
                           for c in self.calls) or "（沒有）"
         wins = "\n".join(f"- {w['id']}：{_rel(w['start_ns'], base)}～{_rel(w['end_ns'], base)}" + (f"（錨點 {w['label']}）" if w.get("label") else "")
-                         for w in self.windows)
+                         + (f"；切片 `{w.get('slice_host') or w['slice']}`" if w.get("slice") else "") for w in self.windows)
         body = (f"## 子任務\n{result['subtask']}\n\n## 時間窗\n{wins}\n\n## 分析摘要\n{result['summary']}\n\n## 證據\n{ev}\n\n"
                 f"## 量測紀錄\n{calls}\n")
         rel = f"workers/W{self.n}_{_slug(self.topic)}.md"
@@ -1097,23 +1191,105 @@ def _background_codes(workers, codes):
     """程式判斷：worker 量到的集合狀態（stop_reasons、active_error_codes…）有跳轉，但這個代碼在每次跳轉前後都在＝背景條件，
     不是這次變化的原因。實測 exp_event_lifecycle：stop_reasons [NO_CMD_VEL_RAW] → [MON_INITIALIZING, NO_CMD_VEL_RAW] → [NO_CMD_VEL_RAW]，
     /cmd_vel_raw 沒錄到，覆蓋缺口的提醒反而讓 Synthesizer 把根因寫成 NO_CMD_VEL_RAW。只看 key_metrics 列全的跳轉（≤5 次）。
-    回傳 {代碼: 「Topic 的 Key」}。"""
+    回傳 {代碼: {"where": 「Topic 的 Key」, "changed": 跳轉時新增或移除的項目}}。"""
     out = {}
     for w in workers:
         for win in (w.get("key_metrics") or {}).values():
             for key, f in (win or {}).items():
                 if not isinstance(f, dict) or not f.get("transitions") or f["transitions"] > len(f.get("changes") or []):
                     continue
-                states = [_set_items(f.get("first")), _set_items(f.get("last"))]
+                states, changed = [_set_items(f.get("first")), _set_items(f.get("last"))], set()
                 for ch in f["changes"]:
                     a, _, rest = str(ch).partition(" → ")
-                    states += [_set_items(a), _set_items(rest.rsplit(" @", 1)[0])]
+                    before, after = _set_items(a), _set_items(rest.rsplit(" @", 1)[0])
+                    states += [before, after]
+                    if before is not None and after is not None:
+                        changed |= before ^ after
                 if any(x is None for x in states):
                     continue
                 for c in codes:
                     if all(c in x for x in states):
-                        out.setdefault(c, f"{w['topic']} 的 {key}")
+                        out.setdefault(c, {"where": f"{w['topic']} 的 {key}", "changed": sorted(changed)})
     return out
+
+
+_DISMISS = ("背景", "而非", "並非", "不是", "不可能", "排除", "無關", "不影響", "不構成")
+# 只是說它沒有被量測、無法證實（尚未確認的內容），不算拿它當原因
+_NEUTRAL = ("未被量測", "沒有被量測", "未量測", "無法證實", "沒有被數據證實", "未被證實", "不在數據裡", "缺乏對", "沒有對應")
+
+
+def _relies_on(text, code):
+    """結論／根因有沒有拿這個代碼當原因：提到它的句子裡有一句不是在排除它（背景、而非、不是…）、不是在說它沒被量測、
+    也不是讓步子句（「雖然 Log 提到了 X，但 …」）就算。實測 e4b 排除時會寫「此為背景條件，而非導致保護停止的關鍵因素」，
+    當原因時寫「原因包括 … NO_CMD_VEL_RAW」「數據證實了 NO_CMD_VEL_RAW 的情況」。"""
+    c = code.lower()
+    for sent in re.split(r"[。；;\n]", str(text or "")):
+        s = sent.replace("不是唯一", "")
+        if c not in s.lower() or any(m in s for m in _DISMISS + _NEUTRAL):
+            continue
+        m = re.search(r"雖然(.*?)但", s)
+        if m and c in m.group(1).lower() and c not in s[m.end():].lower():
+            continue
+        return True
+    return False
+
+
+def _flow_events(metrics, base_ns):
+    """key_metrics 的 _rate → 訊息流的事件 [(+秒, 說明)]：中斷（開始時間、多久）、只在一段時間連續發布、中途才開始、中途停止。"""
+    out = []
+    base = base_ns / 1e9
+    for wm in (metrics or {}).values():
+        r = (wm or {}).get("_rate") or {}
+        for g in r.get("gaps") or []:
+            out.append((f"+{g['start_sec'] - base:.2f}s", f"訊息中斷 {g['duration_sec']:.2f} 秒"))
+        if r.get("published_only"):
+            a, b = r["published_only"]
+            out.append((f"+{a - base:.2f}s", f"只在 +{a - base:.2f}s～+{b - base:.2f}s 連續發布（之前、之後都沒有訊息）"))
+        else:
+            if r.get("started_at"):
+                out.append((f"+{r['started_at'] - base:.2f}s", "中途才開始發布"))
+            if r.get("stopped_after"):
+                out.append((f"+{r['stopped_after'] - base:.2f}s", "之後停止發布"))
+    return out
+
+
+def _flow_block(workers):
+    """交給 Synthesizer 的「程式整理：訊息流」：每個 Topic 的中斷與開始／停止，加上同一時間一起中斷的 Topic（共同的上游）。"""
+    rows, starts = [], []
+    for w in workers:
+        for t, what in w.get("flow_events") or []:
+            rows.append(f"- {t} {w['topic']}：{what}")
+            if what.startswith("訊息中斷"):
+                starts.append((float(t.strip("+s")), w["topic"], what))
+    together = []
+    for t, tp, what in sorted(starts):
+        if together and t - together[-1][0][0] <= 0.3:
+            together[-1].append((t, tp, what))
+        else:
+            together.append([(t, tp, what)])
+    for g in together:
+        if len({tp for _, tp, _ in g}) >= 2:
+            rows.append(f"- 同一時間（+{g[0][0]:.2f}s）一起中斷：{'、'.join(tp for _, tp, _ in g)}——好幾個 Topic 同時停發，"
+                        "通常是共同的上游（發布它們的節點，或它們共同依賴的輸入）出了問題")
+    return "\n".join(rows)
+
+
+def _ensure_flow_events(timeline, workers):
+    """時間線一定有訊息流的事件：某個 Topic 的中斷／開始／停止沒有寫進時間線（來源或事件提到這個 Topic、時間差 0.3 秒內），
+    程式補一列。模型常把幾個 Topic 寫在同一列（來源寫「Topic/Message Flow」、事件裡列出 Topic），那樣就不重複補。"""
+    added = 0
+    for w in workers:
+        for t, what in w.get("flow_events") or []:
+            tv = float(t.strip("+s"))
+            if not any(w["topic"] in f"{x.get('source')} {x.get('event')}" and abs(_timeline_key(x) - tv) <= 0.3 for x in timeline):
+                timeline.append({"time": t, "source": w["topic"], "event": f"{what}（程式補上）"})
+                added += 1
+    return added
+
+
+def _epoch(ns):
+    """奈秒 → epoch 秒的字串（保留 9 位小數，不經過 float）。"""
+    return f"{int(ns) // 1_000_000_000}.{int(ns) % 1_000_000_000:09d}"
 
 
 def _fix_signal_times(timeline, sig_by_id, base_ns):
@@ -1205,6 +1381,8 @@ def _metrics_from_measure(js, analyzed):
             if rate.get("gaps"):
                 wm["_rate"]["gaps"] = rate["gaps"]
                 ev_ts += [g.get("start_sec") for g in rate["gaps"]]
+            if rate.get("single_session"):
+                wm["_rate"]["published_only"] = [rate.get("first_sec"), rate.get("last_sec")]
             if rate.get("started_late"):   # 中途才開始／中途停止發布：時間點進證據（時間線排得到）
                 wm["_rate"]["started_at"] = rate.get("first_sec")
                 ev_ts.append(rate.get("first_sec"))

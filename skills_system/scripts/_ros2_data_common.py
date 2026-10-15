@@ -143,7 +143,8 @@ def run_in_container(script_file, worker_args, *, container=None, timeout=120, w
 
 
 def analysis_windows():
-    """analysis worker 的時間窗：analysis_job 以環境變數 ANALYSIS_WINDOWS 傳入（JSON：[{id, start_ns, end_ns, anchor_ns}]）。"""
+    """analysis worker 的時間窗：analysis_job 以環境變數 ANALYSIS_WINDOWS 傳入（JSON：[{id, start_ns, end_ns, anchor_ns, slice}]；
+    slice＝這個時間窗的切片（容器內路徑），沒有切片時省略）。"""
     raw = (os.environ.get("ANALYSIS_WINDOWS") or "").strip()
     try:
         data = json.loads(raw) if raw else []
@@ -153,12 +154,30 @@ def analysis_windows():
 
 
 def resolve_window_ids(text):
-    """--window 的值是 W1 這種編號時換成「開始,結束,錨點,W1」（奈秒精度，模型不必抄 19 位數的時間）；其他原樣傳回。"""
+    """--window 的值是 W1 這種編號時換成「開始,結束,錨點,W1[,切片]」（奈秒精度，模型不必抄 19 位數的時間）；其他原樣傳回。"""
     t = str(text).strip()
     for w in analysis_windows():
         if t.upper() == str(w["id"]).upper():
-            return f"{w['start_ns']},{w['end_ns']},{w.get('anchor_ns') or ''},{w['id']}"
+            return f"{w['start_ns']},{w['end_ns']},{w.get('anchor_ns') or ''},{w['id']}" + (f",{w['slice']}" if w.get("slice") else "")
     return t
+
+
+def slice_for_window(w, tol_ns=100_000_000):
+    """沒有指定切片的時間窗（worker 自己寫的 +3.37,+31.79）：落在某個有切片的 analysis 時間窗裡（容許 0.1 秒的四捨五入），
+    就用那個切片；超出切片的範圍要讀原本的數據（切片裡沒有那一段）。"""
+    for aw in analysis_windows():
+        if aw.get("slice") and int(aw["start_ns"]) - tol_ns <= w["start_ns"] and w["end_ns"] <= int(aw["end_ns"]) + tol_ns:
+            return aw["slice"]
+    return ""
+
+
+def matching_analysis_window(w, tol_ns=500_000_000):
+    """worker 自己抄的時間窗跟某個 analysis 時間窗兩端都差不到 0.5 秒＝就是那個時間窗（模型抄的數字有四捨五入；
+    實測 e4b 寫 +140.82s,+175.31s、140.82s_175.31s）。"""
+    for aw in analysis_windows():
+        if abs(int(aw["start_ns"]) - w["start_ns"]) <= tol_ns and abs(int(aw["end_ns"]) - w["end_ns"]) <= tol_ns:
+            return aw
+    return None
 
 
 def host_common_args(argv_container, data_path, mounts, data_root=None):
@@ -351,23 +370,29 @@ def iter_messages(mcap_files, topics=None, start_ns=None, end_ns=None):
                                             end_time=None if end_ns is None else end_ns + 1, log_time_order=True)
 
 
-def last_message_before(mcap_files, topic, t_ns):
-    """t_ns 之前（不含）這個 Topic 的最後一則原始訊息，沒有就 None。從後往前讀（mcap 的 reverse），讀到一則就停；
-    舊版 mcap 沒有 reverse 時從頭讀到 t_ns。"""
+def last_record_before(mcap_files, topic, t_ns):
+    """t_ns 之前（不含）這個 Topic 的最後一則：(schema, channel, message)，沒有就 None。從後往前讀（mcap 的 reverse），
+    讀到一則就停；舊版 mcap 沒有 reverse 時從頭讀到 t_ns。"""
     from mcap.reader import make_reader
     for f in reversed(mcap_files):
         with open(f, "rb") as stream:
             reader = make_reader(stream)
             try:
-                for _, _, m in reader.iter_messages(topics=[topic], end_time=t_ns, log_time_order=True, reverse=True):
-                    return m
+                for rec in reader.iter_messages(topics=[topic], end_time=t_ns, log_time_order=True, reverse=True):
+                    return rec
             except TypeError:
                 last = None
-                for _, _, m in reader.iter_messages(topics=[topic], end_time=t_ns, log_time_order=True):
-                    last = m
+                for rec in reader.iter_messages(topics=[topic], end_time=t_ns, log_time_order=True):
+                    last = rec
                 if last is not None:
                     return last
     return None
+
+
+def last_message_before(mcap_files, topic, t_ns):
+    """t_ns 之前（不含）這個 Topic 的最後一則原始訊息，沒有就 None。"""
+    rec = last_record_before(mcap_files, topic, t_ns)
+    return rec[2] if rec else None
 
 
 def bag_overview(mcap_files):
@@ -1023,7 +1048,8 @@ def signal_json(g, base_ns=None, max_times=50):
 # 容器端：時間窗
 # =====================================================================================================================
 def parse_window(text, base_ns=None):
-    """--window S,E[,錨點[,標籤]] → {start_ns, end_ns, anchor_ns, label}；S／E 可以是 epoch 秒或 +相對秒。"""
+    """--window S,E[,錨點[,標籤[,切片]]] → {start_ns, end_ns, anchor_ns, label, data}；S／E 可以是 epoch 秒或 +相對秒；
+    切片＝這個時間窗要讀的切片資料夾（analysis_run 切好的），省略時讀原本的數據。"""
     raw = str(text).strip()
     if "," in raw:
         parts = [p.strip() for p in raw.split(",")]
@@ -1036,7 +1062,7 @@ def parse_window(text, base_ns=None):
         start, end = end, start
     anchor = parse_time(parts[2], base_ns) if len(parts) > 2 and parts[2] else None
     label = parts[3] if len(parts) > 3 else ""
-    return {"start_ns": start, "end_ns": end, "anchor_ns": anchor, "label": label}
+    return {"start_ns": start, "end_ns": end, "anchor_ns": anchor, "label": label, "data": parts[4] if len(parts) > 4 else ""}
 
 
 def window_text(w, base_ns=None):
@@ -1106,12 +1132,15 @@ def carry_in_values(mcap_files, topic, type_name, keys, t_ns):
 
 EDGE_MIN_MESSAGES = 5        # 至少這麼多筆才看得出固定頻率；更少的多半只在狀態改變時才發布，頭尾沒有訊息不代表停止
 EDGE_SILENCE_PERIODS = 10    # 時間窗頭／尾沒有訊息超過「中位數週期 × 這個倍數」（且 ≥1 秒）＝中途才開始／中途停止發布
+RECORDING_WARMUP_SEC = 5.0   # 錄製開始後這麼久內才出現的第一筆，多半是 rosbag2 發現、訂閱 Topic 的延遲或節點剛啟動，不算「中途才開始」
 
 
-def rate_features(times, window):
+def rate_features(times, window, data_start_ns=None):
     """訊息頻率與中斷：筆數、平均 Hz、最大間隔；間隔超過中位數週期 3 倍（且 ≥0.5 秒）的列出來。
     固定頻率的 Topic（≥EDGE_MIN_MESSAGES 筆）再看時間窗的頭尾：started_late＝中途才開始發布、stopped_early＝中途停止發布。
-    實測：/cmd_vel_raw 只在 +13～+21s 發布，只看相鄰訊息的間隔會得到「沒有訊息中斷」，worker 因此判斷指令整段持續發送。"""
+    實測：/cmd_vel_raw 只在 +13～+21s 發布，只看相鄰訊息的間隔會得到「沒有訊息中斷」，worker 因此判斷指令整段持續發送。
+    data_start_ns：時間窗從數據開頭起算、第一筆在錄製開始 RECORDING_WARMUP_SEC 秒內＝錄製剛開始（warmup_start），不算中途才開始
+    （實測開機的範例：/cmd_vel 在 +1.15s 才有第一筆，被當成「速度指令缺失」的證據）。"""
     n = len(times)
     out = {"messages": n}
     if n == 0:
@@ -1131,7 +1160,12 @@ def rate_features(times, window):
         if n >= EDGE_MIN_MESSAGES:
             edge = max(EDGE_SILENCE_PERIODS * median, 1_000_000_000)
             out["started_late"] = times[0] - window["start_ns"] > edge
+            if (out["started_late"] and data_start_ns is not None and window["start_ns"] - data_start_ns < 1_000_000_000
+                    and times[0] - data_start_ns <= RECORDING_WARMUP_SEC * 1e9):
+                out["started_late"], out["warmup_start"] = False, True
             out["stopped_early"] = window["end_ns"] - times[-1] > edge
+            # 中途開始又中途停止、中間沒有中斷＝一段連續的發布（實測 e4b 把分開的兩個指標讀成「間歇性」）
+            out["single_session"] = out["started_late"] and out["stopped_early"] and not out["gaps"]
     return out
 
 

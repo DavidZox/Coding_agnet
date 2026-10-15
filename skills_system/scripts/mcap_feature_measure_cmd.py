@@ -93,6 +93,11 @@ def worker_main(argv):
     try:
         if args.window:
             windows = [rd.parse_window(w, base) for w in args.window]
+            for i, w in enumerate(windows):   # 自己抄的時間窗跟指派的幾乎一樣：換成指派的（精確的邊界、標籤、切片）
+                aw = None if w.get("data") else rd.matching_analysis_window(w)
+                if aw:
+                    windows[i] = dict(w, start_ns=int(aw["start_ns"]), end_ns=int(aw["end_ns"]), anchor_ns=aw.get("anchor_ns"),
+                                      label=w.get("label") or aw["id"], data=aw.get("slice") or "")
         elif args.around:
             t = rd.parse_time(args.around, base)
             windows = [{"start_ns": t - int(args.before * 1e9), "end_ns": t + int(args.after * 1e9), "anchor_ns": t, "label": ""}]
@@ -113,13 +118,23 @@ def worker_main(argv):
                  f"（{rd.fmt_t(idx['start_ns'])} ～ {rd.fmt_t(idx['end_ns'])}）")
     for w in windows:
         rel_base = base   # [+秒] 一律是距離數據開頭（跟 rosout_parser、mcap_analyzer、analysis_run 同一個基準）；錨點另外標
-        times, series, errors = rd.collect_series(data["mcap_files"], entry["topic"], entry["type"], keys, w)
-        rate = rd.rate_features(times, w)
+        # 讀哪裡：analysis_run 切好的切片（只有指派的 Topic、時間窗加上之前的最後一則），沒有切片才讀原本的數據。
+        # Key 的目錄、[+秒] 的基準仍用原本數據的全域索引（切片的時間窗跟原本的一樣，數字可以直接對照）
+        src, via = data, ""
+        sl = w.get("data") or rd.slice_for_window(w)
+        if sl:
+            sdata, serr = rd.resolve_data(sl)
+            if sdata:
+                src, via = sdata, f"（讀切片 {os.path.basename(sl.rstrip('/'))}）"
+            else:
+                via = f"（切片 {sl} 讀不到：{serr}；改讀原本的數據）"
+        times, series, errors = rd.collect_series(src["mcap_files"], entry["topic"], entry["type"], keys, w)
+        rate = rd.rate_features(times, w, data_start_ns=idx["start_ns"])
         wname = w.get("label") or "時間窗"
         lines.append(f"{wname}：{rd.window_text(w, base)}" + ("（已限制在數據範圍內）" if w.get("clamped") else "")
-                     + "；[+秒] 是距離數據開頭的時間")
+                     + "；[+秒] 是距離數據開頭的時間" + via)
         if not times:
-            carry = (rd.carry_in_values(data["mcap_files"], entry["topic"], entry["type"], keys, w["start_ns"])
+            carry = (rd.carry_in_values(src["mcap_files"], entry["topic"], entry["type"], keys, w["start_ns"])
                      if w["start_ns"] > idx["start_ns"] else {})
             held = [(k, lab, t, v) for k in keys for lab, (t, v) in carry.get(k, {}).items()]
             if held:   # 只在狀態改變時才發布的 Topic：沒有新訊息＝狀態沒變，照之前的最後一則
@@ -142,19 +157,26 @@ def worker_main(argv):
             r += "；中斷 " + "、".join(f"{rd.fmt_t(int(g['start_sec'] * 1e9))}[{rd.fmt_rel(int(g['start_sec'] * 1e9), rel_base)}] 起 "
                                      f"{g['duration_sec']} 秒" for g in rate["gaps"])
             all_flags.append(f"{wname} 訊息中斷 {len(rate['gaps'])} 次（最長 {rate['max_gap_sec']} 秒）")
-        if rate.get("started_late"):
+        if rate.get("single_session"):   # 一段連續的發布寫成一句（分開寫，模型會讀成「間歇性」）
+            span = (times[-1] - times[0]) / 1e9
+            r += (f"；只在 {first}～{last} 連續發布 {span:.2f} 秒（中間沒有中斷；之前 {rate['starts_after_window_sec']} 秒、"
+                  f"之後 {rate['ends_before_window_sec']} 秒都沒有訊息）")
+            all_flags.append(f"{wname} 只在 {first}～{last} 連續發布 {span:.1f} 秒（中間沒有中斷，之前與之後都沒有訊息）")
+        elif rate.get("started_late"):
             r += f"；{first} 才開始發布（時間窗開始後 {rate['starts_after_window_sec']} 秒）"
             all_flags.append(f"{wname} {first} 才開始發布（時間窗開始後 {rate['starts_after_window_sec']} 秒沒有訊息）")
+        elif rate.get("warmup_start"):
+            r += f"；錄製開始後 {rate['starts_after_window_sec']} 秒才有第一筆（錄製工具訂閱的延遲或節點剛啟動，不算中途才開始）"
         elif rate.get("starts_after_window_sec", 0) > 1.0:
             r += f"；時間窗開始後 {rate['starts_after_window_sec']} 秒才有第一筆"
-        if rate.get("stopped_early"):
+        if rate.get("stopped_early") and not rate.get("single_session"):
             r += f"；{last} 之後停止發布（到時間窗結束 {rate['ends_before_window_sec']} 秒沒有訊息）"
             all_flags.append(f"{wname} {last} 之後停止發布（到時間窗結束 {rate['ends_before_window_sec']} 秒沒有訊息）")
         if rate["messages"] < rd.EDGE_MIN_MESSAGES:
             r += "；筆數少：可能只在狀態改變時才發布，看狀態跳轉，不要用頻率或間隔判斷中斷"
         lines.append(r)
         # 狀態沿用時間窗開始前的最後一則（只在改變時才發布的 Topic）；時間窗從數據開頭起算就沒有「之前」
-        carry = (rd.carry_in_values(data["mcap_files"], entry["topic"], entry["type"], keys, w["start_ns"])
+        carry = (rd.carry_in_values(src["mcap_files"], entry["topic"], entry["type"], keys, w["start_ns"])
                  if w["start_ns"] > idx["start_ns"] else {})
         wkeys = {}
         for k, d in zip(keys, descs):
@@ -181,7 +203,7 @@ def worker_main(argv):
                 lines.append(f"     其餘 {len(quiet)} 項在時間窗內沒有變化（{_unchanged_summary([f for _, f in quiet])}）")
             wkeys[k] = {"category": d["category"], "dim": dim, "type": d["type"], "data_type": rd.data_type_of(d),
                         "map_by": d.get("map_by"), "entries": feats, "flags": flags}
-        results.append({"window": w, "rate": rate, "keys": wkeys, "errors": errors})
+        results.append({"window": w, "rate": rate, "keys": wkeys, "errors": errors, "source": src["bag_dir"]})
     if skipped:
         lines.append("沒有量測：" + "；".join(skipped))
     lines.append("異常指標（程式判斷）：" + ("；".join(all_flags) if all_flags else "沒有尖峰、沒有狀態跳轉、沒有訊息中斷"))
