@@ -224,6 +224,52 @@ def main():
                 # 範例數據有 WARN（L28 PROTECTIVE_STOP）：不下「正常的操作序列」的判斷
                 assert "正常的操作序列（不是故障）" not in synth_prompt
 
+        def t_missing_input_proxy():
+            # Log 提到、數據裡沒有的輸入（NO_CMD_VEL_RAW → /cmd_vel_raw 沒錄到）：Orchestrator 規劃時就拿到程式檢查，名稱相近的 /cmd_vel
+            # 點名是另一個 Topic；Synthesizer 也一樣（實測 26b 派 /cmd_vel「驗證 NO_CMD_VEL_RAW」、報告寫「/cmd_vel 穩定，排除指令丟失」，25 次 15 次）
+            fake, calls = setup(plans=[GOOD_PLAN], synth=[SYNTH])
+            agent.analysis_run(f'--data {DATA} "安全閘為什麼停下來"')
+            plan_prompt = fake.seen["plan"][0][1]["content"]
+            assert "【程式檢查：Log 提到、但數據裡沒有的輸入】" in plan_prompt and "NO_CMD_VEL_RAW" in plan_prompt, plan_prompt[-1200:]
+            assert "名稱相近的 /cmd_vel 是另一個 Topic" in plan_prompt and "NO_SAFETY_COMMAND_YET" not in plan_prompt.split("【程式檢查")[1], \
+                "對得上 /system/safety_command 的不算缺"
+            synth_prompt = fake.seen["synth"][0][1]["content"]
+            assert "名稱相近的 /cmd_vel 是另一個 Topic" in synth_prompt and "都不能證明也不能排除 NO_CMD_VEL_RAW" in synth_prompt, synth_prompt[-1500:]
+            # 派了 /cmd_vel：Synthesizer 看到的那份局部報告旁邊附程式提醒（實測只有缺口說明時，25 次仍有 9 次拿它排除指令中斷）
+            with_cmd_vel = dict(GOOD_PLAN, assignments=GOOD_PLAN["assignments"] + [{"topic": "/cmd_vel", "subtask": "看速度", "signals": []}])
+            fake, calls = setup(plans=[with_cmd_vel], synth=[SYNTH])
+            agent.analysis_run(f'--data {DATA} "安全閘為什麼停下來"')
+            synth_prompt = fake.seen["synth"][0][1]["content"]
+            w_cmd = synth_prompt[synth_prompt.index("### W2 /cmd_vel"):]
+            assert "程式提醒：/cmd_vel 不是「cmd_vel_raw」" in w_cmd, w_cmd[:800]
+            assert "程式提醒" not in synth_prompt[synth_prompt.index("### W1 "):synth_prompt.index("### W2 ")], "別的 Topic 不附"
+            from agent_core.analysis_job import _similar_topics
+            job = {"index": {"topics": [{"topic": "/cmd_vel", "message_count": 5}, {"topic": "/odom", "message_count": 5},
+                                        {"topic": "/imu/data", "message_count": 0}]}}
+            assert _similar_topics(job, "cmd_vel_raw") == ["/cmd_vel"] and _similar_topics(job, "imu_data") == [], "沒有訊息的不算"
+
+        def t_category_not_key():
+            # Key 目錄的類別寫中文（英文的 state 每一列都有，實測 26b 送 --key state）；工具略過不存在的 Key、把「類別.Key」改寫成 Key 時，
+            # worker 照輸出的「▸ Key（」算真的量到的
+            measure = {"thought": "量安全狀態", "reply": "", "action": {"command": "scripts/mcap_feature_measure_cmd.py",
+                                                                  "args": "--key state --key state.mode"}}
+            fake, calls = setup(plans=[GOOD_PLAN], worker=[measure],
+                                reports=[{"analyzed_keys": ["mode"], "anomaly_detected": True, "summary": "mode 跳轉", "evidence": [],
+                                          "confidence": "high"}], synth=[SYNTH])
+            plain = agent._exec_script
+
+            def exec_new_tool(script_name, script_path, clean_args, extra_env=None, _plain=plain):
+                if script_name == "mcap_feature_measure_cmd.py" and "--json" not in clean_args:   # 新版工具：略過 state、state.mode 換成 mode
+                    return fixture("measure_text.txt").replace("異常指標（程式判斷）", "沒有量測：state（沒有這個 Key：state 是 Key 的類別（狀態），不是 Key）\n異常指標（程式判斷）")
+                return _plain(script_name, script_path, clean_args, extra_env)
+            agent._exec_script = exec_new_tool
+            agent.analysis_run(f'--data {DATA} "安全閘為什麼停下來"')
+            brief = fake.seen["worker"][0][1]["content"]
+            assert "- mode｜狀態｜scalar｜string" in brief and "｜state｜" not in brief, brief[-900:]
+            job = json.load(open(os.path.join(agent.analysis_jobs_dir(), agent.analysis_last["id"], "job.json"), encoding="utf-8"))
+            w = job["workers"][0]
+            assert w["key_selection"] == "worker" and w["analyzed_keys"] == ["mode"], w
+
         def t_auto_assign_and_whole_window():
             fake, calls = setup(plans=[{}, "不是 JSON"], synth=[SYNTH])
             out = agent.analysis_run(f'--data {DATA}')
@@ -541,6 +587,8 @@ def main():
         for name, fn in [("Orchestrator：不存在的 L#／Topic、Log Topic、重複的 Topic 交回修一次（程式列出具體的問題）", t_plan_repair),
                          ("Orchestrator：同一個 L# 列兩次只合併、不交回修正", t_plan_duplicate_signal),
                          ("訊息流：一段完整的發布不強制算異常、交給 Synthesizer「完整的發布」；中斷照樣強制", t_segment_not_fault),
+                         ("Log 提到、數據裡沒有的輸入：Orchestrator 與 Synthesizer 都拿到，名稱相近的 Topic 點名不能代替、它的報告旁附提醒", t_missing_input_proxy),
+                         ("Key 目錄的類別寫中文；工具略過不存在的 Key 時照輸出算量到的 Key", t_category_not_key),
                          ("Orchestrator 給不出計畫：程式依關聯度補指派（不重複、不派 Log）；沒有相關訊號＝整段數據；預設問題", t_auto_assign_and_whole_window),
                          ("時間窗：訊號前後各取幾秒、重疊的合併、限制在數據範圍內；Log 的時間不在範圍內退回整段", t_windows),
                          ("Worker：reply 裡的動作照做、--topic 固定、只准量測技能、第三次相同量測擋下；Frontmatter 數字來自程式；動態時間切片", t_worker_rules),

@@ -18,7 +18,7 @@ dependencies: ["docker", "mcap", "rclpy", "rosidl_runtime_py"]
 
 # 語法
 `EXECUTE: scripts/mcap_feature_measure_cmd.py [數據] --topic TOPIC --key KEY [--key KEY]... [--window 開始,結束]... [--around 時間 --before 秒 --after 秒] [--filter 名稱關鍵字]`
-* Key 名稱用 `mcap_analyzer --topic <TOPIC>` 查。時間可以是 epoch 秒或 `+秒`（距離數據開頭）；不給時間窗＝整份數據。
+* Key 名稱用 `mcap_analyzer --topic <TOPIC>` 查（state、numeric 這些是 Key 的類別，不是 Key）。好幾個 `--key` 裡有不存在的：認得的照量，最後一行說明略過哪些；全部都不存在才回 [ERROR] 並列出可以量測的 Key。時間可以是 epoch 秒或 `+秒`（距離數據開頭）；不給時間窗＝整份數據。
 * `--around <時間>`：以該時間為錨點，前後各取 --before／--after 秒（預設 5）。`--all-entries`：依名稱展開的 Key 連不變的項目也列。`--json`：結構化輸出。
 
 # 範例

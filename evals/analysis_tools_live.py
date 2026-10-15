@@ -61,6 +61,15 @@ def main():
             check("時間窗的寬鬆寫法（+0~+5s）", out.startswith("[PASS]") and "+0.00s ～ +5.00s" in out, out)
             out = run("mcap_feature_measure_cmd.py", a.data, "--topic", t["topic"], "--key", key["key"], "--bogus", "1", env=env)
             check("不認識的參數：照認得的做完、附上說明", out.startswith("[PASS]") and "已忽略不認識的參數：--bogus 1" in out, out)
+            # 不存在的 Key：認得的照量、最後說明；類別不是 Key（實測 26b 送 --key state、--key state.X）
+            out = run("mcap_feature_measure_cmd.py", a.data, "--topic", t["topic"], "--key", key["key"], "--key", "state", env=env)
+            check("混了不存在的 Key（--key state）：認得的照量、說明 state 是類別", out.startswith("[PASS]") and f"▸ {key['key']}（" in out
+                  and "沒有量測：state（沒有這個 Key：state 是 Key 的類別" in out, out)
+            out = run("mcap_feature_measure_cmd.py", a.data, "--topic", t["topic"], "--key", "state", env=env)
+            check("只有不存在的 Key：[ERROR] 點名類別、列出可以量測的 Key", out.startswith("[ERROR]") and "是 Key 的類別" in out
+                  and key["key"] in out, out)
+            out = run("mcap_feature_measure_cmd.py", a.data, "--topic", t["topic"], "--key", f"{key['category']}.{key['key']}", env=env)
+            check(f"「類別.Key」（{key['category']}.{key['key']}）換成 Key 量", out.startswith("[PASS]") and f"▸ {key['key']}（" in out, out)
             out = run("mcap_analyzer_cmd.py", a.data, "--topic", t["topic"], "--key", key["key"], "--preview", "3", env=env)
             check("mcap_analyzer --key --preview：原始值", out.startswith("[PASS]") and "前 " in out, out)
         out = run("mcap_feature_measure_cmd.py", a.data, "--topic", "/no_such_topic", "--key", "x", env=env)

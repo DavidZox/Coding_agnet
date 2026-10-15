@@ -73,13 +73,20 @@ def worker_main(argv):
         print(f"[ERROR] {entry['topic']} 沒辦法量測：{entry.get('error') or '沒有任何訊息'}"
               + ("（自訂訊息型別要先用 ROS2_workspace_env 確認 Workspace）" if entry["role"] == "undecodable" else ""))
         return 2
-    keys, descs, skipped = [], [], []
+    keys, descs, skipped, unknown = [], [], [], []
+    avail = "、".join(x["key"] for x in entry.get("keys", []) if x["category"] in rd.WORKER_CATEGORIES)
     for k in args.key:
         d = rd.find_key(entry, k)
-        if d is None:
-            avail = "、".join(x["key"] for x in entry.get("keys", []) if x["category"] in rd.WORKER_CATEGORIES)
-            print(f"[ERROR] {entry['topic']} 沒有 Key「{k}」。可以量測的 Key：{avail}")
-            return 2
+        head, _, rest = k.partition(".")
+        if d is None and head in rd.CATEGORY_LABELS and rest and rd.find_key(entry, rest):
+            k, d = rest, rd.find_key(entry, rest)   # 「類別.Key」（實測 26b：state.primary_reaction）：類別不是 Key 的一部分
+        if d is None:   # 不存在的 Key：認得的照量、最後說明（唯讀工具，比回錯誤讓模型重送一次省一輪；全部都不認得才回錯誤）
+            unknown.append(k)
+            skipped.append(f"{k}（沒有這個 Key" + (f"：{k} 是 Key 的類別（{rd.CATEGORY_LABELS[k]}），不是 Key" if k in rd.CATEGORY_LABELS else "")
+                           + "）")
+            continue
+        if k in keys:
+            continue
         if d["category"] in ("text", "time"):
             skipped.append(f"{k}（{rd.CATEGORY_LABELS[d['category']]}：不量測"
                            + ("，自由文字屬於 Orchestrator 的 Log 分析範圍" if d["category"] == "text" else "") + "）")
@@ -87,6 +94,11 @@ def worker_main(argv):
         keys.append(k)
         descs.append(d)
     if not keys:
+        if unknown:   # 實測 26b 把 Key 目錄的類別欄當成 Key（--key state）：點名類別，列出可以量測的 Key
+            print(f"[ERROR] {entry['topic']} 沒有 Key「{'」「'.join(unknown)}」"
+                  + ("（state、numeric 這些是 Key 的類別，不是 Key）" if any(u in rd.CATEGORY_LABELS for u in unknown) else "")
+                  + f"。可以量測的 Key：{avail}")
+            return 2
         print("[ERROR] 沒有可以量測的 Key：" + "；".join(skipped))
         return 2
     base = idx["start_ns"]
@@ -205,7 +217,7 @@ def worker_main(argv):
                         "map_by": d.get("map_by"), "entries": feats, "flags": flags}
         results.append({"window": w, "rate": rate, "keys": wkeys, "errors": errors, "source": src["bag_dir"]})
     if skipped:
-        lines.append("沒有量測：" + "；".join(skipped))
+        lines.append("沒有量測：" + "；".join(skipped) + (f"（可以量測的 Key：{avail}）" if unknown else ""))
     lines.append("異常指標（程式判斷）：" + ("；".join(all_flags) if all_flags else "沒有尖峰、沒有狀態跳轉、沒有訊息中斷"))
     if args.json:
         print(json.dumps(rd.jsonable({"data": idx["label"], "topic": entry["topic"], "type": entry["type"],

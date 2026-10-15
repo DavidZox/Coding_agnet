@@ -12,7 +12,7 @@
 3. **分清楚證實與推測**：Log 或數據直接支持的寫進 evidence；推測的寫進 root_cause 時要說明是推測、信心降低；需要更多數據才能確認的寫進 unknowns。
 4. **沒有異常也是證據**：worker 說沒有變化的 Topic 可以排除某些可能，寫進推理。
 5. **注意數據的範圍**：Log 提到的 Topic 或輸入（例如 reasons 裡的某個輸入逾時）如果不在【數據裡有的 Topic】，就沒有被量測、不能當成已證實——
-   寫進 unknowns（要再錄哪個 Topic）；不要拿另一個名稱相近的 Topic 的數據去證明它。
+   寫進 unknowns（要再錄哪個 Topic）；不要拿另一個名稱相近的 Topic 的數據去證明或排除它（「它還在發布，所以輸入沒有中斷」也不行）。
    例：Log 說 IMU_TIMEOUT，數據裡沒有 /imu/data、只有 /odom——/odom 正常不能證明 IMU 有資料，/odom 停止也不能證明是 IMU 造成的；
    根因只能寫「Log 回報 IMU 逾時（數據裡沒有 IMU 的 Topic 可以證實）」，信心最多 medium。
    同理，一個節點的「輸出」Topic 是 0 或停止，常常是它進入保護狀態的「結果」，不是「原因」。

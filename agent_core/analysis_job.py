@@ -61,6 +61,8 @@ ROLES = ("orchestrator", "worker", "synthesizer")
 ROLE_LABELS = {"orchestrator": "Orchestrator", "worker": "Worker", "synthesizer": "Synthesizer"}
 DEFAULT_QUESTION = "這段錄製期間系統發生了什麼異常或狀態變化？找出最可能的根因。"
 WORKER_CATEGORIES = ("numeric", "vector", "state", "kv", "matrix", "array")
+_CATEGORY_TEXT = {"numeric": "數值", "vector": "向量", "state": "狀態", "kv": "鍵值", "matrix": "矩陣", "array": "陣列",
+                  "text": "文字", "time": "時間"}   # 同 _ros2_data_common.CATEGORY_LABELS（給 worker 看的 Key 目錄）
 _LEVEL_RANK = {"DEBUG": 0, "INFO": 1, "UNKNOWN": 1, "WARN": 2, "ERROR": 3, "FATAL": 4}
 _MARKERS = ("[ANALYSIS_DATA]", "[TARGET_CONTAINER]", "[CWD_CHANGED]", "[ROS2_WORKSPACE]")
 _RECORDER_NODE = re.compile(r"^(rosbag2(_\w+)?|ros2_bag\w*)$")
@@ -554,7 +556,8 @@ class AnalysisMixin:
                 f"【數據】{idx.get('label')}：共 {idx.get('duration_sec')} 秒（時間都寫成距離數據開頭的秒數，+秒）\n\n"
                 f"【去重後的 Log（唯一訊號；L# 是編號，×N 是出現次數）】\n{self._digest_text(job)}\n\n"
                 f"【全域 Topic Metadata（可以指派給 worker 的 Topic 與它們的 Key）】\n{self._topics_text(job)}\n\n"
-                f"【限制】最多指派 {job['max_workers']} 個 worker，每個 worker 一個不同的 Topic；Log（/rosout）不能指派——Log 由你負責看。"
+                + _gap_text_for_plan(job, self._coverage_gaps(job, all_signals=True))
+                + f"【限制】最多指派 {job['max_workers']} 個 worker，每個 worker 一個不同的 Topic；Log（/rosout）不能指派——Log 由你負責看。"
                 f"時間窗預設訊號前 {before:g} 秒、後 {after:g} 秒（before_sec、after_sec 可以依問題調整，0.5～60 秒）。"
                 + (f"\n使用者指定一定要分析的 Topic：{'、'.join(forced)}（要指派）" if forced else "")
                 + "\n（每個欄位都用繁體中文寫）")
@@ -770,15 +773,19 @@ class AnalysisMixin:
                     "summary": "", "anomaly_detected": None, "analyzed_keys": [], "program_flags": [], "evidence": []}
 
     # ---------------------------------------------------------------- 3. Synthesizer
-    def _coverage_gaps(self, job):
+    def _coverage_gaps(self, job, all_signals=False):
         """程式檢查：相關的（與 WARN 以上的）Log 提到「某個輸入沒有／逾時」（NO_X、X_TIMEOUT…），數據裡卻沒有名稱對得上 X 的 Topic。
         實測 e4b 的 Synthesizer 三次都拿名稱相近的輸出 Topic（/cmd_vel 是 0）去「證實」NO_CMD_VEL_RAW——/cmd_vel_raw 根本沒錄到。
-        回傳 [(原因代碼, 對應的名稱, [L#…])]。"""
+        all_signals：看全部的 Log（錄製工具自己的除外）——給 Orchestrator 用，那時還沒有挑相關的訊號。
+        回傳 [(原因代碼, 對應的名稱, [L#…])]；名稱相近的 Topic 用 _similar_topics 找。"""
         names = [t["topic"].lower().replace("/", "_") for t in job["index"]["topics"] if t.get("message_count")]
-        related = {r["id"] for r in job["plan"]["related"]}
+        related = {r["id"] for r in (job.get("plan") or {}).get("related") or []}
         gaps = {}
         for s in job.get("signals") or []:
-            if s["id"] not in related and _LEVEL_RANK.get(s["level"], 1) < 2:
+            if all_signals:
+                if is_recorder_node(s["node"]):
+                    continue
+            elif s["id"] not in related and _LEVEL_RANK.get(s["level"], 1) < 2:
                 continue
             for m in _REASON_RE.finditer(s["message"]):
                 x = (m.group(1) or m.group(2) or "").lower()
@@ -811,12 +818,14 @@ class AnalysisMixin:
         job["coverage_gaps"] = [{"reason": c, "name": x, "signals": ids, "background": (bg.get(c) or {}).get("where"),
                                  "changed": (bg.get(c) or {}).get("changed")} for c, x, ids in gaps]
         gap_text = "\n".join(
-            f"- {c}（{'、'.join(ids)}）：數據裡沒有名稱含「{x}」的 Topic，沒有被量測；不過 {bg[c]['where']} 在每次跳轉前後都有 {c}"
-            f"（跳轉時新增／移除的是 {'、'.join(bg[c]['changed']) or '別的項目'}）——它是背景條件，不是這次變化的原因，"
-            f"根因看新增／移除的那一項" if c in bg else
-            f"- {c}（{'、'.join(ids)}）：數據裡沒有名稱含「{x}」的 Topic——沒有被量測，不能拿其他 Topic（例如名稱相近的輸出）"
-            f"證明它；寫進 unknowns，信心最多 medium" for c, x, ids in gaps)
+            (f"- {c}（{'、'.join(ids)}）：數據裡沒有名稱含「{x}」的 Topic，沒有被量測；不過 {bg[c]['where']} 在每次跳轉前後都有 {c}"
+             f"（跳轉時新增／移除的是 {'、'.join(bg[c]['changed']) or '別的項目'}）——它是背景條件，不是這次變化的原因，"
+             f"根因看新增／移除的那一項" if c in bg else
+             f"- {c}（{'、'.join(ids)}）：數據裡沒有名稱含「{x}」的 Topic——沒有被量測，不能拿其他 Topic（例如名稱相近的輸出）"
+             f"證明它；寫進 unknowns，信心最多 medium")
+            + _similar_note(job, c, x) for c, x, ids in gaps)
         reports = []
+        reminders = _proxy_reminders(job, gaps)
         for w in job["workers"]:
             if w.get("status") == "failed":
                 reports.append(f"### W{w['n']} {w['topic']}\n（這個 worker 失敗：{w.get('error')}）")
@@ -826,7 +835,8 @@ class AnalysisMixin:
                            f"- 子任務：{w.get('subtask')}\n- 分析的 Key：{'、'.join(w.get('analyzed_keys') or [])}\n"
                            f"- anomaly_detected：{w.get('anomaly_detected')}（信心 {w.get('confidence')}）\n"
                            f"- 程式判斷的異常指標：{'；'.join(w.get('program_flags') or []) or '沒有'}\n"
-                           f"- 局部報告：{w.get('summary')}\n" + (f"- 證據：\n{ev}" if ev else ""))
+                           f"- 局部報告：{w.get('summary')}\n" + (f"- 證據：\n{ev}" if ev else "")
+                           + reminders.get(w["topic"], ""))
         user = (f"【使用者的問題】\n{job['question']}\n\n【Orchestrator 對問題的理解】\n{plan['understanding']}\n"
                 + (f"報告要聚焦：{plan['report_focus']}\n" if plan.get("report_focus") else "")
                 + f"\n【數據】{job.get('data_label')}：共 {job.get('duration_sec')} 秒（時間是距離數據開頭的秒數）\n\n"
@@ -990,7 +1000,9 @@ class AnalysisWorker:
                 info.append(f"抽樣範圍 {k['range'][0]}～{k['range'][1]}")
             if k.get("note"):
                 info.append(k["note"])
-            kl.append(f"- {k['key']}｜{k['category']}｜{k['dim']}｜{k['type']}" + (f"｜{'；'.join(info)}" if info else ""))
+            # 類別寫中文（同量測工具的輸出）：英文的 state 每一列都有，實測 26b 把它當成 Key 送 --key state（/system/safety_command 35 次 15 次）
+            kl.append(f"- {k['key']}｜{_CATEGORY_TEXT.get(k['category'], k['category'])}｜{k['dim']}｜{k['type']}"
+                      + (f"｜{'；'.join(info)}" if info else ""))
         parts = [f"【使用者的問題】{self.job['question']}",
                  f"【Orchestrator 對問題的理解】{plan['understanding'] or '（沒有）'}",
                  f"【你的子任務】{self.asg['subtask']}",
@@ -1052,11 +1064,9 @@ class AnalysisWorker:
     def _run_tool(self, script, args):
         out = self.a._analysis_tool(script, args, extra_env=self.env)
         ok = not out.lstrip().startswith("[ERROR]")
-        keys = [args[i + 1] for i in range(len(args) - 1) if args[i] == "--key"]
-        if ok and script == "mcap_feature_measure_cmd.py":
-            for k in keys:
-                if f"▸ {k}（" in out:
-                    self.measured[k] = self.measured.get(k, 0) + 1
+        if ok and script == "mcap_feature_measure_cmd.py":   # 照輸出算真的量到的 Key（工具略過不存在的、把「類別.Key」改寫成 Key）
+            for k in dict.fromkeys(re.findall(r"^\s*▸ (\S+?)（", out, re.M)):
+                self.measured[k] = self.measured.get(k, 0) + 1
         self.calls.append({"script": script, "args": args, "ok": ok, "head": out.strip().splitlines()[0][:200] if out.strip() else ""})
         clean = "\n".join(ln for ln in out.splitlines() if not ln.startswith(_MARKERS))
         return clean
@@ -1257,6 +1267,56 @@ def _flow_events(metrics, base_ns, segments=True):
             if r.get("stopped_after"):
                 out.append((f"+{r['stopped_after'] - base:.2f}s", "之後停止發布"))
     return out
+
+
+def _similar_topics(job, x):
+    """數據裡（有訊息的）名稱相近、但不是 X 的 Topic：最後一段名稱（或整個名稱）包含在 X 裡，例如 /cmd_vel 之於 cmd_vel_raw。"""
+    out = []
+    for t in job["index"]["topics"]:
+        if not t.get("message_count"):
+            continue
+        last = t["topic"].rstrip("/").rsplit("/", 1)[-1].lower()
+        full = t["topic"].lower().strip("/").replace("/", "_")
+        if (len(last) >= 3 and last in x) or (len(full) >= 3 and full in x):
+            out.append(t["topic"])
+    return out
+
+
+def _similar_note(job, code, x):
+    """缺口說明的補充：名稱相近的 Topic 是另一個 Topic，有沒有在發布、數值多少都不能證明也不能排除這個原因。
+    實測 26b：數據裡沒有 /cmd_vel_raw 時，Orchestrator 派 /cmd_vel「驗證 NO_CMD_VEL_RAW」，報告寫「/cmd_vel 穩定發布，排除指令丟失」（25 次 15 次）。"""
+    sim = _similar_topics(job, x)
+    if not sim:
+        return ""
+    return (f"；數據裡名稱相近的 {'、'.join(sim)} 是另一個 Topic，不是「{x}」——它有沒有在發布、數值多少，"
+            f"都不能證明也不能排除 {code}")
+
+
+def _proxy_reminders(job, gaps):
+    """名稱相近、但不是沒錄到的那個輸入的 Topic：在它的局部報告旁邊附程式提醒（Topic → 文字）。
+    實測 26b：缺口說明寫了「名稱相近的 /cmd_vel 不能證明也不能排除 NO_CMD_VEL_RAW」，Synthesizer 讀到 W3 的「/cmd_vel 穩定 20 Hz」
+    仍寫「排除指令流中斷」（25 次 9 次）——提醒放在它引用的那份報告旁邊。"""
+    out = {}
+    for c, x, _ids in gaps:
+        for t in _similar_topics(job, x):
+            out[t] = out.get(t, "") + (f"\n- 程式提醒：{t} 不是「{x}」（數據裡沒有）——這份報告的數字（有沒有在發布、數值多少）"
+                                       f"不能用來證明或排除 {c}")
+    return out
+
+
+def _gap_text_for_plan(job, gaps):
+    """給 Orchestrator 的程式檢查：Log 提到、數據裡沒有的輸入，以及不能拿來代替它的名稱相近的 Topic。"""
+    if not gaps:
+        return ""
+    rows = []
+    for c, x, ids in gaps:
+        row = f"- {c}（{'、'.join(ids[:6])}）：指的是名稱含「{x}」的 Topic，這份數據沒有錄到"
+        sim = _similar_topics(job, x)
+        if sim:
+            row += (f"；名稱相近的 {'、'.join(sim)} 是另一個 Topic——不能拿它代替「{x}」去驗證 {c}，"
+                    f"要派它的話，子任務寫成看它自己的變化")
+        rows.append(row)
+    return "【程式檢查：Log 提到、但數據裡沒有的輸入】\n" + "\n".join(rows) + "\n\n"
 
 
 def _segment_notes(workers, base_ns, signals):
