@@ -306,12 +306,12 @@ ANALYSIS_WORKER_SCRIPTS = {"mcap_feature_measure_cmd.py", "mcap_analyzer_cmd.py"
 # 整理在執行的節點的發布／訂閱關係與代碼的條件，交給 Orchestrator、Worker、Synthesizer（agent_core/source_index.py）。空＝不用
 ANALYSIS_SOURCE_ROOT = os.environ.get("AGENT_ANALYSIS_SOURCE_ROOT", "").strip()
 ANALYSIS_SOURCE_CACHE_DIRNAME = "source_index"   # logs/ 下：源碼索引的快取（檔案大小、mtime 沒變就沿用）
-ANALYSIS_SOURCE_MAX_CHARS = {"orchestrator": 4500, "worker": 2500, "synthesizer": 11000}   # 各角色的【源碼脈絡】上限（字）；Orchestrator 的是第二步（分派）的
+ANALYSIS_SOURCE_MAX_CHARS = {"orchestrator": 4500, "worker": 2500, "causal": 11000}   # 各角色的【源碼脈絡】上限（字）；Orchestrator 的是第二步（分派）的
 # Orchestrator 分兩步（有源碼脈絡時）：第一步只在 Log 與 Topic Metadata 裡帶源碼、挑訊號與時間窗，第二步帶整段【源碼脈絡】分派 Topic。
 # 一步做完時整段源碼會讓它漏挑狀態改變的訊號；不給整段源碼，子任務常把輸出 Topic 當輸入去驗證（設計筆記 2.19）。0／off＝一步
 ANALYSIS_PLAN_TWO_STEP = os.environ.get("AGENT_ANALYSIS_PLAN_TWO_STEP", "1").strip().lower() not in ("0", "false", "off", "no")
-# 補推理鏈（有源碼脈絡時）：Synthesizer 寫完報告，Orchestrator 看「尚未確認」的每一項能不能用數據裡錄到、還沒分析的 Topic 補上，
-# 能補就補派 worker、再整合一次。最多幾輪（1＝不補；第一輪的報告留成 report_r1.md）、每輪補派最多幾個 worker
+# 補分析（有源碼脈絡時）：Orchestrator 做因果推論時，缺的環節能用數據裡錄到、還沒分析的 Topic 補上就指派（followups），
+# 補派 worker、再整合事實、再推論。最多幾輪（1＝不補；補分析之前的報告留成 report_r<n>.md）、每輪補派最多幾個 worker
 ANALYSIS_MAX_ROUNDS = int(os.environ.get("AGENT_ANALYSIS_ROUNDS", "2"))
 ANALYSIS_FOLLOWUP_WORKERS = 2
 # 程式的推理提示：Log 提到、數據裡沒有的輸入（名稱比對）、名稱相近的 Topic、背景條件的更正、共同的上游、一段完整的發布……

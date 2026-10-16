@@ -33,8 +33,10 @@ sys.path.insert(0, PROJECT)
 
 
 def model_text(report):
-    """結論＋根因裡模型自己寫的部分（拿掉程式附的更正、檢查說明）。"""
-    return _PROGRAM_NOTE.sub("", f"{report.get('conclusion') or ''}\n{report.get('root_cause') or ''}")
+    """結論＋根因＋因果鏈裡模型自己寫的部分（拿掉程式附的更正、檢查說明）。第八輪起因果推論把細節（代碼、L#、源碼位置）寫在因果鏈，
+    結論與根因比較精簡（實測 long 的 SAFETY_COMMAND_TIMEOUT、lifecycle 的初始化都只在因果鏈裡）；因果鏈也是報告的根因推理，一起評。"""
+    chain = "\n".join(str(x.get("event") or "") for x in report.get("chain") or [] if isinstance(x, dict))
+    return _PROGRAM_NOTE.sub("", f"{report.get('conclusion') or ''}\n{report.get('root_cause') or ''}\n{chain}")
 
 
 _NEG = ("沒有", "未", "無", "不", "沒", "非", "如果", "若", "是否", "排除", "還是", "當")   # 「還是…中斷」「當…停止發布時」是假設
@@ -51,12 +53,15 @@ def _has(text, k):
 def said(text, word):
     """text 有沒有「肯定地」說 word：同一個子句裡（從前一個逗號、句號到這個字）有否定或假設（沒有、未、無、不、如果、是否…）的不算
     （實測：「沒有觸發保護或中斷」「這表示如果 /cmd_vel_raw 確實中斷，則…」都不是在說有中斷）。"""
-    i = text.find(word)
-    while i >= 0:
+    hits = ([(m.start(), m.end()) for m in re.finditer(word[3:], text)] if word.startswith("re:") else
+            [(i, i + len(word)) for i in range(len(text)) if text.startswith(word, i)])
+    for i, e in hits:
         start = max(text.rfind(p, 0, i) for p in "，。；;,、\n")
-        if not any(n in text[start + 1:i] for n in _NEG):
+        ends = [k for k in (text.find(p, i) for p in "，。；;,\n") if k >= 0]
+        after = text[e:min(ends) if ends else len(text)]
+        inside = word.startswith("re:") and any(n in text[i:e] for n in _NEG)   # 正規表示式比對到的範圍裡有否定（「系統並未自動恢復」）
+        if not any(n in text[start + 1:i] for n in _NEG) and not inside and "還是" not in after:   # 「（是正常結束還是意外中斷）無法判定」是假設
             return True
-        i = text.find(word, i + 1)
     return False
 
 
@@ -112,8 +117,9 @@ def score_job(job_id, case):
         if not res["character"]:
             res["why"]["character"] = ("定性成「" + "、".join(wrong) + "」" if wrong else
                                        "沒有「" + "／".join(case["character"][:4]) + "」這類定性")
-    if case.get("upstream"):
-        res["upstream"] = any(k.lower() in text.lower() for k in case["upstream"])
+    if case.get("upstream"):   # 追到上游：寫在尚未確認也算（「發布者 system_health_monitor 為什麼停，看不出來」＝推到節點、原因照實說）
+        up = (text + "\n" + "\n".join(str(u) for u in rep.get("unknowns") or [])).lower()
+        res["upstream"] = any(k.lower() in up for k in case["upstream"])
         if not res["upstream"]:
             res["why"]["upstream"] = "沒有追到上游（共同的發布者／診斷彙整）"
     if case.get("slice"):
@@ -228,7 +234,7 @@ def main():
     p.add_argument("--slice", default="", choices=["", "on", "off"])
     p.add_argument("--source", default=None, help="源碼目錄（受測系統的 ROS 2 工作區 src；- ＝不用；省略＝照設定）")
     p.add_argument("--hints", default="", choices=["", "on", "off"], help="程式的推理提示（off：只給數據與源碼的事實）")
-    p.add_argument("--rounds", type=int, default=0, help="補推理鏈最多幾輪（有源碼脈絡時；1＝不補；省略＝照設定）")
+    p.add_argument("--rounds", type=int, default=0, help="補分析最多幾輪（有源碼脈絡時；1＝不補；省略＝照設定）")
     p.add_argument("--container", default="ros2_web_container")
     p.add_argument("--data-root", default="")
     p.add_argument("--score", nargs="*", default=None, help="只評分這些 job 編號")

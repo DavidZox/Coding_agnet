@@ -16,7 +16,7 @@
 | ![架構](images/AI_agent_harness的說明.png) | `AI_agent_harness的說明.puml` | 元件與資料流；`vision/`（框選／上傳 → 結構化提取 → `[vision result]`）與使用者介面、SkillAgent、技能、存檔的關係 |
 | ![一回合](images/AI_agent_harness的狀態轉移.png) | `AI_agent_harness的狀態轉移.puml` | 一回合的狀態機；附圖時的視覺提取（1b），以及附圖分析在 prompt、壓縮、下一句話裡的位置 |
 | ![工具回傳管線](images/AI_agent_harness的工具回傳管線.png) | `AI_agent_harness的工具回傳管線.puml` | 原文存檔 → 摘要 → 檢索清單 → result_recall；中段是附圖的影像分析（提取 → 存成 #編號 → 〔附圖分析〕進清單 → 併進訊息），同一套 recall |
-| ![數據診斷的流程](images/數據診斷的流程.png) | `數據診斷的流程.puml` | 數據診斷的完整流程（活動圖，2026-10-16 改寫）：收到問題 → 資料預備（含源碼脈絡）→ Orchestrator 第一步挑訊號、第二步帶源碼分派（觀測角度跟源碼核對）→ 時間窗與切片 → Workers（每一步的程式檢查與量測）→ Synthesizer ⇄ 補推理鏈（最多 2 輪）→ 報告；藍＝程式、橘＝模型、綠＝程式檢查與更正，底部是程式輔助的三類（文字版的說明在 README〈圖的說明〉） |
+| ![數據診斷的流程](images/數據診斷的流程.png) | `數據診斷的流程.puml` | 數據診斷的完整流程（活動圖，2026-10-16 改寫）：收到問題 → 資料預備（含源碼脈絡）→ Orchestrator 第一步挑訊號、第二步帶源碼分派（觀測角度跟源碼核對）→ 時間窗與切片 → Workers（每一步的程式檢查與量測）→ Synthesizer 整合事實 → Orchestrator 因果推論 ⇄ 補分析（最多 2 輪）→ 程式組報告；藍＝程式、橘＝模型、綠＝程式檢查與更正，底部是程式輔助的四類（文字版的說明在 README〈圖的說明〉） |
 
 改完 `.puml` 後重新產生 PNG。建議用本機離線渲染（不把圖的內容送到外部服務）：這台機器有 Java、Graphviz（`dot`）與
 `/home/david/Software_quality_checking_pipeline/tools`（PlantUML 與 Microsoft JhengHei 字型）：

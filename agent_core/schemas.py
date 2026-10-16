@@ -300,21 +300,6 @@ ANALYSIS_ASSIGN_SCHEMA = {
     "required": ["source_reading", "assignments"],
 }
 
-# Orchestrator 看 Synthesizer 的報告：「尚未確認」的每一項能不能用數據裡錄到、還沒分析的 Topic 補上（gaps），能補的才補派 worker
-# （assignments；空陣列＝分析結束）
-ANALYSIS_REVIEW_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "gaps": {"type": "array", "maxItems": 6, "items": {
-            "type": "object",
-            "properties": {"unknown": _text(200), "resolvable": {"type": "boolean"}, "why": _text(200)},
-            "required": ["unknown", "resolvable", "why"],
-        }},
-        "assignments": {"type": "array", "maxItems": 4, "items": _ANALYSIS_ASSIGNMENT_VIEW},
-    },
-    "required": ["gaps", "assignments"],
-}
-
 # worker 每一步的決定：同主對話的 {thought, reply, action}，字串有上限
 ANALYSIS_WORKER_REPLY_SCHEMA = {
     "type": "object",
@@ -351,25 +336,57 @@ ANALYSIS_WORKER_REPORT_SCHEMA = {
     "required": ["analyzed_keys", "anomaly_detected", "summary", "evidence", "confidence"],
 }
 
-# Synthesizer 的根因診斷報告（Root Cause Analysis）
-ANALYSIS_REPORT_SCHEMA = {
+# Synthesizer 的事實整合：只整合 worker 量到的事實與 Topic 之間的關係，不做因果推論（因果由 Orchestrator 一個角色做）
+ANALYSIS_FACTS_SCHEMA = {
     "type": "object",
     "properties": {
-        "conclusion": _text(500),
-        "root_cause": _text(700),
-        "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
-        "timeline": {"type": "array", "maxItems": 10, "items": {
+        "timeline": {"type": "array", "maxItems": 14, "items": {
             "type": "object",
             "properties": {"time": _text(40), "source": _text(80), "event": _text(220)},
             "required": ["time", "source", "event"],
         }},
-        "evidence": {"type": "array", "maxItems": 10, "items": {
+        "relations": {"type": "array", "maxItems": 6, "items": {
             "type": "object",
-            "properties": {"source": _text(80), "fact": _text(260)},
+            "properties": {"topics": _text(120), "fact": _text(260)},
+            "required": ["topics", "fact"],
+        }},
+        "unchanged": {"type": "array", "maxItems": 6, "items": {
+            "type": "object",
+            "properties": {"source": _text(80), "fact": _text(200)},
             "required": ["source", "fact"],
         }},
+        "summary": _text(600),
+    },
+    "required": ["timeline", "relations", "unchanged", "summary"],
+}
+
+# Orchestrator 的因果推論（最後一步）：先驗證假設、排因果鏈（每一環附出處：L#、W#、Topic、源碼的檔名:行）、判定，再寫結論與根因；
+# followups＝缺的環節能用還沒分析的 Topic 補上時的補分析（空陣列＝分析結束），每一項寫它補的是 unknowns 的第幾項
+_REFS = {"type": "array", "maxItems": 4, "items": _text(60)}
+_FOLLOWUP_ITEM = json.loads(json.dumps(_ANALYSIS_ASSIGNMENT_VIEW))
+_FOLLOWUP_ITEM["properties"] = {"unknown": {"type": "integer"}, **_FOLLOWUP_ITEM["properties"]}
+_FOLLOWUP_ITEM["required"] = ["unknown"] + _FOLLOWUP_ITEM["required"]
+ANALYSIS_CAUSAL_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "hypotheses": {"type": "array", "maxItems": 4, "items": {
+            "type": "object",
+            "properties": {"hypothesis": _text(200), "verdict": {"type": "string", "enum": ["支持", "推翻", "看不出來"]},
+                           "refs": _REFS, "why": _text(240)},
+            "required": ["hypothesis", "verdict", "refs", "why"],
+        }},
+        "chain": {"type": "array", "maxItems": 8, "items": {
+            "type": "object",
+            "properties": {"time": _text(40), "event": _text(220), "refs": _REFS},
+            "required": ["time", "event", "refs"],
+        }},
+        "verdict": {"type": "string", "enum": ["沒有異常", "有異常", "無法判斷"]},
+        "conclusion": _text(500),
+        "root_cause": _text(700),
+        "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
         "unknowns": {"type": "array", "maxItems": 5, "items": _text(220)},
         "recommendations": {"type": "array", "maxItems": 5, "items": _text(220)},
+        "followups": {"type": "array", "maxItems": 2, "items": _FOLLOWUP_ITEM},
     },
-    "required": ["conclusion", "root_cause", "confidence", "timeline", "evidence", "unknowns", "recommendations"],
+    "required": ["hypotheses", "chain", "verdict", "conclusion", "root_cause", "confidence", "unknowns", "recommendations", "followups"],
 }

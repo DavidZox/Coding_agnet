@@ -8,7 +8,8 @@
 - 時間窗：訊號的時間戳前後各取幾秒、重疊的合併、限制在數據範圍內；沒有相關訊號＝整段數據；
 - Worker：只准量測技能、--topic 固定成指派的 Topic、reply 裡的動作 JSON 也照做、同一個量測第三次擋下、一個 Key 都沒量時系統代選；
   局部報告的 Frontmatter 數字來自程式量測（模型寫的 analyzed_keys 只留真的量過的）；
-- Synthesizer 的 JSON 壞掉：程式拼一份信心低的報告；回傳以 ANALYSIS_REPORT_HEAD 開頭、不再交給摘要 session；
+- Synthesizer（只整合事實）與 Orchestrator 的因果推論：程式核對（因果用詞、出處、判定的依據、背景條件、用詞）交回修一次；
+  JSON 壞掉時程式拼一份信心低的報告；回傳以 ANALYSIS_REPORT_HEAD 開頭、不再交給摘要 session；
 - dispatch 攔下 analysis_run 偽技能並存檔、[ANALYSIS_DATA] 同步目前的數據、腳本拿得到 ANALYSIS_DATA；
 - Web：/analyze 的回合（報告進主對話、進度推到右欄）、/api/analysis/state 讀得到 job、檔案端點擋路徑穿越；
 - 程式重新啟動時，沒做完的 job 標成中斷。
@@ -34,13 +35,17 @@ def fixture(name):
         return f.read()
 
 
-class FakeChat:
-    """依 format（schema）分辨角色：Orchestrator／Worker 的每一步／Worker 的局部報告／Synthesizer／主對話。各自照劇本依序回答。"""
+FACTS_DEFAULT = {"timeline": [], "relations": [], "unchanged": [], "summary": "各 Topic 量到的事實"}
 
-    def __init__(self, schemas, plans=(), assigns=(), reviews=(), worker=(), reports=(), synth=(), main=()):
+
+class FakeChat:
+    """依 format（schema）分辨角色：Orchestrator（規劃、分派、因果推論）／Worker 的每一步／Worker 的局部報告／Synthesizer 的事實整合／
+    主對話。各自照劇本依序回答。"""
+
+    def __init__(self, schemas, plans=(), assigns=(), worker=(), reports=(), facts=(), causal=(), main=()):
         self.s = schemas
-        self.q = {"plan": list(plans), "assign": list(assigns), "review": list(reviews), "worker": list(worker), "report": list(reports),
-                  "synth": list(synth), "main": list(main)}
+        self.q = {"plan": list(plans), "assign": list(assigns), "worker": list(worker), "report": list(reports),
+                  "facts": list(facts), "causal": list(causal), "main": list(main)}
         self.seen = {k: [] for k in self.q}
 
     def _next(self, role, default):
@@ -52,14 +57,14 @@ class FakeChat:
             role, default = "plan", {}
         elif format is self.s.get("assign"):   # Orchestrator 的第二步（有源碼脈絡時：帶源碼分派）
             role, default = "assign", {}
-        elif format is self.s.get("review"):   # 補推理鏈：Orchestrator 看報告的尚未確認（預設：都不能補）
-            role, default = "review", {"gaps": [], "assignments": []}
+        elif format is self.s.get("facts"):   # Synthesizer 的事實整合（預設：一份最小的事實）
+            role, default = "facts", FACTS_DEFAULT
+        elif format is self.s.get("causal"):   # Orchestrator 的因果推論（預設：沒有給出 → 程式拼一份信心 low 的）
+            role, default = "causal", None
         elif format is self.s["worker"]:
             role, default = "worker", {"thought": "量測夠了", "reply": "完成", "action": None}
         elif format is self.s["report"]:
             role, default = "report", {"analyzed_keys": [], "anomaly_detected": False, "summary": "沒有異常", "evidence": [], "confidence": "low"}
-        elif format is self.s["synth"]:
-            role, default = "synth", None
         else:
             role, default = "main", {"thought": "依報告回答", "reply": "依報告：+15.54s 恢復 NORMAL。", "action": None}
         self.seen[role].append(messages)
@@ -230,26 +235,30 @@ def main():
         from agent_core import model_caps
         model_caps._cache.clear()
         ollama.show = lambda model: {"capabilities": ["completion"]}
-        from agent_core.schemas import (ANALYSIS_PLAN_SCHEMA, ANALYSIS_REPORT_SCHEMA, ANALYSIS_WORKER_REPLY_SCHEMA,
+        from agent_core.schemas import (ANALYSIS_CAUSAL_SCHEMA, ANALYSIS_FACTS_SCHEMA, ANALYSIS_PLAN_SCHEMA, ANALYSIS_WORKER_REPLY_SCHEMA,
                                         ANALYSIS_WORKER_REPORT_SCHEMA)
         from agent_core.config import ANALYSIS_REPORT_HEAD
         from agent_core.protocol import is_exempt_result
         from web_app.state import agent, state
         from web_app import flows
-        from agent_core.schemas import ANALYSIS_ASSIGN_SCHEMA, ANALYSIS_PLAN_SCHEMA_SOURCE, ANALYSIS_REVIEW_SCHEMA
+        from agent_core.schemas import ANALYSIS_ASSIGN_SCHEMA, ANALYSIS_PLAN_SCHEMA_SOURCE
         schemas = {"plan": ANALYSIS_PLAN_SCHEMA, "plan_src": ANALYSIS_PLAN_SCHEMA_SOURCE, "assign": ANALYSIS_ASSIGN_SCHEMA,
-                   "review": ANALYSIS_REVIEW_SCHEMA, "worker": ANALYSIS_WORKER_REPLY_SCHEMA, "report": ANALYSIS_WORKER_REPORT_SCHEMA,
-                   "synth": ANALYSIS_REPORT_SCHEMA}
+                   "worker": ANALYSIS_WORKER_REPLY_SCHEMA, "report": ANALYSIS_WORKER_REPORT_SCHEMA,
+                   "facts": ANALYSIS_FACTS_SCHEMA, "causal": ANALYSIS_CAUSAL_SCHEMA}
         agent.target_container = "ros2_web_container"
         agent.analysis_cfg.update(parallel=1, max_workers=3)
         GOOD_PLAN = {"understanding": "安全閘在開頭進入保護停止，之後恢復", "before_sec": 5, "after_sec": 5,
                      "related_signals": [{"id": "L28", "why": "進入 PROTECTIVE_STOP"}, {"id": "L30", "why": "恢復 NORMAL"}],
                      "assignments": [{"topic": "/system/safety_gate_status", "subtask": "看 mode 的跳轉", "signals": ["L28", "L30"]}],
                      "report_focus": "原因與恢復"}
-        SYNTH = {"conclusion": "開頭保護停止、+15.54s 恢復", "root_cause": "初始化時沒有安全指令", "confidence": "medium",
-                 "timeline": [{"time": "+15.54s", "source": "L30", "event": "恢復 NORMAL"}, {"time": "+0.75s", "source": "L28", "event": "進入 PROTECTIVE_STOP"}],
-                 "evidence": [{"source": "/system/safety_gate_status", "fact": "mode PROTECTIVE_STOP $\\rightarrow$ NORMAL @+15.54s"}],
-                 "unknowns": ["/cmd_vel_raw 不在數據裡"], "recommendations": ["加錄 /cmd_vel_raw"]}
+        FACTS = {"timeline": [{"time": "+15.54s", "source": "W1 /system/safety_gate_status", "event": "mode PROTECTIVE_STOP $\\rightarrow$ NORMAL"}],
+                 "relations": [{"topics": "/system/safety_gate_status", "fact": "mode PROTECTIVE_STOP $\\rightarrow$ NORMAL @+15.54s"}],
+                 "unchanged": [], "summary": "安全閘的 mode 在 +15.54s 由 PROTECTIVE_STOP 變 NORMAL"}
+        CAUSAL = {"hypotheses": [{"hypothesis": "初始化期間還沒有安全指令", "verdict": "支持", "refs": ["L28"], "why": "L28 的 reasons"}],
+                  "chain": [{"time": "+0.75s", "event": "進入 PROTECTIVE_STOP", "refs": ["L28"]},
+                            {"time": "+15.54s", "event": "恢復 NORMAL", "refs": ["L30", "W1"]}],
+                  "verdict": "沒有異常", "conclusion": "開頭保護停止、+15.54s 恢復", "root_cause": "初始化時沒有安全指令", "confidence": "medium",
+                  "unknowns": ["/cmd_vel_raw 不在數據裡"], "recommendations": ["加錄 /cmd_vel_raw"], "followups": []}
 
         def setup(**kw):
             fake = FakeChat(schemas, **kw)
@@ -265,7 +274,7 @@ def main():
                                    {"topic": "/rosout", "subtask": "b", "signals": []},
                                    {"topic": "cmd_vel", "subtask": "c", "signals": []},
                                    {"topic": "/cmd_vel", "subtask": "d", "signals": []}]}
-            fake, calls = setup(plans=[bad, GOOD_PLAN], synth=[dict(SYNTH, confidence="high", unknowns=[])])
+            fake, calls = setup(plans=[bad, GOOD_PLAN], causal=[dict(CAUSAL, confidence="high", unknowns=[])])
             out = agent.analysis_run(f'--data {DATA} "安全閘為什麼停下來"')
             assert out.startswith(ANALYSIS_REPORT_HEAD), out[:200]
             assert len(fake.seen["plan"]) == 2, "計畫有問題：交回 Orchestrator 修一次"
@@ -277,12 +286,17 @@ def main():
             # NO_CMD_VEL_RAW 在 stop_reasons 每次跳轉前後都在（[NO_CMD_VEL_RAW, NO_SAFETY_COMMAND_YET] → [MON_INITIALIZING, NO_CMD_VEL_RAW]
             # → [NO_CMD_VEL_RAW]）＝背景條件：根因沒用到它就不列、不限制信心
             assert job["coverage_gaps"][0]["background"] == "/system/safety_gate_status 的 stop_reasons", job["coverage_gaps"]
-            assert "背景條件" in fake.seen["synth"][0][1]["content"]
+            assert "背景條件" in fake.seen["causal"][0][1]["content"]
+            causal_prompt = fake.seen["causal"][0][1]["content"]
+            assert "【程式整理：判定要交代的事實" in causal_prompt and "- L28：WARN safety_motion_controller" in causal_prompt, causal_prompt[-1500:]
+            assert "訊息中斷（停了一段又恢復）只有 （沒有）" in causal_prompt, "用詞：沒有量到中斷就列（沒有）"
             assert job["report"]["confidence"] == "high" and "程式檢查" not in job["report"]["root_cause"], job["report"]
             assert not any("cmd_vel_raw" in u for u in job["report"]["unknowns"]), job["report"]["unknowns"]
-            assert [t["time"] for t in job["report"]["timeline"]] == ["+0.75s", "+15.54s"], "時間線依時間排序"
+            tl = job["report"]["timeline"]
+            assert [float(t["time"].strip("+s")) for t in tl] == sorted(float(t["time"].strip("+s")) for t in tl), "時間線依時間排序"
+            assert {("L28", "+0.75s"), ("L30", "+15.54s")} <= {(t["source"], t["time"]) for t in tl}, "相關的 Log 由程式依時間戳放進時間線"
             # 根因還是寫了沒量測的輸入：照一般的缺口處理（列進尚未確認、信心最多 medium）
-            fake, calls = setup(plans=[GOOD_PLAN], synth=[dict(SYNTH, confidence="high", unknowns=[], root_cause="NO_CMD_VEL_RAW 造成停車")])
+            fake, calls = setup(plans=[GOOD_PLAN], causal=[dict(CAUSAL, confidence="high", unknowns=[], root_cause="NO_CMD_VEL_RAW 造成停車")])
             out = agent.analysis_run(f'--data {DATA} "安全閘為什麼停下來"')
             job = json.load(open(os.path.join(agent.analysis_jobs_dir(), agent.analysis_last["id"], "job.json"), encoding="utf-8"))
             assert job["report"]["confidence"] == "medium" and "程式檢查" in job["report"]["root_cause"], "缺的輸入：信心最多 medium"
@@ -290,9 +304,10 @@ def main():
             # 而且它是背景條件（恢復之後仍在）：程式在根因後面附更正，指出跳轉時真正新增／移除的項目
             assert "程式更正：NO_CMD_VEL_RAW" in job["report"]["root_cause"] and "MON_INITIALIZING" in job["report"]["root_cause"], job["report"]
             assert job["corrections"][0]["changed"] == ["MON_INITIALIZING", "NO_SAFETY_COMMAND_YET"], job["corrections"]
+            assert "背景條件" in job["causal_checks"][0]["issues"][0] and len(fake.seen["causal"]) == 2, "程式核對先交回修一次"
             # 排除它的寫法不算拿它當原因：不更正、不限制信心
-            fake, calls = setup(plans=[GOOD_PLAN], synth=[dict(SYNTH, confidence="high", unknowns=[],
-                                                               root_cause="初始化造成停車；NO_CMD_VEL_RAW 是背景條件，而非原因")])
+            fake, calls = setup(plans=[GOOD_PLAN], causal=[dict(CAUSAL, confidence="high", unknowns=[],
+                                                                root_cause="初始化造成停車；NO_CMD_VEL_RAW 是背景條件，而非原因")])
             agent.analysis_run(f'--data {DATA} "安全閘為什麼停下來"')
             job = json.load(open(os.path.join(agent.analysis_jobs_dir(), agent.analysis_last["id"], "job.json"), encoding="utf-8"))
             assert job["report"]["confidence"] == "high" and "程式更正" not in job["report"]["root_cause"], job["report"]
@@ -303,7 +318,7 @@ def main():
         def t_plan_duplicate_signal():
             # 同一個 L# 列兩次（大小寫不同也算）：合併就好，不交回修正（實測 26b 重複列 L17，舊版報成「L17 不存在」退回一次）
             dup = dict(GOOD_PLAN, related_signals=[{"id": "L28", "why": "a"}, {"id": "l28", "why": "b"}, {"id": "L30", "why": "c"}])
-            fake, calls = setup(plans=[dup], synth=[SYNTH])
+            fake, calls = setup(plans=[dup], facts=[FACTS], causal=[CAUSAL])
             agent.analysis_run(f'--data {DATA} "安全閘為什麼停下來"')
             assert len(fake.seen["plan"]) == 1, "重複的 L# 不交回修正"
             job = json.load(open(os.path.join(agent.analysis_jobs_dir(), agent.analysis_last["id"], "job.json"), encoding="utf-8"))
@@ -321,7 +336,7 @@ def main():
             measure = {"thought": "量 mode", "reply": "", "action": {"command": "scripts/mcap_feature_measure_cmd.py", "args": "--key mode"}}
             calm = {"analyzed_keys": ["mode"], "anomaly_detected": False, "summary": "mode 照預期變化", "evidence": [], "confidence": "medium"}
             for js, forced in ((seg, False), (gap, True)):
-                fake, calls = setup(plans=[GOOD_PLAN], worker=[measure], reports=[calm], synth=[SYNTH])
+                fake, calls = setup(plans=[GOOD_PLAN], worker=[measure], reports=[calm], facts=[FACTS], causal=[CAUSAL])
                 plain = agent._exec_script
 
                 def exec_with(script_name, script_path, clean_args, extra_env=None, _js=js, _plain=plain):
@@ -335,27 +350,30 @@ def main():
                 assert w["anomaly_detected"] is forced and ("訊息中斷本身就是異常" in w["summary"]) is forced, (forced, w)
                 assert bool(w["program_anomalies"]) is forced, w["program_anomalies"]   # 舊版工具沒有 anomalies：照 key_metrics 的中斷
                 assert w["flow_events"], "兩種都列進訊息流（證據、時間線）"
-                synth_prompt = fake.seen["synth"][0][1]["content"]
-                assert ("是一段完整的發布" in synth_prompt) is (not forced), synth_prompt[-1500:]
+                causal_prompt = fake.seen["causal"][0][1]["content"]
+                assert ("是一段完整的發布" in causal_prompt) is (not forced), causal_prompt[-1500:]
                 # 範例數據有 WARN（L28 PROTECTIVE_STOP）：不下「正常的操作序列」的判斷
-                assert "正常的操作序列（不是故障）" not in synth_prompt
+                assert "系統的反應是照設計的（不是故障）" not in causal_prompt
+                facts_prompt = fake.seen["facts"][0][1]["content"]
+                assert "一次指令或一個動作" not in facts_prompt and "【使用者的問題】" not in facts_prompt, "事實整合不拿判斷、不拿問題"
+                assert ("訊息恢復" in facts_prompt) is forced, "中斷的恢復也是事實"
 
         def t_missing_input_proxy():
             # Log 提到、數據裡沒有的輸入（NO_CMD_VEL_RAW → /cmd_vel_raw 沒錄到）：Orchestrator 規劃時就拿到程式檢查，名稱相近的 /cmd_vel
             # 點名是另一個 Topic；Synthesizer 也一樣（實測 26b 派 /cmd_vel「驗證 NO_CMD_VEL_RAW」、報告寫「/cmd_vel 穩定，排除指令丟失」，25 次 15 次）
-            fake, calls = setup(plans=[GOOD_PLAN], synth=[SYNTH])
+            fake, calls = setup(plans=[GOOD_PLAN], facts=[FACTS], causal=[CAUSAL])
             agent.analysis_run(f'--data {DATA} "安全閘為什麼停下來"')
             plan_prompt = fake.seen["plan"][0][1]["content"]
             assert "【程式檢查：Log 提到、但數據裡沒有的輸入】" in plan_prompt and "NO_CMD_VEL_RAW" in plan_prompt, plan_prompt[-1200:]
             assert "名稱相近的 /cmd_vel 是另一個 Topic" in plan_prompt and "NO_SAFETY_COMMAND_YET" not in plan_prompt.split("【程式檢查")[1], \
                 "對得上 /system/safety_command 的不算缺"
-            synth_prompt = fake.seen["synth"][0][1]["content"]
+            synth_prompt = fake.seen["causal"][0][1]["content"]
             assert "名稱相近的 /cmd_vel 是另一個 Topic" in synth_prompt and "都不能證明也不能排除 NO_CMD_VEL_RAW" in synth_prompt, synth_prompt[-1500:]
             # 派了 /cmd_vel：Synthesizer 看到的那份局部報告旁邊附程式提醒（實測只有缺口說明時，25 次仍有 9 次拿它排除指令中斷）
             with_cmd_vel = dict(GOOD_PLAN, assignments=GOOD_PLAN["assignments"] + [{"topic": "/cmd_vel", "subtask": "看速度", "signals": []}])
-            fake, calls = setup(plans=[with_cmd_vel], synth=[SYNTH])
+            fake, calls = setup(plans=[with_cmd_vel], facts=[FACTS], causal=[CAUSAL])
             agent.analysis_run(f'--data {DATA} "安全閘為什麼停下來"')
-            synth_prompt = fake.seen["synth"][0][1]["content"]
+            synth_prompt = fake.seen["causal"][0][1]["content"]
             w_cmd = synth_prompt[synth_prompt.index("### W2 /cmd_vel"):]
             assert "程式提醒：/cmd_vel 不是「cmd_vel_raw」" in w_cmd, w_cmd[:800]
             assert "程式提醒" not in synth_prompt[synth_prompt.index("### W1 "):synth_prompt.index("### W2 ")], "別的 Topic 不附"
@@ -371,7 +389,7 @@ def main():
                                                                   "args": "--key state --key state.mode"}}
             fake, calls = setup(plans=[GOOD_PLAN], worker=[measure],
                                 reports=[{"analyzed_keys": ["mode"], "anomaly_detected": True, "summary": "mode 跳轉", "evidence": [],
-                                          "confidence": "high"}], synth=[SYNTH])
+                                          "confidence": "high"}], facts=[FACTS], causal=[CAUSAL])
             plain = agent._exec_script
 
             def exec_new_tool(script_name, script_path, clean_args, extra_env=None, _plain=plain):
@@ -387,7 +405,7 @@ def main():
             assert w["key_selection"] == "worker" and w["analyzed_keys"] == ["mode"], w
 
         def t_auto_assign_and_whole_window():
-            fake, calls = setup(plans=[{}, "不是 JSON"], synth=[SYNTH])
+            fake, calls = setup(plans=[{}, "不是 JSON"], facts=[FACTS], causal=[CAUSAL])
             out = agent.analysis_run(f'--data {DATA}')
             assert out.startswith(ANALYSIS_REPORT_HEAD), out[:300]
             job = json.load(open(os.path.join(agent.analysis_jobs_dir(), agent.analysis_last["id"], "job.json"), encoding="utf-8"))
@@ -428,7 +446,7 @@ def main():
             report = {"analyzed_keys": ["mode", "不存在的Key"], "anomaly_detected": True, "summary": "mode 在 +15.54s 由 PROTECTIVE_STOP 變 NORMAL",
                       "evidence": [{"time": "+15.54s", "key": "mode", "observation": "PROTECTIVE_STOP $\\rightarrow$ NORMAL"}], "confidence": "high"}
             fixed = dict(report, anomaly_detected=False)   # 程式核對：狀態跳轉是變化、工具沒有判斷出異常 → 交回修一次
-            fake, calls = setup(plans=[GOOD_PLAN], worker=[reply_action, other, shell, same, same, done], reports=[report, fixed], synth=[SYNTH])
+            fake, calls = setup(plans=[GOOD_PLAN], worker=[reply_action, other, shell, same, same, done], reports=[report, fixed], facts=[FACTS], causal=[CAUSAL])
             out = agent.analysis_run(f'--data {DATA} "安全閘為什麼停下來"')
             measure = [c for c in calls if c["script"] == "mcap_feature_measure_cmd.py"]
             text_calls = [c for c in measure if "--json" not in c["args"]]
@@ -452,8 +470,8 @@ def main():
             assert os.path.exists(os.path.join(job_dir, "workers", "W1_system_safety_gate_status.transcript.md"))
             report_md = open(os.path.join(job_dir, "report.md"), encoding="utf-8").read()
             assert report_md.startswith("---\nartifact: \"diagnosis_report\"") and "mode PROTECTIVE_STOP → NORMAL" in report_md
-            synth_prompt = fake.seen["synth"][0][1]["content"]
-            assert "NO_CMD_VEL_RAW" in synth_prompt and "沒有名稱含「cmd_vel_raw」的 Topic" in synth_prompt, "程式檢查：缺的輸入交給 Synthesizer"
+            synth_prompt = fake.seen["causal"][0][1]["content"]
+            assert "NO_CMD_VEL_RAW" in synth_prompt and "沒有名稱含「cmd_vel_raw」的 Topic" in synth_prompt, "程式檢查：缺的輸入交給因果推論"
             assert "safety_command」的 Topic" not in synth_prompt, "NO_SAFETY_COMMAND_YET 對得上 /system/safety_command，不算缺"
             job = json.load(open(os.path.join(job_dir, "job.json"), encoding="utf-8"))
             assert [g["reason"] for g in job["coverage_gaps"]] == ["NO_CMD_VEL_RAW"], job["coverage_gaps"]
@@ -475,7 +493,7 @@ def main():
             # 關掉切片：worker 直接讀原本的數據
             agent.analysis_cfg["slice"] = False
             try:
-                fake, calls = setup(plans=[GOOD_PLAN], synth=[SYNTH])
+                fake, calls = setup(plans=[GOOD_PLAN], facts=[FACTS], causal=[CAUSAL])
                 agent.analysis_run(f'--data {DATA} "安全閘為什麼停下來"')
                 assert not any(c["script"] == "mcap_slicer_cmd.py" for c in calls), "切片關閉"
                 assert all("slice" not in w for c in calls if c["script"] == "mcap_feature_measure_cmd.py"
@@ -485,21 +503,22 @@ def main():
 
         def t_worker_fallback_and_synth_fallback():
             fake, calls = setup(plans=[GOOD_PLAN], worker=[{"thought": "a", "reply": "看起來沒事", "action": None}] * 3,
-                                synth=["{壞掉的 JSON"])
+                                facts=["{壞掉的 JSON"], causal=["{壞掉的 JSON"])
             out = agent.analysis_run(f'--data {DATA} "看一下"')
             job = json.load(open(os.path.join(agent.analysis_jobs_dir(), agent.analysis_last["id"], "job.json"), encoding="utf-8"))
             w = job["workers"][0]
             assert w["key_selection"] == "fallback" and w["analyzed_keys"], w
             nudges = [m["content"] for m in fake.seen["worker"][1] if m["role"] == "user"]
             assert any("你還沒有量測任何 Key" in t for t in nudges), "沒量測就說完成：先推回去一次"
-            assert job["report"]["confidence"] == "low" and out.startswith(ANALYSIS_REPORT_HEAD), job["report"]
+            assert job["report"]["confidence"] == "low" and job["report"]["verdict"] == "無法判斷" and out.startswith(ANALYSIS_REPORT_HEAD), job["report"]
+            assert "Synthesizer 沒有產生事實整合" in job["rounds"][0]["facts"]["summary"], "事實整合由程式拼（各 worker 的摘要）"
             gap = job["coverage_gaps"][0]
             assert gap["reason"] == "NO_CMD_VEL_RAW" and (gap["background"] or any("cmd_vel_raw" in u for u in job["report"]["unknowns"])), \
                 "缺的輸入：不是背景條件就一定列在尚未確認"
             assert is_exempt_result(out, 5000), "報告不再交給摘要 session"
 
         def t_dispatch_and_state():
-            fake, calls = setup(plans=[GOOD_PLAN], synth=[SYNTH])
+            fake, calls = setup(plans=[GOOD_PLAN], facts=[FACTS], causal=[CAUSAL])
             agent.analysis_data = ""
             out = agent.run_tool({"action": {"command": "scripts/analysis_run_cmd.py", "args": f'--data {DATA} "安全閘"'}})
             assert out.startswith(ANALYSIS_REPORT_HEAD) and agent.last_result_id, (out[:100], agent.last_result_id)
@@ -523,7 +542,7 @@ def main():
 
         def t_web():
             state["auto_mode"] = True
-            fake, calls = setup(plans=[GOOD_PLAN], synth=[SYNTH])
+            fake, calls = setup(plans=[GOOD_PLAN], facts=[FACTS], causal=[CAUSAL])
             events = []
             agent.progress_callback = lambda text: events.append({"channel": "progress", "text": text})
             try:
@@ -651,16 +670,16 @@ def main():
             from agent_core.analysis_job import _ensure_flow_events, _flow_block, _flow_events
             s1 = 1_000_000_000
             fe = _flow_events({"W1": {"_rate": {"gaps": [{"start_sec": 250.29, "duration_sec": 10.018}]}}}, 100 * s1)
-            assert fe == [("+150.29s", "訊息中斷 10.02 秒")], fe
+            assert fe == [("+150.29s", "訊息中斷 10.02 秒"), ("+160.31s", "訊息恢復（中斷之後第一則）")], fe   # 恢復也是量到的事實
             assert "只在 +13.47s～+21.28s 連續發布" in _flow_events({"W1": {"_rate": {"published_only": [113.47, 121.28]}}}, 100 * s1)[0][1]
             ws2 = [{"topic": "/system/safety_command", "flow_events": fe},
                    {"topic": "/diagnostics_toplevel_state", "flow_events": [("+150.30s", "訊息中斷 10.02 秒")]}]
             block = _flow_block(ws2)
             assert "同一時間（+150.29s）一起中斷：/system/safety_command、/diagnostics_toplevel_state" in block, block
             tl2 = [{"time": "+150.82s", "source": "L17", "event": "保護停止"}]
-            assert _ensure_flow_events(tl2, ws2) == 2 and _ensure_flow_events(tl2, ws2) == 0, tl2   # 補過就不再補
+            assert _ensure_flow_events(tl2, ws2) == 3 and _ensure_flow_events(tl2, ws2) == 0, tl2   # 補過就不再補
             tl3 = [{"time": "+150.29s", "source": "Topic/Message Flow", "event": "/system/safety_command 和 /diagnostics_toplevel_state 訊息中斷"}]
-            assert _ensure_flow_events(tl3, ws2) == 0, "模型寫在同一列（事件裡有 Topic）就不重複補"
+            assert _ensure_flow_events(tl3, ws2) == 1, "模型寫在同一列（事件裡有 Topic）就不重複補；恢復另外補"
             assert _flow_block([{"topic": "/a", "flow_events": fe}]).count("一起中斷") == 0, "只有一個 Topic 不算同時中斷"
             from agent_core.analysis_job import _segment_notes
             km_seg = {"W1": {"_rate": {"published_only": [114.11, 121.21], "started_at": 114.11, "stopped_after": 121.21}}}
@@ -673,12 +692,12 @@ def main():
             ws_seg = [{"topic": "/cmd_vel_raw", "flow_events": _flow_events(km_seg, 100 * s1), "key_metrics": km_seg}]
             note = "\n".join(_segment_notes(ws_seg, 100 * s1, info))
             assert "+14.11s～+21.21s 是一段完整的發布" in note and "L17（+21.76s，NO_CMD_VEL_RAW）是逾時判斷的結果" in note, note
-            assert "正常的操作序列（不是故障）" in note, "Log 沒有 WARN 以上、別的 Topic 沒有中斷：交給 Synthesizer 正常操作的判斷"
+            assert "系統的反應是照設計的（不是故障）" in note and "不要寫成正常結束" in note, "Log 沒有 WARN 以上、別的 Topic 沒有中斷：照設計的判斷（不說正常結束）"
             warn = info + [{"id": "L20", "level": "WARN", "node": "x", "times_sec": [125.0], "message": "something"}]
-            assert "正常的操作序列" not in "\n".join(_segment_notes(ws_seg, 100 * s1, warn)), "有 WARN：不下正常操作的判斷"
+            assert "照設計" not in "\n".join(_segment_notes(ws_seg, 100 * s1, warn)), "有 WARN：不下照設計的判斷"
             with_gap = ws_seg + [{"topic": "/diagnostics_agg", "key_metrics": {"W1": {"_rate": {"gaps": [{"start_sec": 130.0,
                                                                                                     "duration_sec": 5.0}]}}}}]
-            assert "正常的操作序列" not in "\n".join(_segment_notes(with_gap, 100 * s1, info)), "別的 Topic 中斷：不下正常操作的判斷"
+            assert "照設計" not in "\n".join(_segment_notes(with_gap, 100 * s1, info)), "別的 Topic 中斷：不下照設計的判斷"
             burst = [{"topic": "/system_health_monitor/transition_event",
                       "key_metrics": {"W1": {"_rate": {"published_only": [121.0, 121.01]}}}}]
             assert "逾時判斷" not in "\n".join(_segment_notes(burst, 100 * s1, info)), "原因代碼對不上這個 Topic：不當成它的逾時"
@@ -778,7 +797,7 @@ def main():
                     agent.analysis_cfg.update(source_root="", program_hints=True)
                 d = os.path.join(agent.analysis_jobs_dir(), agent.analysis_last["id"])
                 return fake, d, json.load(open(os.path.join(d, "job.json"), encoding="utf-8"))
-            fake, d, job = run(plans=[plan], assigns=[assign], synth=[SYNTH])
+            fake, d, job = run(plans=[plan], assigns=[assign], facts=[FACTS], causal=[CAUSAL])
             plan_prompt = fake.seen["plan"][0][1]["content"]
             assert "  源碼：safety_motion_controller 發布" in plan_prompt and "source_context 填這個子任務根據的源碼線索" in plan_prompt, plan_prompt[-2500:]
             assert "依賴的輸入：/cmd_vel_raw（✗數據裡沒有）" in plan_prompt and "【程式檢查" not in plan_prompt and "【源碼脈絡" not in plan_prompt
@@ -789,25 +808,27 @@ def main():
             assert "【第一步已經決定（這一步不改）】" in assign_prompt and "- L28 +" in assign_prompt and "source_reading" in assign_prompt
             brief = fake.seen["worker"][0][1]["content"]
             assert "【源碼脈絡：/system/safety_gate_status" in brief and "Orchestrator 指出的源碼線索：gate.py:31 _reasons" in brief, brief[-1500:]
-            synth = fake.seen["synth"][0][1]["content"]
-            assert "Topic 之間的關係" in synth and "【程式檢查" not in synth, synth[-3000:]
+            synth = fake.seen["causal"][0][1]["content"]
+            assert "Topic 之間的關係" in synth and "【程式檢查" not in synth and "【源碼脈絡（" in synth, synth[-3000:]
+            facts_prompt = fake.seen["facts"][0][1]["content"]
+            assert "【Topic 之間的源碼關係" in facts_prompt and "【源碼脈絡（" not in facts_prompt and "安全閘為什麼停下來" not in facts_prompt
             assert job["source"]["nodes"]["safety_motion_controller"] == "demo/demo_pkg/gate.py" and not job["program_hints"], job.get("source")
             p = job["plan"]
             assert p["steps"] == 2 and p["assignments"][0]["source_context"] == "gate.py:31 _reasons" and p["source_reading"].startswith("NO_CMD_VEL_RAW")
             assert p["draft_assignments"][0]["source_context"] == "第一步的線索" and [r["id"] for r in p["related"]] == ["L28", "L30"], p
-            assert job["synth_raw"]["conclusion"] and os.path.exists(os.path.join(d, "source_context.md"))
+            assert job["causal_raw"]["conclusion"] and os.path.exists(os.path.join(d, "source_context.md"))
             assert all(os.path.exists(os.path.join(d, "prompts", f)) for f in ("orchestrator.md", "orchestrator_assign.md"))
             md = open(os.path.join(d, "workers", "W1_system_safety_gate_status.md"), encoding="utf-8").read()
             assert 'source_context: "gate.py:31 _reasons"' in md and "source_root:" in open(os.path.join(d, "report.md"), encoding="utf-8").read()
             # 第二步給不出可用的指派（交回修一次也沒有）：沿用第一步的
-            fake, d, job = run(plans=[plan], synth=[SYNTH])
+            fake, d, job = run(plans=[plan], facts=[FACTS], causal=[CAUSAL])
             assert len(fake.seen["assign"]) == 2 and "steps" not in job["plan"], job["plan"]
             assert job["plan"]["assignments"][0]["source_context"] == "第一步的線索" and any("沿用第一步" in x for x in job["plan"]["issues"])
             # 關掉兩步（AGENT_ANALYSIS_PLAN_TWO_STEP=0）：照一步做
             from agent_core import analysis_job as aj
             aj.ANALYSIS_PLAN_TWO_STEP = False
             try:
-                fake, d, job = run(plans=[plan], assigns=[assign], synth=[SYNTH])
+                fake, d, job = run(plans=[plan], assigns=[assign], facts=[FACTS], causal=[CAUSAL])
             finally:
                 aj.ANALYSIS_PLAN_TWO_STEP = True
             assert not fake.seen["assign"] and job["plan"]["assignments"][0]["source_context"] == "第一步的線索"
@@ -815,17 +836,19 @@ def main():
         def t_view_gaps_review():
             # 有源碼脈絡、判斷提示開：①【程式檢查】的缺的輸入用源碼判斷（代碼的條件讀的變數由 /cmd_vel_raw 的 callback 寫入），不用名稱比對；
             # ② 觀測角度：節點沒有發布／訂閱這個 Topic 就交回修（源碼核對），worker 的任務說明寫出觀測角度；
-            # ③ 補推理鏈：Orchestrator 看尚未確認、補派還沒分析的 Topic（讀原本的數據），Synthesizer 再整合一次，第一輪的報告留成 report_r1.md；
-            #    都不能補就結束（只有一輪）
+            # ③ 補分析：Orchestrator 的因果推論指派還沒分析的 Topic（讀原本的數據），事實整合與因果推論再做一次（第 2 輪看得到上一輪的推論），
+            #    第一輪的報告留成 report_r1.md；不補就結束（只有一輪）
             ws = make_demo_ws(os.path.join(tmp, "demo_ws3"))
             bad = {"source_reading": "NO_CMD_VEL_RAW 讀 /cmd_vel_raw", "assignments": [
                 {"topic": "/cmd_vel", "view_node": "safety_motion_controller", "view": "輸出", "subtask": "看輸出有沒有歸零", "signals": ["L28"], "source_context": "無"},
                 {"topic": "/system/safety_command", "view_node": "safety_motion_controller", "view": "輸出", "subtask": "看反應", "signals": ["L28"], "source_context": "無"}]}
             good = json.loads(json.dumps(bad))
             good["assignments"][1]["view"] = "輸入"
-            review = {"gaps": [{"unknown": "診斷的上游", "resolvable": True, "why": "/diagnostics_agg 有錄到、還沒分析"}],
-                      "assignments": [{"topic": "/diagnostics_agg", "view_node": "system_health_monitor", "view": "輸入", "subtask": "看診斷有沒有中斷",
-                                       "signals": [], "source_context": "無"}]}
+            more = dict(CAUSAL, unknowns=["system_health_monitor 的輸入（診斷）有沒有變化"],
+                        followups=[{"unknown": 1, "topic": "/diagnostics_agg", "view_node": "system_health_monitor", "view": "輸入",
+                                    "subtask": "看診斷有沒有中斷", "signals": [], "source_context": "無"},
+                                   {"unknown": 1, "topic": "/parameter_events", "view_node": "safety_motion_controller", "view": "輸入",
+                                    "subtask": "看參數", "signals": [], "source_context": "無"}])
 
             def run(**kw):
                 fake, _ = setup(**kw)
@@ -836,28 +859,43 @@ def main():
                     agent.analysis_cfg.update(source_root="", program_hints=True)
                 d = os.path.join(agent.analysis_jobs_dir(), agent.analysis_last["id"])
                 return fake, d, json.load(open(os.path.join(d, "job.json"), encoding="utf-8"))
-            fake, d, job = run(plans=[GOOD_PLAN], assigns=[bad, good], reviews=[review], synth=[SYNTH, SYNTH])
+            fake, d, job = run(plans=[GOOD_PLAN], assigns=[bad, good], facts=[FACTS, FACTS], causal=[more, CAUSAL])
             fix = fake.seen["assign"][1][1]["content"]
             assert "/system/safety_command 不是 safety_motion_controller 的輸出：源碼裡 safety_motion_controller 沒有發布它" in fix, fix[-600:]
             views = {a["topic"]: (a.get("view_node"), a.get("view")) for a in job["plan"]["assignments"]}
             assert views == {"/cmd_vel": ("safety_motion_controller", "輸出"), "/system/safety_command": ("safety_motion_controller", "輸入")}, views
             briefs = [m[1]["content"] for m in fake.seen["worker"]]
             assert any("【觀測角度】/cmd_vel 是 safety_motion_controller 的輸出（它發布的結果）" in b for b in briefs), briefs[0][:800]
-            synth1 = fake.seen["synth"][0][1]["content"]
+            synth1 = fake.seen["causal"][0][1]["content"]
             assert "NO_CMD_VEL_RAW（L28" in synth1 and "的條件讀的輸入 /cmd_vel_raw 沒有被錄到" in synth1 and "名稱含" not in synth1, synth1[-2500:]
             assert job["coverage_gaps"][0]["source"].startswith("gate.py:"), job["coverage_gaps"]
-            # 補推理鏈：補派 /diagnostics_agg（W3，第 2 輪、讀原本的數據），Synthesizer 整合第 2 輪
-            assert len(fake.seen["review"]) == 1 and "U1 /cmd_vel_raw 不在數據裡" in fake.seen["review"][0][1]["content"]
+            # 補分析：因果推論指派 /diagnostics_agg（W3，第 2 輪、讀原本的數據），事實整合與因果推論再做一次
+            assert "還沒分析的 Topic：" in synth1 and "/diagnostics_agg" in synth1.split("還沒分析的 Topic：")[1], synth1[-800:]
             assert [w["topic"] for w in job["workers"]] == ["/cmd_vel", "/system/safety_command", "/diagnostics_agg"] and job["workers"][2]["round"] == 2
             assert '"slice"' not in fake.seen["worker"][-1][1]["content"] and len(job["rounds"]) == 2, job["rounds"]
-            synth2 = fake.seen["synth"][1][1]["content"]
-            assert "【上一輪的報告（補分析之前）】" in synth2 and "補派：W3 /diagnostics_agg" in synth2 and "（第 2 輪補派）" in synth2, synth2[-1500:]
-            assert os.path.exists(os.path.join(d, "report_r1.md")) and os.path.exists(os.path.join(d, "prompts", "orchestrator_review.md"))
+            synth2 = fake.seen["causal"][1][1]["content"]
+            assert "【上一輪的推論（補分析之前）】" in synth2 and "這一輪補分析的 worker：W3 /diagnostics_agg" in synth2 and "（第 2 輪補分析）" in synth2, synth2[-1500:]
+            assert "followups：這一輪不能再補分析" in synth2, "最多 2 輪：第 2 輪不能再補"
+            assert "### W3 /diagnostics_agg" in fake.seen["facts"][1][1]["content"], "第 2 輪的事實整合有補分析的 worker"
+            assert os.path.exists(os.path.join(d, "report_r1.md")) and os.path.exists(os.path.join(d, "prompts", "orchestrator_causal_2.md"))
             md = open(os.path.join(d, "workers", "W3_diagnostics_agg.md"), encoding="utf-8").read()
             assert 'view: "system_health_monitor 的輸入"' in md and "round: 2" in md, md[:600]
+            rv = job["reviews"][0]
+            assert [a["topic"] for a in rv["followups"]] == ["/diagnostics_agg"] and rv["followups"][0]["fills"].startswith("system_health_monitor 的輸入"), rv
+            assert any("/parameter_events 是 ROS 2 框架的 Topic" in x for x in rv["issues"]), rv["issues"]
+            assert "/parameter_events" not in synth1.split("還沒分析的 Topic：")[1], "框架的 Topic 不列進補分析的候選"
+            # 補分析的 Topic 跟它要補的那一項在源碼上沒有關係：不補（那一項沒提到這個 Topic、發布或訂閱它的節點、這些節點的其他 Topic）
+            unrelated = dict(more, unknowns=["lifecycle manager 為什麼發起重啟"])
+            fake, d, job = run(plans=[GOOD_PLAN], assigns=[good], causal=[unrelated])
+            assert len(job["rounds"]) == 1 and job["reviews"][0]["followups"] == [], job["reviews"]
+            assert any("在源碼上沒有關係" in x for x in job["reviews"][0]["issues"]), job["reviews"][0]["issues"]
+            # 補分析沒寫它補哪一項尚未確認、或沒有尚未確認：不補
+            nofill = dict(CAUSAL, unknowns=[], followups=[dict(more["followups"][0], unknown=1)])
+            fake, d, job = run(plans=[GOOD_PLAN], assigns=[good], causal=[nofill])
+            assert len(job["rounds"]) == 1 and job["reviews"][0]["followups"] == [] and "沒有對應的尚未確認" in job["reviews"][0]["issues"][0]
             # 都不能補：只有一輪
-            fake, d, job = run(plans=[GOOD_PLAN], assigns=[good], synth=[SYNTH])
-            assert len(fake.seen["review"]) == 1 and len(job["rounds"]) == 1 and job["reviews"][0]["assignments"] == []
+            fake, d, job = run(plans=[GOOD_PLAN], assigns=[good], facts=[FACTS], causal=[CAUSAL])
+            assert len(fake.seen["causal"]) == 1 and len(job["rounds"]) == 1 and job["reviews"][0]["followups"] == [] and job["reviews"][0]["allowed"]
             assert not os.path.exists(os.path.join(d, "report_r1.md"))
 
         def t_fact_wording():
@@ -869,8 +907,9 @@ def main():
             bad = {"analyzed_keys": ["mode"], "anomaly_detected": False, "summary": "mode 在 +15.54s 恢復；之前安全指令中斷導致保護停止",
                    "evidence": [], "confidence": "medium"}
             good = dict(bad, summary="mode 在 +15.54s 由 PROTECTIVE_STOP 變 NORMAL")
-            synth_bad = dict(SYNTH, root_cause="安全指令中斷，安全閘保護停止")
-            fake, calls = setup(plans=[plan], worker=[measure], reports=[bad, good], synth=[synth_bad, SYNTH])
+            causal_bad = dict(CAUSAL, root_cause="安全指令中斷，安全閘保護停止")
+            facts_bad = dict(FACTS, summary="安全閘因為沒有安全指令而保護停止")
+            fake, calls = setup(plans=[plan], worker=[measure], reports=[bad, good], facts=[facts_bad, FACTS], causal=[causal_bad, CAUSAL])
             agent.analysis_run(f'--data {DATA} "安全閘為什麼停下來"')
             brief = fake.seen["worker"][0][1]["content"]
             assert "【使用者的問題】" not in brief and "【Orchestrator 對問題的理解】" not in brief and GOOD_PLAN["understanding"] not in brief, brief[:400]
@@ -882,36 +921,70 @@ def main():
             w = job["workers"][0]
             assert w["summary"] == good["summary"] and len(w["report_issues"]) == 2 and w["report_issues_left"] == [], w
             assert w["subtask"] == plan["assignments"][0]["subtask"], "plan 與 Synthesizer 看到的子任務照原樣（有 L#）"
-            assert len(fake.seen["synth"]) == 2 and "報告寫了「安全指令中斷」" in fake.seen["synth"][1][1]["content"]
+            assert len(fake.seen["causal"]) == 2 and "寫了「安全指令中斷」" in fake.seen["causal"][1][1]["content"]
+            assert len(fake.seen["facts"]) == 2 and "寫了「因為」" in fake.seen["facts"][1][1]["content"], "事實整合寫了因果：交回修一次"
+            assert job["facts_checks"][0]["left"] == [] and os.path.exists(os.path.join(job_dir, "prompts", "synthesizer_2.md"))
             from agent_core.analysis_job import _interrupt_words
             assert not _interrupt_words("停止發布的原因（例如上游節點關閉或通訊中斷）無法得知") and not _interrupt_words("沒有任何狀態跳轉、數值尖峰或訊息中斷")
             assert _interrupt_words("根因為 /cmd_vel_raw 指令源頭中斷") == ["中斷"]
-            assert job["report_wording"][0]["left"] == [] and job["report"]["root_cause"].startswith(SYNTH["root_cause"]), job["report_wording"]
-            assert os.path.exists(os.path.join(job_dir, "prompts", "synthesizer_2.md"))
+            assert job["causal_checks"][0]["left"] == [] and job["report"]["root_cause"].startswith(CAUSAL["root_cause"]), job["causal_checks"]
+            assert os.path.exists(os.path.join(job_dir, "prompts", "orchestrator_causal_2.md"))
+
+        def t_causal_checks():
+            # 因果推論的程式核對：因果鏈要有、出處要存在；判定要有事實依據（「有異常」要有異常的事實、「沒有異常」要引用每一個異常的事實）；
+            # 背景條件（清單狀態每次跳轉前後都在）不能放進因果鏈；報告的時間線＝事實整合＋相關的 Log（程式依時間戳放）＋訊息流
+            from agent_core.analysis_job import _causal_issues, _log_rows, _abnormal_facts
+            km = {"W1": {"stop_reasons": {"transitions": 2, "first": "[X_BG]", "last": "[X_BG]", "changes": [
+                "[X_BG] → [X_BG, Y_NEW] @1.0", "[X_BG, Y_NEW] → [X_BG] @2.0"]}}}
+            job = {"index": {"start_ns": 0, "topics": [{"topic": "/a", "role": "worker"}, {"topic": "/b", "role": "worker"}]},
+                   "plan": {"related": [{"id": "L1"}]},
+                   "signals": [{"id": "L1", "level": "INFO", "node": "n", "message": "reasons=[X_BG, Y_NEW]", "times_sec": [1.0]},
+                               {"id": "L2", "level": "WARN", "node": "rosbag2_recorder", "message": "錄製工具的 WARN 不算", "times_sec": [0.5]}],
+                   "workers": [{"n": 1, "topic": "/a", "status": "done", "program_anomalies": [], "program_flags": [], "key_metrics": km}]}
+            ok = {"verdict": "沒有異常", "chain": [{"time": "+1.00s", "event": "Y_NEW 出現", "refs": ["L1", "W1"]}], "unknowns": []}
+            assert _causal_issues(job, ok) == [], _causal_issues(job, ok)
+            assert any("因果鏈（chain）是空的" in x for x in _causal_issues(job, dict(ok, chain=[])))
+            got = _causal_issues(job, dict(ok, chain=[{"event": "e", "refs": ["L9", "W7"]}]))
+            assert any("沒有認得的出處" in x for x in got) and any("L9、W7 不存在" in x for x in got), got
+            assert any("判定「有異常」" in x for x in _causal_issues(job, dict(ok, verdict="有異常"))), "沒有異常的事實不能判有異常"
+            assert any("判定「無法判斷」要在 unknowns" in x for x in _causal_issues(job, dict(ok, verdict="無法判斷")))
+            got = _causal_issues(job, dict(ok, chain=[{"event": "X_BG 造成停車", "refs": ["L1"]}]))
+            assert any("X_BG 在 /a 的 stop_reasons 每次跳轉前後都在＝背景條件" in x for x in got), got
+            assert not _causal_issues(job, dict(ok, chain=[{"event": "Y_NEW 出現（reasons=[X_BG, Y_NEW]）；X_BG 一直都在，屬於背景", "refs": ["L1"]}]))
+            warn = json.loads(json.dumps(job))
+            warn["signals"][0]["level"] = "WARN"
+            warn["workers"].append({"n": 2, "topic": "/b", "status": "done", "program_anomalies": ["W1 訊息中斷 1 次（最長 3 秒）"],
+                                    "program_flags": ["W1 訊息中斷 1 次（最長 3 秒）"], "key_metrics": {}})
+            assert set(_abnormal_facts(warn)) == {"L1", "W2"}, "WARN 以上的相關 Log、程式判斷的異常；錄製工具的不算"
+            got = _causal_issues(warn, dict(ok, chain=[{"event": "e", "refs": ["W1"]}]))
+            assert any("判定「沒有異常」，但這些異常的事實沒有在因果鏈或假設裡引用：L1（WARN n）；W2" in x for x in got), got
+            assert not [x for x in _causal_issues(warn, dict(ok, chain=[{"event": "e", "refs": ["L1", "/b"]}])) if "沒有異常" in x], "引用 Topic＝引用那個 W#"
+            assert [r["source"] for r in _log_rows(job)] == ["L1"], "時間線的 Log：相關的與 WARN 以上的（錄製工具的不算）"
 
         for name, fn in [("Orchestrator：不存在的 L#／Topic、Log Topic、重複的 Topic 交回修一次（程式列出具體的問題）", t_plan_repair),
                          ("Orchestrator：同一個 L# 列兩次只合併、不交回修正", t_plan_duplicate_signal),
-                         ("訊息流：一段完整的發布不強制算異常、交給 Synthesizer「完整的發布」；中斷照樣強制", t_segment_not_fault),
-                         ("Log 提到、數據裡沒有的輸入：Orchestrator 與 Synthesizer 都拿到，名稱相近的 Topic 點名不能代替、它的報告旁附提醒", t_missing_input_proxy),
+                         ("訊息流：一段完整的發布不強制算異常、「完整的發布」的判斷給因果推論（事實整合只有事實與恢復）；中斷照樣強制", t_segment_not_fault),
+                         ("Log 提到、數據裡沒有的輸入：Orchestrator 規劃與因果推論都拿到，名稱相近的 Topic 點名不能代替、它的報告旁附提醒", t_missing_input_proxy),
                          ("Key 目錄的類別寫中文；工具略過不存在的 Key 時照輸出算量到的 Key", t_category_not_key),
                          ("Orchestrator 給不出計畫：程式依關聯度補指派（不重複、不派 Log）；沒有相關訊號＝整段數據；預設問題", t_auto_assign_and_whole_window),
                          ("時間窗：訊號前後各取幾秒、重疊的合併、限制在數據範圍內；Log 的時間不在範圍內退回整段", t_windows),
                          ("Worker：reply 裡的動作照做、--topic 固定、只准量測技能、第三次相同量測擋下；Frontmatter 數字來自程式；動態時間切片", t_worker_rules),
-                         ("Worker 沒量測：推回去一次、系統代選 Key；Synthesizer 壞掉：程式拼一份信心低的報告", t_worker_fallback_and_synth_fallback),
+                         ("Worker 沒量測：推回去一次、系統代選 Key；事實整合與因果推論壞掉：程式拼一份信心低的報告", t_worker_fallback_and_synth_fallback),
                          ("dispatch：analysis_run 偽技能存檔與軌跡、[ANALYSIS_DATA] 同步、省略 --data、腳本拿得到環境變數", t_dispatch_and_state),
                          ("Web：/analyze 的回合（進度、報告進主對話、主模型依報告回答）、面板 state、分析模式指令", t_web),
                          ("程式重新啟動：沒做完的 job（進度很久沒更新）標成中斷，剛更新的不動", t_mark_interrupted),
                          ("錄製：資料夾名稱放錯在 --out-root 改當 --name；含 / 的相對路徑、--name 帶路徑擋下", t_recorder_target),
                          ("量測：中途開始／停止發布（一段連續的寫成一句）、狀態沿用、數值切換、時間窗帶切片", t_features),
-                         ("Synthesizer：L# 的時間校正、補上訊息流事件、同時中斷的 Topic；背景條件與程式更正", t_timeline_fix),
+                         ("報告的時間線：L# 的時間校正、補上訊息流事件（含恢復）、同時中斷的 Topic；背景條件與程式更正", t_timeline_fix),
                          ("源碼索引：Python／C++ 的發布、訂閱、計時器、參數；沒編譯的不算；Log 的路徑對回源碼；在執行的節點；依賴的輸入與代碼的條件",
                           t_source_index),
                          ("源碼脈絡：Orchestrator 分兩步（先挑訊號、再帶【源碼脈絡】分派；給不出就用第一步的）、Worker 與 Synthesizer 拿到【源碼脈絡】、計畫多 source_context、關閉程式提示時沒有【程式檢查】；產物 source_context.md、prompts/",
                           t_source_context_pipeline),
-                         ("有源碼脈絡：缺的輸入用源碼判斷（不用名稱比對）、觀測角度用源碼核對、補推理鏈（補派、第 2 輪整合、report_r1.md；不能補就結束）",
-                          t_view_gaps_review),
+                         ("有源碼脈絡：缺的輸入用源碼判斷（不用名稱比對）、觀測角度用源碼核對、補分析（因果推論指派還沒分析的 Topic、第 2 輪整合與推論、"
+                          "report_r1.md；不補就結束）", t_view_gaps_review),
                          ("只根據事實：worker 只拿子任務（L# 換成時間、沒有理解與問題）；局部報告與報告的用詞跟量測不符（停止寫成中斷、寫因果）交回修一次",
-                          t_fact_wording)]:
+                          t_fact_wording),
+                         ("因果推論的程式核對：因果鏈與出處、判定的事實依據（有異常／沒有異常）、背景條件不能進因果鏈；時間線的 Log 由程式放", t_causal_checks)]:
             check(name, fn)
     finally:
         os.chdir(cwd)

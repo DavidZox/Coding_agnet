@@ -176,7 +176,7 @@
   .job-task { margin: 8px 0; font-size: 14px; line-height: 1.5; white-space: pre-wrap; }
   .job-meta { color: #9aa0a6; font-size: 12px; margin-top: 6px; display: flex; gap: 14px; flex-wrap: wrap; }
   .status-badge { padding: 2px 9px; border-radius: 10px; font-size: 12px; font-weight: bold; background: #4a4c50; }
-  .s-preparing, .s-planning { background: #3d4f7a; } .s-working, .s-synthesizing { background: #2a5fb0; }
+  .s-preparing, .s-planning { background: #3d4f7a; } .s-working, .s-synthesizing, .s-reasoning { background: #2a5fb0; }
   .s-done { background: #2f7d4a; } .s-failed { background: #8a2f2f; }
   .an-steps { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 12px; margin: 6px 0; }
   .an-step { padding: 2px 8px; border-radius: 10px; background: #2b2d31; color: #8f96a0; border: 1px solid #3a3c40; }
@@ -852,8 +852,8 @@ msgBox.addEventListener('keydown', (e) => {
 // 📊 數據分析面板：analysis_run 的 job（Orchestrator → Workers → Synthesizer）。分析在主對話的回合裡同步執行，進度同時推到
 // 右欄的系統卡片；面板讀 job 資料夾的檔案，分析進行中或面板打開時每 1.5 秒輪詢 /api/analysis/state。
 // =====================================================================
-const AN_STATUS = { preparing: '資料預備', planning: 'Orchestrator 規劃', working: 'Workers 分析', synthesizing: 'Synthesizer 整合', done: '完成', failed: '失敗' };
-const AN_STEPS = ['preparing', 'planning', 'working', 'synthesizing'];
+const AN_STATUS = { preparing: '資料預備', planning: 'Orchestrator 規劃', working: 'Workers 分析', synthesizing: 'Synthesizer 整合事實', reasoning: 'Orchestrator 因果推論', done: '完成', failed: '失敗' };
+const AN_STEPS = ['preparing', 'planning', 'working', 'synthesizing', 'reasoning'];
 const AN_ACTIVE = new Set(AN_STEPS);
 const an = { jobId: null, data: null, timer: null, lastKey: '', settingsOpen: false, open: new Set() };
 
@@ -958,7 +958,7 @@ function renderAnalysisSettings(d) {
       <span title="受測系統的源碼目錄（ROS 2 工作區的 src）：Log 的源碼位置對回程式碼、在執行的節點的發布／訂閱關係、代碼的條件，交給三個角色；空白＝不用">源碼目錄</span>
       <span><input id="an-source" style="width:70%" value="${esc(s.source_root)}" placeholder="例如 ~/ros2_ws/src（空白＝不用源碼脈絡）">
         <label title="關閉：不給程式的推理提示（名稱比對的缺口、背景條件、共同的上游…），只給數據與源碼的事實"><input id="an-hints" type="checkbox" ${s.program_hints === false ? '' : 'checked'}> 程式的推理提示</label>
-        <label title="有源碼脈絡時：報告寫完，Orchestrator 看「尚未確認」能不能用還沒分析的 Topic 補上，能補就補派 worker 再整合（1＝不補）">最多 <input id="an-rounds" type="number" min="1" max="3" style="width:50px" value="${esc(s.rounds || 2)}"> 輪</label></span>
+        <label title="有源碼脈絡時：Orchestrator 做因果推論時，缺的環節能用還沒分析的 Topic 補上就指派補分析，再整合事實、再推論（1＝不補）">最多 <input id="an-rounds" type="number" min="1" max="3" style="width:50px" value="${esc(s.rounds || 2)}"> 輪</label></span>
       <span>目前的數據</span>
       <span><input id="an-data" style="width:70%" value="${esc(d.data)}" placeholder="實驗資料夾、bag、切片、實驗名稱或 latest"> <button class="mini-btn" onclick="saveAnalysisData()">設定</button></span>
       <span>模型</span>
@@ -1042,7 +1042,7 @@ function renderAnalysisPanel() {
       </div>`;
   });
   if (files['report.md']) {
-    html += `<div class="section-title"><span>🧩 Synthesizer 的根因診斷報告</span><span><button class="mini-btn" onclick="openAnalysisFile('report.md', '數據診斷報告')">開啟（含 Frontmatter）</button></span></div>
+    html += `<div class="section-title"><span>🧭 診斷報告（Orchestrator 的因果推論＋Synthesizer 的事實整合）</span><span><button class="mini-btn" onclick="openAnalysisFile('report.md', '數據診斷報告')">開啟（含 Frontmatter）</button></span></div>
       <div class="item-card st-done"><div class="item-body" style="padding:10px"><div class="item-goal">${esc(stripFrontmatter(files['report.md']))}</div></div></div>`;
   }
   html += `<details style="margin-top:10px"><summary class="section-title" style="display:list-item">全部進度（${events.length} 筆）</summary>

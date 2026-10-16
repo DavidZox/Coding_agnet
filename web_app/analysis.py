@@ -90,9 +90,9 @@ def analysis_action(action, data):
             if "program_hints" in data:
                 cfg["program_hints"] = str(data["program_hints"]).strip().lower() in ("1", "true", "on", "yes")
                 msgs.append(f"程式的推理提示：{'開' if cfg['program_hints'] else '關'}")
-            if "rounds" in data:   # 補推理鏈最多幾輪（有源碼脈絡時；1＝不補）
+            if "rounds" in data:   # 最多幾輪（有源碼脈絡時，因果推論可以指派補分析；1＝不補）
                 cfg["rounds"] = _num(data["rounds"], int, 1, 3)
-                msgs.append(f"最多 {cfg['rounds']} 輪（補推理鏈）")
+                msgs.append(f"最多 {cfg['rounds']} 輪（補分析）")
         except ValueError as e:
             return {"ok": False, "error": str(e)}
         agent.save_analysis_settings()
