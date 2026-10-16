@@ -137,6 +137,12 @@ def main():
                 fake, tools, system = turn("nav2 怎麼了", [say(reply)])
                 assert fake.calls == 1, (reply, fake.calls)
 
+        def t_claim_describes_state():
+            # 描述數據或系統的狀態（前面有主詞）不是宣稱做了：數據診斷的追問常寫「指令已停止發布」「系統已完成初始化」
+            reply = "根據報告，/cmd_vel_raw 在 +34.25s 已停止發布，安全閘到最後仍是 LIMITED；馬達的警告解除之前，系統已完成的限速不會自己解除。"
+            fake, tools, system = turn("那要怎麼讓安全閘恢復？", [say(reply)])
+            assert fake.calls == 1 and not any("沒有執行任何工具" in s for s in system), (fake.calls, system)
+
         def t_claim_after_tool_ok():
             fake, tools, system = turn("看一下 AGENT.md 的開頭", [step("scripts/cat_cmd.py", "AGENT.md"), say("已經讀完了，重點如下…")])
             assert fake.calls == 2 and not any("沒有執行任何工具" in s for s in system), (fake.calls, system)
@@ -248,6 +254,7 @@ def main():
                          ("卡住偵測：每個新回合重新計數", t_reset_each_turn),
                          ("沒有執行卻宣稱做完：提醒一次", t_claim),
                          ("沒有執行卻宣稱做完：每回合最多提醒一次", t_claim_only_once),
+                         ("描述數據或系統的狀態（前面有主詞的「已停止」「已完成」）不是宣稱做了", t_claim_describes_state),
                          ("條件句、疑問句、否定句不提醒", t_hedge_no_nudge),
                          ("這一回合真的執行過工具：不提醒", t_claim_after_tool_ok),
                          ("路徑找不到時列出相近的路徑（view_file／list_dir／change_dir）", t_path_suggestions),

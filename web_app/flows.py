@@ -372,8 +372,15 @@ def run_analysis_turn(question, events, data=None):
     進主對話（auto 直接加入、manual／hybrid 等你決定），之後主模型依報告回答、可以接著追問。回傳是否在等使用者決策。"""
     from agent_core.protocol import quote_cli_arg
     import json
+    import re
     data = data or agent.analysis_data or "latest"
-    args = f"--data {quote_cli_arg(data)}" + (f" {quote_cli_arg(question)}" if question else "")
+    if question and re.search(r"(?:^|\s)--(?:data|dir|topic|source|no-source|workers|before|after|rounds)\b", question):
+        # 「/analyze --data exp_x 問題」：選項照原樣交給 analysis_run（它會解析，剩下的字是問題）。以前整段加引號當成問題，
+        # 選項沒被認出來、數據靜靜地用了目前的（latest）——實測問 LiDAR 的數據，分析的卻是最後錄的另一份
+        has_data = re.search(r"(?:^|\s)--(?:data|dir)\b", question)
+        args = ("" if has_data else f"--data {quote_cli_arg(data)} ") + question
+    else:
+        args = f"--data {quote_cli_arg(data)}" + (f" {quote_cli_arg(question)}" if question else "")
     action = {"command": "scripts/analysis_run_cmd.py", "args": args}
     reply = "交給數據診斷（Orchestrator → Workers → Synthesizer）。"
     agent.messages.append({"role": "assistant", "content": json.dumps(

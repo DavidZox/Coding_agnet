@@ -94,7 +94,9 @@ def score_job(job_id, case):
         res["timeline"] = not miss
         if miss:
             res["why"]["timeline"] = "缺：" + "、".join(miss)
-    relied = [c for c in case.get("not_cause") or [] if _relies_on(text, c)]
+    # 清單狀態的跳轉（「stop_reasons 從 [NO_CMD_VEL_RAW] 變成 [NO_CMD_VEL_RAW, SAFETY_COMMAND_TIMEOUT]」）不是拿它當原因（限制 62；
+    # 程式核對因果鏈時也是先拿掉 [...] 再看）
+    relied = [c for c in case.get("not_cause") or [] if _relies_on(re.sub(r"\[[^\]\n。；]*\]?", "", text), c)]   # 沒有右括號（被截斷）的到句尾
     if case.get("cause"):
         groups = case["cause"].get("all") or []
         lacking = [g for g in groups if not any(k.lower() in text.lower() for k in g)]

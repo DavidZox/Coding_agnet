@@ -569,6 +569,19 @@ def main():
             assert "⚠️" in ev[-1]["text"], "worker 上限 1～8"
             stats = flows.build_stats()
             assert stats["analysis"]["status"] == "done" and "analysis_mode" in stats
+            # 「/analyze --data X 問題」：選項照原樣交給 analysis_run（以前整段加引號當成問題，數據靜靜地用了目前的）
+            seen = []
+            real = agent.run_tool
+            agent.run_tool = lambda parsed, approved=False: (seen.append(parsed["action"]["args"]), "[ERROR] 測試：不執行")[1]
+            try:
+                flows.run_analysis_turn("--data exp_other LiDAR 出錯之後為什麼沒有恢復", [], data=DATA)
+                flows.run_analysis_turn("--topic /cmd_vel 為什麼歸零", [], data=DATA)
+                flows.run_analysis_turn("安全閘為什麼停下來", [], data=DATA)
+            finally:
+                agent.run_tool = real
+            assert seen[0] == "--data exp_other LiDAR 出錯之後為什麼沒有恢復", seen
+            assert seen[1].startswith("--data ") and seen[1].endswith(" --topic /cmd_vel 為什麼歸零"), seen
+            assert seen[2].endswith('"安全閘為什麼停下來"') or seen[2].endswith("安全閘為什麼停下來"), seen
 
         def t_mark_interrupted():
             d = os.path.join(agent.analysis_jobs_dir(), "20200101_000000")
@@ -904,6 +917,21 @@ def main():
             fake, d, job = run(plans=[GOOD_PLAN], assigns=[only], facts=[FACTS, FACTS], causal=[up, CAUSAL])
             assert [a["topic"] for a in job["reviews"][0]["followups"]] == ["/diagnostics_agg"], job["reviews"]
             assert "只能往上游補" in fake.seen["causal"][0][1]["content"]
+            # 補時間窗：規劃只挑 L30（+15.54s），已分派的 /cmd_vel 的發布者 safety_motion_controller 自己印的 L27～L29（+0.75s～+1.22s）、
+            # /system/safety_command 的發布者 system_health_monitor 的 L19、L20 不在時間窗 → 程式補上，交給量那個 Topic 的 worker
+            plan_l30 = dict(GOOD_PLAN, related_signals=[{"id": "L30", "why": "恢復 NORMAL"}])
+            fake, d, job = run(plans=[plan_l30], assigns=[good], causal=[CAUSAL])
+            cov = [c["id"] for c in job["plan"]["coverage"]]
+            assert cov == ["L19", "L20", "L27", "L28", "L29"], job["plan"].get("coverage")
+            t0 = round(float(job["time_range"][0]) * 1e9)
+            assert [r["id"] for r in job["plan"]["related"]] == ["L30"] and len(job["windows"]) == 2, job["windows"]
+            assert abs(job["windows"][0]["start_ns"] - t0) < 2e6 and job["windows"][0]["signals"][:2] == ["L19", "L20"], job["windows"]
+            sig = {a["topic"]: a["signals"] for a in job["plan"]["assignments"]}
+            assert {"L27", "L28", "L29"} <= set(sig["/cmd_vel"]) and "L19" not in sig["/cmd_vel"] and {"L19", "L20"} <= set(sig["/system/safety_command"]), sig
+            first = fake.seen["causal"][0][1]["content"]
+            assert "程式補的時間窗（已分派 Topic 的發布節點自己印的 Log，你規劃時沒有挑）" in first and "- L28 +0.75s：WARN safety_motion_controller" in first, first[-3000:]
+            md = open(os.path.join(d, "report.md"), encoding="utf-8").read()
+            assert "coverage_signals" in md and any(r["source"] == "L27" for r in job["report"]["timeline"]), "補的訊號也進時間線"
             # 補分析沒寫它補哪一項尚未確認、或沒有尚未確認：不補
             nofill = dict(CAUSAL, unknowns=[], followups=[dict(more["followups"][0], unknown=1)])
             fake, d, job = run(plans=[GOOD_PLAN], assigns=[good], causal=[nofill])
@@ -942,6 +970,7 @@ def main():
             from agent_core.analysis_job import _interrupt_words
             assert not _interrupt_words("停止發布的原因（例如上游節點關閉或通訊中斷）無法得知") and not _interrupt_words("沒有任何狀態跳轉、數值尖峰或訊息中斷")
             assert _interrupt_words("根因為 /cmd_vel_raw 指令源頭中斷") == ["中斷"]
+            assert not _interrupt_words("為什麼兩個 Topic 同時停止發布（是發布節點當掉、通訊中斷，還是收到特定指令停止）"), "列出可能的原因是假設"
             assert job["causal_checks"][0]["left"] == [] and job["report"]["root_cause"].startswith(CAUSAL["root_cause"]), job["causal_checks"]
             assert os.path.exists(os.path.join(job_dir, "prompts", "orchestrator_causal_2.md"))
             assert job["report"]["unresolved"] == [] and "程式核對：未修正" not in open(os.path.join(job_dir, "report.md"), encoding="utf-8").read()
@@ -994,6 +1023,12 @@ def main():
             assert "- W4 /cmd：從數據開頭就在發布，+15.00s 停止之後沒有恢復" in out and "同一時間（+15.00s）一起停止：/cmd、/agg" in out, out
             assert "某一項錯誤解除，不代表其他狀態也恢復" in out
             assert _end_states(dict(job, workers=[])) == ""
+            # 清單的值（被截斷、沒有右括號的到句尾）先拿掉再看背景條件；用詞核對引用的句子以出問題的字為中心
+            from agent_core.analysis_job import _unlisted, _excerpt
+            assert _unlisted("stop_reasons 從 `[NO_CMD_VEL_RAW]` 變更為 `[NO_CMD_VEL_RAW, SAFETY_COMMAND___`。另一句") == "stop_reasons 從 `` 變更為 `。另一句"
+            long = "為什麼 /diagnostics_agg 與 /system/safety_command 會在 +15.03s 同時中斷（發布它們的節點的狀態沒有錄到）"
+            ex = _excerpt(long, "中斷")
+            assert "中斷" in ex and len(ex) <= 62 and ex.startswith("…"), ex
 
         def t_causal_checks():
             # 因果推論的程式核對：因果鏈要有、出處要存在；判定要有事實依據（「有異常」要有異常的事實、「沒有異常」要引用每一個異常的事實）；

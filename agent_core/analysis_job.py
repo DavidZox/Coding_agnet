@@ -660,6 +660,15 @@ class AnalysisMixin:
             issues.append("Orchestrator 沒有給出可用的指派，由程式依關聯度指派")
         plan["issues"] = issues
         windows = self._make_windows(job, plan["related"], plan["before"], plan["after"])
+        cover = _coverage_signals(job, plan["assignments"], windows) if plan["related"] else []
+        if cover:   # 事實整理：分派了它發布的 Topic，它自己的狀態變化 Log 就是那個 Topic 的事實，時間窗要涵蓋
+            plan["coverage"] = [{"id": c["id"], "why": f"程式補：{c['node']} 發布已分派的 {'、'.join(c['topics'])}，它的這則 Log 不在任何時間窗"}
+                                for c in cover]
+            windows = self._make_windows(job, plan["related"] + plan["coverage"], plan["before"], plan["after"])
+            for a in plan["assignments"]:   # 補的時間窗交給量那個節點發布的 Topic 的 worker
+                a["signals"] = list(dict.fromkeys(list(a.get("signals") or []) + [c["id"] for c in cover if a["topic"] in c["topics"]]))
+            self._analysis_note(job, "🛠 時間窗：程式補上 " + "、".join(f"{c['id']}（{c['node']}）" for c in cover)
+                                     + "——已分派 Topic 的發布節點自己印的 Log，原本不在任何時間窗")
         for a in plan["assignments"]:
             ids = [w["id"] for w in windows if set(w["signals"]) & set(a.get("signals") or [])]
             a["windows"] = ids or [w["id"] for w in windows]
@@ -832,7 +841,11 @@ class AnalysisMixin:
                 out.append(dict(w, start_ns=s, end_ns=e))
         if not out:   # Log 的時間都不在數據範圍內（時鐘不同）：退回整段數據
             return [{"id": "W1", "start_ns": start, "end_ns": end, "anchor_ns": None, "signals": [], "label": "整段數據（Log 的時間不在數據範圍內）"}]
-        out = out[:ANALYSIS_MAX_WINDOWS]
+        while len(out) > ANALYSIS_MAX_WINDOWS:   # 超過上限：最靠近的兩個合併（以前直接丟掉後面的，補時間窗之後可能丟掉結尾的事件）
+            k = min(range(len(out) - 1), key=lambda i: out[i + 1]["start_ns"] - out[i]["end_ns"])
+            a, b = out[k], out.pop(k + 1)
+            a["end_ns"] = max(a["end_ns"], b["end_ns"])
+            a["signals"] += [x for x in b["signals"] if x not in a["signals"]]
         for i, w in enumerate(out, 1):
             w["id"] = f"W{i}"
             sig = sig_by_id.get(w["signals"][0], {})
@@ -1042,12 +1055,12 @@ class AnalysisMixin:
             self._analysis_note(job, f"⚠️ 因果推論交回兩次還有 {len(unresolved)} 個問題，報告標示「程式核對：未修正」")
         own = list(causal["unknowns"])   # 模型自己寫的尚未確認（補分析的 unknown 對的是這幾項；程式之後補的不算）
         if hints:   # 程式保證：拿背景條件當原因附更正（核對交回之後還是）；Log 提到、沒錄到的輸入一定在「尚未確認」、信心最多 medium
-            relied = [c for c in bg if _relies_on(causal["root_cause"], c) or _relies_on(causal["conclusion"], c)]
+            relied = [c for c in bg if _relies_on(_unlisted(causal["root_cause"]), c) or _relies_on(_unlisted(causal["conclusion"]), c)]
             for c in relied:
                 changed = "、".join(bg[c]["changed"]) or "別的項目"
                 fix = f"（程式更正：{c} 在 {bg[c]['where']} 每次跳轉前後都在、恢復之後仍在，不可能是這次變化的原因；跳轉時新增／移除的是 {changed}，根因要看這幾項）"
                 for field in ("root_cause", "conclusion"):
-                    if _relies_on(causal[field], c):
+                    if _relies_on(_unlisted(causal[field]), c):
                         causal[field] += fix
                 job.setdefault("corrections", []).append({"reason": c, "where": bg[c]["where"], "changed": bg[c]["changed"]})
                 self._analysis_note(job, f"🛠 根因更正：{c} 是背景條件（恢復之後仍在），推論拿它當原因，附上程式更正")
@@ -1132,6 +1145,7 @@ class AnalysisMixin:
               "data_path": job["data"], "time_range": job.get("time_range"),
               "windows": {w["id"]: [_sec3(w["start_ns"]), _sec3(w["end_ns"])] for w in job["windows"]},
               "related_signals": [r["id"] for r in plan["related"]],
+              **({"coverage_signals": [c["id"] for c in plan["coverage"]]} if plan.get("coverage") else {}),
               "workers": [{"topic": w["topic"], "analyzed_keys": w.get("analyzed_keys"), "anomaly_detected": w.get("anomaly_detected"),
                            "file": w.get("file")} for w in job["workers"]],
               "anomalies": [w["topic"] for w in job["workers"] if w.get("anomaly_detected")],
@@ -1228,7 +1242,11 @@ _INTERRUPT_WORDS = ("中斷", "間歇", "斷斷續續", "丟失", "遺失")   # 
 _INTERRUPT_ALT = "(?:" + "|".join(_INTERRUPT_WORDS) + ")"
 # 否定或假設的說法不算：否定詞到子句結束（逗號、句號）都算否定的範圍——「沒有任何狀態跳轉、數值尖峰或訊息中斷」
 # 「排除…中斷的可能性」「是否中斷」「（尚未確認）例如上游節點關閉或通訊中斷」；工具那一行的名稱「程式判斷的異常（訊息中斷）」也不算
-_NEGATED_INTERRUPT = re.compile(r"程式判斷的異常（訊息中斷）|(?:沒有|無|未|並非|不是|不屬於|而非|不算|排除|是否|有沒有|不確定|例如|或是|還是|可能)[^，。；\n]{0,25}")
+# 列出可能的原因「（是發布節點當掉、通訊中斷，還是收到特定指令停止）」：「還是」前面的選項也是假設（第九輪 aggkill：只看逗號裡的子句，
+# 「還是」在下一個子句，誤判成用詞不對、交回兩次）
+_ALTERNATIVES = re.compile(r"(?:是|（)[^。；\n）]{0,30}(?=還是|或是|或者)")   # 「還是／或是」留著：後面的選項由下面的否定規則拿掉
+_NEGATED_INTERRUPT = re.compile(r"程式判斷的異常（訊息中斷）|" + _ALTERNATIVES.pattern + "|"
+                                r"(?:沒有|無|未|並非|不是|不屬於|而非|不算|排除|是否|有沒有|不確定|例如|或是|還是|可能)[^，。；\n]{0,25}")
 _INTERRUPT_AS_TIME = re.compile(r"(?:中斷|間歇)(?:後|之後|前|之前|期間|時|的那一刻)")   # 有量到的中斷時：拿它當時間參考（「中斷後 0.51 秒」）
 _CAUSAL_WORDS = ("導致", "造成", "引起", "觸發", "證實", "證明", "排除", "歸因", "根因")
 _SIGNAL_REF = re.compile(r"(?<![A-Za-z0-9_])L(\d+)(?![0-9])")
@@ -1600,7 +1618,8 @@ _DISMISS = ("背景", "而非", "並非", "不是", "不可能", "排除", "無�
 # 只是說它沒有被量測、無法證實（尚未確認的內容），不算拿它當原因
 _NEUTRAL = ("未被量測", "沒有被量測", "未量測", "無法證實", "沒有被數據證實", "未被證實", "不在數據裡", "缺乏對", "沒有對應")
 # 不是在說這次變化的原因：沒把握（無法確認／判斷是否…）、它一直都在、拿它解釋恢復後的輸出為 0（第四～六輪人工複核）
-_NOT_THE_CHANGE = ("無法確認", "無法判斷", "是否", "持續存在", "一直存在", "仍存在", "始終存在", "併發", "恢復後", "非零")
+_NOT_THE_CHANGE = ("無法確認", "無法判斷", "是否", "持續存在", "一直存在", "仍存在", "始終存在", "併發", "恢復後", "非零",
+                   "仍維持 NORMAL", "仍維持在 NORMAL", "模式仍維持")   # 「偵測到 X，但模式仍維持 NORMAL」：X 沒有造成這次的變化（第九輪 monkill）
 
 
 def _dismissed(sent, c):
@@ -1650,6 +1669,17 @@ def _changes(w):
     return [f for f in w.get("program_flags") or [] if f not in bad]
 
 
+def _excerpt(text, word, width=60):
+    """引用一句話時以出問題的字為中心：太長就取它前後一段（交回時模型才看得到要改的是哪個字）。"""
+    if len(text) <= width:
+        return text
+    i = max(0, text.find(word))
+    a = max(0, i - (width - len(word)) // 2)
+    b = min(len(text), a + width)
+    a = max(0, b - width)
+    return ("…" if a else "") + text[a:b] + ("…" if b < len(text) else "")
+
+
 def _wording_issues(job, texts):
     """用詞跟量測對不對得上（程式核對：事實整合與因果推論都用，有問題交回修一次）：量測沒有訊息中斷的 Topic 寫成「中斷／間歇／丟失」。
     全部 Topic 都沒有訊息中斷時，這些字都沒有量測支持；有 Topic 中斷時，只看提到沒中斷的 Topic、沒提到中斷的 Topic 的句子。
@@ -1666,7 +1696,7 @@ def _wording_issues(job, texts):
     measured = {w["topic"] for w in done}
     found = []
     for t in texts:
-        for clause in re.split(r"[，。；;\n]", str(t or "")):
+        for clause in re.split(r"[，。；;\n]", _ALTERNATIVES.sub("", str(t or ""))):   # 先拿掉跨逗號的「是 A、B，還是 C」
             if broken:   # 實測：事實整合寫「在 +18.79s（中斷後 0.51 秒）/system/safety_gate_status…」說的是別的 Topic 的中斷
                 clause = _INTERRUPT_AS_TIME.sub("", clause)
             if not [x for x in _interrupt_words(clause) if x not in quoted]:
@@ -1676,7 +1706,7 @@ def _wording_issues(job, texts):
                 continue
             if broken and (not said or said & set(broken)):
                 continue
-            found.append(_short(clause.strip(), 60))
+            found.append(_excerpt(clause.strip(), [x for x in _interrupt_words(clause) if x not in quoted][0]))
     if not found:
         return []
     facts = "；".join(f"{w['topic']} {'；'.join(_changes(w)[:2])}" for w in calm if _changes(w))[:500]
@@ -1791,6 +1821,10 @@ def _causal_user(job, facts, gap_text, flow, reminders, allow, left):
             + f"\n\n【你規劃時的理解與假設（待驗證：可能對、可能錯）】\n理解：{plan['understanding']}\n"
             + (f"源碼的讀法：{plan['source_reading']}\n" if plan.get("source_reading") else "")
             + "相關的 Log 訊號：\n" + (rel or "（沒有，分析整段數據）")
+            + ("\n程式補的時間窗（已分派 Topic 的發布節點自己印的 Log，你規劃時沒有挑）：\n" + "\n".join(
+                f"- {c['id']} {_rel(int(round(float(sig_by_id[c['id']]['first_sec']) * 1e9)), base)}：{sig_by_id[c['id']]['level']} "
+                f"{sig_by_id[c['id']]['node']}：{_short(sig_by_id[c['id']]['message'], 100)}"
+                for c in plan.get("coverage") or [] if c["id"] in sig_by_id) if plan.get("coverage") else "")
             + f"\n\n【時間窗】\n{wins}\n\n【分派的 worker（出處寫 W#）】\n{assigned}"
             + (f"\n\n【程式檢查：Log 提到、但數據裡沒有對應 Topic 的輸入】\n{gap_text}" if gap_text else "")
             + (f"\n\n【程式整理：訊息流（Topic 的中斷、恢復、中途開始或停止發布）】\n{flow}" if flow else "")
@@ -1844,6 +1878,31 @@ def _related_to(js, topic, text):
     為什麼停」——/cmd_vel_raw 的發布者不在源碼裡，下游的輸出答不了；更早沒有這一條時，55 次有 13 次補量 /diagnostics_toplevel_state
     去補「lifecycle manager 為什麼重啟」這類它答不了的項目。"""
     return topic in _upstream_of(js, text)
+
+
+def _coverage_signals(job, assignments, windows):
+    """已分派 Topic 的發布節點自己印的 Log（出現 3 次以內、錄製工具的除外）不在任何時間窗 → 要補時間窗的訊號（事實整理，不是推理提示）。
+    有源碼才知道誰發布哪個 Topic。實測（第九輪）：規劃常只挑 WARN／ERROR 那一串，安全閘自己的 INFO 狀態變化（指令開始、
+    指令結束後的 NO_CMD_VEL_RAW）不在時間窗，時間線就缺事件（cmdvel 1/5、camera 2/5）；分派了它發布的 Topic，它自己的 Log
+    就是那個 Topic 的事實。→ [{id, node, topics}]"""
+    js = job.get("_source")
+    if not js:
+        return []
+    nodes = {}
+    for a in assignments:
+        for n in js.publishers(a["topic"]):
+            nodes.setdefault(n, []).append(a["topic"])
+    out = []
+    for s in job.get("signals") or []:
+        if is_recorder_node(s.get("node", "")) or s.get("node") not in nodes:
+            continue
+        times = s.get("times_sec") or [s.get("first_sec")]
+        if len(times) > 3:   # 週期性的 Log 不是狀態變化
+            continue
+        ns = [int(round(float(t) * 1e9)) for t in times[:ANALYSIS_SIGNAL_OCCURRENCES] if t is not None]
+        if any(not any(w["start_ns"] <= x <= w["end_ns"] for w in windows) for x in ns):
+            out.append({"id": s["id"], "node": s["node"], "topics": nodes[s["node"]]})
+    return out
 
 
 def _abnormal_facts(job):
@@ -1962,8 +2021,17 @@ def _end_states(job):
         if len(together) >= 2:
             out.append(f"- 同一時間（{_rel(together[0][0], base)}）一起停止：{'、'.join(x[1] for x in together)}")
     if diff:
-        out.append("——到最後的值不是開頭的值：照它到最後的值寫（例如仍鎖住、仍限速、仍在保護停止）；某一項錯誤解除，不代表其他狀態也恢復")
+        out.append("——到最後的值不是開頭的值：照它到最後的值寫（例如仍鎖住、仍限速、仍在保護停止）；某一項錯誤解除，不代表其他狀態也恢復。"
+                   "它從括號裡的時間開始：為什麼到最後還是這個值，要用那個時間的事件解釋——之後才發生的事件（例如後來才停止的指令）"
+                   "不是它維持的原因")   # 第九輪 motorhold：限速從過熱開始，報告常寫成「指令停止，導致系統因缺乏指令而維持在限速」
     return "\n".join(out)
+
+
+def _unlisted(text):
+    """拿掉清單狀態的值（[...]；被截斷、沒有右括號的到句尾）：「stop_reasons 從 [NO_CMD_VEL_RAW] 變成 [NO_CMD_VEL_RAW, SAFETY_…]」
+    是清單的跳轉，不是拿 NO_CMD_VEL_RAW 當原因。實測（第九輪）：模型把清單寫成截斷的「[NO_CMD_VEL_RAW, SAFETY_COMMAND___」，
+    只拿掉成對的 [...] 時被當成拿背景條件當原因，交回三次都一樣、報告標了錯的「未修正」。"""
+    return re.sub(r"\[[^\]\n。；]*\]?", "", str(text or ""))
 
 
 def _causal_issues(job, data):
@@ -2013,9 +2081,8 @@ def _causal_issues(job, data):
                                for tok in source_index.value_tokens(s.get("message"))))
     bg = _background_codes(job.get("workers") or [], codes)
     for c, info in bg.items():
-        in_chain = any(c.lower() in re.sub(r"\[[^\]]*\]", "", str(x.get("event") or "")).lower()
-                       and not _dismissed(re.sub(r"\[[^\]]*\]", "", str(x.get("event") or "")), c.lower()) for x in chain)
-        if in_chain or _relies_on(data.get("root_cause"), c) or _relies_on(data.get("conclusion"), c):
+        in_chain = any(c.lower() in _unlisted(x.get("event")).lower() and not _dismissed(_unlisted(x.get("event")), c.lower()) for x in chain)
+        if in_chain or _relies_on(_unlisted(data.get("root_cause")), c) or _relies_on(_unlisted(data.get("conclusion")), c):
             issues.append(f"{c} 在 {info['where']} 每次跳轉前後都在＝背景條件，不能當這次變化的原因、不要放進因果鏈"
                           f"（跳轉時新增／移除的是 {'、'.join(info['changed']) or '別的項目'}）")
     texts = ([data.get("conclusion"), data.get("root_cause")] + [x.get("event") for x in chain]
@@ -2026,7 +2093,7 @@ def _causal_issues(job, data):
 def _log_rows(job):
     """時間線上的 Log 事件（程式依 Log 的時間戳放，不經過模型）：相關的訊號與 WARN 以上的訊號，每個最多前幾次出現（錄製工具自己的除外）。"""
     base = job["index"]["start_ns"]
-    related = {r["id"] for r in job["plan"]["related"]}
+    related = {r["id"] for r in job["plan"]["related"]} | {c["id"] for c in job["plan"].get("coverage") or []}
     rows = []
     for s in job.get("signals") or []:
         if is_recorder_node(s.get("node", "")) or (s["id"] not in related and _LEVEL_RANK.get(s.get("level"), 1) < 2):
