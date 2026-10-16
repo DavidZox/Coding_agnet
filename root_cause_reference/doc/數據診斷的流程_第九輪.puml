@@ -1,0 +1,220 @@
+@startuml
+' --- 樣式精準控制 ---
+skinparam shadowing false
+skinparam defaultFontName "Microsoft JhengHei"
+skinparam ActivityBackgroundColor #FFF8E7
+skinparam ActivityBorderColor #996633
+skinparam NoteBackgroundColor #FFFFE0
+skinparam PartitionBorderColor #996633
+
+title 數據診斷：問題 → 資料預備 → Orchestrator（兩步）→ 時間窗與切片 → Workers → Synthesizer（事實）→ Orchestrator（因果）⇄ 補分析 → 報告\n藍＝程式（整理事實、量測，不呼叫模型）；橘＝模型（判斷）；綠＝程式檢查與更正。每一步的輸入與產物都留在 logs/analysis_jobs/<編號>/
+
+partition "收到問題" {
+start
+:主對話的 AI 呼叫 analysis_run（偽技能，在本程式內執行，不用使用者確認）
+／Web 的分析模式、/analyze <問題>；CLI：/analyze <問題>
+參數：~--data（實驗資料夾、bag、切片、實驗名稱、latest；省略＝目前的數據）
+~--source <目錄>／~--no-source、~--topic（一定要分析的 Topic）、
+~--workers、~--before／~--after（秒）、~--rounds（補分析最多幾輪）; <<#DDEBF7>>
+}
+
+partition "① 資料預備（程式，不用模型）" {
+:mcap_analyzer ~--json：全域 Topic Metadata
+（Topic、型別、筆數、頻率、起訖；每個 Key 的類別與維度）
+錄製時建好的索引直接讀，也帶 MCAP 存的 .msg 原文（註解、常數）; <<#DDEBF7>>
+:rosout_parser ~--json：/rosout 去重成唯一訊號 L#
+（層級、節點、次數、每一次的時間戳；
+保留 MCAP 記的 file、function、line；略過 rosbag2 自己的 Log）; <<#DDEBF7>>
+if (數據裡有可以分析的 Topic？) then (沒有)
+  :回 [ERROR]（都是 Log、沒有訊息或無法解碼）;
+  stop
+else (有)
+endif
+if (有設定源碼目錄？
+（設定 source_root 或 ~--source）) then (有)
+  :源碼索引（source_index，快取：檔案沒變就沿用）→ 這次的源碼脈絡
+・在執行的節點：Log 的節點、/<節點>/transition_event、同一個 launch 檔；沒編譯的不算
+・每個 Topic：誰發布、什麼時候發布、依賴哪些輸入 Topic、誰訂閱（沒錄到的標出來）
+・Log 的源碼位置對回程式碼（版本可能不同時標出來）
+・Log 裡的代碼在源碼成立的條件：條件讀的變數由哪個 Topic 或參數寫入、
+  在不在 PROTECTIVE_REASONS 這類集合裡; <<#DDEBF7>>
+else (沒有)
+endif
+note right
+  產物：topic_metadata.md、log_digest.md、
+  source_context.md（有源碼時）
+  源碼解析失敗不影響分析（照沒有源碼的流程）
+end note
+}
+
+partition "② Orchestrator 第一步：挑訊號（模型）" {
+:**看得到**：問題、去重後的 Log（最多 60 個訊號，WARN 以上全部；
+每行接「＠檔名:行 函式」）、Topic Metadata（每個 Topic 下面一行源碼：
+誰發布、依賴哪些輸入、誰訂閱；沒錄到的輸入清單）、限制
+（最多 4 個 worker、時間窗前後 5 秒）
+**輸出**：對問題的理解、相關訊號 L#（通常 1～4 個＋理由）、
+前後秒數、草稿指派、報告焦點; <<#FCE5CD>>
+note right
+  這一步**看不到整段源碼脈絡**：
+  實測整段源碼會讓它漏挑狀態改變的訊號
+  （指令開始的 L15：20/20 → 7/20）
+  沒有源碼時，判斷提示開著才加
+  「程式檢查：Log 提到、數據裡沒有的輸入」（名稱比對）
+end note
+:程式檢查：L# 要存在、Topic 要存在而且可分析、不重複、
+不派 /rosout、不超過上限 → 有問題列出具體的問題，交回修一次; <<#E2EFDA>>
+}
+
+if (有源碼脈絡？) then (有：分兩步)
+  partition "③ Orchestrator 第二步：帶源碼分派（模型）" {
+  :**看得到**：第一步的全部輸入＋整段源碼脈絡（在執行的節點、計時器、參數、
+  Log 裡最多 6 個代碼的成立條件）＋【第一步已經決定】（理解、L#、前後秒數，不再改）
+  **輸出**：先寫 source_reading（代碼在什麼條件下產生、讀哪個 Topic、
+  哪些是輸入、哪些是輸出），再寫每個指派：
+  Topic、**觀測角度**（view_node 的輸入／輸出）、子任務、signals、source_context; <<#FCE5CD>>
+  note right
+    **觀測角度**：同一個 Topic 是發布者的輸出、也是訂閱者的輸入；
+    子任務要說清楚從哪一端看——看輸出＝那個節點做了什麼（結果），
+    看輸入＝它收到了什麼（原因）。
+    實測：把 /cmd_vel 寫成「驗證輸入」的指派，
+    觀測角度都寫成「safety_motion_controller 的輸入」——
+    源碼裡它是輸出，程式核對得出來
+  end note
+  :程式檢查（同第一步）＋**觀測角度跟源碼核對**：
+  輸出＝view_node 要發布它，輸入＝要訂閱它（外部節點不查）
+  → 對不上交回修一次；修不好的那一項不帶觀測角度
+  → 還是給不出可用的指派就用第一步的草稿; <<#E2EFDA>>
+  }
+else (沒有)
+endif
+if (兩步都沒有可用的指派？) then (是)
+  :程式依關聯度補指派; <<#E2EFDA>>
+else (否)
+endif
+note right
+  產物：plan.json（含 draft_assignments、source_reading）、
+  prompts/orchestrator.md、orchestrator_assign.md
+end note
+
+partition "④ 時間窗與切片（程式）" {
+:時間窗：每個相關訊號的前 2 次出現，各取前後 N 秒，
+重疊的合併、限制在數據範圍內、最多 4 個（超過就合併最靠近的）；沒有相關訊號＝整段數據
+**程式補時間窗**（有源碼）：已分派 Topic 的發布節點自己印的 Log（3 次以內）不在任何時間窗
+→ 補上、交給量那個 Topic 的 worker、也放進時間線; <<#DDEBF7>>
+:切片（mcap_slicer）：每個時間窗切一份小 bag，只含指派的 Topic＋/rosout，
+每個 Topic 再帶時間窗之前的最後一則（狀態接得上）
+→ <數據>/analysis_slices/<編號>/；整段數據不切、切片失敗就讀原本的數據; <<#DDEBF7>>
+}
+
+partition "⑤ Workers（每個 Topic 一個乾淨的 session，同時 2 個）" {
+:任務說明（程式組）：子任務（L# 換成時間）、**觀測角度**、
+Topic 與時間窗（錨點只寫時間）、可量測的 Key 目錄（類別、維度、抽樣值）、
+自己 Topic 的源碼（發布者、依賴的輸入、.msg 的說明與常數、
+source_context、發布的程式碼）
+**看不到** Log、其他 Topic、使用者的問題與 Orchestrator 的理解; <<#DDEBF7>>
+note right
+  理解裡有 Log 與推測的原因：實測 worker 照著寫
+  「證實 L17 時 /cmd_vel_raw 中斷」32/40，
+  量到的卻是一段完整的發布、中間沒有中斷
+end note
+repeat
+  :worker 決定下一步（模型）
+  {thought, reply, action}：要量哪些 Key; <<#FCE5CD>>
+  :程式檢查動作：只准 mcap_feature_measure／mcap_analyzer、
+  Topic 與數據路徑由系統固定、同一個量測第 3 次擋下; <<#E2EFDA>>
+  :量測（程式算，只讀自己時間窗的切片）：數值統計、尖峰、最大跳變、
+  狀態跳轉（集合的增減、時間占比）、訊息中斷、中途開始／停止
+  最後兩行分開：程式判斷的異常（只有訊息中斷）／量到的變化（不代表異常）; <<#DDEBF7>>
+repeat while (還要量？（最多 6 步）) is (要) not (夠了)
+:沒有量測 → 催一次；還是沒有 → 系統代選 Key; <<#E2EFDA>>
+:寫局部報告（模型）：有沒有異常（工具判斷的異常，或數值明顯不合理）、
+摘要、證據、信心；**照工具的說法寫量到的現象，不推測原因**; <<#FCE5CD>>
+:程式核對局部報告：工具沒判斷出異常卻寫有異常、
+量測沒有訊息中斷卻寫「中斷／間歇／丟失」、寫了因果（導致、證實、排除…）
+→ 有就交回修一次（report_issues）; <<#E2EFDA>>
+:程式：量過的 Key 用 ~--json 重量一次，數字填進 frontmatter
+（key_metrics、program_flags、program_anomalies；模型只寫判斷）；
+訊息中斷、中途開始／停止列進證據
+（判斷提示開著：訊息中斷一定算異常）; <<#DDEBF7>>
+note right
+  產物：workers/W<n>_<topic>.md（局部報告，frontmatter 有
+  view、source_context）、.transcript.md（完整對話）
+end note
+}
+
+partition "⑥～⑧ 整合事實 → 因果推論 → 補分析（最多 2 輪；1＝不補）" {
+repeat
+  :⑥ Synthesizer：只整合事實（模型）
+  **看得到**：數據與時間窗、Topic 之間的源碼關係（誰發布、依賴哪些輸入、誰訂閱）、
+  程式整理的訊息流（中斷、恢復、開始／停止，附發布者）、各 worker 量到的事實
+  **看不到**：使用者的問題、Log、Orchestrator 的理解（推測的原因）
+  **輸出**：時間線、Topic 之間的關係（同時、先後、源碼上的）、沒有變化的、摘要; <<#FCE5CD>>
+  :程式核對：寫了因果（導致、因為、證實、排除…）、
+  量測沒有訊息中斷卻寫「中斷／間歇／丟失」→ 交回修一次；還在 → 報告的事實整合標「程式核對：未修正」; <<#E2EFDA>>
+  :⑦ Orchestrator 的因果推論（模型；因果只在這一步）
+  **看得到**：規劃時同一份問題、Log、Topic Metadata、完整源碼脈絡（11000 字內）、
+  自己規劃時的理解與假設（待驗證）、時間窗與分派、【程式檢查】【程式整理：訊息流】、
+  事實整合與各 worker 的事實、【程式整理：判定要交代的事實】【程式整理：到最後的值與最後一次停止】；
+  第 2 輪起再加【上一輪的推論】
+  **先寫**：假設的驗證（支持／推翻／看不出來）→ 因果鏈（每一環附出處：
+  L#、W#、Topic、源碼的檔名:行）→ 判定（沒有異常／有異常／無法判斷）
+  **再寫**：結論、根因、信心、尚未確認、建議、要補分析的 Topic; <<#FCE5CD>>
+  note right
+    分開「系統的反應是不是照設計」與「輸入為什麼這樣」：
+    後者看不出來就寫進尚未確認，不寫成正常結束或故障。
+    【程式檢查】（判斷提示開著）：Log 提到、但沒錄到的輸入
+    （有源碼：代碼的條件讀的 Topic；沒有源碼：名稱比對）。
+    【程式整理：訊息流】判斷提示開著才加：一段完整的發布不是中斷（為什麼停看不出來）、
+    結束後的逾時判斷、整份數據安靜時＝系統照設計反應（不寫成正常結束）
+    【程式整理：到最後的值與最後一次停止】（一直都有）：到最後跟開頭不同的值
+    （仍鎖住、仍限速…，不能寫成恢復）、回到開頭的值、一段發布的最後一次停止
+    （是不是異常看不出來）、從頭在發布的停止（附發布的時機）、同一時間一起停止
+  end note
+  :程式核對 → 交回修一次；還有問題 → 只針對留下的再交回一次；
+  還在 → 報告標「程式核對：未修正」。核對：因果鏈要有、出處要存在；判定要有事實依據
+  （有異常＝要有 WARN 以上的相關 Log、ERROR 以上的 Log 或程式判斷的異常；
+  沒有異常＝要引用每一個這類事實）；背景條件不能進因果鏈；用詞跟量測一致。
+  判斷提示開著：還是拿背景條件當原因就附更正、沒錄到的輸入列進尚未確認
+  且信心最多 medium；JSON 壞掉 → 程式拼一份信心 low、判定無法判斷的; <<#E2EFDA>>
+  if (有源碼脈絡、還沒到最多輪數、
+  推論列了要補分析的 Topic？) then (有)
+    :⑧ 程式檢查：要寫補的是「尚未確認」的第幾項（沒有尚未確認、對不到的不補）、
+    不是框架的 Topic、在那一項的上游（提到的 Topic、發布它的節點的輸入與其他輸出、
+    提到的節點的輸入與輸出；訂閱它的節點的輸出＝下游，補不了原因）；
+    Topic 要存在、可分析、還沒分析過，觀測角度跟源碼核對（最多 2 個）
+    → 這一輪的報告留成 report_r<n>.md；補派 worker（同一組時間窗，
+    不在切片裡 → 讀原本的數據），流程同 ⑤; <<#E2EFDA>>
+  else (沒有)
+    :分析以這一輪的推論結束;
+  endif
+repeat while (有補派 worker？) is (有：再整合事實、再推論) not (沒有)
+}
+
+partition "⑨ 報告（程式組合）" {
+:推論（結論、判定、根因、因果鏈、假設的驗證、尚未確認、建議）＋
+時間線（事實整合的時間線＋相關與 WARN 以上的 Log，程式依時間戳放＋訊息流事件；
+L# 的時間照 Log 校正、依時間排序）＋事實整合 → report.md（Frontmatter Markdown）；
+重點回到主對話、存成 #編號（之後可以 result_recall）→ 主對話的 AI 依報告回答; <<#DDEBF7>>
+note right
+  全部產物：job.json（每一輪的事實與推論、核對紀錄）、events.jsonl（進度）、
+  log_digest.md、topic_metadata.md、source_context.md、plan.json、
+  workers/、report.md、report_r<n>.md（補分析之前）、
+  prompts/（交給模型的完整輸入：orchestrator、orchestrator_assign、
+  synthesizer、orchestrator_causal，對照與重播用）
+end note
+stop
+}
+
+legend bottom
+  **程式輔助分四類**
+  ・事實整理（一直都有，不是推理提示）：Log 去重、時間換算、時間窗、切片、量測數字、異常與變化分開（只有訊息中斷算異常；
+    中斷的恢復、發布者的源碼一行）、計畫檢查、觀測角度核對、L# 時間校正、子任務的 L# 換成時間、時間線上的 Log 由程式放、
+    程式補時間窗、判定要交代的事實、到最後的值與最後一次停止
+  ・核對（一直都有，交回修一次；因果推論還有問題再交回一次，還在就在報告標「未修正」）：局部報告與事實整合的用詞、
+    事實整合不寫因果、因果推論的出處、判定的事實依據、背景條件不進因果鏈；補分析只往上游
+  ・名稱比對的提示（只在沒有源碼時）：Orchestrator 的缺口清單、點名名稱相近的 Topic、報告旁的提醒、「通常是共同的上游」
+  ・判斷提示（program_hints，可關）：訊息中斷一定算異常、【程式檢查】的缺的輸入與背景條件、一段完整的發布不是中斷（為什麼停看不出來）、
+    整份數據安靜時＝系統照設計反應、事後的背景條件更正與「尚未確認」＋信心上限
+  worker 與 Synthesizer 只描述事實、補充上下文；因果推論只在 Orchestrator 的最後一步，而且只根據給的事實（Log、量測結果、源碼）
+endlegend
+@enduml
