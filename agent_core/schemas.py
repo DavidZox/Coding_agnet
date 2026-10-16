@@ -273,15 +273,46 @@ ANALYSIS_PLAN_SCHEMA_SOURCE = json.loads(json.dumps(ANALYSIS_PLAN_SCHEMA))
 ANALYSIS_PLAN_SCHEMA_SOURCE["properties"]["assignments"]["items"]["properties"]["source_context"] = _text(240)
 ANALYSIS_PLAN_SCHEMA_SOURCE["properties"]["assignments"]["items"]["required"] = ["topic", "subtask", "signals", "source_context"]
 
+# 有源碼脈絡時的指派（第二步、補分析）多「觀測角度」：view_node＝Log 談到的功能所在的節點，view＝這個 Topic 對它是輸入（它訂閱的）
+# 還是輸出（它發布的）——同一個 Topic 是發布者的輸出、也是訂閱者的輸入，子任務要說清楚從哪一端看（程式用源碼核對）。
+# 欄位順序＝生成順序：先定 Topic 與觀測角度，再寫子任務
+_ANALYSIS_ASSIGNMENT_VIEW = {
+    "type": "object",
+    "properties": {
+        "topic": _text(120),
+        "view_node": _text(80),
+        "view": {"type": "string", "enum": ["輸入", "輸出"]},
+        "subtask": _text(400),
+        "signals": {"type": "array", "maxItems": 4, "items": _text(12)},
+        "source_context": _text(240),
+    },
+    "required": ["topic", "view_node", "view", "subtask", "signals", "source_context"],
+}
+
 # Orchestrator 第二步（有源碼脈絡時分兩步）：訊號與時間窗是第一步定的，這一步先寫從源碼讀到的（相關訊號的代碼在什麼條件下產生、
 # 條件讀的變數由哪個 Topic 寫入），再分派 Topic
 ANALYSIS_ASSIGN_SCHEMA = {
     "type": "object",
     "properties": {
         "source_reading": _text(400),
-        "assignments": ANALYSIS_PLAN_SCHEMA_SOURCE["properties"]["assignments"],
+        "assignments": {"type": "array", "maxItems": 8, "items": _ANALYSIS_ASSIGNMENT_VIEW},
     },
     "required": ["source_reading", "assignments"],
+}
+
+# Orchestrator 看 Synthesizer 的報告：「尚未確認」的每一項能不能用數據裡錄到、還沒分析的 Topic 補上（gaps），能補的才補派 worker
+# （assignments；空陣列＝分析結束）
+ANALYSIS_REVIEW_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "gaps": {"type": "array", "maxItems": 6, "items": {
+            "type": "object",
+            "properties": {"unknown": _text(200), "resolvable": {"type": "boolean"}, "why": _text(200)},
+            "required": ["unknown", "resolvable", "why"],
+        }},
+        "assignments": {"type": "array", "maxItems": 4, "items": _ANALYSIS_ASSIGNMENT_VIEW},
+    },
+    "required": ["gaps", "assignments"],
 }
 
 # worker 每一步的決定：同主對話的 {thought, reply, action}，字串有上限

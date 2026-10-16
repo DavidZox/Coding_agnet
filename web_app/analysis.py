@@ -27,6 +27,7 @@ def settings_view():
             "max_workers": cfg.get("max_workers"), "parallel": cfg.get("parallel"),
             "before": cfg.get("before"), "after": cfg.get("after"),
             "source_root": cfg.get("source_root") or "", "program_hints": bool(cfg.get("program_hints", True)),
+            "rounds": cfg.get("rounds"),
             "models": {r: agent.analysis_model(r) for r in ROLES},
             "think": {r: agent.analysis_think(r) for r in ROLES},
             "follows_main": {r: not cfg.get(r) for r in ROLES}}
@@ -89,6 +90,9 @@ def analysis_action(action, data):
             if "program_hints" in data:
                 cfg["program_hints"] = str(data["program_hints"]).strip().lower() in ("1", "true", "on", "yes")
                 msgs.append(f"程式的推理提示：{'開' if cfg['program_hints'] else '關'}")
+            if "rounds" in data:   # 補推理鏈最多幾輪（有源碼脈絡時；1＝不補）
+                cfg["rounds"] = _num(data["rounds"], int, 1, 3)
+                msgs.append(f"最多 {cfg['rounds']} 輪（補推理鏈）")
         except ValueError as e:
             return {"ok": False, "error": str(e)}
         agent.save_analysis_settings()

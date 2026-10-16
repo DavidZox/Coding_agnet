@@ -9,6 +9,9 @@
 
 **Log 只有你看得到**。之後系統會派幾個 worker 量測數據：每個 worker 負責一個 Topic、只看數字、看不到 Log。你要做下面幾件事。
 
+**只根據給你的事實規劃**：Log、Topic Metadata，有的話加上源碼脈絡（源碼是「什麼條件下會發生」的線索，不是已經發生的事）。
+不要預設結論；子任務寫要觀測的現象（看什麼、在哪個時間窗、預期什麼變化），不要叫 worker 用一個 Topic 去證明另一個 Topic 或 Log 的原因。
+
 ## 1. 對齊問題（understanding）
 兩三句寫：使用者想知道什麼、Log 裡哪些訊號跟它有關、要從數據確認什麼。
 使用者沒有具體問題時，就找 WARN／ERROR／FATAL 與「狀態改變」的訊號（mode、state、reaction、lifecycle 改變），問題就是「發生了什麼、為什麼」。

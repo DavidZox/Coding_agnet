@@ -159,6 +159,8 @@ def run_cases(cases, args, root):
         agent.analysis_cfg["source_root"] = "" if args.source == "-" else args.source
     if args.hints in ("on", "off"):
         agent.analysis_cfg["program_hints"] = args.hints == "on"
+    if args.rounds:
+        agent.analysis_cfg["rounds"] = args.rounds
     runs = []
     for case in cases:
         for i in range(args.runs):
@@ -215,6 +217,7 @@ def main():
     p.add_argument("--slice", default="", choices=["", "on", "off"])
     p.add_argument("--source", default=None, help="源碼目錄（受測系統的 ROS 2 工作區 src；- ＝不用；省略＝照設定）")
     p.add_argument("--hints", default="", choices=["", "on", "off"], help="程式的推理提示（off：只給數據與源碼的事實）")
+    p.add_argument("--rounds", type=int, default=0, help="補推理鏈最多幾輪（有源碼脈絡時；1＝不補；省略＝照設定）")
     p.add_argument("--container", default="ros2_web_container")
     p.add_argument("--data-root", default="")
     p.add_argument("--score", nargs="*", default=None, help="只評分這些 job 編號")

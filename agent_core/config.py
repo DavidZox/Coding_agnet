@@ -310,6 +310,10 @@ ANALYSIS_SOURCE_MAX_CHARS = {"orchestrator": 4500, "worker": 2500, "synthesizer"
 # Orchestrator 分兩步（有源碼脈絡時）：第一步只在 Log 與 Topic Metadata 裡帶源碼、挑訊號與時間窗，第二步帶整段【源碼脈絡】分派 Topic。
 # 一步做完時整段源碼會讓它漏挑狀態改變的訊號；不給整段源碼，子任務常把輸出 Topic 當輸入去驗證（設計筆記 2.19）。0／off＝一步
 ANALYSIS_PLAN_TWO_STEP = os.environ.get("AGENT_ANALYSIS_PLAN_TWO_STEP", "1").strip().lower() not in ("0", "false", "off", "no")
+# 補推理鏈（有源碼脈絡時）：Synthesizer 寫完報告，Orchestrator 看「尚未確認」的每一項能不能用數據裡錄到、還沒分析的 Topic 補上，
+# 能補就補派 worker、再整合一次。最多幾輪（1＝不補；第一輪的報告留成 report_r1.md）、每輪補派最多幾個 worker
+ANALYSIS_MAX_ROUNDS = int(os.environ.get("AGENT_ANALYSIS_ROUNDS", "2"))
+ANALYSIS_FOLLOWUP_WORKERS = 2
 # 程式的推理提示：Log 提到、數據裡沒有的輸入（名稱比對）、名稱相近的 Topic、背景條件的更正、共同的上游、一段完整的發布……
 # off：只給數據與源碼的事實，因果由模型自己推（量源碼脈絡能不能取代這些提示時用）。量測、切片、時間校正等事實處理不受影響
 ANALYSIS_PROGRAM_HINTS = os.environ.get("AGENT_ANALYSIS_PROGRAM_HINTS", "1").strip().lower() not in ("0", "false", "off", "no")

@@ -1210,6 +1210,7 @@ class JobSource:
         self.signals = [s for s in signals or [] if not _is_recorder(s.get("node"))]
         self.msg_defs = msg_defs or {}
         self.log_sites, self.unresolved, self.confirmed = {}, [], set()
+        self._code_inputs = {}
         for s in self.signals:
             for src in s.get("sources") or []:
                 line = int(src.get("line") or 0)
@@ -1401,11 +1402,9 @@ class JobSource:
             out.append(item)
         return {"token": token, "sites": out, "defs": defs[:2]}
 
-    def _inputs(self, rel, fn, cond):
-        """條件讀的東西 → 從哪裡來：成員變數（self.x、x_、this->x；區域變數往回找一次指定）由哪個 callback（收到哪個 Topic）
-        或參數寫入；模組／類別層的常數（PROTECTIVE_REASONS…）列出定義。"""
-        idx = self.idx
-        code = idx.code(rel) or {}
+    def _cond_members(self, rel, fn, cond):
+        """條件讀的成員變數（self.x、x_、this->x；區域變數往回找一次指定）與常數名稱。"""
+        code = self.idx.code(rel) or {}
         members = re.findall(r"self\.(\w+)", cond) + re.findall(r"(?<![\w.>])(\w+_)\b", cond) + re.findall(r"this->(\w+)", cond)
         consts = [c for c in re.findall(r"(?<![\w.])([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+)\b", cond)]
         if fn:
@@ -1414,6 +1413,44 @@ class JobSource:
                 rhs = assigns.get(local)
                 if rhs:
                     members += re.findall(r"self\.(\w+)", rhs) + re.findall(r"(?<![\w.>])(\w+_)\b", rhs)
+        return members, consts
+
+    def code_inputs(self, token):
+        """代碼在源碼成立的條件讀的成員變數，由哪些 Topic 的訂閱 callback 寫入 → {Topic: 「檔名:行 函式（變數 ← callback）」}。
+        給程式檢查用（Log 提到、數據裡沒錄到的輸入；一段發布結束後的逾時判斷），取代用代碼名稱比對 Topic 名稱。"""
+        if token in self._code_inputs:
+            return self._code_inputs[token]
+        idx, out = self.idx, {}
+        self._code_inputs[token] = out
+        sites, _defs = idx.token_sites(token, limit=6, prefer_files=self.prefer_files, prefer_pkgs=self.prefer_pkgs)
+        for h in sites[:2]:
+            rel, line = h["file"], h["line"]
+            fn = idx.func_at(rel, line)
+            cond = idx.ctrl_at(rel, line, fn)
+            if not cond:
+                continue
+            members, _consts = self._cond_members(rel, fn, cond[2])
+            cbs = idx.callbacks(rel)
+            for m in dict.fromkeys(members):
+                for w in idx.writers(rel, m):
+                    for kind, topic in cbs.get(w) or []:
+                        if kind == "sub" and topic:
+                            out.setdefault(topic, f"{os.path.basename(rel)}:{cond[0]} {fn[1] if fn else ''}（{m} ← {w}）".replace(" （", "（"))
+        return out
+
+    def publishers(self, topic):
+        """在執行的節點裡發布這個 Topic 的節點名稱。"""
+        return [c["name"] for c in self.nodes if any(p["topic"] == topic for p in c["pubs"])]
+
+    def subscribers(self, topic):
+        """在執行的節點裡訂閱這個 Topic 的節點名稱。"""
+        return [c["name"] for c in self.nodes if any(x["topic"] == topic for x in c["subs"])]
+
+    def _inputs(self, rel, fn, cond):
+        """條件讀的東西 → 從哪裡來：成員變數（self.x、x_、this->x；區域變數往回找一次指定）由哪個 callback（收到哪個 Topic）
+        或參數寫入；模組／類別層的常數（PROTECTIVE_REASONS…）列出定義。"""
+        idx = self.idx
+        members, consts = self._cond_members(rel, fn, cond)
         cbs = idx.callbacks(rel)
         out = []
         for call in dict.fromkeys(re.findall(r"(?:self\.|this->)?([A-Za-z_]\w*)\s*\(", cond)):

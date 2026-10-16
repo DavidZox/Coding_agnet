@@ -36,10 +36,10 @@ def fixture(name):
 class FakeChat:
     """依 format（schema）分辨角色：Orchestrator／Worker 的每一步／Worker 的局部報告／Synthesizer／主對話。各自照劇本依序回答。"""
 
-    def __init__(self, schemas, plans=(), assigns=(), worker=(), reports=(), synth=(), main=()):
+    def __init__(self, schemas, plans=(), assigns=(), reviews=(), worker=(), reports=(), synth=(), main=()):
         self.s = schemas
-        self.q = {"plan": list(plans), "assign": list(assigns), "worker": list(worker), "report": list(reports), "synth": list(synth),
-                  "main": list(main)}
+        self.q = {"plan": list(plans), "assign": list(assigns), "review": list(reviews), "worker": list(worker), "report": list(reports),
+                  "synth": list(synth), "main": list(main)}
         self.seen = {k: [] for k in self.q}
 
     def _next(self, role, default):
@@ -51,6 +51,8 @@ class FakeChat:
             role, default = "plan", {}
         elif format is self.s.get("assign"):   # Orchestrator 的第二步（有源碼脈絡時：帶源碼分派）
             role, default = "assign", {}
+        elif format is self.s.get("review"):   # 補推理鏈：Orchestrator 看報告的尚未確認（預設：都不能補）
+            role, default = "review", {"gaps": [], "assignments": []}
         elif format is self.s["worker"]:
             role, default = "worker", {"thought": "量測夠了", "reply": "完成", "action": None}
         elif format is self.s["report"]:
@@ -233,9 +235,10 @@ def main():
         from agent_core.protocol import is_exempt_result
         from web_app.state import agent, state
         from web_app import flows
-        from agent_core.schemas import ANALYSIS_ASSIGN_SCHEMA, ANALYSIS_PLAN_SCHEMA_SOURCE
+        from agent_core.schemas import ANALYSIS_ASSIGN_SCHEMA, ANALYSIS_PLAN_SCHEMA_SOURCE, ANALYSIS_REVIEW_SCHEMA
         schemas = {"plan": ANALYSIS_PLAN_SCHEMA, "plan_src": ANALYSIS_PLAN_SCHEMA_SOURCE, "assign": ANALYSIS_ASSIGN_SCHEMA,
-                   "worker": ANALYSIS_WORKER_REPLY_SCHEMA, "report": ANALYSIS_WORKER_REPORT_SCHEMA, "synth": ANALYSIS_REPORT_SCHEMA}
+                   "review": ANALYSIS_REVIEW_SCHEMA, "worker": ANALYSIS_WORKER_REPLY_SCHEMA, "report": ANALYSIS_WORKER_REPORT_SCHEMA,
+                   "synth": ANALYSIS_REPORT_SCHEMA}
         agent.target_container = "ros2_web_container"
         agent.analysis_cfg.update(parallel=1, max_workers=3)
         GOOD_PLAN = {"understanding": "安全閘在開頭進入保護停止，之後恢復", "before_sec": 5, "after_sec": 5,
@@ -794,6 +797,54 @@ def main():
                 aj.ANALYSIS_PLAN_TWO_STEP = True
             assert not fake.seen["assign"] and job["plan"]["assignments"][0]["source_context"] == "第一步的線索"
 
+        def t_view_gaps_review():
+            # 有源碼脈絡、判斷提示開：①【程式檢查】的缺的輸入用源碼判斷（代碼的條件讀的變數由 /cmd_vel_raw 的 callback 寫入），不用名稱比對；
+            # ② 觀測角度：節點沒有發布／訂閱這個 Topic 就交回修（源碼核對），worker 的任務說明寫出觀測角度；
+            # ③ 補推理鏈：Orchestrator 看尚未確認、補派還沒分析的 Topic（讀原本的數據），Synthesizer 再整合一次，第一輪的報告留成 report_r1.md；
+            #    都不能補就結束（只有一輪）
+            ws = make_demo_ws(os.path.join(tmp, "demo_ws3"))
+            bad = {"source_reading": "NO_CMD_VEL_RAW 讀 /cmd_vel_raw", "assignments": [
+                {"topic": "/cmd_vel", "view_node": "safety_motion_controller", "view": "輸出", "subtask": "看輸出有沒有歸零", "signals": ["L28"], "source_context": "無"},
+                {"topic": "/system/safety_command", "view_node": "safety_motion_controller", "view": "輸出", "subtask": "看反應", "signals": ["L28"], "source_context": "無"}]}
+            good = json.loads(json.dumps(bad))
+            good["assignments"][1]["view"] = "輸入"
+            review = {"gaps": [{"unknown": "診斷的上游", "resolvable": True, "why": "/diagnostics_agg 有錄到、還沒分析"}],
+                      "assignments": [{"topic": "/diagnostics_agg", "view_node": "system_health_monitor", "view": "輸入", "subtask": "看診斷有沒有中斷",
+                                       "signals": [], "source_context": "無"}]}
+
+            def run(**kw):
+                fake, _ = setup(**kw)
+                agent.analysis_cfg.update(source_root=ws, program_hints=True)
+                try:
+                    agent.analysis_run(f'--data {DATA} "安全閘為什麼停下來"')
+                finally:
+                    agent.analysis_cfg.update(source_root="", program_hints=True)
+                d = os.path.join(agent.analysis_jobs_dir(), agent.analysis_last["id"])
+                return fake, d, json.load(open(os.path.join(d, "job.json"), encoding="utf-8"))
+            fake, d, job = run(plans=[GOOD_PLAN], assigns=[bad, good], reviews=[review], synth=[SYNTH, SYNTH])
+            fix = fake.seen["assign"][1][1]["content"]
+            assert "/system/safety_command 不是 safety_motion_controller 的輸出：源碼裡 safety_motion_controller 沒有發布它" in fix, fix[-600:]
+            views = {a["topic"]: (a.get("view_node"), a.get("view")) for a in job["plan"]["assignments"]}
+            assert views == {"/cmd_vel": ("safety_motion_controller", "輸出"), "/system/safety_command": ("safety_motion_controller", "輸入")}, views
+            briefs = [m[1]["content"] for m in fake.seen["worker"]]
+            assert any("【觀測角度】/cmd_vel 是 safety_motion_controller 的輸出（它發布的結果）" in b for b in briefs), briefs[0][:800]
+            synth1 = fake.seen["synth"][0][1]["content"]
+            assert "NO_CMD_VEL_RAW（L28" in synth1 and "的條件讀的輸入 /cmd_vel_raw 沒有被錄到" in synth1 and "名稱含" not in synth1, synth1[-2500:]
+            assert job["coverage_gaps"][0]["source"].startswith("gate.py:"), job["coverage_gaps"]
+            # 補推理鏈：補派 /diagnostics_agg（W3，第 2 輪、讀原本的數據），Synthesizer 整合第 2 輪
+            assert len(fake.seen["review"]) == 1 and "U1 /cmd_vel_raw 不在數據裡" in fake.seen["review"][0][1]["content"]
+            assert [w["topic"] for w in job["workers"]] == ["/cmd_vel", "/system/safety_command", "/diagnostics_agg"] and job["workers"][2]["round"] == 2
+            assert '"slice"' not in fake.seen["worker"][-1][1]["content"] and len(job["rounds"]) == 2, job["rounds"]
+            synth2 = fake.seen["synth"][1][1]["content"]
+            assert "【上一輪的報告（補分析之前）】" in synth2 and "補派：W3 /diagnostics_agg" in synth2 and "（第 2 輪補派）" in synth2, synth2[-1500:]
+            assert os.path.exists(os.path.join(d, "report_r1.md")) and os.path.exists(os.path.join(d, "prompts", "orchestrator_review.md"))
+            md = open(os.path.join(d, "workers", "W3_diagnostics_agg.md"), encoding="utf-8").read()
+            assert 'view: "system_health_monitor 的輸入"' in md and "round: 2" in md, md[:600]
+            # 都不能補：只有一輪
+            fake, d, job = run(plans=[GOOD_PLAN], assigns=[good], synth=[SYNTH])
+            assert len(fake.seen["review"]) == 1 and len(job["rounds"]) == 1 and job["reviews"][0]["assignments"] == []
+            assert not os.path.exists(os.path.join(d, "report_r1.md"))
+
         for name, fn in [("Orchestrator：不存在的 L#／Topic、Log Topic、重複的 Topic 交回修一次（程式列出具體的問題）", t_plan_repair),
                          ("Orchestrator：同一個 L# 列兩次只合併、不交回修正", t_plan_duplicate_signal),
                          ("訊息流：一段完整的發布不強制算異常、交給 Synthesizer「完整的發布」；中斷照樣強制", t_segment_not_fault),
@@ -812,7 +863,9 @@ def main():
                          ("源碼索引：Python／C++ 的發布、訂閱、計時器、參數；沒編譯的不算；Log 的路徑對回源碼；在執行的節點；依賴的輸入與代碼的條件",
                           t_source_index),
                          ("源碼脈絡：Orchestrator 分兩步（先挑訊號、再帶【源碼脈絡】分派；給不出就用第一步的）、Worker 與 Synthesizer 拿到【源碼脈絡】、計畫多 source_context、關閉程式提示時沒有【程式檢查】；產物 source_context.md、prompts/",
-                          t_source_context_pipeline)]:
+                          t_source_context_pipeline),
+                         ("有源碼脈絡：缺的輸入用源碼判斷（不用名稱比對）、觀測角度用源碼核對、補推理鏈（補派、第 2 輪整合、report_r1.md；不能補就結束）",
+                          t_view_gaps_review)]:
             check(name, fn)
     finally:
         os.chdir(cwd)
