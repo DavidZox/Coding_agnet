@@ -884,11 +884,26 @@ def main():
             assert [a["topic"] for a in rv["followups"]] == ["/diagnostics_agg"] and rv["followups"][0]["fills"].startswith("system_health_monitor 的輸入"), rv
             assert any("/parameter_events 是 ROS 2 框架的 Topic" in x for x in rv["issues"]), rv["issues"]
             assert "/parameter_events" not in synth1.split("還沒分析的 Topic：")[1], "框架的 Topic 不列進補分析的候選"
-            # 補分析的 Topic 跟它要補的那一項在源碼上沒有關係：不補（那一項沒提到這個 Topic、發布或訂閱它的節點、這些節點的其他 Topic）
+            # 補分析的 Topic 不在它要補的那一項的上游：不補（那一項沒提到這個 Topic、發布它的節點、這個節點的輸入與其他輸出）
             unrelated = dict(more, unknowns=["lifecycle manager 為什麼發起重啟"])
             fake, d, job = run(plans=[GOOD_PLAN], assigns=[good], causal=[unrelated])
             assert len(job["rounds"]) == 1 and job["reviews"][0]["followups"] == [], job["reviews"]
-            assert any("在源碼上沒有關係" in x for x in job["reviews"][0]["issues"]), job["reviews"][0]["issues"]
+            assert any("/diagnostics_agg 不在它要補的" in x for x in job["reviews"][0]["issues"]), job["reviews"][0]["issues"]
+            # 只往上游：「/diagnostics_agg 為什麼停」不能補量訂閱它的 MON 的輸出 /system/safety_command（下游）；
+            # 「/system/safety_command 為什麼停」可以補量發布它的 MON 的輸入 /diagnostics_agg（上游）
+            only = {"source_reading": good["source_reading"], "assignments": [good["assignments"][0]]}
+            down = dict(more, unknowns=["/diagnostics_agg 為什麼在 +2s 停止發布"],
+                        followups=[{"unknown": 1, "topic": "/system/safety_command", "view_node": "system_health_monitor", "view": "輸出",
+                                    "subtask": "看安全指令有沒有停", "signals": [], "source_context": "無"}])
+            fake, d, job = run(plans=[GOOD_PLAN], assigns=[only], causal=[down])
+            assert job["reviews"][0]["followups"] == [] and any("/system/safety_command 不在它要補的" in x and "下游" in x
+                                                                for x in job["reviews"][0]["issues"]), job["reviews"]
+            up = dict(more, unknowns=["/system/safety_command 為什麼在 +2s 停止發布"],
+                      followups=[{"unknown": 1, "topic": "/diagnostics_agg", "view_node": "system_health_monitor", "view": "輸入",
+                                  "subtask": "看診斷有沒有停", "signals": [], "source_context": "無"}])
+            fake, d, job = run(plans=[GOOD_PLAN], assigns=[only], facts=[FACTS, FACTS], causal=[up, CAUSAL])
+            assert [a["topic"] for a in job["reviews"][0]["followups"]] == ["/diagnostics_agg"], job["reviews"]
+            assert "只能往上游補" in fake.seen["causal"][0][1]["content"]
             # 補分析沒寫它補哪一項尚未確認、或沒有尚未確認：不補
             nofill = dict(CAUSAL, unknowns=[], followups=[dict(more["followups"][0], unknown=1)])
             fake, d, job = run(plans=[GOOD_PLAN], assigns=[good], causal=[nofill])
@@ -929,6 +944,56 @@ def main():
             assert _interrupt_words("根因為 /cmd_vel_raw 指令源頭中斷") == ["中斷"]
             assert job["causal_checks"][0]["left"] == [] and job["report"]["root_cause"].startswith(CAUSAL["root_cause"]), job["causal_checks"]
             assert os.path.exists(os.path.join(job_dir, "prompts", "orchestrator_causal_2.md"))
+            assert job["report"]["unresolved"] == [] and "程式核對：未修正" not in open(os.path.join(job_dir, "report.md"), encoding="utf-8").read()
+            # 修一次之後還有：只針對留下的問題再交回一次（第三版修好就沒事）；還在就在報告標「程式核對：未修正」
+            fake, calls = setup(plans=[plan], worker=[measure], reports=[good], facts=[FACTS], causal=[causal_bad, causal_bad, CAUSAL])
+            agent.analysis_run(f'--data {DATA} "安全閘為什麼停下來"')
+            job_dir = os.path.join(agent.analysis_jobs_dir(), agent.analysis_last["id"])
+            job = json.load(open(os.path.join(job_dir, "job.json"), encoding="utf-8"))
+            third = fake.seen["causal"][2][1]["content"]
+            assert len(fake.seen["causal"]) == 3 and "【程式檢查：還沒修好的問題——只修正這幾處" in third and "寫了「安全指令中斷」" in third, third[-800:]
+            assert job["causal_checks"][0]["left2"] == [] and job["report"]["unresolved"] == [], job["causal_checks"]
+            fake, calls = setup(plans=[plan], worker=[measure], reports=[good], facts=[facts_bad, facts_bad],
+                                causal=[causal_bad, causal_bad, causal_bad])
+            text = agent.analysis_run(f'--data {DATA} "安全閘為什麼停下來"')
+            job_dir = os.path.join(agent.analysis_jobs_dir(), agent.analysis_last["id"])
+            job = json.load(open(os.path.join(job_dir, "job.json"), encoding="utf-8"))
+            md = open(os.path.join(job_dir, "report.md"), encoding="utf-8").read()
+            assert len(fake.seen["causal"]) == 3 and job["report"]["unresolved"] and "寫了「安全指令中斷」" in job["report"]["unresolved"][0], job["report"]
+            assert "## ⚠️ 程式核對：未修正" in md and md.index("## ⚠️ 程式核對：未修正") < md.index("## 根因"), md[:1500]
+            assert "⚠️ 程式核對：未修正：寫了「因為」" in md and job["report"]["facts_unresolved"], "事實整合修一次還在：事實整合那一節標示"
+            assert "程式核對：未修正（這幾處跟量到的事實對不上" in text, text[:1200]
+
+        def t_end_states():
+            # 到最後的值與最後一次停止（程式整理，給因果推論）：到最後跟開頭不同的值、回到開頭的值（同一個 Topic 變化一樣的 Key 併一行）、
+            # 中途開始的一段發布的最後一次停止（是不是異常看不出來）、從頭就在發布的停止（推到發布它的節點）、同一時間一起停止
+            from agent_core.analysis_job import _end_states
+            b = 1_000_000_000_000_000_000
+            sec = lambda x: b / 1e9 + x   # noqa: E731
+            job = {"index": {"start_ns": b, "end_ns": b + 40_000_000_000, "topics": [
+                       {"topic": "/gate", "first_sec": sec(0.0), "last_sec": sec(16.5)},
+                       {"topic": "/diag", "first_sec": sec(0.0), "last_sec": sec(39.9)},
+                       {"topic": "/raw", "first_sec": sec(9.0), "last_sec": sec(20.0)},
+                       {"topic": "/cmd", "first_sec": sec(0.0), "last_sec": sec(15.0)},
+                       {"topic": "/agg", "first_sec": sec(0.0), "last_sec": sec(15.1)}]},
+                   "windows": [{"id": "W1", "start_ns": b + 10_000_000_000, "end_ns": b + 30_000_000_000}],
+                   "workers": [
+                       {"n": 1, "topic": "/gate", "status": "done", "key_metrics": {"W1": {"_rate": {"messages": 1}, "mode": {
+                           "transitions": 1, "first": "NORMAL", "last": "ESTOP_LATCHED", "changes": [f"NORMAL → ESTOP_LATCHED @{sec(16.5)}"]}}}},
+                       {"n": 2, "topic": "/diag", "status": "done", "key_metrics": {"W1": {"_rate": {"messages": 200}, **{
+                           f"level[{k}]": {"transitions": 2, "first": "0", "last": "0", "changes": [f"0 → 2 @{sec(16.5)}", f"2 → 0 @{sec(20.5)}"]}
+                           for k in ("a", "b")}}}},
+                       {"n": 3, "topic": "/raw", "status": "done", "key_metrics": {"W1": {"_rate": {
+                           "messages": 110, "published_only": [sec(9.0), sec(20.0)]}, "x": {"constant": 0.1}}}},
+                       {"n": 4, "topic": "/cmd", "status": "done", "key_metrics": {"W1": {"_rate": {"messages": 50, "stopped_after": sec(15.0)}}}},
+                       {"n": 5, "topic": "/agg", "status": "done", "key_metrics": {"W1": {"_rate": {"messages": 51, "stopped_after": sec(15.1)}}}}]}
+            out = _end_states(job)
+            assert "- W1 /gate mode：NORMAL → ESTOP_LATCHED（+16.50s），之後到數據結束（+40.00s）沒有新的訊息，最後一則是 ESTOP_LATCHED" in out, out
+            assert "回到時間窗開頭的值：W2 /diag level[a] 等 2 個 Key＝0（+20.50s）" in out, out
+            assert "- W3 /raw：+9.00s 中途開始發布，+20.00s 最後一次停止" in out and "不要算成異常" in out, out
+            assert "- W4 /cmd：從數據開頭就在發布，+15.00s 停止之後沒有恢復" in out and "同一時間（+15.00s）一起停止：/cmd、/agg" in out, out
+            assert "某一項錯誤解除，不代表其他狀態也恢復" in out
+            assert _end_states(dict(job, workers=[])) == ""
 
         def t_causal_checks():
             # 因果推論的程式核對：因果鏈要有、出處要存在；判定要有事實依據（「有異常」要有異常的事實、「沒有異常」要引用每一個異常的事實）；
@@ -984,7 +1049,9 @@ def main():
                           "report_r1.md；不補就結束）", t_view_gaps_review),
                          ("只根據事實：worker 只拿子任務（L# 換成時間、沒有理解與問題）；局部報告與報告的用詞跟量測不符（停止寫成中斷、寫因果）交回修一次",
                           t_fact_wording),
-                         ("因果推論的程式核對：因果鏈與出處、判定的事實依據（有異常／沒有異常）、背景條件不能進因果鏈；時間線的 Log 由程式放", t_causal_checks)]:
+                         ("因果推論的程式核對：因果鏈與出處、判定的事實依據（有異常／沒有異常）、背景條件不能進因果鏈；時間線的 Log 由程式放", t_causal_checks),
+                         ("到最後的值與最後一次停止：沒有回到開頭的值、回到開頭的（相同的 Key 併一行）、一段發布的最後一次停止、從頭在發布的停止、一起停止",
+                          t_end_states)]:
             check(name, fn)
     finally:
         os.chdir(cwd)

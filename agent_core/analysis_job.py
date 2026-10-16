@@ -967,15 +967,18 @@ class AnalysisMixin:
             fix = (user + "\n\n【上一版事實整合】\n" + json.dumps(data, ensure_ascii=False)[:5000]
                    + "\n\n【程式檢查發現的問題：修正後輸出完整的事實整合】\n" + "\n".join(f"- {x}" for x in issues))
             data2 = self._analysis_session(job, "analysis_synthesizer", "synthesizer", system, fix, ANALYSIS_FACTS_SCHEMA, 3072)
-            job.setdefault("facts_checks", []).append({"round": rnd, "issues": issues, "left": _facts_issues(job, data2) if data2 else None})
+            remain = _facts_issues(job, data2) if data2 else None
+            job.setdefault("facts_checks", []).append({"round": rnd, "issues": issues, "left": remain})
             data = data2 or data
+            issues = remain if data2 else issues   # 修完還在的（沒有給出新的一版：第一版的問題）
         if not data:
             self._analysis_note(job, "🧩 Synthesizer 沒有給出事實整合，由程式拼一份（各 worker 的摘要與訊息流）")
-            data = _fallback_facts(job)
+            data, issues = _fallback_facts(job), []
         return {"summary": _short(data.get("summary"), 600),
                 "timeline": [x for x in data.get("timeline") or [] if isinstance(x, dict)][:14],
                 "relations": [x for x in data.get("relations") or [] if isinstance(x, dict)][:6],
-                "unchanged": [x for x in data.get("unchanged") or [] if isinstance(x, dict)][:6]}
+                "unchanged": [x for x in data.get("unchanged") or [] if isinstance(x, dict)][:6],
+                "unresolved": list(issues or [])}   # 交回一次還沒修好的：報告的事實整合標「程式核對：未修正」
 
     def _analysis_causal(self, job, rnd, facts):
         """Orchestrator 的因果推論（因果只在這一步）：問題、Log、源碼、規劃時的假設、事實整合、各 worker 的事實 → 假設的驗證、因果鏈、
@@ -1007,8 +1010,23 @@ class AnalysisMixin:
                    + "\n\n【程式檢查發現的問題：修正後輸出完整的推論】\n" + "\n".join(f"- {x}" for x in issues))
             data2 = self._analysis_session(job, "analysis_orchestrator_causal", "orchestrator", system, fix, ANALYSIS_CAUSAL_SCHEMA, 4096,
                                            label="orchestrator_causal")
-            job.setdefault("causal_checks", []).append({"round": rnd, "issues": issues, "left": _causal_issues(job, data2) if data2 else None})
+            remain = _causal_issues(job, data2) if data2 else issues   # 沒有給出新的一版：第一版的問題都還在
+            rec = {"round": rnd, "issues": issues, "left": remain if data2 else None}
             data = data2 or data
+            if data2 and remain:   # 修一次之後還有（實測只給源碼時 55 次有 3 次）：只針對留下的問題再交回一次，其他照上一版
+                self._analysis_note(job, f"🧭 修正後還有 {len(remain)} 個問題，再交回一次（只修這幾處）：{'；'.join(remain)[:200]}")
+                fix2 = (user + "\n\n【上一版推論（已經照程式檢查修過一次）】\n" + json.dumps(data2, ensure_ascii=False)[:6000]
+                        + "\n\n【程式檢查：還沒修好的問題——只修正這幾處，其他欄位照上一版輸出完整的推論】\n" + "\n".join(f"- {x}" for x in remain))
+                data3 = self._analysis_session(job, "analysis_orchestrator_causal", "orchestrator", system, fix2, ANALYSIS_CAUSAL_SCHEMA, 4096,
+                                               label="orchestrator_causal")
+                left3 = _causal_issues(job, data3) if data3 else None
+                rec["left2"] = left3
+                if data3 and left3 is not None and len(left3) <= len(remain):
+                    data, remain = data3, left3
+            job.setdefault("causal_checks", []).append(rec)
+            unresolved = list(remain or [])
+        else:
+            unresolved = []
         job["causal_raw"] = json.loads(json.dumps(data, ensure_ascii=False)) if data else None   # 模型原本寫的（程式更正之前）
         if not data:
             self._analysis_note(job, "🧭 Orchestrator 沒有給出因果推論，由程式拼一份信心 low 的報告（只列量到的事實）")
@@ -1018,7 +1036,10 @@ class AnalysisMixin:
                   "verdict": data.get("verdict") or "無法判斷", "conclusion": data.get("conclusion") or "",
                   "root_cause": data.get("root_cause") or "", "confidence": data.get("confidence") or "low",
                   "unknowns": [str(u) for u in data.get("unknowns") or [] if str(u).strip()][:5],
-                  "recommendations": [str(u) for u in data.get("recommendations") or [] if str(u).strip()][:5]}
+                  "recommendations": [str(u) for u in data.get("recommendations") or [] if str(u).strip()][:5],
+                  "unresolved": unresolved}   # 程式核對交回兩次還沒修好的問題：報告上標「程式核對：未修正」
+        if unresolved:
+            self._analysis_note(job, f"⚠️ 因果推論交回兩次還有 {len(unresolved)} 個問題，報告標示「程式核對：未修正」")
         own = list(causal["unknowns"])   # 模型自己寫的尚未確認（補分析的 unknown 對的是這幾項；程式之後補的不算）
         if hints:   # 程式保證：拿背景條件當原因附更正（核對交回之後還是）；Log 提到、沒錄到的輸入一定在「尚未確認」、信心最多 medium
             relied = [c for c in bg if _relies_on(causal["root_cause"], c) or _relies_on(causal["conclusion"], c)]
@@ -1053,8 +1074,8 @@ class AnalysisMixin:
                 elif source_index.is_framework_topic(topic if topic.startswith("/") else "/" + topic):
                     problems.append(f"{topic} 是 ROS 2 框架的 Topic，補不了因果鏈，不補")
                 elif not _related_to(job["_source"], topic if topic.startswith("/") else "/" + topic, own[k - 1]):
-                    problems.append(f"{topic} 跟它要補的「{_short(own[k - 1], 40)}」在源碼上沒有關係（那一項沒有提到這個 Topic、發布或訂閱它的節點、"
-                                    "這些節點的其他 Topic），不補")
+                    problems.append(f"{topic} 不在它要補的「{_short(own[k - 1], 40)}」的上游（那一項提到的 Topic、發布它的節點的輸入與其他輸出、"
+                                    "提到的節點的輸入與輸出），不補——下游的輸出補不了原因")
                 else:
                     items.append(f)
                     fills[topic if topic.startswith("/") else "/" + topic] = own[k - 1]
@@ -1098,9 +1119,10 @@ class AnalysisMixin:
             self._analysis_note(job, f"🛠 時間線：補上 {added} 個訊息流的事件（Topic 的中斷、恢復、中途開始或停止）")
         evidence = ([{"source": x.get("topics"), "fact": x.get("fact")} for x in facts["relations"]]
                     + [{"source": x.get("source"), "fact": x.get("fact")} for x in facts["unchanged"]])
-        data = dict(causal, timeline=sorted(timeline, key=_timeline_key), evidence=evidence, facts_summary=facts.get("summary"))
+        data = dict(causal, timeline=sorted(timeline, key=_timeline_key), evidence=evidence, facts_summary=facts.get("summary"),
+                    facts_unresolved=facts.get("unresolved") or [])
         job["report"] = {k: data.get(k) for k in ("conclusion", "root_cause", "confidence", "verdict", "timeline", "evidence", "unknowns",
-                                                  "recommendations", "chain", "hypotheses", "facts_summary")}
+                                                  "recommendations", "chain", "hypotheses", "facts_summary", "unresolved", "facts_unresolved")}
         return data
 
     def _render_report(self, job, data, facts):
@@ -1126,8 +1148,11 @@ class AnalysisMixin:
         lines = [frontmatter(fm), f"# 數據診斷報告\n\n**問題**：{job['question']}\n\n**數據**：{job.get('data_label')}（{job['data']}，"
                                   f"{job.get('duration_sec')} 秒）\n",
                  f"## 結論\n{data.get('conclusion') or '-'}\n",
-                 f"## 判定：{data.get('verdict') or '-'}（信心：{data.get('confidence')}）\n",
-                 f"## 根因\n{data.get('root_cause') or '-'}\n"]
+                 f"## 判定：{data.get('verdict') or '-'}（信心：{data.get('confidence')}）\n"]
+        if data.get("unresolved"):   # 程式核對交回兩次還沒修好的：讀報告的人要知道哪幾處跟事實對不上
+            lines.append("## ⚠️ 程式核對：未修正\n交回 Orchestrator 兩次還沒修好，讀結論與因果鏈時以事實為準：\n"
+                         + "\n".join(f"- {x}" for x in data["unresolved"]) + "\n")
+        lines.append(f"## 根因\n{data.get('root_cause') or '-'}\n")
         if data.get("chain"):
             lines.append("## 因果鏈（Orchestrator）\n| 時間 | 事件 | 出處 |\n|---|---|---|\n" + "\n".join(
                 f"| {x.get('time')} | {x.get('event')} | {'、'.join(x.get('refs') or [])} |" for x in data["chain"]) + "\n")
@@ -1142,6 +1167,7 @@ class AnalysisMixin:
             lines.append("## 時間線（事實）\n| 時間 | 來源 | 事件 |\n|---|---|---|\n" + "\n".join(
                 f"| {t.get('time')} | {t.get('source')} | {t.get('event')} |" for t in data["timeline"]) + "\n")
         lines.append("## 事實整合（Synthesizer）\n" + (facts.get("summary") or "-") + "\n"
+                     + "".join(f"- ⚠️ 程式核對：未修正：{x}\n" for x in facts.get("unresolved") or [])
                      + "".join(f"- **{x.get('topics')}**：{x.get('fact')}\n" for x in facts.get("relations") or [])
                      + "".join(f"- 沒有變化：**{x.get('source')}**：{x.get('fact')}\n" for x in facts.get("unchanged") or []))
         lines.append("## 分析過程\n" + f"- Orchestrator 規劃時的理解：{plan['understanding']}\n"
@@ -1171,6 +1197,9 @@ class AnalysisMixin:
                             for w in job["windows"]),
                  f"結論：{data.get('conclusion')}", f"判定：{data.get('verdict')}（信心 {data.get('confidence')}）",
                  f"根因：{data.get('root_cause')}"]
+        if data.get("unresolved") or data.get("facts_unresolved"):
+            lines.append("程式核對：未修正（這幾處跟量到的事實對不上，回答時以事實為準）：" + "；".join(
+                _short(x, 160) for x in (data.get("unresolved") or []) + (data.get("facts_unresolved") or [])))
         if data.get("chain"):
             lines.append("因果鏈：\n" + "\n".join(f"- {x.get('time')}｜{x.get('event')}（{'、'.join(x.get('refs') or [])}）" for x in data["chain"][:6]))
         if data.get("timeline"):
@@ -1754,7 +1783,8 @@ def _causal_user(job, facts, gap_text, flow, reminders, allow, left):
                  + "；" + ("只停止發布或一段完整的發布（不是中斷）：" + "、".join(stops) if stops else "其他 Topic 沒有中斷")
                  + "——停止就寫「停止發布」，不要寫成中斷")
     follow = (f"followups：unknowns 裡缺的環節能用下面這些錄到、還沒分析的 Topic 在同一組時間窗量到，才指派（最多 {ANALYSIS_FOLLOWUP_WORKERS} 個；"
-              "每一項的 unknown 寫它補的是 unknowns 的第幾項（從 1 開始）；" + _VIEW_LINE
+              "每一項的 unknown 寫它補的是 unknowns 的第幾項（從 1 開始）；只能往上游補：要補「X 為什麼停、為什麼變」，只能量 X 本身、"
+              "發布 X 的節點的輸入與其他輸出——訂閱 X 的節點的輸出（下游）只看得到 X 的影響；" + _VIEW_LINE
               + "）因果鏈已經完整、沒有 unknowns，或缺的是沒錄到的 Topic、節點內部的狀態，就給空陣列。還沒分析的 Topic："
               + "、".join(left[:15]) if allow else "followups：這一輪不能再補分析，給空陣列。")
     return (job["_plan_head"] + _source_text(job, "causal", related=[r["id"] for r in plan["related"]]).lstrip("\n")
@@ -1767,6 +1797,7 @@ def _causal_user(job, facts, gap_text, flow, reminders, allow, left):
             + f"\n\n【Synthesizer 的事實整合】\n摘要：{facts.get('summary') or '（沒有）'}\n時間線：\n{ftl}\nTopic 之間的關係：\n{frel}\n沒有變化：\n{fun}"
             + f"\n\n【各 worker 量到的事實】\n{workers}"
             + checklist
+            + _end_states(job)
             + _previous_causal_text(job)
             + "\n\n【這一步：因果推論】先寫 hypotheses、chain（每一環的 refs 寫 L#、W#、Topic 或源碼的檔名:行）、verdict，再寫 conclusion、"
               f"root_cause、confidence、unknowns、recommendations。{follow}\n（每個欄位都用繁體中文寫；時間寫成 +秒）")
@@ -1797,16 +1828,22 @@ def _ref_parts(job, ref):
     return ok, bad
 
 
-def _related_to(js, topic, text):
-    """補分析的 Topic 跟它要補的那一項尚未確認，在源碼上有沒有關係：那一項提到這個 Topic、發布或訂閱它的節點，或這些節點的其他 Topic。
-    實測（第八輪）沒有這一條時，Orchestrator 幾乎都補量剩下的 /diagnostics_toplevel_state 去補「lifecycle manager 為什麼重啟」
-    「/cmd_vel_raw 為什麼沒發布」這類它答不了的項目（55 次 13 次，判定都沒變）。"""
+def _upstream_of(js, text):
+    """尚未確認的那一項談到的 Topic 與節點 → 往上游可以量的 Topic：提到的 Topic 本身、發布它的節點的輸入（訂閱）與其他輸出；
+    提到的節點的輸入與輸出。不含訂閱它的節點（下游）的輸出——下游只看得到它的影響，補不了它為什麼停、為什麼變。"""
     t = str(text or "")
-    nodes = set(js.publishers(topic)) | set(js.subscribers(topic))
-    linked = {x["topic"] for c in js.nodes if c["name"] in nodes for x in c["pubs"] + c["subs"]}
-    topics = {topic} | linked
-    return (any(re.search(re.escape(x) + r"(?![A-Za-z0-9_/])", t) for x in topics if x)
-            or any(n and n in t for n in nodes))
+    named = {x for c in js.nodes for x in [p["topic"] for p in c["pubs"]] + [x["topic"] for x in c["subs"]]
+             if x and re.search(re.escape(x) + r"(?![A-Za-z0-9_/])", t)} | set(re.findall(r"/[A-Za-z0-9_/]+", t))
+    nodes = {c["name"] for c in js.nodes if c["name"] and c["name"] in t} | {n for x in named for n in js.publishers(x)}
+    return named | {x["topic"] for c in js.nodes if c["name"] in nodes for x in c["pubs"] + c["subs"]}
+
+
+def _related_to(js, topic, text):
+    """補分析的 Topic 在它要補的那一項尚未確認的上游（_upstream_of）。
+    實測（第八輪）：只看「源碼上有沒有關係」時，110 次有 3 次補量下游的 /cmd_vel、/system/safety_gate_status 去補「/cmd_vel_raw
+    為什麼停」——/cmd_vel_raw 的發布者不在源碼裡，下游的輸出答不了；更早沒有這一條時，55 次有 13 次補量 /diagnostics_toplevel_state
+    去補「lifecycle manager 為什麼重啟」這類它答不了的項目。"""
+    return topic in _upstream_of(js, text)
 
 
 def _abnormal_facts(job):
@@ -1824,6 +1861,109 @@ def _abnormal_facts(job):
         if w.get("program_anomalies"):
             out[f"W{w['n']}"] = f"{w['topic']} {w['program_anomalies'][0]}"
     return out
+
+
+def _start_val(v):
+    """一個 Key 在一個時間窗開頭的值（狀態 Key 的 first、常數，或第一次變化之前的值）。"""
+    if "first" in v:
+        return str(v["first"])
+    if "constant" in v:
+        return str(v["constant"])
+    ch = v.get("changes") or []
+    return ch[0].rsplit(" @", 1)[0].split(" → ", 1)[0] if ch else None
+
+
+def _end_val(v):
+    """一個 Key 在一個時間窗最後的值（狀態 Key 的 last、常數，或最後一次變化之後的值）。"""
+    if "last" in v:
+        return str(v["last"])
+    if "constant" in v:
+        return str(v["constant"])
+    ch = v.get("changes") or []
+    return ch[-1].rsplit(" @", 1)[0].split(" → ", 1)[-1] if ch else None
+
+
+def _last_change(v):
+    m = re.search(r"@([\d.]+)$", ((v.get("changes") or [""])[-1]))
+    return float(m.group(1)) if m else None
+
+
+def _end_states(job):
+    """到最後的值與最後一次停止（程式整理，給因果推論；兩種設定都給——是量到的事實與數據看得出什麼）：
+    - 有變化的 Key：到最後跟時間窗開頭不同的值（到數據結束、或到時間窗結束是什麼），跟回到開頭的值的；同一個 Topic 變化一樣的 Key 併成一行
+      （診斷彙整的階層）。中途才出現的項目，「開頭」是它第一次出現的值（例如錯誤 → OK）。
+    - 最後一次停止發布：Topic 停止之後到數據結束都沒有訊息。中途開始的一段發布，它的結束是不是異常數據看不出來；
+      從數據開頭就在發布的，是發布它的節點之後沒有再發布；同一時間一起停的列在一起。
+    實測（第八輪）：lidar 的報告寫「LiDAR 錯誤解除，系統狀態恢復正常」——安全閘一直鎖著，要從幾份 worker 的事實自己拼出來；
+    cmdgap 把最後一段指令的結束也算成異常（「兩次速度指令異常（一次中斷、一次停止發布）」）。"""
+    base, end_ns = job["index"]["start_ns"], job["index"]["end_ns"]
+    meta = {t["topic"]: t for t in job["index"]["topics"]}
+    wins = {w["id"]: w for w in job.get("windows") or []}
+    js = job.get("_source")
+    diff, same, stops = {}, {}, []
+    for w in job.get("workers") or []:
+        km = w.get("key_metrics") or {}
+        order = sorted((wid for wid in km if wid in wins), key=lambda x: wins[x]["start_ns"])
+        if w.get("status") != "done" or not order:
+            continue
+        last_win, t = wins[order[-1]], meta.get(w["topic"]) or {}
+        last_ns = int(t["last_sec"] * 1e9) if t.get("last_sec") is not None else None
+        first_ns = int(t["first_sec"] * 1e9) if t.get("first_sec") is not None else None
+        if last_win["end_ns"] >= end_ns - 2e8:
+            until = f"到數據結束（{_rel(end_ns, base)}）是"
+        elif last_ns is not None and last_ns <= last_win["end_ns"] + 1e8:
+            until = f"之後到數據結束（{_rel(end_ns, base)}）沒有新的訊息，最後一則是"
+        else:
+            until = f"到時間窗結束（{_rel(last_win['end_ns'], base)}）是"
+        for k in dict.fromkeys(k for wid in order for k in km[wid] if not k.startswith("_")):
+            vals = [km[wid][k] for wid in order if isinstance(km[wid].get(k), dict)]
+            moved = [v for v in vals if v.get("changes")]
+            if not moved:
+                continue
+            init, final = _start_val(vals[0]), _end_val(vals[-1])
+            when = max((x for x in map(_last_change, moved) if x is not None), default=None)
+            at = _rel(int(when * 1e9), base) if when else "-"
+            group = same if init == final else diff
+            group.setdefault((w["n"], w["topic"], init, final, at, until), []).append(k)
+        stop = next((x for wid in reversed(order) for r in [((km[wid] or {}).get("_rate") or {})]
+                     for x in [r.get("stopped_after") or (r.get("published_only") or [None, None])[1]] if x), None)
+        if not stop or last_ns is None or abs(last_ns / 1e9 - stop) > 0.5 or end_ns - last_ns < 1e9:
+            continue
+        gaps = [g for wid in order for g in (((km[wid] or {}).get("_rate") or {}).get("gaps") or [])]
+        gap_txt = ("（中間 " + "、".join(f"{_rel(int(g['start_sec'] * 1e9), base)} 起 {g['duration_sec']:.2f} 秒" for g in gaps)
+                   + " 的訊息中斷是另一件事：程式判斷的異常）") if gaps else ""
+        src = js.topic_source_line(w["topic"], compact=True) if js else ""
+        if first_ns is not None and first_ns - base > 1e9:   # 中途開始的一段發布
+            text = (f"- W{w['n']} {w['topic']}：{_rel(first_ns, base)} 中途開始發布，{_rel(last_ns, base)} 最後一次停止"
+                    f"（之後到數據結束都沒有訊息）{gap_txt}——這一次停止為什麼、是不是異常，數據看不出來：不要算成異常，"
+                    "也不要寫成正常結束；系統對它的反應照不照設計，另外看源碼與量測")
+        else:
+            text = (f"- W{w['n']} {w['topic']}：從數據開頭就在發布，{_rel(last_ns, base)} 停止之後沒有恢復{gap_txt}"
+                    + (f"（{src}）" if src else "") + "——發布它的節點之後沒有再發布這個 Topic；為什麼停，數據看不出來")
+        stops.append((last_ns, w["topic"], text))
+    if not (diff or same or stops):
+        return ""
+
+    def keys(ks):
+        return ks[0] + (f" 等 {len(ks)} 個 Key" if len(ks) > 1 else "")
+    out = ["\n\n【程式整理：到最後的值與最後一次停止（量到的最後一則；寫「恢復」「仍然」「停止」照這裡）】"]
+    if diff:
+        out += ["到最後跟時間窗開頭不同（中途才出現的項目，開頭是它第一次出現的值）："] + [
+            f"- W{n} {tp} {keys(ks)}：{_short(i, 40)} → {_short(f, 40)}（{at}），{u} {_short(f, 40)}"
+            for (n, tp, i, f, at, u), ks in list(diff.items())[:8]]
+    if same:
+        out.append("回到時間窗開頭的值：" + "；".join(f"W{n} {tp} {keys(ks)}＝{_short(f, 40)}（{at}）"
+                                               for (n, tp, i, f, at, u), ks in list(same.items())[:6])
+                   + (f"…等 {len(same)} 組" if len(same) > 6 else ""))
+    if stops:
+        stops.sort()
+        out += ["最後一次停止發布："] + [x[2] for x in stops[:4]]
+        together = [x for x in stops if abs(x[0] - stops[0][0]) <= 3e8]
+        if len(together) >= 2:
+            out.append(f"- 同一時間（{_rel(together[0][0], base)}）一起停止：{'、'.join(x[1] for x in together)}")
+    if diff:
+        out.append("——到最後的值不是開頭的值：照它到最後的值寫（例如仍鎖住、仍限速、仍在保護停止）；某一項錯誤解除，不代表其他狀態也恢復")
+    return "\n".join(out)
 
 
 def _causal_issues(job, data):
