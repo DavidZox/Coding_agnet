@@ -125,7 +125,7 @@ def worker_main(argv):
         return 2
     windows = [w for w in clamped if w]
 
-    all_flags, results, lines = [], [], []
+    all_flags, anomalies, results, lines = [], [], [], []   # anomalies：程式判斷的異常（只有訊息中斷）；其餘 flags 是量到的變化
     lines.append(f"[PASS] 特徵量測：{entry['topic']}（{entry['type']}）｜數據 {idx['label']}"
                  f"（{rd.fmt_t(idx['start_ns'])} ～ {rd.fmt_t(idx['end_ns'])}）")
     for w in windows:
@@ -169,6 +169,7 @@ def worker_main(argv):
             r += "；中斷 " + "、".join(f"{rd.fmt_t(int(g['start_sec'] * 1e9))}[{rd.fmt_rel(int(g['start_sec'] * 1e9), rel_base)}] 起 "
                                      f"{g['duration_sec']} 秒" for g in rate["gaps"])
             all_flags.append(f"{wname} 訊息中斷 {len(rate['gaps'])} 次（最長 {rate['max_gap_sec']} 秒）")
+            anomalies.append(all_flags[-1])
         if rate.get("single_session"):   # 一段連續的發布寫成一句（分開寫，模型會讀成「間歇性」）；寫明是完整的發布（實測會被說成「指令中斷」）
             span = (times[-1] - times[0]) / 1e9
             r += (f"；只在 {first}～{last} 連續發布 {span:.2f} 秒（一段完整的發布，中間沒有中斷；之前 {rate['starts_after_window_sec']} 秒、"
@@ -218,10 +219,14 @@ def worker_main(argv):
         results.append({"window": w, "rate": rate, "keys": wkeys, "errors": errors, "source": src["bag_dir"]})
     if skipped:
         lines.append("沒有量測：" + "；".join(skipped) + (f"（可以量測的 Key：{avail}）" if unknown else ""))
-    lines.append("異常指標（程式判斷）：" + ("；".join(all_flags) if all_flags else "沒有尖峰、沒有狀態跳轉、沒有訊息中斷"))
+    # 異常與變化分開寫：開始／停止發布、一段完整的發布、狀態跳轉、尖峰都是量到的變化，不代表異常。舊版全部列在「異常指標」底下，
+    # 實測 26b 的 worker 把 /cmd_vel_raw 一次完整的指令標成異常 40/40、寫成「中斷」32/40（工具量到的是中間沒有中斷）
+    changes = [f for f in all_flags if f not in anomalies]
+    lines.append("程式判斷的異常（訊息中斷）：" + ("；".join(anomalies) if anomalies else "沒有"))
+    lines.append("量到的變化（事實，不代表異常）：" + ("；".join(changes) if changes else "沒有尖峰、沒有狀態跳轉、沒有中途開始或停止發布"))
     if args.json:
         print(json.dumps(rd.jsonable({"data": idx["label"], "topic": entry["topic"], "type": entry["type"],
-                                      "data_start_ns": idx["start_ns"], "windows": results, "flags": all_flags,
+                                      "data_start_ns": idx["start_ns"], "windows": results, "flags": all_flags, "anomalies": anomalies,
                                       "skipped": skipped}), ensure_ascii=False, indent=1, default=str))
         print(rd.marker_line(data).strip())
     else:

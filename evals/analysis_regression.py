@@ -37,7 +37,15 @@ def model_text(report):
     return _PROGRAM_NOTE.sub("", f"{report.get('conclusion') or ''}\n{report.get('root_cause') or ''}")
 
 
-_NEG = ("沒有", "未", "無", "不", "沒", "非", "如果", "若", "是否", "排除")
+_NEG = ("沒有", "未", "無", "不", "沒", "非", "如果", "若", "是否", "排除", "還是", "當")   # 「還是…中斷」「當…停止發布時」是假設
+
+
+_TIMED_DELAY = re.compile(r"\d+(?:\.\d+)?\s*(?:s|秒)[^，。；]{0,4}延遲")
+
+
+def _has(text, k):
+    """關鍵字比對；「re:」開頭的是正規表示式（例如 INITIALIZING 不算 MON_INITIALIZING 裡的）。"""
+    return bool(re.search(k[3:], text)) if k.startswith("re:") else k in text
 
 
 def said(text, word):
@@ -92,15 +100,18 @@ def score_job(job_id, case):
         if why:
             res["why"]["cause"] = "；".join(why)
     if case.get("forbid") is not None or case.get("not_cause"):
-        bad = [f for f in case.get("forbid") or [] if said(text, f)]
+        plain = _TIMED_DELAY.sub("", text)   # 「約 0.52s 延遲」是逾時判斷的時間差，不是傳輸延遲的說法（第六輪人工複核）
+        bad = [f for f in case.get("forbid") or [] if said(plain, f)]
         res["clean"] = not bad and not relied
         why = [f"「{b}」" for b in bad] + [f"拿 {c} 當原因" for c in relied]
         if why:
             res["why"]["clean"] = "、".join(why)
     if case.get("character"):
-        res["character"] = any(k in text for k in case["character"])
+        wrong = [w for w in case.get("character_forbid") or [] if said(text, w)]   # 只根據事實的定性：肯定地說「異常」「故障」就不算
+        res["character"] = any(_has(text, k) for k in case["character"]) and not wrong
         if not res["character"]:
-            res["why"]["character"] = "沒有「" + "／".join(case["character"][:4]) + "」這類定性"
+            res["why"]["character"] = ("定性成「" + "、".join(wrong) + "」" if wrong else
+                                       "沒有「" + "／".join(case["character"][:4]) + "」這類定性")
     if case.get("upstream"):
         res["upstream"] = any(k.lower() in text.lower() for k in case["upstream"])
         if not res["upstream"]:

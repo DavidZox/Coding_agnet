@@ -70,19 +70,26 @@ harness 本身（技能系統的索引＋按需載入的規格＋既有腳本、
   整段數據不切、切片失敗就讀原本的數據。
 
 **⑤ Workers（每個 Topic 一個乾淨的 session，同時 2 個）**
-- 看得到：問題、Orchestrator 的理解、子任務、觀測角度、自己的 Topic 與時間窗、可量測的 Key 目錄（類別、維度、抽樣值）、
-  自己 Topic 的源碼（發布者、依賴的輸入、.msg 的說明與常數、`source_context`、發布的程式碼）。看不到 Log 與其他 Topic。
+- 看得到：子任務（裡面的 L# 由程式換成時間）、觀測角度、自己的 Topic 與時間窗（錨點只寫時間）、可量測的 Key 目錄（類別、維度、抽樣值）、
+  自己 Topic 的源碼（發布者、依賴的輸入、.msg 的說明與常數、`source_context`、發布的程式碼）。
+- 看不到：Log、其他 Topic、使用者的問題與 Orchestrator 的理解——理解裡有 Log 與推測的原因，實測 worker 會照著推測寫
+  「證實 L17 時 /cmd_vel_raw 中斷」，跟量到的「一段完整的發布、中間沒有中斷」相反。
 - 每一步（最多 6 步）決定量哪些 Key；只准用 mcap_feature_measure、mcap_analyzer，Topic 與數據路徑由系統固定，同一個量測第 3 次擋下；
   沒量測會被催一次，還是沒有就由系統代選 Key。
-- 局部報告：有沒有異常（只看量測工具回傳的結果）、摘要、證據、信心；只描述這個 Topic 本身的現象，不推測原因。
-- 程式：量過的 Key 用 `--json` 再量一次，數字填進 frontmatter（模型只寫判斷）；訊息中斷、中途開始或停止列進證據。
-- 產物：`workers/W<n>_<topic>.md`（frontmatter 有 `view`、`source_context`）、`.transcript.md`（完整對話）。
+- 量測結果的最後兩行分開寫：「程式判斷的異常（訊息中斷）」與「量到的變化（事實，不代表異常）」——開始／停止發布、一段完整的發布、
+  狀態跳轉、尖峰都是變化。
+- 局部報告：有沒有異常（工具判斷的異常，或數值明顯不合理）、摘要、證據、信心；照工具的說法寫量到的現象，不推測原因。
+- 程式核對局部報告，跟量測不符就交回修一次：工具沒判斷出異常卻寫有異常；量測沒有訊息中斷卻寫「中斷／間歇／丟失」；寫了因果（導致、證實、排除…）。
+- 程式：量過的 Key 用 `--json` 再量一次，數字填進 frontmatter（`key_metrics`、`program_flags`、`program_anomalies`；模型只寫判斷）；
+  訊息中斷、中途開始或停止列進證據。
+- 產物：`workers/W<n>_<topic>.md`（frontmatter 有 `view`、`source_context`，交回修過的有 `report_issues`）、`.transcript.md`（完整對話）。
 
 **⑥ Synthesizer（模型）**
 - 看得到：問題、理解與報告焦點；相關的 Log（附理由與源碼位置）與其他 WARN 以上；時間窗；數據裡全部的 Topic；完整源碼脈絡（11000 字以內：
   Topic 之間的關係、在執行的節點、相關 Log 的源碼位置、代碼的條件、最多 5 段相關函式的程式碼）；【程式檢查】與【程式整理：訊息流】；
-  每個 worker 的局部報告（含觀測角度）。第 2 輪起再加【上一輪的報告】與補派的 worker。
+  每個 worker 的局部報告（含觀測角度；程式判斷的異常與量到的變化分開列）。第 2 輪起再加【上一輪的報告】與補派的 worker。
 - 輸出：結論、根因與信心、時間線、證據、尚未確認、建議。
+- 程式核對用詞：量測沒有訊息中斷的 Topic，報告寫成「中斷／間歇／丟失」就列出句子、交回修一次（`prompts/synthesizer_2.md`）。
 - 規則：只根據給的事實（Log、量測結果、源碼）做因果推論，接不上的環節寫進「尚未確認」；輸出 Topic 的現象不能拿來證明它的輸入。
 
 **⑦ 報告後處理（程式）**
@@ -103,7 +110,7 @@ harness 本身（技能系統的索引＋按需載入的規格＋既有腳本、
 
 | 類別 | 內容 | 什麼時候有 |
 |---|---|---|
-| 事實整理 | Log 去重、時間換算、時間窗、切片、量測數字、訊息中斷、計畫檢查、觀測角度核對、L# 時間校正 | 一直都有（不是推理提示） |
+| 事實整理 | Log 去重、時間換算、時間窗、切片、量測數字、異常與變化分開（只有訊息中斷算異常）、計畫檢查、觀測角度核對、L# 時間校正、子任務的 L# 換成時間、局部報告與報告的用詞核對 | 一直都有（不是推理提示） |
 | 名稱比對的提示 | Orchestrator 的缺口清單、點名名稱相近的 Topic、報告旁的提醒、「通常是共同的上游」 | 只在沒有源碼時 |
 | 判斷提示（`program_hints`） | 訊息中斷一定算異常；【程式檢查】的缺的輸入（有源碼時用代碼的條件讀哪個 Topic 判斷，不靠名稱比對）與背景條件；一段完整的發布＝一次指令、整份數據安靜時寫成正常的操作序列；事後的背景條件更正、「尚未確認」與信心上限 | 開著（`/analysis_hints off` 可關） |
 
@@ -118,8 +125,8 @@ worker 最多 6 步；各角色的模型沒另外設定時跟著主對話。
 | ① 資料預備 | 程式 | `topic_metadata.md`（全域 Topic Metadata）、`log_digest.md`（去重後的 Log；rosbag2 自己的 Log 也列出並標明）、`source_context.md`（有源碼目錄時：在執行的節點、Topic 關係、Log 位置、代碼的條件） |
 | ②③ Orchestrator | 模型＋程式檢查 | `plan.json`（對問題的理解、相關訊號、時間窗、每個 worker 的 Topic、觀測角度與子任務；分兩步時加 `source_reading` 與第一步的 `draft_assignments`；補推理鏈補派的在 `followups`） |
 | ④ 時間窗與切片 | 程式 | `<數據>/analysis_slices/<編號>/sliced_bag_*`（toolkit 格式，Foxglove 也能開；路徑記在 `job.json` 的 `slices`） |
-| ⑤ Workers | 模型決定、程式量測 | `workers/W<n>_<topic>.md`（局部報告；frontmatter 有觀測角度 `view`、補派的有 `round`）、`workers/W<n>_<topic>.transcript.md`（worker 的完整對話） |
-| ⑥⑦ Synthesizer | 模型＋程式檢查 | `report.md`（最後的報告；程式附的更正、檢查說明會標「程式更正／程式檢查」） |
+| ⑤ Workers | 模型決定、程式量測 | `workers/W<n>_<topic>.md`（局部報告；frontmatter 有觀測角度 `view`、程式判斷的異常 `program_anomalies`、補派的有 `round`、交回修過的有 `report_issues`）、`workers/W<n>_<topic>.transcript.md`（worker 的完整對話） |
+| ⑥⑦ Synthesizer | 模型＋程式檢查 | `report.md`（最後的報告；程式附的更正、檢查說明會標「程式更正／程式檢查」）；用詞交回修過的：`job.json` 的 `report_wording`、`prompts/synthesizer_2.md` |
 | ⑧ 補推理鏈 | 模型＋程式檢查 | `report_r<n>.md`（補派之前那一輪的報告）；`job.json` 的 `reviews`（每一項尚未確認能不能補、為什麼、補派了什麼）與 `rounds` |
 | 全程 | 程式 | `job.json`（狀態、計畫、時間窗、切片、每個 worker 的結果與量測數字、報告、更正、`synth_raw`＝Synthesizer 原本寫的）、`events.jsonl`（進度，Web 的卡片與面板讀它）、`prompts/<角色>.md`（交給模型的完整輸入：orchestrator、orchestrator_assign、orchestrator_review、synthesizer，對照與重播用） |
 
@@ -154,7 +161,7 @@ primary_reaction 從 INIT 轉向 NONE，發生在 +15.53s……
 **幾個關鍵的設計**（細節與實測見〈[設計筆記 2.18](doc/設計筆記與已知限制.md)〉）：
 
 - **時間戳由程式換算**：Orchestrator 只填訊號編號（L28），程式用去重後的時間戳算時間窗；worker 用 `--window W1` 這種編號（或不寫，系統帶入），不用抄 19 位數的時間。所有輸出的 `[+秒]` 都是「距離數據開頭」（Log、Topic、時間窗同一個基準）。
-- **能由程式做的就不交給模型**：Log 去重、Key 的型別／維度／類別、統計數字、狀態跳轉、訊息中斷、異常指標、計畫的檢查（不存在的 L#／Topic、重複的 Topic 會具體列出、交回 Orchestrator 修一次，修不好由程式依關聯度補指派）。
+- **能由程式做的就不交給模型**：Log 去重、Key 的型別／維度／類別、統計數字、狀態跳轉、訊息中斷、程式判斷的異常（只有訊息中斷）、計畫的檢查（不存在的 L#／Topic、重複的 Topic 會具體列出、交回 Orchestrator 修一次，修不好由程式依關聯度補指派）。
 - **worker 只能量自己的 Topic**：`--topic` 由系統固定、只准用量測技能；實測 e4b 常把動作的 JSON 寫進 `reply`，worker 的工具都是唯讀的量測，所以照做；一個 Key 都沒量時系統代選（狀態優先）。Key 目錄的類別寫中文（英文的 `state` 每一列都有，實測 26b 把它當成 Key 送 `--key state`，140 個 worker 15 次 → 0）；不存在的 Key 照量認得的、最後說明。
 - **源碼脈絡**（設定源碼目錄時，〈[設計筆記 2.19](doc/設計筆記與已知限制.md)〉）：MCAP 的 /rosout 本來就記了每一則 Log 的 file:line、schema 是 .msg 原文；程式再讀受測系統的源碼（不呼叫模型），整理這次在執行的節點（Log 的節點、lifecycle 的 transition_event、同一個 launch 檔；同名的好幾個實作用 Log 的源碼位置決定，沒編譯的不算）、每個 Topic 誰發布、什麼時候、**依賴哪些輸入 Topic**（發布時讀的變數由哪個訂閱寫入）、Log 裡的代碼在源碼成立的條件。Topic 之間的關係有了，模型不再拿輸出 Topic 當輸入的證據（有事件的數據 15/20 → 1/20，不用名稱比對）；「正常的操作」這類判斷仍要下面的程式提示。Orchestrator 分兩步（2.20）：整段源碼會讓它漏挑狀態改變的 Log，所以先挑訊號、再帶源碼分派。
 - **「數據範圍」的程式檢查**：Log 說某個輸入沒有／逾時（`NO_CMD_VEL_RAW`、`IMU_TIMEOUT`…），數據裡卻沒有對得上的 Topic 時，程式保證報告把它列在「尚未確認」、信心最多 medium——小模型常拿名稱相近的輸出 Topic 當證據。Orchestrator 規劃時也拿到這個檢查，名稱相近的 Topic（沒錄到 `/cmd_vel_raw` 時的 `/cmd_vel`）點名不能代替；Synthesizer 讀到那個 Topic 的局部報告時旁邊再附一次提醒（實測 26b 拿 `/cmd_vel` 排除指令中斷：有事件的數據 20 次 15 次 → 2 次）。
@@ -232,7 +239,8 @@ python3 Agent_Runner.py     # CLI（同樣有 /analyze 與 /analysis_* 指令）
 | 源碼脈絡（2026-10-15 晚上，同一台、同一批數據，26b，每份 5 次；源碼 `~/fih_humanoid_amr/amr_base/src`） | 有事件的數據拿 /cmd_vel 證明或排除 /cmd_vel_raw：沒有提示 15/20、名稱提示 2/20、**只給源碼 1/20**（Orchestrator 的子任務 11/21 → 2/25：錯誤的源頭就修好）；aggregator 凍結的上游、lifecycle 的整條鏈都寫得出來。「一次指令的開始與結束是正常的操作」只給源碼 0/10——判斷類的問題源碼解決不了，仍要程式的判斷提示：源碼＋判斷提示 135/140（人工複核；名稱提示 139/140）。一次約 27 秒（多 3 秒）。細節：〈設計筆記 2.19〉、`evals/results/analysis_5090_summary.md` |
 | Orchestrator 分兩步（2026-10-15 深夜，同上） | 先挑訊號、再帶源碼脈絡分派：Orchestrator 的 /cmd_vel 子任務寫成驗證輸入 9/25 → 2/25、/cmd_vel_raw 數據的時間線有指令開始 8/10 → 10/10、報告拿 /cmd_vel 當輸入的證據 0/20；**源碼＋判斷提示 139/140**（人工複核，跟名稱提示持平、不用名稱比對）。只給源碼仍是 127/140（定性 0/10）。一次約 31 秒（多一次模型呼叫、約 3 秒）。細節：〈設計筆記 2.20〉 |
 | 觀測角度＋源碼判斷的缺口＋只根據事實＋補推理鏈（2026-10-16，同上） | 指派寫明 Topic 是哪個節點的輸入或輸出，程式用源碼核對：/cmd_vel 被寫成「驗證輸入」的指派，觀測角度都對不上源碼、交回修正 → Orchestrator 與 worker 的 /cmd_vel 誤用都是 0/25；【程式檢查】的缺的輸入改用源碼判斷，**推薦設定不再有任何名稱比對**，人工複核 138/140（只給源碼 131/140，定性仍要判斷提示）。補推理鏈 70 次裡 65 次判斷「缺的是沒錄到的 Topic、不能補」就結束，一次約 1.5 秒；「只根據事實」的規則要另外說明「能完整解釋的就照事實定性」，不然模型不敢寫「正常的操作」。細節：〈設計筆記 2.21〉 |
-| 離線自我測試 | `analysis_selftest.py` 18/18、`main_selftest.py` 12/12、`v5_selftest.py` 8/8 |
+| 只根據事實（2026-10-16 第七輪，同上） | worker 只拿子任務（不給問題與 Orchestrator 的理解，L# 換成時間）、量測工具把異常（只有訊息中斷）與變化分開、局部報告與報告的用詞由程式核對：cmdvel 的「中斷」一路傳下去的錯整個消失（worker 標成異常 10/10 → 0/10、寫「中斷」7/10 → 0/10、報告寫「中斷」6/10 → 0/10）；**源碼＋判斷提示 140/140**、只給源碼 135/140（第六輪用同一個評分 134、126）。評分程式照人工複核的先例補齊，跟 1163 項人工判定全部一致，之後的回歸不必再人工複核；cmdvel 的定性改成只根據事實（照設計反應、不是故障），停止寫成「中斷」算錯誤說法。一次約 29～31 秒。改完才錄的 2 份驗證集（真的中斷又恢復、節點被 kill）36/45：做得到真的中斷與被 kill 的保護停止；時間線缺「恢復」、停止發布的 Topic 沒推到發布它的節點。細節：〈設計筆記 2.22〉 |
+| 離線自我測試 | `analysis_selftest.py` 19/19、`main_selftest.py` 12/12、`v5_selftest.py` 8/8 |
 | toolkit 相容 | toolkit 的 `mcap_analyzer.py` 讀得懂 mcap_slicer 產生的切片（包括巢狀的 Key）；切片的 `metadata.yaml` 是 rosbag2 的格式，`ros2 bag info／play <切片資料夾>` 也讀得到 |
 
 **已知的限制**：e4b 的 Synthesizer 會把「輸出 Topic 是 0」當成「輸入缺失」的證據（Log 的 NO_CMD_VEL_RAW 指的是 /cmd_vel_raw，它不在這份數據裡）——程式檢查會把這種情況列進「尚未確認」並把信心壓到 medium，但推理文字本身仍可能這樣寫；

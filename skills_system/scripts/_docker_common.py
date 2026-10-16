@@ -68,6 +68,22 @@ def clean_stderr(text):
     return "\n".join(lines).strip()
 
 
+# bash -ic 載入 /etc/bash.bashrc：Ubuntu 對 sudo 群組、還沒用過 sudo 的使用者每次都在 stdout 開頭印這段提示，不是指令的輸出
+# （實測 cah_analysis_test：每個量測結果的第一行都是它，worker 局部報告的「量測紀錄」也顯示成這一句）
+_STDOUT_BANNER = ('To run a command as administrator (user "root"), use "sudo <command>".',
+                  'See "man sudo_root" for details.')
+
+
+def strip_banner(text):
+    """去掉 stdout 開頭的 sudo 提示（連同它後面的空行）；沒有提示就原樣傳回。"""
+    if not text or not text.lstrip().startswith(_STDOUT_BANNER[0]):
+        return text
+    lines = text.split("\n")
+    while lines and (lines[0].strip() in _STDOUT_BANNER or not lines[0].strip()):
+        lines.pop(0)
+    return "\n".join(lines)
+
+
 def tail(text, max_lines=20, max_chars=2000):
     """只保留輸出結尾，避免把大量原始輸出塞回 Agent。"""
     text = (text or "").strip()
@@ -184,6 +200,7 @@ def docker_exec(container, command, timeout, interactive=False, what=None, timeo
             return False, "", f"[ERROR] {what} 執行異常: {e}"
 
         err = clean_stderr(r.stderr)
+        out = strip_banner(r.stdout) if interactive else r.stdout
 
         # 容器內沒有 coreutils timeout：退回只用宿主機端逾時再執行一次
         if inner and r.returncode in (126, 127) and "timeout" in err and "executable file not found" in err:
@@ -193,16 +210,16 @@ def docker_exec(container, command, timeout, interactive=False, what=None, timeo
             msg = f"[ERROR] {what} 逾時（超過 {timeout} 秒），容器內的程序已被終止。"
             if timeout_hint:
                 msg += f"\n{timeout_hint}"
-            partial = tail(r.stdout)
+            partial = tail(out)
             if partial:
                 msg += f"\n--- 逾時前的部分輸出 ---\n{partial}"
-            return False, r.stdout, msg
+            return False, out, msg
 
         if inner and r.returncode == 137:
-            return False, r.stdout, _fail(
+            return False, out, _fail(
                 what,
                 f"程序被 KILL 強制終止（逾時 {timeout} 秒後 TERM 無效而補 KILL，或程序遭系統 OOM 終止）",
-                r.returncode, r.stdout,
+                r.returncode, out,
             )
 
         if r.returncode != 0:
@@ -210,9 +227,9 @@ def docker_exec(container, command, timeout, interactive=False, what=None, timeo
             reason = explained or err or "沒有任何錯誤訊息"
             if explained and err:
                 reason += f"\n--- stderr ---\n{tail(err)}"
-            return False, r.stdout, _fail(what, reason, r.returncode, r.stdout)
+            return False, out, _fail(what, reason, r.returncode, out)
 
-        return True, r.stdout, ""
+        return True, out, ""
 
     return False, "", f"[ERROR] {what} 執行異常: 無法以任何方式執行 docker exec"  # 理論上不會到這
 

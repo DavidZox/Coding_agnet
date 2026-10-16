@@ -230,7 +230,8 @@ CMD_VEL_FEATURES = """[PASS] 特徵量測：/cmd_vel（geometry_msgs/msg/Twist�
   ▸ linear.x（scalar，數值，double）
      linear.x：min 0  max 0.42  mean 0.1137  std 0.1521  slope 0.0031/s  首 0→末 0（1010 筆）
        最大跳變 0→0.42 @ 1791967530.102[+23.09s]
-異常指標（程式判斷）：沒有尖峰、沒有狀態跳轉、沒有訊息中斷"""
+程式判斷的異常（訊息中斷）：沒有
+量到的變化（事實，不代表異常）：沒有尖峰、沒有狀態跳轉、沒有中途開始或停止發布"""
 ANALYSIS_REPORT = """[PASS] 📊 數據診斷報告（job 20261014_181445：4 個 worker、模型呼叫 18 次、74 秒）
 問題：安全閘為什麼一開始是 PROTECTIVE_STOP？什麼時候恢復？
 數據：exp_20261014_084506（51.889 秒）；時間窗：W1 +0.00s～+30.54s（L28 WARN safety_motion_controller）

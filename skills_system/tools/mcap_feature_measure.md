@@ -27,4 +27,4 @@ dependencies: ["docker", "mcap", "rclpy", "rosidl_runtime_py"]
 `EXECUTE: scripts/mcap_feature_measure_cmd.py --topic /diagnostics_agg --key status.level --filter Battery --window +10,+40`
 
 # 回傳
-每個時間窗：訊息筆數（第一筆、最後一筆）／頻率／中斷／中途開始或停止發布，每個 Key 的特徵；最後一行「異常指標（程式判斷）」彙整尖峰、狀態跳轉、中斷與開始／停止發布。[+秒]＝距離數據開頭（跟 rosout_parser 同一個基準）。
+每個時間窗：訊息筆數（第一筆、最後一筆）／頻率／中斷／中途開始或停止發布，每個 Key 的特徵；最後兩行：「程式判斷的異常（訊息中斷）」只列訊息中斷；「量到的變化（事實，不代表異常）」彙整尖峰、狀態跳轉、數值切換、中途開始／停止發布。`--json` 的 `anomalies` 是前者、`flags` 是全部。[+秒]＝距離數據開頭（跟 rosout_parser 同一個基準）。

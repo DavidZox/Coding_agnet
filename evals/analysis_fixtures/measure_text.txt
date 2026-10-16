@@ -8,5 +8,6 @@
      stop_reasons：狀態跳轉 2 次（首 [NO_CMD_VEL_RAW, NO_SAFETY_COMMAND_YET] → 末 [NO_CMD_VEL_RAW]；占比 [MON_INITIALIZING, NO_CMD_VEL_RAW] 76%、[NO_CMD_VEL_RAW] 24%、[NO_CMD_VEL_RAW, NO_SAFETY_COMMAND_YET] 0%）
        1791967508.236[+1.22s] [NO_CMD_VEL_RAW, NO_SAFETY_COMMAND_YET] → [MON_INITIALIZING, NO_CMD_VEL_RAW]（+MON_INITIALIZING；-NO_SAFETY_COMMAND_YET）
        1791967522.547[+15.54s] [MON_INITIALIZING, NO_CMD_VEL_RAW] → [NO_CMD_VEL_RAW]（-MON_INITIALIZING）
-異常指標（程式判斷）：時間窗 mode 狀態跳轉 1 次；時間窗 stop_reasons 狀態跳轉 2 次
+程式判斷的異常（訊息中斷）：沒有
+量到的變化（事實，不代表異常）：時間窗 mode 狀態跳轉 1 次；時間窗 stop_reasons 狀態跳轉 2 次
 [ANALYSIS_DATA] /workspace/app/diagnostics_package/toolkit/experiment_logs/exp_20261014_084506

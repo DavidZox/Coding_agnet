@@ -751,7 +751,7 @@ class AnalysisMixin:
                 continue
             seen.add(name)
             sigs = [sig_by_id[s.strip().upper()]["id"] for s in (a.get("signals") or []) if s.strip().upper() in sig_by_id]
-            subtask = _short(a.get("subtask") or "", 400) or "檢查這個 Topic 在時間窗內的變化，跟問題有沒有關"
+            subtask = _short(a.get("subtask") or "", 400) or "檢查這個 Topic 在時間窗內的變化（狀態跳轉、數值的變化、訊息中斷、開始或停止發布）"
             item = {"topic": name, "subtask": subtask, "signals": sigs}
             node = _short(a.get("view_node") or "", 80).strip().strip("/").rsplit("/", 1)[-1]
             if node and a.get("view") in ("輸入", "輸出"):   # 觀測角度：有源碼時程式核對（節點有沒有發布／訂閱這個 Topic）
@@ -796,7 +796,7 @@ class AnalysisMixin:
             if len(out) >= n:
                 break
             if topic not in forced:
-                out.append({"topic": topic, "subtask": "檢查這個 Topic 在時間窗內的變化（狀態跳轉、數值異常、訊息中斷），判斷跟問題有沒有關",
+                out.append({"topic": topic, "subtask": "檢查這個 Topic 在時間窗內的變化（狀態跳轉、數值的變化、訊息中斷、開始或停止發布）",
                             "signals": [r["id"] for r in related]})
         return out
 
@@ -972,7 +972,8 @@ class AnalysisMixin:
                            + (f"- 觀測角度：{w['view']}\n" if w.get("view") else "")
                            + f"- 子任務：{w.get('subtask')}\n- 分析的 Key：{'、'.join(w.get('analyzed_keys') or [])}\n"
                            f"- anomaly_detected：{w.get('anomaly_detected')}（信心 {w.get('confidence')}）\n"
-                           f"- 程式判斷的異常指標：{'；'.join(w.get('program_flags') or []) or '沒有'}\n"
+                           f"- 程式判斷的異常（訊息中斷）：{'；'.join(w.get('program_anomalies') or []) or '沒有'}\n"
+                           f"- 量到的變化（不代表異常）：{'；'.join(_changes(w)) or '沒有'}\n"
                            f"- 局部報告：{w.get('summary')}\n" + (f"- 證據：\n{ev}" if ev else "")
                            + reminders.get(w["topic"], ""))
         user = (f"【使用者的問題】\n{job['question']}\n\n【Orchestrator 對問題的理解】\n{plan['understanding']}\n"
@@ -987,8 +988,17 @@ class AnalysisMixin:
                 + _previous_round_text(job)
                 + "\n\n【各 Worker 的局部報告（每個 worker 一個 Topic）】\n" + "\n\n".join(reports)
                 + "\n\n（每個欄位都用繁體中文寫；時間寫成 +秒）")
-        data = self._analysis_session(job, "analysis_synthesizer", "synthesizer", _read_prompt("synthesizer.md"), user,
-                                      ANALYSIS_REPORT_SCHEMA, 4096)
+        system = _read_prompt("synthesizer.md")
+        data = self._analysis_session(job, "analysis_synthesizer", "synthesizer", system, user, ANALYSIS_REPORT_SCHEMA, 4096)
+        issues = _report_wording_issues(job, data) if data else []
+        if issues:   # 程式核對用詞：量測沒有訊息中斷，報告寫成「中斷／間歇／丟失」→ 交回修正一次（prompts/synthesizer_2.md）
+            self._analysis_note(job, f"🧩 報告的用詞跟量測不符，交回 Synthesizer 修正一次：{'；'.join(issues)[:200]}")
+            fix = (user + "\n\n【上一版報告】\n" + json.dumps(data, ensure_ascii=False)[:6000]
+                   + "\n\n【程式檢查發現的問題：修正後輸出完整的報告】\n" + "\n".join(f"- {x}" for x in issues))
+            data2 = self._analysis_session(job, "analysis_synthesizer", "synthesizer", system, fix, ANALYSIS_REPORT_SCHEMA, 4096)
+            job.setdefault("report_wording", []).append({"round": rnd, "issues": issues,
+                                                          "left": _report_wording_issues(job, data2) if data2 else None})
+            data = data2 or data
         job["synth_raw"] = json.loads(json.dumps(data, ensure_ascii=False)) if data else None   # 模型原本寫的（程式更正之前）
         if not data:
             data = self._fallback_report(job)
@@ -1159,6 +1169,74 @@ class AnalysisMixin:
         return True
 
 
+# ---------------------------------------------------------------- worker 的任務說明與局部報告的程式核對
+_WORKER_REPORT_ASK = (
+    "[系統] 量測結束，寫這個 Topic 的局部報告：analyzed_keys＝你實際量測過的 Key；"
+    "anomaly_detected＝量測工具判斷的異常（「程式判斷的異常」那一行，例如訊息中斷），或數值明顯不合理（例如 NaN、超出物理範圍）——"
+    "狀態跳轉、開始／停止發布、一段完整的發布、尖峰是量到的變化，寫進 summary，不算異常；"
+    "summary＝三到六句，照量測工具的說法寫量到的現象（什麼時候開始／停止發布、數值、跳轉、有沒有訊息中斷），引用數字與時間（+秒）；"
+    "evidence＝關鍵的時間點（+秒）、Key 與觀察；confidence＝high／medium／low。"
+    "沒有量到的東西不要寫，也不要推測原因或寫跟其他 Topic、Log 的關係（因果由 Synthesizer 判斷）。")
+
+_INTERRUPT_WORDS = ("中斷", "間歇", "斷斷續續", "丟失", "遺失")   # 不用「斷訊」：「診斷訊息」裡就有
+_INTERRUPT_ALT = "(?:" + "|".join(_INTERRUPT_WORDS) + ")"
+# 否定或假設的說法不算：否定詞到子句結束（逗號、句號）都算否定的範圍——「沒有任何狀態跳轉、數值尖峰或訊息中斷」
+# 「排除…中斷的可能性」「是否中斷」「（尚未確認）例如上游節點關閉或通訊中斷」；工具那一行的名稱「程式判斷的異常（訊息中斷）」也不算
+_NEGATED_INTERRUPT = re.compile(r"程式判斷的異常（訊息中斷）|(?:沒有|無|未|並非|不是|不屬於|而非|不算|排除|是否|有沒有|不確定|例如|或是|可能)[^，。；\n]{0,25}")
+_CAUSAL_WORDS = ("導致", "造成", "引起", "觸發", "證實", "證明", "排除", "歸因", "根因")
+_SIGNAL_REF = re.compile(r"(?<![A-Za-z0-9_])L(\d+)(?![0-9])")
+
+
+def _interrupt_words(text):
+    """文字（去掉否定的說法之後）用了哪些「中斷、間歇、丟失」類的字。"""
+    t = _NEGATED_INTERRUPT.sub("", text or "")
+    return [w for w in _INTERRUPT_WORDS if w in t]
+
+
+def _worker_subtask(job, text):
+    """交給 worker 的子任務：L#（Log 訊號的編號）換成它出現的時間（+秒）。worker 看不到 Log，L# 對它沒有意義，
+    還會讓它在局部報告裡引用 Log、寫「證實 L17 時…」（實測 26b：子任務引用 L# 38/40、局部報告引用 L# 29/40）。"""
+    base = job["index"]["start_ns"]
+    sig = {str(s["id"]).upper(): s for s in job.get("signals") or []}
+
+    def when(sid):
+        s = sig.get(f"L{sid}")
+        if not s:
+            return None
+        times = (s.get("times_sec") or [s.get("first_sec")])[:2]
+        return "、".join(_rel(int(round(float(t) * 1e9)), base) for t in times if t is not None) or None
+
+    # 「L17 (+21.76s)」「L17（+21.76s）」：模型自己寫了時間，留時間就好
+    text = re.sub(r"(?<![A-Za-z0-9_])L(\d+)\s*[（(]\s*([+＋-]?\d+(?:\.\d+)?\s*s?)\s*[)）]",
+                  lambda m: m.group(2) if sig.get(f"L{m.group(1)}") else m.group(0), text or "")
+    return _SIGNAL_REF.sub(lambda m: when(m.group(1)) or m.group(0), text)
+
+
+def _worker_report_issues(rep, anomalies, flags):
+    """局部報告跟量測工具的結果對不對得上（程式核對，有問題交回 worker 修一次）：
+    - anomaly_detected 是 true，但工具沒有判斷出異常（量到的只是變化）；
+    - 量測沒有訊息中斷，報告卻寫「中斷／間歇／丟失」（實測 26b：/cmd_vel_raw 一段完整的發布寫成「數據中斷」32/40）；
+    - 寫了因果（導致、證實、排除…）：worker 只描述量到的現象，因果由 Synthesizer 判斷。"""
+    issues = []
+    text = " ".join([str(rep.get("summary") or "")] + [str((e or {}).get("observation") or "") for e in rep.get("evidence") or []
+                                                         if isinstance(e, dict)])
+    changes = [f for f in flags if f not in anomalies]
+    if rep.get("anomaly_detected") and not anomalies:
+        issues.append("anomaly_detected 寫 true，但量測工具沒有判斷出異常（「程式判斷的異常」是沒有）；"
+                      + (f"量到的是變化：{'；'.join(changes[:3])}——" if changes else "")
+                      + "開始／停止發布、狀態跳轉、尖峰不算異常，除非數值明顯不合理（在 summary 寫出是哪個數值），否則改成 false")
+    words = _interrupt_words(text) if not anomalies else []
+    if words:
+        issues.append(f"你寫了「{'、'.join(words)}」，但量測工具量到的沒有訊息中斷"
+                      + (f"（量到的是：{'；'.join(changes[:3])}）" if changes else "")
+                      + "——照工具的說法寫：開始發布、停止發布、一段完整的發布、沒有訊息，不要寫成中斷、間歇或丟失")
+    causal = [w for w in _CAUSAL_WORDS if w in text]
+    if causal:
+        issues.append(f"你寫了「{'、'.join(causal)}」：局部報告只寫這個 Topic 量到的現象與時間，不寫原因、不寫它跟 Log 或其他 Topic 的關係"
+                      "（因果由 Synthesizer 判斷）")
+    return issues
+
+
 class AnalysisWorker:
     """一個 Topic 的數據解析手：乾淨的 session，只看自己的 Topic、時間窗與 Key 目錄，自己決定量測哪些 Key。"""
 
@@ -1184,12 +1262,11 @@ class AnalysisWorker:
     # ---- 任務說明
     def _brief(self):
         base = self.job["index"]["start_ns"]
-        plan = self.job["plan"]
         wl = []
         for w in self.windows:
             line = f"- {w['id']}：{_rel(w['start_ns'], base)} ～ {_rel(w['end_ns'], base)}（{(w['end_ns'] - w['start_ns']) / 1e9:.1f} 秒）"
-            if w.get("anchor_ns"):
-                line += f"；錨點 {w['label']}（{_rel(w['anchor_ns'], base)}）"
+            if w.get("anchor_ns"):   # 只寫時間：錨點的標籤是 Log 訊號（L# 層級 節點），worker 看不到 Log
+                line += f"；錨點 {_rel(w['anchor_ns'], base)}"
             wl.append(line)
         kl, skip = [], []
         for k in self.entry.get("keys", []):
@@ -1210,9 +1287,9 @@ class AnalysisWorker:
             # 類別寫中文（同量測工具的輸出）：英文的 state 每一列都有，實測 26b 把它當成 Key 送 --key state（/system/safety_command 35 次 15 次）
             kl.append(f"- {k['key']}｜{_CATEGORY_TEXT.get(k['category'], k['category'])}｜{k['dim']}｜{k['type']}"
                       + (f"｜{'；'.join(info)}" if info else ""))
-        parts = [f"【使用者的問題】{self.job['question']}",
-                 f"【Orchestrator 對問題的理解】{plan['understanding'] or '（沒有）'}",
-                 f"【你的子任務】{self.asg['subtask']}"]
+        # 只給子任務（要觀察的現象與時間），不給使用者的問題與 Orchestrator 的理解：理解裡有 Log 與推測的原因（實測 26b 30/40），
+        # worker 照著推測寫「證實 L17 時 /cmd_vel_raw 中斷」，跟量到的「一段完整的發布、中間沒有中斷」相反（32/40）
+        parts = [f"【你的子任務】{_worker_subtask(self.job, self.asg['subtask'])}"]
         if self.asg.get("view"):   # 觀測角度（程式用源碼核對過）：這個 Topic 是哪個節點的輸入還是輸出
             parts.append(f"【觀測角度】{self.topic} 是 {self.asg['view_node']} 的{self.asg['view']}"
                          f"（{'它發布的結果' if self.asg['view'] == '輸出' else '它收到的輸入'}）——描述這個 Topic 本身的現象"
@@ -1227,6 +1304,14 @@ class AnalysisWorker:
         if src:
             parts.append(src.strip())
         return "\n\n".join(parts)
+
+    def _report(self, msgs):
+        """請 worker 寫局部報告（一次呼叫）→ dict（壞掉回 {}）。"""
+        try:
+            rep = json.loads(self._chat(msgs, ANALYSIS_WORKER_REPORT_SCHEMA, 2048))
+        except (ValueError, TypeError, KeyError):
+            rep = {}
+        return tidy(rep) if isinstance(rep, dict) else {}
 
     def _chat(self, msgs, schema, predict):
         res = self.a._timed_chat("analysis_worker", model=self.model, messages=msgs, format=schema,
@@ -1339,39 +1424,44 @@ class AnalysisWorker:
                 out = self._run_tool("mcap_feature_measure_cmd.py", args)
                 msgs.append({"role": "user", "content": f"[系統] 你沒有量測任何 Key，系統替你量了 {'、'.join(keys)}：\n"
                                                         f"{_clip(out, ANALYSIS_TOOL_RESULT_MAX_CHARS)}"})
-        msgs.append({"role": "user", "content": (
-            "[系統] 量測結束，寫這個 Topic 的局部報告：analyzed_keys＝你實際量測過的 Key；anomaly_detected＝量測結果裡有沒有跟子任務或問題有關的"
-            "異常（尖峰、狀態跳轉、訊息中斷、數值不合理），只看上面工具回傳的結果；summary＝三到六句，寫量到的現象、跟子任務的關係，"
-            "引用量測的數字與時間（+秒）；evidence＝關鍵的時間點（+秒）、Key 與觀察；confidence＝high／medium／low。"
-            "沒有量到的東西不要寫，也不要推測原因（因果由 Synthesizer 判斷）。")})
-        try:
-            rep = json.loads(self._chat(msgs, ANALYSIS_WORKER_REPORT_SCHEMA, 2048))
-        except (ValueError, TypeError, KeyError):
-            rep = {}
-        rep = tidy(rep) if isinstance(rep, dict) else {}
+        msgs.append({"role": "user", "content": _WORKER_REPORT_ASK})
+        rep = self._report(msgs)
         analyzed = [k for k in rep.get("analyzed_keys") or [] if k in self.measured] or list(self.measured)
-        metrics, flags, data_type, ev_ts = {}, [], None, []
+        metrics, flags, data_type, ev_ts, anomalies = {}, [], None, [], []
         if analyzed:
             args = ["--topic", self.topic, "--json"] + [x for k in analyzed for x in ("--key", k)]
             js, _ = split_json_output(a._analysis_tool("mcap_feature_measure_cmd.py", args, extra_env=self.env))
             if js:
                 metrics, flags, data_type, ev_ts = _metrics_from_measure(js, analyzed)
-        anomaly = bool(rep.get("anomaly_detected")) if rep else bool(flags)
+                anomalies = list(js["anomalies"]) if "anomalies" in js else _gap_flags(metrics)   # 舊版工具沒有 anomalies：照量到的中斷
+        # 程式核對局部報告跟量測：異常要是工具判斷的異常、用詞不能跟量測相反（停止發布寫成中斷）、不寫因果；有問題交回修一次
+        issues = _worker_report_issues(rep, anomalies, flags) if rep else []
+        left = []
+        if issues:
+            a._analysis_note(job, f"🛠 {self.tag}：局部報告跟量測不符，交回修正一次：{'；'.join(issues)[:160]}", kind="worker_step", worker=self.n)
+            msgs.append({"role": "assistant", "content": json.dumps(rep, ensure_ascii=False)})
+            msgs.append({"role": "user", "content": "[系統] 程式檢查局部報告，發現跟量測工具的結果不符：\n" + "\n".join(f"- {x}" for x in issues)
+                                                    + "\n照量測工具的結果修正，重新輸出完整的局部報告（同樣的 JSON 格式）。"})
+            rep2 = self._report(msgs)
+            if rep2:
+                rep = dict(rep2, analyzed_keys=rep.get("analyzed_keys"))   # 量測過的 Key 照第一版（數字已經照它重量）
+                left = _worker_report_issues(rep, anomalies, flags)
+        anomaly = bool(rep.get("anomaly_detected")) if rep else bool(anomalies)
         summary = _short(rep.get("summary"), 900) or "（worker 沒有寫摘要）"
         evidence = [e for e in rep.get("evidence") or [] if isinstance(e, dict)][:6]
         flow = _flow_events(metrics, self.job["index"]["start_ns"])
-        broken = _flow_events(metrics, self.job["index"]["start_ns"], segments=False)
-        if flow:   # 訊息流中斷（停發、中途開始／停止）本身就是異常：實測 e4b 看到 10 秒的中斷仍以「狀態沒變」判沒有異常
-            if broken and not anomaly and self.job["program_hints"]:   # 一段完整的發布（中途開始又中途停止、中間沒有中斷）不強制：實測 /cmd_vel_raw 一次指令被當成故障
+        broken = [(t, what) for t, what in flow if what.startswith("訊息中斷")]
+        if flow:   # 訊息中斷本身就是異常：實測 e4b 看到 10 秒的中斷仍以「狀態沒變」判沒有異常
+            if broken and not anomaly and self.job["program_hints"]:   # 只有中斷（停了又恢復）強制；開始／停止發布、一段完整的發布是變化
                 anomaly = True
-                summary += "（程式判斷：" + "；".join(f"{t} {what}" for t, what in broken) + "——訊息流中斷本身就是異常）"
+                summary += "（程式判斷：" + "；".join(f"{t} {what}" for t, what in broken) + "——訊息中斷本身就是異常）"
             have = " ".join(str(e.get("time")) for e in evidence)
             evidence += [{"time": t, "key": "（訊息流）", "observation": f"{what}（程式量測）"} for t, what in flow if t not in have]
         result = {"n": self.n, "topic": self.topic, "type": self.entry["type"], "subtask": self.asg["subtask"], "status": "done",
                   "windows": [w["id"] for w in self.windows], "analyzed_keys": analyzed, "key_selection": self.key_selection,
                   "anomaly_detected": anomaly,
                   "confidence": rep.get("confidence") or "low", "summary": summary,
-                  "evidence": evidence[:8], "program_flags": flags, "flow_events": flow,
+                  "evidence": evidence[:8], "program_flags": flags, "program_anomalies": anomalies, "flow_events": flow,
                   "data_type": data_type, "steps": steps, "calls": len(self.calls),
                   "key_metrics": metrics}   # 程式量的數字也留在 job 裡：Synthesizer 前的程式檢查要用（_background_codes）
         if self.asg.get("source_context"):
@@ -1380,6 +1470,8 @@ class AnalysisWorker:
             result["view"] = f"{self.asg['view_node']} 的{self.asg['view']}"
         if self.asg.get("round"):
             result["round"] = self.asg["round"]
+        if issues:   # 程式核對局部報告發現的問題（交回修了一次）與修完還在的
+            result["report_issues"], result["report_issues_left"] = issues, left
         result["file"] = self._write(result, metrics, ev_ts, msgs)
         mark = "⚠️ 有異常" if result["anomaly_detected"] else "沒有異常"
         a._analysis_note(job, f"✅ {self.tag}：{mark}（{'、'.join(analyzed) or '沒有量測'}；{steps} 輪）", kind="worker_done", worker=self.n)
@@ -1394,7 +1486,8 @@ class AnalysisWorker:
               "windows": result["windows"], "analyzed_key": (result["analyzed_keys"] or [None])[0],
               "analyzed_keys": result["analyzed_keys"], "key_selection": result["key_selection"],
               "anomaly_detected": result["anomaly_detected"], "confidence": result["confidence"],
-              "program_flags": result["program_flags"], "key_metrics": metrics, "evidence_timestamps": ev_ts[:12],
+              "program_flags": result["program_flags"], "program_anomalies": result["program_anomalies"],
+              "key_metrics": metrics, "evidence_timestamps": ev_ts[:12],
               "model": self.model, "steps": result["steps"]}
         if result.get("source_context"):   # Orchestrator 給這個子任務的源碼線索（不是已證實的根因）
             fm["source_context"] = result["source_context"]
@@ -1402,6 +1495,9 @@ class AnalysisWorker:
             fm["view"] = result["view"]
         if result.get("round"):   # 補推理鏈補派的 worker（第幾輪）
             fm["round"] = result["round"]
+        if result.get("report_issues"):   # 程式核對局部報告：交回修正的問題、修完還在的
+            fm["report_issues"] = result["report_issues"]
+            fm["report_issues_left"] = result["report_issues_left"]
         slices = {w["id"]: w.get("slice_host") or w["slice"] for w in self.windows if w.get("slice")}
         if slices:   # 這個 worker 讀的切片（沒有＝讀原本的數據）
             fm["data_slices"] = slices
@@ -1456,22 +1552,90 @@ def _background_codes(workers, codes):
 _DISMISS = ("背景", "而非", "並非", "不是", "不可能", "排除", "無關", "不影響", "不構成")
 # 只是說它沒有被量測、無法證實（尚未確認的內容），不算拿它當原因
 _NEUTRAL = ("未被量測", "沒有被量測", "未量測", "無法證實", "沒有被數據證實", "未被證實", "不在數據裡", "缺乏對", "沒有對應")
+# 不是在說這次變化的原因：沒把握（無法確認／判斷是否…）、它一直都在、拿它解釋恢復後的輸出為 0（第四～六輪人工複核）
+_NOT_THE_CHANGE = ("無法確認", "無法判斷", "是否", "持續存在", "一直存在", "仍存在", "始終存在", "併發", "恢復後", "非零")
+
+
+def _dismissed(sent, c):
+    """這一句有沒有排除代碼 c（小寫）：排除的字（背景、而非、並非、不是…）在它後面（「X 屬於背景條件」「X…而非指令消失所致」），
+    或在它前面、中間沒有「而是」（「不是 X 造成的」）。「這並非硬體故障，而是由 … X 共同導致」不算排除（X 在「而是」之後）。"""
+    low = sent.lower()
+    i = low.find(c)
+    if i < 0:
+        return False
+    for m in _DISMISS:
+        for k in [x.start() for x in re.finditer(re.escape(m), sent)]:
+            if k > i or "而是" not in sent[k:i]:
+                return True
+    return False
 
 
 def _relies_on(text, code):
     """結論／根因有沒有拿這個代碼當原因：提到它的句子裡有一句不是在排除它（背景、而非、不是…）、不是在說它沒被量測、
     也不是讓步子句（「雖然 Log 提到了 X，但 …」）就算。實測 e4b 排除時會寫「此為背景條件，而非導致保護停止的關鍵因素」，
-    當原因時寫「原因包括 … NO_CMD_VEL_RAW」「數據證實了 NO_CMD_VEL_RAW 的情況」。"""
+    當原因時寫「原因包括 … NO_CMD_VEL_RAW」「數據證實了 NO_CMD_VEL_RAW 的情況」。
+    第四～六輪人工複核（14 次誤判）補的：報告別的句子已經排除它（背景、而非…）就不算；清單狀態的引用（「由 [A] 變為 [A, B]」）、
+    說它持續存在或為什麼存在（「X 是因為…」「X 的原因」）、拿它解釋恢復後輸出為 0、「無法確認是否…」都不算拿它當原因。"""
     c = code.lower()
-    for sent in re.split(r"[。；;\n]", str(text or "")):
-        s = sent.replace("不是唯一", "")
-        if c not in s.lower() or any(m in s for m in _DISMISS + _NEUTRAL):
+    sents = [re.sub(r"\[[^\]]*\]", "", sent).replace("不是唯一", "") for sent in re.split(r"[。；;\n]", str(text or ""))]   # 清單狀態的引用不算提到
+    if any(_dismissed(s, c) for s in sents):
+        return False
+    explained = re.compile(re.escape(c) + r"[`'」』）)\s]{0,3}(?:的原因|是因為|是由於|源自|來自|的存在|標籤|狀態持續|條件持續)")
+    for s in sents:
+        if c not in s.lower() or any(m in s for m in _NEUTRAL + _NOT_THE_CHANGE) or explained.search(s.lower()):
             continue
         m = re.search(r"雖然(.*?)但", s)
         if m and c in m.group(1).lower() and c not in s[m.end():].lower():
             continue
         return True
     return False
+
+def _gap_flags(metrics):
+    """key_metrics 的訊息中斷 → 程式判斷的異常（舊版量測工具的 --json 沒有 anomalies 時用）。"""
+    return [f"{wid} 訊息中斷 {len(r['gaps'])} 次（最長 {max(g.get('duration_sec') or 0 for g in r['gaps'])} 秒）"
+            for wid, wm in (metrics or {}).items() for r in [((wm or {}).get("_rate") or {})] if r.get("gaps")]
+
+
+def _changes(w):
+    """worker 量到的變化（程式的 flags 裡不是異常的：開始／停止發布、一段完整的發布、狀態跳轉、尖峰…）。"""
+    bad = set(w.get("program_anomalies") or [])
+    return [f for f in w.get("program_flags") or [] if f not in bad]
+
+
+def _report_wording_issues(job, data):
+    """Synthesizer 報告的用詞跟量測對不對得上（程式核對，有問題交回修一次）：量測沒有訊息中斷的 Topic，報告寫成「中斷／間歇／丟失」。
+    全部 Topic 都沒有訊息中斷時，報告裡的這些字都沒有量測支持（Log 原文有這個字的除外）；有 Topic 中斷時，只看提到沒中斷的 Topic、
+    沒提到中斷的 Topic 的句子。實測 26b：報告寫「/cmd_vel_raw 的發布中斷」「指令源頭中斷」時 cmdvel 定性成正常的操作 10/33，沒寫 7/7。"""
+    done = [w for w in job.get("workers") or [] if w.get("status") == "done"]
+    if not done or not data:
+        return []
+    broken = [w["topic"] for w in done if w.get("program_anomalies")]
+    calm = [w for w in done if not w.get("program_anomalies")]
+    logs = " ".join(str(s.get("message") or "") for s in job.get("signals") or [])
+    texts = [str(data.get(k) or "") for k in ("conclusion", "root_cause")]
+    texts += [str(x) for k in ("unknowns", "recommendations") for x in data.get(k) or []]
+    texts += [str((x or {}).get(f) or "") for k, f in (("timeline", "event"), ("evidence", "fact"))
+              for x in data.get(k) or [] if isinstance(x, dict)]
+    names = lambda clause: {t for t in re.findall(r"/[A-Za-z0-9_/]+", clause)}   # 句子提到的 Topic（完整名稱：/cmd_vel 不等於 /cmd_vel_raw）
+    measured = {w["topic"] for w in done}
+    found = []
+    for t in texts:
+        for clause in re.split(r"[，。；;\n]", t):
+            if not [x for x in _interrupt_words(clause) if x not in logs]:
+                continue
+            said = names(clause)
+            if said - measured:   # 提到沒有量測的 Topic（沒錄到、沒分析）：不是跟量測相反
+                continue
+            if broken and (not said or said & set(broken)):
+                continue
+            found.append(_short(clause.strip(), 60))
+    if not found:
+        return []
+    facts = "；".join(f"{w['topic']} {'；'.join(_changes(w)[:2])}" for w in calm if _changes(w))[:500]
+    return [f"報告寫了「{'」「'.join(dict.fromkeys(found[:3]))}」，但程式量到"
+            + ("這幾個 Topic" if broken else "的 Topic 都") + "沒有訊息中斷" + (f"（量到的是：{facts}）" if facts else "")
+            + "——照量測的說法寫：開始發布、停止發布、一段完整的發布、輸出歸零；中斷＝停了一段又恢復，只有程式判斷的異常才是。"
+            "停止的原因數據看不出來就寫進 unknowns"]
 
 
 def _flow_events(metrics, base_ns, segments=True):
@@ -1630,7 +1794,8 @@ _SOURCE_PLAN_LINE = "source_context 填這個子任務根據的源碼線索（Lo
 _VIEW_LINE = ("每個指派先定觀測角度：view_node＝Log 談到的功能所在的節點（印出相關 Log 的節點，或跟它有發布／訂閱關係的節點），"
               "view＝這個 Topic 對 view_node 是輸入（它訂閱的）還是輸出（它發布的），照 Topic Metadata 的源碼一行判斷；"
               "subtask 照這個角度寫要觀測的現象——看輸出＝這個節點做了什麼（結果），看輸入＝這個節點收到了什麼（原因）；"
-              "worker 只描述這個 Topic 本身的現象，不要叫它用這個 Topic 證明別的 Topic 或 Log 的原因。")
+              "worker 只描述這個 Topic 本身的現象，不要叫它用這個 Topic 證明別的 Topic 或 Log 的原因；"
+              "subtask 只寫要觀察的現象與時間，不寫你推測的原因或預期的結論（worker 看不到 Log 與你的理解，L# 由系統換成時間）。")
 # Orchestrator 第二步（分派）的說明：先寫從源碼讀到的（source_reading），再定每個 Topic 的觀測角度、照角度寫子任務
 _ASSIGN_LINE = ("先在 source_reading 寫你從源碼讀到的：相關訊號裡的代碼由哪段程式、在什麼條件下產生，條件讀的變數由哪個 Topic 寫入；"
                 "哪些 Topic 是那個節點的輸入、哪些是它的輸出。再分派：" + _VIEW_LINE +

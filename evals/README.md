@@ -81,7 +81,7 @@ python3 evals/perf_report.py                # 平常使用 CLI／Web 累積的 l
 ## 數據解析的評測（2026-10-14）
 
 ```bash
-python3 evals/analysis_selftest.py          # 離線：假模型照劇本回答、數據技能用錄下的真實輸出（analysis_fixtures/）——18 個情境，幾秒
+python3 evals/analysis_selftest.py          # 離線：假模型照劇本回答、數據技能用錄下的真實輸出（analysis_fixtures/）——19 個情境，幾秒
 python3 evals/analysis_tools_live.py --container ros2_web_container \
     --data /workspace/app/diagnostics_package/toolkit/experiment_logs/exp_20261014_084506 [--record]   # 實機：五支數據技能（不需要 Ollama）
 python3 evals/run_evals.py --modes harness --only analysis_route_diagnose,analysis_route_single_key,analysis_route_log   # 真模型：主對話的路由
@@ -105,6 +105,7 @@ python3 evals/analysis_regression.py --score-file test_data/repeat_runs.json   #
   模型可以分角色指定（`--model`／`--orchestrator`／`--worker`／`--synthesizer`、`--think-roles`），源碼目錄（`--source`）與程式提示（`--hints`）也一樣，只改這次執行、不寫回設定，
   換到 DGX Spark／5090 跑 26b 時用同一套比較。結果在 `evals/results/analysis_<時間>/scorecard.md`。
   評分是關鍵字與時間的比對：抓得到缺事件、拿背景條件當原因、「間歇性」這類錯；措辭換了的對錯仍要人看報告（scorecard 列出每一項沒過的原因）。
+  關鍵字裡「re:」開頭的是正規表示式；`character_forbid`＝肯定地說了就不算定性對的字（cmdvel 的「異常」「故障」）。2026-10-16 起 cmdvel 的定性改成只根據事實（說安全閘照設計反應、不是故障就算；不再要求「正常的操作」），把停止發布說成「中斷」算錯誤說法；steady、lifecycle、根因（`_relies_on`）照第四～六輪人工複核的先例補了說法——本機用 `test_data/tools/scorer_check.py` 核對過 1120 項人工判定全部一致。
   換機器時把 `test_data/recordings/` 複製到那台的數據根目錄（或 `--data-root`）。
 - **實機事件測試**（2026-10-15）的錄製、ground truth、每次分析與對照結果在 `test_data/`（見 `test_data/README.md`）。
 - **報告的品質**（根因對不對）目前只能人工看：`/analyze <問題>` 跑一次，看 `logs/analysis_jobs/<編號>/report.md` 與各 worker 的局部報告；

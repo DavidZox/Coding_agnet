@@ -55,8 +55,8 @@ def main():
         check(f"mcap_analyzer --topic {t['topic']}：Key 的型別、維度、類別", out.startswith("[PASS]") and "Key｜ROS 型別" in out, out)
         if key:
             out = run("mcap_feature_measure_cmd.py", a.data, "--topic", t["topic"], "--key", key["key"], env=env)
-            check(f"mcap_feature_measure {t['topic']} {key['key']}：特徵與異常指標", out.startswith("[PASS] 特徵量測")
-                  and f"▸ {key['key']}（" in out and "異常指標（程式判斷）" in out, out)
+            check(f"mcap_feature_measure {t['topic']} {key['key']}：特徵、程式判斷的異常與量到的變化", out.startswith("[PASS] 特徵量測")
+                  and f"▸ {key['key']}（" in out and "程式判斷的異常（訊息中斷）" in out and "量到的變化（事實，不代表異常）" in out, out)
             out = run("mcap_feature_measure_cmd.py", a.data, "--topic", t["topic"], "--key", key["key"], "--window", "+0~+5s", env=env)
             check("時間窗的寬鬆寫法（+0~+5s）", out.startswith("[PASS]") and "+0.00s ～ +5.00s" in out, out)
             out = run("mcap_feature_measure_cmd.py", a.data, "--topic", t["topic"], "--key", key["key"], "--bogus", "1", env=env)

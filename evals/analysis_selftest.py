@@ -14,6 +14,7 @@
 - 程式重新啟動時，沒做完的 job 標成中斷。
 每一個情境都在臨時目錄複製一份專案，不碰正式的 logs/。"""
 import json
+import re
 import os
 import shutil
 import sys
@@ -331,7 +332,8 @@ def main():
                 agent.analysis_run(f'--data {DATA} "安全閘為什麼停下來"')
                 job = json.load(open(os.path.join(agent.analysis_jobs_dir(), agent.analysis_last["id"], "job.json"), encoding="utf-8"))
                 w = job["workers"][0]
-                assert w["anomaly_detected"] is forced and ("訊息流中斷本身就是異常" in w["summary"]) is forced, (forced, w)
+                assert w["anomaly_detected"] is forced and ("訊息中斷本身就是異常" in w["summary"]) is forced, (forced, w)
+                assert bool(w["program_anomalies"]) is forced, w["program_anomalies"]   # 舊版工具沒有 anomalies：照 key_metrics 的中斷
                 assert w["flow_events"], "兩種都列進訊息流（證據、時間線）"
                 synth_prompt = fake.seen["synth"][0][1]["content"]
                 assert ("是一段完整的發布" in synth_prompt) is (not forced), synth_prompt[-1500:]
@@ -374,7 +376,7 @@ def main():
 
             def exec_new_tool(script_name, script_path, clean_args, extra_env=None, _plain=plain):
                 if script_name == "mcap_feature_measure_cmd.py" and "--json" not in clean_args:   # 新版工具：略過 state、state.mode 換成 mode
-                    return fixture("measure_text.txt").replace("異常指標（程式判斷）", "沒有量測：state（沒有這個 Key：state 是 Key 的類別（狀態），不是 Key）\n異常指標（程式判斷）")
+                    return fixture("measure_text.txt").replace("程式判斷的異常（訊息中斷）", "沒有量測：state（沒有這個 Key：state 是 Key 的類別（狀態），不是 Key）\n程式判斷的異常（訊息中斷）")
                 return _plain(script_name, script_path, clean_args, extra_env)
             agent._exec_script = exec_new_tool
             agent.analysis_run(f'--data {DATA} "安全閘為什麼停下來"')
@@ -425,7 +427,8 @@ def main():
             done = {"thought": "夠了", "reply": "完成", "action": None}
             report = {"analyzed_keys": ["mode", "不存在的Key"], "anomaly_detected": True, "summary": "mode 在 +15.54s 由 PROTECTIVE_STOP 變 NORMAL",
                       "evidence": [{"time": "+15.54s", "key": "mode", "observation": "PROTECTIVE_STOP $\\rightarrow$ NORMAL"}], "confidence": "high"}
-            fake, calls = setup(plans=[GOOD_PLAN], worker=[reply_action, other, shell, same, same, done], reports=[report], synth=[SYNTH])
+            fixed = dict(report, anomaly_detected=False)   # 程式核對：狀態跳轉是變化、工具沒有判斷出異常 → 交回修一次
+            fake, calls = setup(plans=[GOOD_PLAN], worker=[reply_action, other, shell, same, same, done], reports=[report, fixed], synth=[SYNTH])
             out = agent.analysis_run(f'--data {DATA} "安全閘為什麼停下來"')
             measure = [c for c in calls if c["script"] == "mcap_feature_measure_cmd.py"]
             text_calls = [c for c in measure if "--json" not in c["args"]]
@@ -442,7 +445,9 @@ def main():
             assert json.loads(fm["analyzed_keys"]) == ["mode"], "analyzed_keys 只留真的量過的"
             metrics = json.loads(fm["key_metrics"])
             assert metrics["W1"]["mode"]["transitions"] == 1 and metrics["W1"]["mode"]["last"] == "NORMAL", metrics
-            assert json.loads(fm["anomaly_detected"]) is True and json.loads(fm["topic"]) == "/system/safety_gate_status"
+            assert json.loads(fm["anomaly_detected"]) is False and json.loads(fm["topic"]) == "/system/safety_gate_status"
+            assert len(fake.seen["report"]) == 2 and "量測工具沒有判斷出異常" in fake.seen["report"][1][-1]["content"]
+            assert "量測工具沒有判斷出異常" in fm["report_issues"] and json.loads(fm["report_issues_left"]) == [], fm.get("report_issues")
             assert "PROTECTIVE_STOP → NORMAL" in md and "rightarrow" not in md, "LaTeX 箭頭換成 →"
             assert os.path.exists(os.path.join(job_dir, "workers", "W1_system_safety_gate_status.transcript.md"))
             report_md = open(os.path.join(job_dir, "report.md"), encoding="utf-8").read()
@@ -686,6 +691,16 @@ def main():
             assert _relies_on("NO_CMD_VEL_RAW 不是唯一原因", "NO_CMD_VEL_RAW"), "「不是唯一」＝原因之一"
             assert not _relies_on("雖然 Log 提到了 NO_CMD_VEL_RAW，但根據 W1 的數據，MON_INITIALIZING 是新增的關鍵原因", "NO_CMD_VEL_RAW"), "讓步子句"
             assert not _relies_on("信心是中等，因為 NO_CMD_VEL_RAW 的具體來源未被量測", "NO_CMD_VEL_RAW"), "只說沒被量測"
+            # 第四～六輪人工複核的誤判（14 次）：清單狀態的引用、它一直都在、解釋它為什麼存在、恢復後輸出為 0、報告別處已排除它
+            assert not _relies_on("原因清單新增了 SAFETY_COMMAND_TIMEOUT（由 [NO_CMD_VEL_RAW] 變為 [NO_CMD_VEL_RAW, SAFETY_COMMAND_TIMEOUT]）", "NO_CMD_VEL_RAW")
+            assert not _relies_on("由於數據中缺乏 /cmd_vel_raw 的輸入，導致 NO_CMD_VEL_RAW 狀態持續存在", "NO_CMD_VEL_RAW")
+            assert not _relies_on("推測 NO_CMD_VEL_RAW 是因為節點重啟期間無法接受指令", "NO_CMD_VEL_RAW")
+            assert not _relies_on("恢復後速度仍為 0，是因為 NO_CMD_VEL_RAW 條件導致輸出始終為 0", "NO_CMD_VEL_RAW")
+            assert not _relies_on("Log 顯示進入 PROTECTIVE_STOP 的原因是 SAFETY_COMMAND_TIMEOUT 與 NO_CMD_VEL_RAW。"
+                                  "NO_CMD_VEL_RAW 在跳轉前後一直存在，屬於背景條件", "NO_CMD_VEL_RAW"), "報告別的句子已經排除它"
+            assert _relies_on("這並非硬體故障，而是由初始化階段以及缺乏原始速度指令（NO_CMD_VEL_RAW）共同導致的預期行為", "NO_CMD_VEL_RAW"), \
+                "「並非」否定的是硬體故障：「而是」之後的 X 是原因"
+            assert not _relies_on("保護停止不是 NO_CMD_VEL_RAW 造成的", "NO_CMD_VEL_RAW")
             assert _relies_on("數據證實了 NO_CMD_VEL_RAW 的情況，因為 /cmd_vel 持續為零", "NO_CMD_VEL_RAW")
             assert _relies_on("雖然有診斷訊息，但直接原因是 NO_CMD_VEL_RAW", "NO_CMD_VEL_RAW"), "代碼在「但」之後＝原因"
             from agent_core.analysis_job import _background_codes
@@ -845,6 +860,35 @@ def main():
             assert len(fake.seen["review"]) == 1 and len(job["rounds"]) == 1 and job["reviews"][0]["assignments"] == []
             assert not os.path.exists(os.path.join(d, "report_r1.md"))
 
+        def t_fact_wording():
+            # worker 只拿子任務（L# 換成時間）：不給使用者的問題與 Orchestrator 的理解（裡面有 Log 與推測的原因），錨點只寫時間；
+            # 局部報告跟量測不符（量測沒有訊息中斷卻寫「中斷」、寫因果）→ 交回 worker 修一次；報告寫「中斷」→ 交回 Synthesizer 修一次
+            plan = dict(GOOD_PLAN, assignments=[{"topic": "/system/safety_gate_status", "subtask": "看 L28 (+0.75s) 與 L30 前後 mode 的跳轉",
+                                                 "signals": ["L28", "L30"]}])
+            measure = {"thought": "量 mode", "reply": "", "action": {"command": "scripts/mcap_feature_measure_cmd.py", "args": "--key mode"}}
+            bad = {"analyzed_keys": ["mode"], "anomaly_detected": False, "summary": "mode 在 +15.54s 恢復；之前安全指令中斷導致保護停止",
+                   "evidence": [], "confidence": "medium"}
+            good = dict(bad, summary="mode 在 +15.54s 由 PROTECTIVE_STOP 變 NORMAL")
+            synth_bad = dict(SYNTH, root_cause="安全指令中斷，安全閘保護停止")
+            fake, calls = setup(plans=[plan], worker=[measure], reports=[bad, good], synth=[synth_bad, SYNTH])
+            agent.analysis_run(f'--data {DATA} "安全閘為什麼停下來"')
+            brief = fake.seen["worker"][0][1]["content"]
+            assert "【使用者的問題】" not in brief and "【Orchestrator 對問題的理解】" not in brief and GOOD_PLAN["understanding"] not in brief, brief[:400]
+            assert not re.search(r"L(28|30)", brief) and "看 +0.75s 與 +15.54s 前後 mode 的跳轉" in brief, brief[:800]
+            ask = fake.seen["report"][1][-1]["content"]
+            assert "你寫了「中斷」" in ask and "你寫了「導致」" in ask, ask
+            job_dir = os.path.join(agent.analysis_jobs_dir(), agent.analysis_last["id"])
+            job = json.load(open(os.path.join(job_dir, "job.json"), encoding="utf-8"))
+            w = job["workers"][0]
+            assert w["summary"] == good["summary"] and len(w["report_issues"]) == 2 and w["report_issues_left"] == [], w
+            assert w["subtask"] == plan["assignments"][0]["subtask"], "plan 與 Synthesizer 看到的子任務照原樣（有 L#）"
+            assert len(fake.seen["synth"]) == 2 and "報告寫了「安全指令中斷」" in fake.seen["synth"][1][1]["content"]
+            from agent_core.analysis_job import _interrupt_words
+            assert not _interrupt_words("停止發布的原因（例如上游節點關閉或通訊中斷）無法得知") and not _interrupt_words("沒有任何狀態跳轉、數值尖峰或訊息中斷")
+            assert _interrupt_words("根因為 /cmd_vel_raw 指令源頭中斷") == ["中斷"]
+            assert job["report_wording"][0]["left"] == [] and job["report"]["root_cause"].startswith(SYNTH["root_cause"]), job["report_wording"]
+            assert os.path.exists(os.path.join(job_dir, "prompts", "synthesizer_2.md"))
+
         for name, fn in [("Orchestrator：不存在的 L#／Topic、Log Topic、重複的 Topic 交回修一次（程式列出具體的問題）", t_plan_repair),
                          ("Orchestrator：同一個 L# 列兩次只合併、不交回修正", t_plan_duplicate_signal),
                          ("訊息流：一段完整的發布不強制算異常、交給 Synthesizer「完整的發布」；中斷照樣強制", t_segment_not_fault),
@@ -865,7 +909,9 @@ def main():
                          ("源碼脈絡：Orchestrator 分兩步（先挑訊號、再帶【源碼脈絡】分派；給不出就用第一步的）、Worker 與 Synthesizer 拿到【源碼脈絡】、計畫多 source_context、關閉程式提示時沒有【程式檢查】；產物 source_context.md、prompts/",
                           t_source_context_pipeline),
                          ("有源碼脈絡：缺的輸入用源碼判斷（不用名稱比對）、觀測角度用源碼核對、補推理鏈（補派、第 2 輪整合、report_r1.md；不能補就結束）",
-                          t_view_gaps_review)]:
+                          t_view_gaps_review),
+                         ("只根據事實：worker 只拿子任務（L# 換成時間、沒有理解與問題）；局部報告與報告的用詞跟量測不符（停止寫成中斷、寫因果）交回修一次",
+                          t_fact_wording)]:
             check(name, fn)
     finally:
         os.chdir(cwd)
