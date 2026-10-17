@@ -11,8 +11,8 @@
 > **ROS 2 數據解析的執行邊界**：數據技能（mcap_*、rosout_parser）由主機端呼叫，讀檔與 ROS 2 訊息反序列化在目標容器內執行（自動載入 /opt/ros 與 Workspace overlay；自訂訊息型別讀不到時先用 ROS2_workspace_env 確認 Workspace）。路徑以容器內路徑為準，主機路徑會依容器的 bind mount 自動換算。**數據**可以是實驗資料夾、bag 資料夾、切片資料夾、`.mcap`、實驗名稱或 `latest`；省略時用 CURRENT_ANALYSIS_DATA（成功操作過的數據會自動成為目前的數據）。
 
 ## ROS 2 數據解析（主要功能）
-> 問題要同時看 Log 與好幾個 Topic（「發生了什麼、為什麼、什麼時候恢復」）用 analysis_run；只看一個 Topic、一個值、Log 的時間點，直接用下面對應的技能。
-- [analysis_run](tools/analysis_run.md) — 數據診斷：Log 去重＋Topic Metadata → Orchestrator 分派不同的 Topic 給多個 worker 量測 → Synthesizer 寫根因診斷報告（結論、時間線、證據、建議）
+> 問題要同時看 Log 與好幾個 Topic（「發生了什麼、前後有哪些變化、什麼時候恢復」）用 analysis_run；只看一個 Topic、一個值、Log 的時間點，直接用下面對應的技能。
+- [analysis_run](tools/analysis_run.md) — 數據分析：Log 去重＋Topic Metadata → Orchestrator 分派不同的 Topic 給多個 worker 量整段數據 → 程式整理事實、Synthesizer 寫摘要（事實報告：各 Topic 的結果、時間線、Log 的對照；不判斷原因）
 - [mcap_recorder](tools/mcap_recorder.md) — 在目標容器內定時錄製 ROS 2 Topic（toolkit 格式：bag、rosout.log、terminal.log），錄完自動建立全域 Topic Metadata 索引
 - [rosout_parser](tools/rosout_parser.md) — Log 智慧過濾：重複的 Log 合併成唯一訊號（L#：層級、Node、次數、時間戳），找異常的時間點
 - [mcap_analyzer](tools/mcap_analyzer.md) — 全域 Topic Metadata（時間範圍、每個 Topic 的型別、筆數、頻率、角色）；`--topic` 看每個 Key 的型別、維度與類別；`--key --preview` 看原始值

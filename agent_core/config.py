@@ -166,9 +166,9 @@ TOOL_RESULT_TOKEN_THRESHOLD = 500
 TOOL_SUMMARY_DEFAULT = os.environ.get("AGENT_TOOL_SUMMARY", "1").strip().lower() not in ("0", "off", "false", "no")
 # summarize_tool_result() 產生的內容固定以這個標籤開頭：CLI 據此印出、Web 據此推 🧠 卡片，讓使用者看到主對話實際收到的內容。
 TOOL_SUMMARY_TAG = "[tool result - 任務導向摘要]"
-# analysis_run 的回傳（Synthesizer 寫好的根因診斷報告）固定以這個開頭：它本身就是多個 agent 依問題整理好的結論，跟 result_recall
+# analysis_run 的回傳（程式組好的事實報告）固定以這個開頭：它本身就是多個 agent 依問題整理好的事實，跟 result_recall
 # 一樣不再交給摘要 session（is_exempt_result），主對話直接收到完整的報告。
-ANALYSIS_REPORT_HEAD = "[PASS] 📊 數據診斷報告"
+ANALYSIS_REPORT_HEAD = "[PASS] 📊 數據事實報告"
 # _content_for_context 退回「只給成功／失敗判定」時的固定開頭（/summarize off 或摘要 session 失敗）；UI 據此標示 AI 實際收到的是哪一種。
 TOOL_REDUCED_TAG = "[tool result - 已精簡]"
 # 獨立 session 一次最多讀多少原始輸出（字元）：超過就保留頭尾、明確告知中間省略了多少（見 _clip_tool_output）。
@@ -266,18 +266,20 @@ OPS_MAX_ITEMS = 6                        # 計畫最多幾步（小模型規劃�
 OPS_WORKER_MAX_STEPS = 10                # 每一步的 worker 最多幾輪（每輪一個動作）
 
 # =========================================================
-# 📊 數據解析的多 agent 協同（agent_core/analysis_job.py，analysis_run 技能）：Orchestrator → Workers → Synthesizer。
+# 📊 數據解析的多 agent 協同（agent_core/analysis_job.py，analysis_run 技能）：只要有 .mcap 就能用的事實報告——
+# 量到什麼、什麼時候、Log 說了什麼，不做因果推論（原因要對照源碼另外分析；第九輪的源碼脈絡與因果推論留在 root_cause_reference/）。
 # 1. 資料預備（程式）：rosout_parser 把 Log 去重成唯一訊號、mcap_analyzer 讀全域 Topic Metadata 索引（錄製時已建立的就讀快取）；
-# 2. Orchestrator（一次模型呼叫）：同時看去重後的 Log 與 Topic Metadata，挑出跟問題有關的 Log 訊號（程式換成精確的時間窗）、
-#    把不同的 Topic 指派給不同的 worker（一個 Topic 只給一個 worker，擴大分析廣度）；
-# 3. Workers（每個一個乾淨的 session＋自己的工具迴圈）：只看自己的 Topic 與時間窗，自己決定量測哪些 Key（mcap_feature_measure），
-#    不碰 Log 字串；產出 Frontmatter Markdown 的局部報告（frontmatter 的數字由程式從量測結果填，不讓模型抄）；
-# 4. Synthesizer（一次模型呼叫）：拿 Orchestrator 的 Log 視角＋全部局部報告做因果拼圖，寫根因診斷報告。
+# 2. Orchestrator（一次模型呼叫）：同時看去重後的 Log 與 Topic Metadata，挑出跟問題有關的 Log 訊號、把不同的 Topic 指派給不同的
+#    worker（一個 Topic 只給一個 worker，擴大分析廣度）；
+# 3. Workers（每個一個乾淨的 session＋自己的工具迴圈）：只看自己的 Topic，自己決定量測哪些 Key（mcap_feature_measure，整段數據），
+#    不碰 Log 字串；局部報告的數字由程式從量測結果填，不讓模型抄；
+# 4. 事實由程式整理（每個 Topic 的類別、事件、到最後的值；Topic 的事件與 Log 依時間對照），Synthesizer 寫成摘要；
+# 5. Orchestrator 檢查：相關的 Log 前後量到的 Topic 都沒有變化時，決定要不要補量還沒量的 Topic（最多補一輪）。
 # job 的計畫、每個 worker 的報告與對話、最後的報告都在 logs/analysis_jobs/<編號>/。
 # =========================================================
 ANALYSIS_JOBS_DIRNAME = "analysis_jobs"
 ANALYSIS_SETTINGS_NAME = "analysis_settings.json"   # logs/ 下：各角色的模型、數據根目錄、worker 數…（Web 的 📊 分析面板 ⚙️ 設定）
-ANALYSIS_AGENTS_DIRNAME = "analysis_agents"         # orchestrator.md／worker.md／synthesizer.md：三個角色的 system prompt（可直接改）
+ANALYSIS_AGENTS_DIRNAME = "analysis_agents"         # orchestrator.md／orchestrator_check.md／worker.md／synthesizer.md：各角色的 system prompt（可直接改）
 # 各角色的模型：預設同主模型（AGENT_ANALYSIS_*_MODEL 可分別指定，例如 Orchestrator 與 Synthesizer 用 gemma4:26b、worker 用 e4b）
 ANALYSIS_ORCHESTRATOR_MODEL = os.environ.get("AGENT_ANALYSIS_ORCHESTRATOR_MODEL", "").strip() or None
 ANALYSIS_WORKER_MODEL = os.environ.get("AGENT_ANALYSIS_WORKER_MODEL", "").strip() or None
@@ -286,34 +288,21 @@ ANALYSIS_THINK_DEFAULT = os.environ.get("AGENT_ANALYSIS_THINK", "").strip().lowe
 # 數據根目錄（容器內或主機路徑都可以，主機路徑會依 bind mount 換成容器路徑）：mcap_recorder 錄到這裡、實驗名稱與 latest 相對於它；
 # 沒設定時工具在容器的 /workspace 底下找 experiment_logs
 ANALYSIS_DATA_ROOT = os.environ.get("AGENT_ANALYSIS_DATA_ROOT", "").strip()
-ANALYSIS_MAX_WORKERS = int(os.environ.get("AGENT_ANALYSIS_MAX_WORKERS", "4"))        # 一次最多派幾個 worker（＝最多分析幾個 Topic）
+# 一次分析最長幾秒（以整秒算）：每個 worker 量整段數據，事實才不會因為規劃時漏挑某則 Log 而少一段。更長的數據先用 mcap_slicer
+# 切成這個長度以內的片段再分析（之後要分析更長的時間跨度，是多組 Orchestrator → Workers → Synthesizer 各管一段，再往上整合）
+ANALYSIS_MAX_SECONDS = int(os.environ.get("AGENT_ANALYSIS_MAX_SECONDS", "180"))
+ANALYSIS_MAX_WORKERS = int(os.environ.get("AGENT_ANALYSIS_MAX_WORKERS", "6"))        # 一次最多派幾個 worker（＝最多分析幾個 Topic；4 個時 14 份數據有 3 份常漏掉 /cmd_vel 或 /cmd_vel_raw，6 個時時間線 52/65 → 65/65）
 ANALYSIS_PARALLEL_WORKERS = int(os.environ.get("AGENT_ANALYSIS_PARALLEL", "2"))      # 同時跑幾個 worker（Ollama 同一個模型只有一個 slot
 #                                                                                       時模型呼叫仍會排隊，但容器內的量測可以重疊）
 ANALYSIS_WORKER_MAX_STEPS = int(os.environ.get("AGENT_ANALYSIS_WORKER_STEPS", "6"))  # 一個 worker 最多幾個動作
-ANALYSIS_WINDOW_BEFORE = 5.0             # 時間窗：Log 訊號前後各取幾秒（同 toolkit 的預設）；Orchestrator 可以依問題調整
-ANALYSIS_WINDOW_AFTER = 5.0
-ANALYSIS_MAX_WINDOWS = 4                 # 時間窗最多幾個（重疊的會合併）；同一個訊號最多取前幾次出現
-# 動態時間切片：時間窗定好之後，每個時間窗先用 mcap_slicer 切一片（只含指派的 Topic＋每個 Topic 在時間窗之前的最後一則），
-# worker 只讀切片；整段數據（沒有相關訊號）不切。切片放在數據資料夾底下的 analysis_slices/<job 編號>/（容器裡寫得到、主機看得到）
-ANALYSIS_SLICE = os.environ.get("AGENT_ANALYSIS_SLICE", "1").strip().lower() not in ("0", "false", "off", "no")
-ANALYSIS_SLICES_DIRNAME = "analysis_slices"
-ANALYSIS_SIGNAL_OCCURRENCES = 2
 ANALYSIS_DIGEST_MAX_SIGNALS = 60         # 交給 Orchestrator 的去重後 Log 最多幾個訊號（WARN 以上全部，其餘依時間補到上限）
 ANALYSIS_TOOL_RESULT_MAX_CHARS = 5000    # worker 的工具回傳進上下文的上限（超過保留頭尾）
 # worker 可以用的腳本（其餘一律拒絕）：特徵量測與 Key／原始值檢視；Topic 由系統固定成指派的那一個
 ANALYSIS_WORKER_SCRIPTS = {"mcap_feature_measure_cmd.py", "mcap_analyzer_cmd.py"}
-# 源碼脈絡：受測系統的源碼目錄（ROS 2 工作區的 src，主機路徑）。設定了就把 Log 的源碼位置（/rosout 的 file:line）對回程式碼，
-# 整理在執行的節點的發布／訂閱關係與代碼的條件，交給 Orchestrator、Worker、Synthesizer（agent_core/source_index.py）。空＝不用
-ANALYSIS_SOURCE_ROOT = os.environ.get("AGENT_ANALYSIS_SOURCE_ROOT", "").strip()
-ANALYSIS_SOURCE_CACHE_DIRNAME = "source_index"   # logs/ 下：源碼索引的快取（檔案大小、mtime 沒變就沿用）
-ANALYSIS_SOURCE_MAX_CHARS = {"orchestrator": 4500, "worker": 2500, "causal": 11000}   # 各角色的【源碼脈絡】上限（字）；Orchestrator 的是第二步（分派）的
-# Orchestrator 分兩步（有源碼脈絡時）：第一步只在 Log 與 Topic Metadata 裡帶源碼、挑訊號與時間窗，第二步帶整段【源碼脈絡】分派 Topic。
-# 一步做完時整段源碼會讓它漏挑狀態改變的訊號；不給整段源碼，子任務常把輸出 Topic 當輸入去驗證（設計筆記 2.19）。0／off＝一步
-ANALYSIS_PLAN_TWO_STEP = os.environ.get("AGENT_ANALYSIS_PLAN_TWO_STEP", "1").strip().lower() not in ("0", "false", "off", "no")
-# 補分析（有源碼脈絡時）：Orchestrator 做因果推論時，缺的環節能用數據裡錄到、還沒分析的 Topic 補上就指派（followups），
-# 補派 worker、再整合事實、再推論。最多幾輪（1＝不補；補分析之前的報告留成 report_r<n>.md）、每輪補派最多幾個 worker
+# 事實的對照（程式）：Topic 的變化與 Log 前後這麼多秒內就列在一起（只寫時間差，不代表誰造成誰）；不同 Topic 這麼多秒內一起變化＝「同時」
+ANALYSIS_ALIGN_SEC = 1.0
+ANALYSIS_SAME_TIME_SEC = 0.1
+# 補量：相關的 Log 前後量到的 Topic 都沒有變化時，Orchestrator 可以補派還沒量的 Topic，再整理一次事實。
+# 最多幾輪（1＝不補、2＝最多補一輪；補量之前的報告留成 report_r<n>.md）、每輪補派最多幾個 worker
 ANALYSIS_MAX_ROUNDS = int(os.environ.get("AGENT_ANALYSIS_ROUNDS", "2"))
 ANALYSIS_FOLLOWUP_WORKERS = 2
-# 程式的推理提示：Log 提到、數據裡沒有的輸入（名稱比對）、名稱相近的 Topic、背景條件的更正、共同的上游、一段完整的發布……
-# off：只給數據與源碼的事實，因果由模型自己推（量源碼脈絡能不能取代這些提示時用）。量測、切片、時間校正等事實處理不受影響
-ANALYSIS_PROGRAM_HINTS = os.environ.get("AGENT_ANALYSIS_PROGRAM_HINTS", "1").strip().lower() not in ("0", "false", "off", "no")

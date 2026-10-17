@@ -111,17 +111,8 @@ def _handle_analysis_command(agent, text):
             if agent.analysis_cfg["container"] and not agent.target_container:
                 agent.target_container = agent.analysis_cfg["container"]
         print(f"📊 預設容器：{agent.analysis_cfg.get('container') or '（沒有）'}；目前的目標容器：{agent.target_container or '（沒有）'}")
-    elif cmd == "/analysis_source":
-        if arg:
-            agent.analysis_cfg["source_root"] = "" if arg == "-" else os.path.expanduser(arg)
-            agent.save_analysis_settings()
-        root = agent.analysis_cfg.get("source_root") or ""
-        print(f"📊 源碼目錄：{root or '（沒有：不用源碼脈絡）'}" + ("（目錄不存在）" if root and not os.path.isdir(root) else ""))
-    elif cmd == "/analysis_hints":
-        if arg.lower() in ("on", "off"):
-            agent.analysis_cfg["program_hints"] = arg.lower() == "on"
-            agent.save_analysis_settings()
-        print(f"📊 程式的推理提示：{'開' if agent.analysis_cfg.get('program_hints', True) else '關（只給數據與源碼的事實）'}")
+    elif cmd in ("/analysis_source", "/analysis_hints"):   # 第九輪以前的設定：源碼脈絡、推理提示
+        print(f"📊 {cmd} 已經拿掉：數據分析只做事實報告，每個 worker 量整段數據，不用源碼。")
     elif cmd == "/analysis_model":
         bits = arg.split()
         if len(bits) == 2 and bits[0].lower() in ROLES + ("all",):
@@ -137,7 +128,7 @@ def _handle_analysis_command(agent, text):
             print("📊 還沒有數據分析 job：/analyze [問題] 開始。")
     else:
         print("📊 /analyze [問題]、/analysis（最近的 job）、/analysis_data <數據>、/analysis_root <路徑>、"
-              "/analysis_container <容器>、/analysis_model <角色|all> <模型>、/analysis_source <源碼目錄|->、/analysis_hints on|off")
+              "/analysis_container <容器>、/analysis_model <角色|all> <模型>")
     return True
 
 
@@ -155,7 +146,7 @@ def main():
     plan_mode = False  # 👈 開啟後，下一個新任務先規劃、經使用者核准後才執行；核准即自動退出
 
     print("\n" + "="*50)
-    print("ROS 2 數據解析 Agent + Token Tracker 已啟動（/analyze [問題]＝數據診斷）")
+    print("ROS 2 數據解析 Agent + Token Tracker 已啟動（/analyze [問題]＝數據分析：事實報告）")
     print(f"上下文模式：{agent.context_mode}（/context_mode harness|claude_code 切換）；"
           f"執行前關卡：{'開' if agent.guard_enabled else '關'}（/guard on|off）")
     print("="*50)
@@ -284,18 +275,18 @@ def main():
             if user_msg.lower() in ['exit', 'quit']:
                 break
             if user_msg.strip().lower() == "/analyze" or user_msg.strip().lower().startswith("/analyze "):
-                # 📊 直接交給數據診斷（同主模型選用 analysis_run），報告進主對話後讓 AI 依報告回答、可以接著追問
+                # 📊 直接交給數據分析（同主模型選用 analysis_run），報告進主對話後讓 AI 依報告回答、可以接著追問
                 from .protocol import quote_cli_arg
                 import json as _json
                 question = user_msg.strip()[len("/analyze"):].strip()
                 agent.set_current_task(question or user_msg.strip())
                 agent.end_plan_for_new_task()
-                agent.messages.append({'role': 'user', 'content': question or "找出這段數據的異常與根因。"})
+                agent.messages.append({'role': 'user', 'content': question or "這段錄製期間發生了哪些狀態變化？"})
                 data = agent.analysis_data or "latest"
                 action = {"command": "scripts/analysis_run_cmd.py",
                           "args": f"--data {quote_cli_arg(data)}" + (f" {quote_cli_arg(question)}" if question else "")}
                 agent.messages.append({'role': 'assistant', 'content': _json.dumps(
-                    {"thought": "使用者要求數據診斷，直接交給 analysis_run", "reply": "交給數據診斷。", "action": action}, ensure_ascii=False)})
+                    {"thought": "使用者要求數據分析，直接交給 analysis_run", "reply": "交給數據分析。", "action": action}, ensure_ascii=False)})
                 result = agent.run_tool({"action": action}, approved=True)
                 print(f"\n🚀 系統回傳:\n{'-'*30}\n{result}\n{'-'*30}")
                 tokens = agent.count_tokens(result)

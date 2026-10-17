@@ -7,7 +7,7 @@ dependencies: ["docker", "mcap", "rclpy", "pyyaml"]
 ---
 
 # 用途
-把某個事件前後的數據切成獨立的小 bag，方便分享、用 Foxglove 看，或只分析那一段。
+把某個事件前後的數據切成獨立的小 bag，方便分享、用 Foxglove 看，或只分析那一段（例如超過 3 分鐘的數據，切出要看的時間段再交給 analysis_run）。
 輸出（同 diagnostics_package/toolkit）：實驗資料夾底下 `sliced_bag_<序號>_<秒>_<奈秒>/`：`rosbag2.mcap`、`metadata.yaml`（rosbag2 的格式，`ros2 bag info／play <切片資料夾>` 讀得到；另外有每個 Topic 的 available_keys、頻率）、檔案級 Metadata `ai_slice_diagnostic_summary`（觸發的訊號、層級、Node、時間窗）、`topic_metadata.json`。
 訊號的時間：bag 的 /rosout 用 MCAP log_time；rosout.log 用 Log 的 stamp。時間點不在數據範圍內時不切、回錯誤。
 
@@ -18,7 +18,7 @@ dependencies: ["docker", "mcap", "rclpy", "pyyaml"]
 * `--before`／`--after`：前後各取幾秒（預設各 5 秒，同 toolkit）。
 * `--window 開始,結束`：明確的時間窗（epoch 秒或 `+秒`，例如 `+12,+30`）；不用 --before／--after。
 * `--topics`：只切這些 Topic（省略＝全部）。`--with-state`：每個 Topic 另外帶上時間窗之前的最後一則（保留原本的時間戳），只在狀態改變時才發布的 Topic 才知道時間窗開始時的狀態。
-* analysis_run 會自動用 `--window --topics --with-state` 替每個時間窗切片（放在 `analysis_slices/<job 編號>/`），不用另外叫。
+* analysis_run 一次最多分析 3 分鐘的數據：更長的數據先用 `--window` 切出要看的那段（3 分鐘以內），再把切片資料夾交給 analysis_run（`--data <切片資料夾>`）。
 
 # 範例
 `EXECUTE: scripts/mcap_slicer_cmd.py latest --signal L28 --before 3 --after 10`

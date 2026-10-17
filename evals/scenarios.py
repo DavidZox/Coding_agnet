@@ -232,23 +232,27 @@ CMD_VEL_FEATURES = """[PASS] 特徵量測：/cmd_vel（geometry_msgs/msg/Twist�
        最大跳變 0→0.42 @ 1791967530.102[+23.09s]
 程式判斷的異常（訊息中斷）：沒有
 量到的變化（事實，不代表異常）：沒有尖峰、沒有狀態跳轉、沒有中途開始或停止發布"""
-ANALYSIS_REPORT = """[PASS] 📊 數據診斷報告（job 20261014_181445：4 個 worker、模型呼叫 18 次、74 秒）
+ANALYSIS_REPORT = """[PASS] 📊 數據事實報告（job 20261014_181445：3 個 worker、模型呼叫 12 次、18 秒）
 問題：安全閘為什麼一開始是 PROTECTIVE_STOP？什麼時候恢復？
-數據：exp_20261014_084506（51.889 秒）；時間窗：W1 +0.00s～+30.54s（L28 WARN safety_motion_controller）
-結論：安全閘在 +0.75s 因為還沒收到安全指令與速度輸入而進入 PROTECTIVE_STOP，系統健康監控初始化完成後於 +15.54s 恢復 NORMAL。
-根因（信心 medium）：L28／L29 記錄 NO_SAFETY_COMMAND_YET、MON_INITIALIZING；/system/safety_command 的 primary_reaction 在 +15.53s 由 INIT 變成 NONE，緊接著 +15.54s 安全閘 mode 變成 NORMAL。
-時間線：
-- +0.75s｜L28｜進入 PROTECTIVE_STOP（NO_SAFETY_COMMAND_YET、NO_CMD_VEL_RAW）
-- +15.53s｜/system/safety_command｜primary_reaction INIT → NONE
-- +15.54s｜/system/safety_gate_status｜mode PROTECTIVE_STOP → NORMAL
-尚未確認：/cmd_vel_raw 不在數據裡，NO_CMD_VEL_RAW 無法由數據證實。
-建議：下次錄製加上 /cmd_vel_raw。
-各 worker：W1 /system/safety_gate_status（⚠️ 有異常）；W2 /system/safety_command（⚠️ 有異常）；W3 /cmd_vel（沒有異常）
-完整報告：logs/analysis_jobs/20261014_181445/report.md（各 worker 的局部報告在 workers/）"""
+數據：exp_20261014_084506（51.889 秒）
+摘要：+0.75s safety_motion_controller 印出 L28 WARN（mode=PROTECTIVE_STOP，reasons 有 NO_SAFETY_COMMAND_YET、NO_CMD_VEL_RAW）。+1.22s /system/safety_gate_status 的 stop_reasons 從 [NO_CMD_VEL_RAW, NO_SAFETY_COMMAND_YET] 變成 [MON_INITIALIZING, NO_CMD_VEL_RAW]。+15.53s /system/safety_command 的 primary_reaction 從 INIT 變成 NONE；+15.54s 安全閘的 mode 從 PROTECTIVE_STOP 變成 NORMAL，同一時間印出 L30 INFO。/cmd_vel 整段沒有變化。
+各 Topic：
+- W1 /system/safety_gate_status｜狀態改變｜3 則（則數少）｜mode：PROTECTIVE_STOP → NORMAL（+15.54s）｜到最後：mode＝NORMAL（開頭 PROTECTIVE_STOP）
+- W2 /system/safety_command｜狀態改變｜整段持續發布（514 則，平均 10.0 Hz）｜primary_reaction：INIT → NONE（+15.53s）｜到最後：primary_reaction＝NONE（開頭 INIT）
+- W3 /cmd_vel｜沒有變化｜整段持續發布（1010 則，平均 20.0 Hz）
+時間線（重點 5/5 列）：
+- +0.75s｜L28 WARN safety_motion_controller｜GATE mode=PROTECTIVE_STOP latched=False reasons=['NO_SAFETY_COMMAND_YET', 'NO_CMD_VEL_RAW']｜前後 1 秒內：沒有對應的變化
+- +1.22s｜W1 /system/safety_gate_status｜stop_reasons：[NO_CMD_VEL_RAW, NO_SAFETY_COMMAND_YET] → [MON_INITIALIZING, NO_CMD_VEL_RAW]｜前後 1 秒內：L28（早 0.47 秒）、L29（同時）
+- +15.53s｜W2 /system/safety_command｜primary_reaction：INIT → NONE｜前後 1 秒內：L30（晚 0.01 秒）
+- +15.54s｜W1 /system/safety_gate_status｜mode：PROTECTIVE_STOP → NORMAL｜前後 1 秒內：L30（同時）
+- +15.54s｜L30 INFO safety_motion_controller｜GATE mode=NORMAL latched=False reasons=['NO_CMD_VEL_RAW']｜前後 1 秒內：W2（早 0.01 秒）、W1（同時）
+沒有分析的 Topic：沒有分析：/diagnostics_agg、/diagnostics_toplevel_state
+完整報告：logs/analysis_jobs/20261014_181445/report.md（各 worker 的局部報告在 workers/）
+（依這份報告回答使用者：只陳述報告裡的事實——時間、數值、狀態、Log 的原文。報告沒有判斷原因：使用者問「為什麼」時，照事實說明發生了什麼、先後順序，並說明原因要對照源碼另外分析）"""
 
 # ---------------------------------------------------------------- 情境
 SCENARIOS = [
-    {"id": "analysis_route_diagnose", "desc": "問「為什麼、什麼時候恢復」要同時看 Log 與多個 Topic：用 analysis_run（多 agent 數據診斷），依報告回答",
+    {"id": "analysis_route_diagnose", "desc": "問「為什麼、什麼時候恢復」要同時看 Log 與多個 Topic：用 analysis_run（多 agent 數據分析），依事實報告回答",
      "state": {"target_container": "ros2_web", "analysis_data": DATA_PATH}, "pseudo": {"analysis_run": ANALYSIS_REPORT},
      "turns": [{"user": "剛剛錄的那份數據裡，安全閘為什麼一開始是 PROTECTIVE_STOP？什麼時候恢復的？幫我找根因",
                 "expect": {"tools_any": ["analysis_run"], "reply_any": ["15.5"]}}]},

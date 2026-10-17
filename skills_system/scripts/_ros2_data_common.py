@@ -1165,14 +1165,15 @@ def carry_in_values(mcap_files, topic, type_name, keys, t_ns):
     return out
 
 
-EDGE_MIN_MESSAGES = 5        # 至少這麼多筆才看得出固定頻率；更少的多半只在狀態改變時才發布，頭尾沒有訊息不代表停止
+EDGE_MIN_MESSAGES = 10       # 至少這麼多筆才看得出固定頻率（才判斷中斷與中途開始／停止）；更少的多半只在狀態改變時才發布，頭尾沒有訊息、隔很久都不代表停止或中斷
 EDGE_SILENCE_PERIODS = 10    # 時間窗頭／尾沒有訊息超過「中位數週期 × 這個倍數」（且 ≥1 秒）＝中途才開始／中途停止發布
 RECORDING_WARMUP_SEC = 5.0   # 錄製開始後這麼久內才出現的第一筆，多半是 rosbag2 發現、訂閱 Topic 的延遲或節點剛啟動，不算「中途才開始」
 
 
 def rate_features(times, window, data_start_ns=None):
-    """訊息頻率與中斷：筆數、平均 Hz、最大間隔；間隔超過中位數週期 3 倍（且 ≥0.5 秒）的列出來。
-    固定頻率的 Topic（≥EDGE_MIN_MESSAGES 筆）再看時間窗的頭尾：started_late＝中途才開始發布、stopped_early＝中途停止發布。
+    """訊息頻率與中斷：筆數、平均 Hz、最大間隔。固定頻率的 Topic（≥EDGE_MIN_MESSAGES 筆）才判斷中斷（間隔超過中位數週期 3 倍、
+    且 ≥0.5 秒的列出來）與時間窗的頭尾：started_late＝中途才開始發布、stopped_early＝中途停止發布。筆數少的多半只在狀態改變時才發布，
+    相鄰兩則隔很久是正常的（實測 cmdgap 的 /system/safety_gate_status 整段 5 則，被算成「訊息中斷 16.18 秒」）。
     實測：/cmd_vel_raw 只在 +13～+21s 發布，只看相鄰訊息的間隔會得到「沒有訊息中斷」，worker 因此判斷指令整段持續發送。
     data_start_ns：時間窗從數據開頭起算、第一筆在錄製開始 RECORDING_WARMUP_SEC 秒內＝錄製剛開始（warmup_start），不算中途才開始
     （實測開機的範例：/cmd_vel 在 +1.15s 才有第一筆，被當成「速度指令缺失」的證據）。"""
@@ -1191,7 +1192,8 @@ def rate_features(times, window, data_start_ns=None):
         median = periods[len(periods) // 2]
         out["max_gap_sec"] = round(gaps[0][0] / 1e9, 3)
         thr = max(3 * median, 500_000_000)
-        out["gaps"] = [{"start_sec": sec(t), "duration_sec": round(g / 1e9, 3)} for g, t in gaps[:3] if g > thr]
+        out["gaps"] = [{"start_sec": sec(t), "duration_sec": round(g / 1e9, 3)} for g, t in gaps[:3] if g > thr] \
+            if n >= EDGE_MIN_MESSAGES else []
         if n >= EDGE_MIN_MESSAGES:
             edge = max(EDGE_SILENCE_PERIODS * median, 1_000_000_000)
             out["started_late"] = times[0] - window["start_ns"] > edge

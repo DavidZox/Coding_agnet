@@ -237,19 +237,9 @@ OPS_WORKER_WRAPUP_SCHEMA = {
 }
 
 
-# 📊 數據解析的多 agent 協同（agent_core/analysis_job.py）。陣列與字串都有上限（同 OPS 的理由：小模型偶爾在一個欄位裡失控）。
-# Orchestrator：欄位順序＝生成順序——先寫對問題的理解，再挑相關的 Log 訊號（只填編號，精確的時間戳由程式換算），
-# 最後才指派 Topic（每個 worker 一個不同的 Topic）與子任務。
-_ANALYSIS_ASSIGNMENT = {
-    "type": "object",
-    "properties": {
-        "topic": _text(120),
-        "subtask": _text(400),
-        "signals": {"type": "array", "maxItems": 4, "items": _text(12)},
-    },
-    "required": ["topic", "subtask", "signals"],
-}
-
+# 📊 數據解析的多 agent 協同（agent_core/analysis_job.py）：只整理事實，不做因果推論。陣列與字串都有上限（同 OPS 的理由：小模型偶爾
+# 在一個欄位裡失控）。Orchestrator 的規劃：欄位順序＝生成順序——先寫對問題的理解，再挑相關的 Log 訊號（只填編號），最後才指派
+# Topic（每個 worker 一個不同的 Topic）與子任務
 ANALYSIS_PLAN_SCHEMA = {
     "type": "object",
     "properties": {
@@ -259,45 +249,13 @@ ANALYSIS_PLAN_SCHEMA = {
             "properties": {"id": _text(12), "why": _text(160)},
             "required": ["id", "why"],
         }},
-        "before_sec": {"type": "number"},
-        "after_sec": {"type": "number"},
-        "assignments": {"type": "array", "maxItems": 8, "items": _ANALYSIS_ASSIGNMENT},
-        "report_focus": _text(300),
+        "assignments": {"type": "array", "maxItems": 8, "items": {
+            "type": "object",
+            "properties": {"topic": _text(120), "subtask": _text(400)},
+            "required": ["topic", "subtask"],
+        }},
     },
-    "required": ["understanding", "related_signals", "before_sec", "after_sec", "assignments", "report_focus"],
-}
-
-# 有源碼脈絡時的計畫：每個指派多一個 source_context（這個子任務根據的源碼線索：檔案:行 函式、代碼的條件），
-# 交給 worker、寫進局部報告的 Frontmatter
-ANALYSIS_PLAN_SCHEMA_SOURCE = json.loads(json.dumps(ANALYSIS_PLAN_SCHEMA))
-ANALYSIS_PLAN_SCHEMA_SOURCE["properties"]["assignments"]["items"]["properties"]["source_context"] = _text(240)
-ANALYSIS_PLAN_SCHEMA_SOURCE["properties"]["assignments"]["items"]["required"] = ["topic", "subtask", "signals", "source_context"]
-
-# 有源碼脈絡時的指派（第二步、補分析）多「觀測角度」：view_node＝Log 談到的功能所在的節點，view＝這個 Topic 對它是輸入（它訂閱的）
-# 還是輸出（它發布的）——同一個 Topic 是發布者的輸出、也是訂閱者的輸入，子任務要說清楚從哪一端看（程式用源碼核對）。
-# 欄位順序＝生成順序：先定 Topic 與觀測角度，再寫子任務
-_ANALYSIS_ASSIGNMENT_VIEW = {
-    "type": "object",
-    "properties": {
-        "topic": _text(120),
-        "view_node": _text(80),
-        "view": {"type": "string", "enum": ["輸入", "輸出"]},
-        "subtask": _text(400),
-        "signals": {"type": "array", "maxItems": 4, "items": _text(12)},
-        "source_context": _text(240),
-    },
-    "required": ["topic", "view_node", "view", "subtask", "signals", "source_context"],
-}
-
-# Orchestrator 第二步（有源碼脈絡時分兩步）：訊號與時間窗是第一步定的，這一步先寫從源碼讀到的（相關訊號的代碼在什麼條件下產生、
-# 條件讀的變數由哪個 Topic 寫入），再分派 Topic
-ANALYSIS_ASSIGN_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "source_reading": _text(400),
-        "assignments": {"type": "array", "maxItems": 8, "items": _ANALYSIS_ASSIGNMENT_VIEW},
-    },
-    "required": ["source_reading", "assignments"],
+    "required": ["understanding", "related_signals", "assignments"],
 }
 
 # worker 每一步的決定：同主對話的 {thought, reply, action}，字串有上限
@@ -318,75 +276,34 @@ ANALYSIS_WORKER_REPLY_SCHEMA = {
     "required": ["thought", "reply", "action"],
 }
 
-# worker 的局部報告（Frontmatter Markdown 的模型部分）：analyzed_keys 程式會核對是不是真的量過；數字一律由程式從量測結果填，
-# 這裡只要模型判斷「跟子任務有沒有關、算不算異常」與文字說明
+# worker 的局部報告：analyzed_keys 程式會核對是不是真的量過；事實（時間、數值、跳轉）一律由程式從量測結果整理，
+# 模型只寫量到的現象的文字說明
 ANALYSIS_WORKER_REPORT_SCHEMA = {
     "type": "object",
     "properties": {
         "analyzed_keys": {"type": "array", "maxItems": 6, "items": _text(120)},
-        "anomaly_detected": {"type": "boolean"},
         "summary": _text(800),
-        "evidence": {"type": "array", "maxItems": 6, "items": {
-            "type": "object",
-            "properties": {"time": _text(40), "key": _text(120), "observation": _text(200)},
-            "required": ["time", "key", "observation"],
-        }},
-        "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
     },
-    "required": ["analyzed_keys", "anomaly_detected", "summary", "evidence", "confidence"],
+    "required": ["analyzed_keys", "summary"],
 }
 
-# Synthesizer 的事實整合：只整合 worker 量到的事實與 Topic 之間的關係，不做因果推論（因果由 Orchestrator 一個角色做）
-ANALYSIS_FACTS_SCHEMA = {
+# Synthesizer：程式整理好的事實（各 Topic 的結果、時間線）寫成摘要。上限放寬（實測 26b 的摘要中位數約 700 字，上限 800 時
+# 三成被截斷在半句、交回縮短也一半還是截斷）：長度靠 prompt 的「三到六句」，上限只防失控
+ANALYSIS_SUMMARY_SCHEMA = {
     "type": "object",
-    "properties": {
-        "timeline": {"type": "array", "maxItems": 14, "items": {
-            "type": "object",
-            "properties": {"time": _text(40), "source": _text(80), "event": _text(220)},
-            "required": ["time", "source", "event"],
-        }},
-        "relations": {"type": "array", "maxItems": 6, "items": {
-            "type": "object",
-            "properties": {"topics": _text(120), "fact": _text(260)},
-            "required": ["topics", "fact"],
-        }},
-        "unchanged": {"type": "array", "maxItems": 6, "items": {
-            "type": "object",
-            "properties": {"source": _text(80), "fact": _text(200)},
-            "required": ["source", "fact"],
-        }},
-        "summary": _text(600),
-    },
-    "required": ["timeline", "relations", "unchanged", "summary"],
+    "properties": {"summary": _text(1200)},
+    "required": ["summary"],
 }
 
-# Orchestrator 的因果推論（最後一步）：先驗證假設、排因果鏈（每一環附出處：L#、W#、Topic、源碼的檔名:行）、判定，再寫結論與根因；
-# followups＝缺的環節能用還沒分析的 Topic 補上時的補分析（空陣列＝分析結束），每一項寫它補的是 unknowns 的第幾項
-_REFS = {"type": "array", "maxItems": 4, "items": _text(60)}
-_FOLLOWUP_ITEM = json.loads(json.dumps(_ANALYSIS_ASSIGNMENT_VIEW))
-_FOLLOWUP_ITEM["properties"] = {"unknown": {"type": "integer"}, **_FOLLOWUP_ITEM["properties"]}
-_FOLLOWUP_ITEM["required"] = ["unknown"] + _FOLLOWUP_ITEM["required"]
-ANALYSIS_CAUSAL_SCHEMA = {
+# Orchestrator 的檢查：前後量到的 Topic 都沒有變化的 Log，要不要補量還沒量的 Topic（空陣列＝不補）；每一項寫它對應哪一則 Log
+ANALYSIS_CHECK_SCHEMA = {
     "type": "object",
     "properties": {
-        "hypotheses": {"type": "array", "maxItems": 4, "items": {
+        "followups": {"type": "array", "maxItems": 2, "items": {
             "type": "object",
-            "properties": {"hypothesis": _text(200), "verdict": {"type": "string", "enum": ["支持", "推翻", "看不出來"]},
-                           "refs": _REFS, "why": _text(240)},
-            "required": ["hypothesis", "verdict", "refs", "why"],
+            "properties": {"signal": _text(12), "topic": _text(120), "subtask": _text(400)},
+            "required": ["signal", "topic", "subtask"],
         }},
-        "chain": {"type": "array", "maxItems": 8, "items": {
-            "type": "object",
-            "properties": {"time": _text(40), "event": _text(220), "refs": _REFS},
-            "required": ["time", "event", "refs"],
-        }},
-        "verdict": {"type": "string", "enum": ["沒有異常", "有異常", "無法判斷"]},
-        "conclusion": _text(500),
-        "root_cause": _text(700),
-        "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
-        "unknowns": {"type": "array", "maxItems": 5, "items": _text(220)},
-        "recommendations": {"type": "array", "maxItems": 5, "items": _text(220)},
-        "followups": {"type": "array", "maxItems": 2, "items": _FOLLOWUP_ITEM},
     },
-    "required": ["hypotheses", "chain", "verdict", "conclusion", "root_cause", "confidence", "unknowns", "recommendations", "followups"],
+    "required": ["followups"],
 }

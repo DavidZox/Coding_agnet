@@ -47,8 +47,8 @@ SLASH_COMMANDS = [
     {"cmd": "/objective show", "desc": "查看目前的 Objective", "group": "動作與查詢"},
     {"cmd": "/objective clear", "desc": "清除 Objective", "group": "動作與查詢"},
     {"cmd": "/clear", "desc": "清空對話記憶，重新開始（選取後需再按 Enter 才會送出）", "group": "動作與查詢"},
-    {"cmd": "/analyze ", "desc": "數據診斷：直接交給 analysis_run（Log 去重＋Topic Metadata → Orchestrator 分派 → Workers 量測 → Synthesizer 報告），後接問題", "group": "數據分析", "args": True},
-    {"cmd": "/analyze", "desc": "數據診斷（不帶問題）：找出目前數據的異常與根因", "group": "數據分析"},
+    {"cmd": "/analyze ", "desc": "數據分析：直接交給 analysis_run（Log 去重＋Topic Metadata → Orchestrator 分派 → Workers 量測 → 事實報告），後接問題", "group": "數據分析", "args": True},
+    {"cmd": "/analyze", "desc": "數據分析（不帶問題）：整理目前數據發生了哪些狀態變化", "group": "數據分析"},
     {"cmd": "/analysis", "desc": "看最近一次數據分析的報告", "group": "數據分析"},
     {"cmd": "/analysis jobs", "desc": "列出最近的數據分析 job", "group": "數據分析"},
     {"cmd": "/analysis_data ", "desc": "設定目前分析的數據（實驗資料夾、bag、切片、.mcap、實驗名稱或 latest）", "group": "數據分析", "args": True},
@@ -56,10 +56,7 @@ SLASH_COMMANDS = [
     {"cmd": "/analysis_container ", "desc": "設定數據分析預設的容器（目標容器沒設定時用；- 清除）", "group": "數據分析", "args": True},
     {"cmd": "/analysis_model ", "desc": "設定 orchestrator／worker／synthesizer（或 all）的模型，例如 all gemma4:26b", "group": "數據分析", "args": True},
     {"cmd": "/analysis_workers ", "desc": "一次最多派幾個 worker（1～8）", "group": "數據分析", "args": True},
-    {"cmd": "/analysis_slice ", "desc": "動態時間切片 on|off（每個時間窗先切片、worker 只讀切片）", "group": "數據分析", "args": True},
-    {"cmd": "/analysis_source ", "desc": "受測系統的源碼目錄（ROS 2 工作區的 src；- 不用）：源碼脈絡交給三個角色", "group": "數據分析", "args": True},
-    {"cmd": "/analysis_hints ", "desc": "程式的推理提示 on|off（off：只給數據與源碼的事實）", "group": "數據分析", "args": True},
-    {"cmd": "/analysis_mode on", "desc": "📊 分析模式：送出的問題直接交給數據診斷", "group": "數據分析"},
+    {"cmd": "/analysis_mode on", "desc": "📊 分析模式：送出的問題直接交給數據分析", "group": "數據分析"},
     {"cmd": "/analysis_mode off", "desc": "關閉分析模式（訊息回到主對話）", "group": "數據分析"},
     {"cmd": "/analysis_help", "desc": "數據分析的全部指令說明", "group": "數據分析"},
     {"cmd": "/model", "desc": "查看四個角色（主對話、分析 Orchestrator／Worker／Synthesizer）的模型與 thinking 開關", "group": "模型"},
@@ -69,7 +66,7 @@ SLASH_COMMANDS = [
 
 MENU_TEXT = """可用指令：
 /menu                  顯示本說明
-/analyze [問題]         數據診斷：直接交給 analysis_run（Log 去重＋Topic Metadata → Orchestrator 分派 → Workers 量測 → Synthesizer 報告）；
+/analyze [問題]         數據分析：直接交給 analysis_run（Log 去重＋Topic Metadata → Orchestrator 分派 → Workers 量測 → 事實報告）；
                         /analysis_help 看全部數據分析指令
 /clear                  清空對話記憶，重新開始
 /model [模型]           查看四個角色的模型與 thinking；給模型名稱＝換主對話的模型（也可以按標題列的 🧠）

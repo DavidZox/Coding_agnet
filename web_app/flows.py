@@ -382,9 +382,9 @@ def run_analysis_turn(question, events, data=None):
     else:
         args = f"--data {quote_cli_arg(data)}" + (f" {quote_cli_arg(question)}" if question else "")
     action = {"command": "scripts/analysis_run_cmd.py", "args": args}
-    reply = "交給數據診斷（Orchestrator → Workers → Synthesizer）。"
+    reply = "交給數據分析（Orchestrator → Workers → Synthesizer，整理成事實報告）。"
     agent.messages.append({"role": "assistant", "content": json.dumps(
-        {"thought": "使用者要求數據診斷，直接交給 analysis_run", "reply": reply, "action": action}, ensure_ascii=False)})
+        {"thought": "使用者要求數據分析，直接交給 analysis_run", "reply": reply, "action": action}, ensure_ascii=False)})
     events.append({"channel": "chat", "role": "assistant", "text": reply, "action": action_text(action)})
     outcome = _handle_tool_result(agent.run_tool({"action": action}, approved=True), events)
     if outcome == "continue":

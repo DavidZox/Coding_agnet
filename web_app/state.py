@@ -34,7 +34,7 @@ state = {
     "tool_summary_mode": TOOL_SUMMARY_DEFAULT,  # 超過門檻的工具回傳交給獨立 session 做任務導向摘要（預設開）
     "plan_mode": False,
     "parallel_cal": PARALLEL_CAL_DEFAULT,  # 軟水位壓縮改在背景執行緒做（/parallel_cal on|off）
-    "analysis_mode": False,   # 📊 分析模式：輸入框的問題直接交給數據診斷 analysis_run（/analysis_mode on|off、📊 按鈕）
+    "analysis_mode": False,   # 📊 分析模式：輸入框的問題直接交給數據分析 analysis_run（/analysis_mode on|off、📊 按鈕）
 }
 # 等待使用者決策的事項：mode＝hybrid／manual（已執行的工具結果要不要加入上下文，result／tokens），
 # 或 guard（🛡️ 執行前關卡：會改變系統狀態的技能還沒執行，parsed＝這一輪的回覆、guard＝guard_check 的說明）

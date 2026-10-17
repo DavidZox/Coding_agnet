@@ -176,7 +176,7 @@
   .job-task { margin: 8px 0; font-size: 14px; line-height: 1.5; white-space: pre-wrap; }
   .job-meta { color: #9aa0a6; font-size: 12px; margin-top: 6px; display: flex; gap: 14px; flex-wrap: wrap; }
   .status-badge { padding: 2px 9px; border-radius: 10px; font-size: 12px; font-weight: bold; background: #4a4c50; }
-  .s-preparing, .s-planning { background: #3d4f7a; } .s-working, .s-synthesizing, .s-reasoning { background: #2a5fb0; }
+  .s-preparing, .s-planning { background: #3d4f7a; } .s-working, .s-synthesizing, .s-checking { background: #2a5fb0; }
   .s-done { background: #2f7d4a; } .s-failed { background: #8a2f2f; }
   .an-steps { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 12px; margin: 6px 0; }
   .an-step { padding: 2px 8px; border-radius: 10px; background: #2b2d31; color: #8f96a0; border: 1px solid #3a3c40; }
@@ -302,7 +302,7 @@
     </div>
     <button class="secondary" id="attach-btn" title="附加影像：框選畫面或選擇檔案" onclick="toggleAttachMenu()">📷</button>
     <button class="secondary" id="plan-btn" title="切換 Plan 模式：開啟後，下一個新任務會先規劃步驟、你核准才執行" onclick="togglePlanMode()">📝 Plan</button>
-    <button class="secondary" id="analysis-btn" title="📊 分析模式：開啟後，送出的問題直接交給數據診斷（Orchestrator → Workers → Synthesizer），數據用目前的數據" onclick="toggleAnalysisMode()">📊 分析</button>
+    <button class="secondary" id="analysis-btn" title="📊 分析模式：開啟後，送出的問題直接交給數據分析（Orchestrator → Workers → Synthesizer，整理成事實報告），數據用目前的數據" onclick="toggleAnalysisMode()">📊 分析</button>
     <textarea id="msg" placeholder="輸入訊息；打「/」選擇功能開關或手動載入技能規格...（Enter 送出，Shift+Enter 換行；📷 可附加影像）"></textarea>
     <button id="send-btn" onclick="sendMessage()">送出</button>
     <input type="file" id="file-input" accept="image/*" multiple style="display:none">
@@ -492,7 +492,7 @@ function updateStatus(stats) {
   analysisBtn.classList.toggle('analysis-on', analysisModeOn);
   analysisBtn.textContent = analysisModeOn ? '📊 分析 ✓' : '📊 分析';
   msgBox.placeholder = analysisModeOn
-    ? '📊 分析模式：輸入要診斷的問題（例如「底盤為什麼在錄製中途停下來？什麼時候恢復？」），送出後直接交給數據診斷…'
+    ? '📊 分析模式：輸入要分析的問題（例如「底盤在錄製中途停下來的前後發生了什麼？什麼時候恢復？」），送出後直接交給數據分析…'
     : DEFAULT_PLACEHOLDER;
   const sa = document.getElementById('stat-analysis');
   const aj = stats.analysis;
@@ -852,8 +852,8 @@ msgBox.addEventListener('keydown', (e) => {
 // 📊 數據分析面板：analysis_run 的 job（Orchestrator → Workers → Synthesizer）。分析在主對話的回合裡同步執行，進度同時推到
 // 右欄的系統卡片；面板讀 job 資料夾的檔案，分析進行中或面板打開時每 1.5 秒輪詢 /api/analysis/state。
 // =====================================================================
-const AN_STATUS = { preparing: '資料預備', planning: 'Orchestrator 規劃', working: 'Workers 分析', synthesizing: 'Synthesizer 整合事實', reasoning: 'Orchestrator 因果推論', done: '完成', failed: '失敗' };
-const AN_STEPS = ['preparing', 'planning', 'working', 'synthesizing', 'reasoning'];
+const AN_STATUS = { preparing: '資料預備', planning: 'Orchestrator 規劃', working: 'Workers 分析', synthesizing: 'Synthesizer 整合事實', checking: 'Orchestrator 檢查', done: '完成', failed: '失敗' };
+const AN_STEPS = ['preparing', 'planning', 'working', 'synthesizing', 'checking'];
 const AN_ACTIVE = new Set(AN_STEPS);
 const an = { jobId: null, data: null, timer: null, lastKey: '', settingsOpen: false, open: new Set() };
 
@@ -951,14 +951,9 @@ function renderAnalysisSettings(d) {
       <span>worker 上限／同時執行</span>
       <span><input id="an-workers" type="number" min="1" max="8" style="width:60px" value="${esc(s.max_workers)}"> 個／
         <input id="an-parallel" type="number" min="1" max="8" style="width:60px" value="${esc(s.parallel)}"> 個（Ollama 同一個模型只有一個 slot 時模型呼叫仍會排隊）</span>
-      <span title="Orchestrator 選的 Log 訊號前後各取幾秒（它也可以依問題調整）">時間窗預設</span>
-      <span>前 <input id="an-before" type="number" min="0.5" max="60" step="0.5" style="width:70px" value="${esc(s.before)}"> 秒、
-        後 <input id="an-after" type="number" min="0.5" max="60" step="0.5" style="width:70px" value="${esc(s.after)}"> 秒
+      <span title="相關的 Log 前後量到的 Topic 都沒有變化時，Orchestrator 可以補量還沒量的 Topic 一輪（1＝不補）">補量</span>
+      <span>最多 <input id="an-rounds" type="number" min="1" max="2" style="width:50px" value="${esc(s.rounds || 2)}"> 輪（每個 worker 量整段數據；一次最多 3 分鐘）
         <button class="mini-btn primary" onclick="saveAnalysisSettings()">套用</button></span>
-      <span title="受測系統的源碼目錄（ROS 2 工作區的 src）：Log 的源碼位置對回程式碼、在執行的節點的發布／訂閱關係、代碼的條件，交給三個角色；空白＝不用">源碼目錄</span>
-      <span><input id="an-source" style="width:70%" value="${esc(s.source_root)}" placeholder="例如 ~/ros2_ws/src（空白＝不用源碼脈絡）">
-        <label title="關閉：不給程式的推理提示（名稱比對的缺口、背景條件、共同的上游…），只給數據與源碼的事實"><input id="an-hints" type="checkbox" ${s.program_hints === false ? '' : 'checked'}> 程式的推理提示</label>
-        <label title="有源碼脈絡時：Orchestrator 做因果推論時，缺的環節能用還沒分析的 Topic 補上就指派補分析，再整合事實、再推論（1＝不補）">最多 <input id="an-rounds" type="number" min="1" max="3" style="width:50px" value="${esc(s.rounds || 2)}"> 輪</label></span>
       <span>目前的數據</span>
       <span><input id="an-data" style="width:70%" value="${esc(d.data)}" placeholder="實驗資料夾、bag、切片、實驗名稱或 latest"> <button class="mini-btn" onclick="saveAnalysisData()">設定</button></span>
       <span>模型</span>
@@ -980,7 +975,7 @@ function renderAnalysisPanel() {
     html += `<div class="code-empty">還沒有數據分析 job。<br>
       ① 數據：用現有的實驗資料夾，或跟 AI 說「錄 30 秒的核心 Topic」（mcap_recorder，錄完自動建立 Topic Metadata 索引）。<br>
       ② 問問題：直接跟 AI 說（像「為什麼車子在這段時間停下來？」，它會選 analysis_run），或輸入 <code>/analyze &lt;問題&gt;</code>，或按輸入框旁的 <b>📊 分析</b>。<br>
-      ③ 這裡會顯示：Orchestrator 從去重後的 Log 挑出的訊號與時間窗、每個 worker 負責的 Topic 與局部報告（Frontmatter Markdown）、Synthesizer 的根因診斷報告。</div>`;
+      ③ 這裡會顯示：Orchestrator 從去重後的 Log 挑出的訊號、每個 worker 負責的 Topic 與局部報告（Frontmatter Markdown）、最後的事實報告（量到什麼、什麼時候、Log 說了什麼；不判斷原因）。</div>`;
     analysisPanel.innerHTML = html;
     return;
   }
@@ -997,18 +992,16 @@ function renderAnalysisPanel() {
       ${j.error ? `<div class="needs-box failure"><h3>❌ 分析中斷</h3>${esc(j.error)}</div>` : ''}
       <div class="btn-row">${files['log_digest.md'] ? `<button class="mini-btn" onclick="openAnalysisFile('log_digest.md', '去重後的 Log')">📜 去重後的 Log</button>` : ''}
         ${files['topic_metadata.md'] ? `<button class="mini-btn" onclick="openAnalysisFile('topic_metadata.md', '全域 Topic Metadata')">🗂️ Topic Metadata</button>` : ''}
-        ${files['report.md'] ? `<button class="mini-btn primary" onclick="openAnalysisFile('report.md', '數據診斷報告')">📄 完整報告</button>` : ''}</div>
+        ${files['report.md'] ? `<button class="mini-btn primary" onclick="openAnalysisFile('report.md', '數據事實報告')">📄 完整報告</button>` : ''}</div>
     </div>`;
   const plan = j.plan;
   if (plan) {
-    const wins = (j.windows || []).map(w => `<span class="chip verify" title="${esc(w.label || '')}">${esc(w.id)} ${anRel(w.start_ns, base)}～${anRel(w.end_ns, base)}${w.signals && w.signals.length ? '（' + esc(w.signals.join(',')) + '）' : ''}</span>`).join(' ');
     const rel = (plan.related || []).map(r => `<div class="plan-notes"><b>${esc(r.id)}</b> ${esc(r.why)}</div>`).join('');
     html += `<div class="section-title"><span>🧭 Orchestrator 的計畫</span></div>
       <div class="item-card st-done"><div class="item-body" style="padding:10px">
         <div class="item-goal">${esc(plan.understanding || '（沒有）')}</div>
-        ${rel ? `<div style="margin-top:6px">${rel}</div>` : '<div class="plan-notes">沒有相關的 Log 訊號：分析整段數據</div>'}
-        <div style="margin-top:6px">時間窗：${wins}（前 ${esc(plan.before)} 秒／後 ${esc(plan.after)} 秒）</div>
-        ${plan.report_focus ? `<div class="plan-notes"><b>報告要回答</b> ${esc(plan.report_focus)}</div>` : ''}
+        ${rel ? `<div style="margin-top:6px">${rel}</div>` : '<div class="plan-notes">沒有挑相關的 Log 訊號</div>'}
+        ${(plan.followups || []).length ? `<div class="plan-notes"><b>補量</b> ${esc(plan.followups.map(a => a.topic + '（為了 ' + (a.signal || '-') + '）').join('、'))}</div>` : ''}
         ${(plan.issues || []).length ? `<div class="plan-notes">⚠️ 程式檢查：${esc(plan.issues.join('；'))}</div>` : ''}
       </div></div>`;
   }
@@ -1016,33 +1009,34 @@ function renderAnalysisPanel() {
   const events = det.events || [];
   const done = {};
   (j.workers || []).forEach(w => { done[w.n] = w; });
-  const assigns = (plan && plan.assignments) || [];
+  const assigns = ((plan && plan.assignments) || []).concat((plan && plan.followups) || []);
+  const tagsOf = {};
+  ((j.report && j.report.topics) || []).forEach(r => { tagsOf[r.w] = r.tags || []; });
   if (assigns.length) html += `<div class="section-title"><span>🔧 Workers（每個 worker 一個 Topic）</span></div>`;
   assigns.forEach((a, i) => {
     const n = i + 1, w = done[n];
     const evs = events.filter(e => e.worker === n);
     const running = !w && evs.length && !evs.some(e => e.kind === 'worker_done' || e.kind === 'worker_error');
     const st = w ? (w.status === 'failed' ? 'failed' : 'done') : (running ? 'running' : 'pending');
-    const mark = w ? (w.status === 'failed' ? '❌' : (w.anomaly_detected ? '⚠️' : '✅')) : (running ? '🔄' : '⬜');
+    const mark = w ? (w.status === 'failed' ? '❌' : '✅') : (running ? '🔄' : '⬜');
     const open = an.open.has('w' + n) || running;
     let body = `<div class="item-goal">${esc(a.subtask)}</div>`;
     if (w) {
       body += `<div class="item-summary">${esc(w.summary || w.error || '')}</div>`;
-      if ((w.evidence || []).length) body += '<div style="margin-top:6px">' + w.evidence.map(e => `<div class="plan-notes"><b>${esc(e.time)}</b> <code>${esc(e.key)}</code> ${esc(e.observation)}</div>`).join('') + '</div>';
-      if ((w.program_flags || []).length) body += `<div class="plan-notes">程式判斷：${esc(w.program_flags.join('；'))}</div>`;
+      if ((w.program_flags || []).length) body += `<div class="plan-notes">量測工具：${esc(w.program_flags.join('；'))}</div>`;
       if (w.file) body += `<div class="btn-row"><button class="mini-btn" onclick="openAnalysisFile('${esc(w.file)}', 'W${n} ${esc(a.topic)} 的局部報告')">📄 局部報告（Frontmatter Markdown）</button>
         <button class="mini-btn" onclick="openAnalysisFile('${esc(w.file.replace(/\.md$/, '.transcript.md'))}', 'W${n} ${esc(a.topic)} 的完整對話')">📜 worker 對話</button></div>`;
     }
     if (evs.length) body += `<div class="timeline">${evs.slice(-12).map(e => `<div class="tl"><span class="ts">${esc(e.ts)}</span>${esc(e.text)}</div>`).join('')}</div>`;
     html += `<div class="item-card st-${st}">
         <div class="item-head" onclick="toggleAnOpen('w${n}')"><span>${mark}</span><span class="item-title">W${n} ${esc(a.topic)}</span>
-          <span class="item-meta">${w ? `${esc(w.data_type || '')}${w.confidence ? ' · 信心 ' + esc(w.confidence) : ''}${w.key_selection === 'fallback' ? ' · 系統代選 Key' : ''}` : (running ? '分析中' : '等待')}</span></div>
-        <div class="item-sub">${(w && w.analyzed_keys || []).map(k => `<span class="chip">${esc(k)}</span>`).join('')}${(a.windows || []).map(x => `<span class="chip verify">${esc(x)}</span>`).join('')}</div>
+          <span class="item-meta">${w ? `${esc((tagsOf[n] || []).join('、') || w.data_type || '')}${w.round ? ' · 補量' : ''}${w.key_selection === 'fallback' ? ' · 系統代選 Key' : ''}` : (running ? '分析中' : '等待')}</span></div>
+        <div class="item-sub">${(w && w.analyzed_keys || []).map(k => `<span class="chip">${esc(k)}</span>`).join('')}</div>
         ${open ? `<div class="item-body">${body}</div>` : ''}
       </div>`;
   });
   if (files['report.md']) {
-    html += `<div class="section-title"><span>🧭 診斷報告（Orchestrator 的因果推論＋Synthesizer 的事實整合）</span><span><button class="mini-btn" onclick="openAnalysisFile('report.md', '數據診斷報告')">開啟（含 Frontmatter）</button></span></div>
+    html += `<div class="section-title"><span>📄 事實報告（程式整理的事實＋Synthesizer 的摘要）</span><span><button class="mini-btn" onclick="openAnalysisFile('report.md', '數據事實報告')">開啟（含 Frontmatter）</button></span></div>
       <div class="item-card st-done"><div class="item-body" style="padding:10px"><div class="item-goal">${esc(stripFrontmatter(files['report.md']))}</div></div></div>`;
   }
   html += `<details style="margin-top:10px"><summary class="section-title" style="display:list-item">全部進度（${events.length} 筆）</summary>
@@ -1064,8 +1058,6 @@ async function analysisPost(action, body) {
 function saveAnalysisSettings() {
   analysisPost('settings', { data_root: document.getElementById('an-root').value.trim(), container: document.getElementById('an-container').value.trim(),
     max_workers: document.getElementById('an-workers').value, parallel: document.getElementById('an-parallel').value,
-    before: document.getElementById('an-before').value, after: document.getElementById('an-after').value,
-    source_root: document.getElementById('an-source').value.trim(), program_hints: document.getElementById('an-hints').checked,
     rounds: document.getElementById('an-rounds').value });
 }
 function saveAnalysisData() { analysisPost('data', { path: document.getElementById('an-data').value.trim() }); }
@@ -1083,9 +1075,9 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closeViewer(
 const modelCfg = { open: false, data: null };
 const MODEL_ROLES = [
   ['main', '主對話', '一般對話、查詢、操作技能用的模型；摘要模型沒有另外指定時跟著它換'],
-  ['orchestrator', '分析 Orchestrator', '數據診斷：看去重後的 Log 與 Topic Metadata、挑 Log 訊號、把不同的 Topic 分派給 worker（下一次分析生效）'],
-  ['worker', '分析 Worker', '數據診斷：每個 worker 一個 Topic，自己選 Key 量測、寫局部報告（下一次分析生效）'],
-  ['synthesizer', '分析 Synthesizer', '數據診斷：整合 Log 與各 worker 的局部報告，寫根因診斷報告（下一次分析生效）'],
+  ['orchestrator', '分析 Orchestrator', '數據分析：看去重後的 Log 與 Topic Metadata、挑 Log 訊號、把不同的 Topic 分派給 worker、檢查要不要補量（下一次分析生效）'],
+  ['worker', '分析 Worker', '數據分析：每個 worker 一個 Topic，自己選 Key 量整段數據、寫局部報告（下一次分析生效）'],
+  ['synthesizer', '分析 Synthesizer', '數據分析：把程式整理的事實與各 worker 的局部報告寫成事實摘要（下一次分析生效）'],
 ];
 function mpThinkOk(name) { return !!(modelCfg.data && modelCfg.data.thinking && modelCfg.data.thinking[name]); }
 async function toggleModelPanel(force) {

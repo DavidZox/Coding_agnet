@@ -86,30 +86,30 @@ python3 evals/analysis_tools_live.py --container ros2_web_container \
     --data /workspace/app/diagnostics_package/toolkit/experiment_logs/exp_20261014_084506 [--record]   # 實機：五支數據技能（不需要 Ollama）
 python3 evals/run_evals.py --modes harness --only analysis_route_diagnose,analysis_route_single_key,analysis_route_log   # 真模型：主對話的路由
 python3 evals/analysis_regression.py --run --runs 3 [--model gemma4:26b] [--synthesizer deepseek-r1:8b] [--think-roles synthesizer] \
-    [--source ~/ros2_ws/src|-] [--hints on|off] [--rounds N]   # 真模型：6 份數據的回歸評分（--source 源碼脈絡、--hints 程式的推理提示、--rounds 補分析最多幾輪）
+    [--rounds N]   # 真模型：6 份數據的回歸評分（--rounds 1＝不補量）
 python3 evals/analysis_regression.py --score-file test_data/repeat_runs.json   # 只評分已經跑過的 job
 ```
 
 - **`analysis_selftest.py`** 測 harness 的程式把關：Orchestrator 的計畫檢查與修正（不存在的 L#／Topic、Log Topic、重複的 Topic；重複的 L# 只合併、不交回修正）、補指派、
-  時間窗（前後秒數、合併、限制在數據範圍內）、worker 的規則（reply 裡的動作、`--topic` 固定、只准量測技能、第三次相同的量測擋下、系統代選 Key）、
-  局部報告的 Frontmatter 數字來自程式、Synthesizer 壞掉的退路、dispatch 與 Web 的回合；
-  錄製的資料夾名稱（`--out-root` 放錯成名稱時改當 `--name`）、量測的特徵（中途開始／停止發布、狀態沿用時間窗之前的最後一則、
-  只有幾種值的數值列每次切換、`3.37s-31.79s` 的時間窗寫法）、時間線 L# 的時間校正、覆蓋缺口的背景條件判斷、一段完整的發布不強制算異常（交給因果推論的程式判斷：逾時、照設計的反應）、Log 提到但數據裡沒有的輸入（Orchestrator 的兩步與因果推論都拿到，名稱相近的 Topic 點名不能代替、它的報告旁附提醒）、Key 目錄的類別寫中文與工具略過不存在的 Key；源碼索引（一個小工作區：Python 與 C++ 的發布／訂閱／計時器／參數、沒編譯的檔案不算、Log 的路徑對回源碼、在執行的節點、依賴的輸入與代碼的條件）與源碼脈絡交給三個角色、關閉程式提示時沒有【程式檢查】；有源碼時缺的輸入用源碼判斷（不用名稱比對）、觀測角度用源碼核對並交回修正；事實整合不寫因果、因果推論的出處與判定的事實依據（交回修一次；還有問題再交回一次，還在就標「程式核對：未修正」）、到最後的值與最後一次停止、補分析（要對到某一項尚未確認、只往上游——下游的輸出不補；補派、第 2 輪、report_r1.md，不能補就結束）。`analysis_fixtures/` 是從 `exp_20261014_084506`
+  worker 的規則（reply 裡的動作、`--topic` 固定、時間窗拿掉、只准量測技能、第三次相同的量測擋下、系統代選 Key）、局部報告的事實來自程式量測、
+  一段完整的發布與真的中斷、Key 目錄的類別寫中文與工具略過不存在的 Key；事實的整理（類別、發布、變化、到最後的值、前後 1 秒的對照、
+  重複的 Log 只取第一次與最後一次、同時發生、前後沒有變化的 Log、沒有分析的 Topic、時間線太長時的取捨）；Orchestrator 檢查（前後沒有量到變化的 Log
+  才問、補量的程式核對、第 2 輪不再問、report_r1.md）；局部報告與摘要的核對（不寫原因與推測、沒有量到中斷就不能寫中斷、摘要太長被截斷；
+  修一次還在就標「程式核對：未修正」）；一次最多 3 分鐘、拿掉的選項；Synthesizer 壞掉的退路、dispatch 與 Web 的回合；錄製的資料夾名稱、
+  量測工具的特徵（中途開始／停止發布、狀態沿用、數值切換）。`analysis_fixtures/` 是從 `exp_20261014_084506`
   錄下的 `mcap_analyzer --json`、`rosout_parser --json`、`mcap_feature_measure` 輸出；換了 Key 的分類或輸出格式時重錄一次（指令見 `analysis_tools_live.py` 的說明）。
 - **`analysis_tools_live.py`** 在真的容器裡跑：全域索引、Key 檢視、特徵量測（含寬鬆的時間寫法、不認識的參數、混了不存在的 Key 或「類別.Key」）、原始值、錯誤處理、Log 去重、
   切片（寫到容器的 /tmp、測完刪掉；切片資料夾 `ros2 bag info` 讀得到）、`--record` 真的錄 6 秒。
 - **`analysis_regression.py`**（回歸評分，另一個方法——原本的產物照舊產生、照舊保留，評分只讀 `logs/analysis_jobs/<job>/` 不改）：
-  6 份數據（穩定、開機範例、/cmd_vel_raw 事件、重啟 monitor、凍結 aggregator 的真故障、180 秒長錄製）各跑 N 次，
-  依 `analysis_regression_cases.json` 自動評分：(a) 時間線有沒有該有的事件（時間±容許＋關鍵字）、(b) 根因、(c) 沒有錯誤說法
-  （禁用的說法、拿背景條件當原因；程式附的更正不算模型寫的）、(d) 定性、上游（故障追不追得到共同的上游）、切片（長錄製）、沒有事件（穩定）。
-  模型可以分角色指定（`--model`／`--orchestrator`／`--worker`／`--synthesizer`、`--think-roles`），源碼目錄（`--source`）與程式提示（`--hints`）也一樣，只改這次執行、不寫回設定，
-  換到 DGX Spark／5090 跑 26b 時用同一套比較。結果在 `evals/results/analysis_<時間>/scorecard.md`。
-  評分是關鍵字與時間的比對：抓得到缺事件、拿背景條件當原因、「間歇性」這類錯；措辭換了的對錯仍要人看報告（scorecard 列出每一項沒過的原因）。
-  關鍵字裡「re:」開頭的是正規表示式；`character_forbid`＝肯定地說了就不算定性對的字（cmdvel 的「異常」「故障」；cmdgap 把最後一段指令的結束也說成異常）。2026-10-16 起 cmdvel 的定性改成只根據事實（說安全閘照設計反應、不是故障就算；不再要求「正常的操作」），把停止發布說成「中斷」算錯誤說法；第八輪起（嚴格版）肯定地說指令「正常結束／自然停止」也算錯誤說法（數據分不出正常做完與上游掛掉），評分的文字加上因果鏈；steady、lifecycle、根因（`_relies_on`）照第四～六輪人工複核的先例補了說法——本機用 `test_data/tools/scorer_check.py` 核對過 1243 項人工判定全部一致。
+  每份數據各跑 N 次，依 `analysis_regression_cases.json`（這台的 14 份數據用 `test_data/cases_5090.json`，經 `test_data/tools/run_regression.py`）
+  自動評分，只評事實：(a) 時間線有沒有該有的事件（時間±容許＋關鍵字）、(b) 用詞（摘要沒有原因、推測、這份數據不該有的說法）、
+  (c) 時間有根據（摘要寫的 +秒 對得上報告裡程式整理的事實）、沒有事件（steady：每個 Topic 都沒有變化）；另外列每份數據的平均秒數、
+  問了要不要補量、補量、Topic 組合有幾種、同一個 Topic 的事實有沒有不一致。全部由程式判，不需要人工標註。
+  模型可以分角色指定（`--model`／`--orchestrator`／`--worker`／`--synthesizer`、`--think-roles`），只改這次執行、不寫回設定。
+  結果在 `evals/results/analysis_<時間>/scorecard.md`。第九輪以前的根因評分（根因、定性、上游）在 `root_cause_reference/evals/`。
   換機器時把 `test_data/recordings/` 複製到那台的數據根目錄（或 `--data-root`）。
 - **實機事件測試**（2026-10-15）的錄製、ground truth、每次分析與對照結果在 `test_data/`（見 `test_data/README.md`）。
-- **報告的品質**（根因對不對）目前只能人工看：`/analyze <問題>` 跑一次，看 `logs/analysis_jobs/<編號>/report.md` 與各 worker 的局部報告；
-  建「已知根因」的錄製當評測資料是待辦（`doc/待辦清單.md`）。
+- **大量數據的穩定度**：同一套評分可以套在更多錄製上（隨機情境的數據產生器是下一步，見 `test_data/README.md`）。
 
 多步驟維運任務（ops_run）的離線自我測試是 `v5_selftest.py`；真模型、在 Docker-in-Docker 沙盒裡真的執行的維運情境在 `ops_suite/`
 （資料集與結果見 `benchmark_study_3/`）。coding 的評測（`run_coding_evals.py`、`coding_selftest.py`、`web_ui_test.py`、DevBench、SWE-bench）

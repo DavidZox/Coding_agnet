@@ -18,7 +18,7 @@
 | `analysis_agents/`（其他三份） | 第九輪的規劃、worker、Synthesizer prompt |
 | `evals/analysis_selftest.py` | 離線自我測試，含因果核對、源碼索引、觀測角度、到最後的值 |
 | `evals/analysis_regression.py`、`analysis_regression_cases.json` | 根因版的評分：時間線、根因、錯誤說法、定性、上游 |
-| `test_data/cases_5090.json`、`test_data/tools/make_cases.py` | 14 份測試數據的根因評分標準（`test_data/` 不進 git，這兩個是複本） |
+| `test_data/cases_5090.json`、`test_data/tools/make_cases.py` | 14 份測試數據的根因評分標準。只在本機：.gitignore 的 `test_data/` 也套用到這裡，不會進 git |
 | `doc/數據診斷的流程_第九輪.puml` | 第九輪的流程圖（圖檔：`git show 62e0534:doc/數據診斷的流程.png > 流程.png`） |
 
 ## analysis_job.py 裡跟根因有關的部分

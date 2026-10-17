@@ -353,12 +353,12 @@ class ConsoleHandler(BaseHTTPRequestHandler):
             message = DEFAULT_VISION_PROMPT if vision_session.count() else DEFAULT_SKILL_PROMPT
 
         if message.lower() == "/analyze" or message.lower().startswith("/analyze "):
-            # 📊 /analyze [問題]：直接交給數據診斷（跟主模型選用 analysis_run 一樣，報告進主對話、可以接著追問）
+            # 📊 /analyze [問題]：直接交給數據分析（跟主模型選用 analysis_run 一樣，報告進主對話、可以接著追問）
             question = message[len("/analyze"):].strip()
             stream.append({"channel": "chat", "role": "user", "text": message, "tokens": agent.count_tokens(message)})
             clear_plan_for_new_task(stream)
             agent.set_current_task(question or message)
-            agent.messages.append({'role': 'user', 'content': question or "找出這段數據的異常與根因。"})
+            agent.messages.append({'role': 'user', 'content': question or "這段錄製期間發生了哪些狀態變化？"})
             self._finish_turn(stream, run_analysis_turn(question, stream))
             return
 
@@ -400,7 +400,7 @@ class ConsoleHandler(BaseHTTPRequestHandler):
             )})
 
         if state.get("analysis_mode"):
-            # 📊 分析模式：問題直接交給數據診斷（附圖的分析文字一起當成問題的一部分）；報告照一般工具結果進主對話
+            # 📊 分析模式：問題直接交給數據分析（附圖的分析文字一起當成問題的一部分）；報告照一般工具結果進主對話
             agent.messages.append({'role': 'user', 'content': content})
             self._finish_turn(stream, run_analysis_turn(content, stream))
             return
