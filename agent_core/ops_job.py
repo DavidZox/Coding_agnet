@@ -19,19 +19,18 @@ import os
 import re
 import time
 
-from .config import GUARDED_SKILLS, NUM_CTX, OPS_MAX_ITEMS, OPS_WORKER_MAX_STEPS, SKILL_DOC_PREFIX
+from .config import GUARDED_SKILLS, NUM_CTX, OPS_MAX_ITEMS, OPS_WORKER_MAX_STEPS, PROMPTS_DIR, SKILL_DOC_PREFIX
 from .protocol import action_text, parse_agent_reply
 from .schemas import OPS_PLAN_SCHEMA, OPS_WORKER_REPLY_SCHEMA, OPS_WORKER_WRAPUP_SCHEMA
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-_PROMPTS = os.path.join(os.path.dirname(_HERE), "ops_agents")
+_PROMPTS = os.path.join(PROMPTS_DIR, "ops")
 # 每一步都可以用的技能（查詢、找名稱、切換目錄或目標容器）；其中有些也能改變狀態（docker_ctl restart、ROS2_param set…），
 # 那種用法只有這一步標了 changes_state、而且技能列在這一步的 skills 裡才放行
 OPS_ALWAYS_READ = {"list_dir", "find_file", "search_text", "view_file", "csv_query", "change_dir", "docker_containers", "docker_images",
                    "docker_ctl", "docker_runcmd", "host_runcmd", "ROS2_topic_list", "ROS2_topic_echo", "ROS2_node_list",
                    "ROS2_node_info", "ROS2_param", "ROS2_domain_id", "workpackage_status", "semantic_map", "rmf_handshake",
                    "docker_open"}
-_NOT_FOR_OPS = {"code_job_send", "code_job_status", "code_job_cancel", "ops_plan", "ops_run", "modify_memory", "stt_engine",
+_NOT_FOR_OPS = {"ops_plan", "ops_run", "modify_memory", "stt_engine",
                 "result_recall", "result_grep", "result_view", "result_list"}
 # 計畫的目標寫了這些動作、用的又是兩用的技能（docker_ctl、ROS2_param…）時，這一步算會改變狀態
 _CHANGE_WORDS = re.compile(r"重新啟動|重啟|啟動|停掉|關掉|restart|改成|改為|修改|設定為|設成|設為|寫入|新增|建立|"

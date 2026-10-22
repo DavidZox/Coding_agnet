@@ -1,4 +1,4 @@
-"""執行 shell 指令的技能（host_runcmd、docker_runcmd、code_run）共用：把 harness 拆開的參數接回一行指令。
+"""執行 shell 指令的技能（host_runcmd、docker_runcmd）共用：把 harness 拆開的參數接回一行指令。
 
 harness 用 shlex 把 action.args 拆成參數（_parse_script_args）。模型常常寫 `python3 -c "a; print(b)"`（外層沒有再包一層引號），
 拆開後 `a; print(b)` 是一個參數；以前直接用空白接回去，引號就不見了，bash 把 `;` 當成指令分隔、括號變成語法錯誤

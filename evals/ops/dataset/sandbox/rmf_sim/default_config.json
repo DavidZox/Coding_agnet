@@ -1,0 +1,3 @@
+{"robots": [{"id": "tb1", "station": "home", "battery": 82.0, "behavior": "normal"},
+            {"id": "tb2", "station": "a0", "battery": 76.5, "behavior": "normal"},
+            {"id": "tb3", "station": "a8", "battery": 64.0, "behavior": "normal"}]}

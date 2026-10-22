@@ -17,6 +17,7 @@ from .config import (
     MAX_CHARS_PER_TOKEN,
     MIN_CHARS_PER_TOKEN,
     PROJECT_ROOT,
+    PROMPTS_DIR,
     SKILL_MODEL,
     SUMMARY_MODEL,
 )
@@ -54,8 +55,8 @@ class SkillAgent(ConversationMixin, PromptMixin, DispatchMixin, GuardMixin, Cont
         self.script_dir = PROJECT_ROOT
         self.base_path = os.path.join(self.script_dir, "skills_system")
         self.index_file = os.path.join(self.base_path, "SKILLS.md")
-        self.profile_file = os.path.join(self.script_dir, "AGENT.md")
-        self.memory_file = os.path.join(self.script_dir, "Memory.md")
+        self.profile_file = os.path.join(PROMPTS_DIR, "AGENT.md")
+        self.memory_file = os.path.join(PROMPTS_DIR, "Memory.md")
 
         # 預設工作目錄以程式所在位置為準，不寫死機器特定路徑
         self.current_cwd = self.script_dir

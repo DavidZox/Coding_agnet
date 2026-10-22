@@ -1,4 +1,4 @@
-"""modify_memory：把使用者明確要求記住的經驗寫進長期記憶（專案根目錄的 Memory.md）。
+"""modify_memory：把使用者明確要求記住的經驗寫進長期記憶（prompts/Memory.md）。
 
 Memory.md 每一輪都會透過 SkillAgent.load_long_term_memory() 進入 system prompt 的「Long Term Memory」區塊，
 所以寫在這裡的是通用原則、選技能的規則、溝通風格、專案經驗——之後每一次對話都看得到。
@@ -17,7 +17,7 @@ from datetime import datetime
 
 _SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(_SCRIPTS_DIR))
-MEMORY_FILE = os.path.join(_PROJECT_ROOT, "Memory.md")
+MEMORY_FILE = os.path.join(_PROJECT_ROOT, "prompts", "Memory.md")
 
 # 記憶條目：「[MM-DD HH:MM] 內容」
 _ENTRY_RE = re.compile(r"^\[\d{2}-\d{2} \d{2}:\d{2}\]\s*(.*)$")

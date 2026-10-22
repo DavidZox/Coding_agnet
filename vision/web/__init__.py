@@ -1,6 +1,6 @@
 """前端共用資源（框選 overlay + 螢幕選單）的靜態檔案服務。
 
-web_console.py 與 subagent/screen_gemma4_web.py 都用 GET /static/vision/<name>
+web_console.py 與 vision/sniper.py 都用 GET /static/vision/<name>
 把這裡的檔案送給瀏覽器，前端的框選邏輯只維護一份。"""
 import os
 

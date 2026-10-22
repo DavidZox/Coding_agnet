@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """只驗程式那一層（不呼叫模型）：產生器的每一份錄製，用分析程式量全部的事實（mcap_analyzer --facts、rosout_parser，
 analysis_job.build_facts），跟產生器的評分標準比——時間線該有的事件、Topic 的類別、穩定的錄製沒有事件（背景的 Topic 除外）。
-大量數據時先跑這個（快、結果固定），程式的事實對了，再跑有模型的回歸（evals/analysis_regression.py）。
+大量數據時先跑這個（快、結果固定），程式的事實對了，再跑有模型的回歸（evals/analysis/regression.py）。
 
     python3 evals/datagen/check_facts.py test_data/recordings/gen/s1/cases.json [--container cah_analysis_test] [--only id1,id2] [-v]"""
 import argparse
@@ -23,7 +23,7 @@ def run(script, args, container):
 
 
 def match(ev, rows):
-    from evals.analysis_regression import _rows_for
+    from evals.analysis.regression import _rows_for
     return _rows_for(ev, rows)
 
 
@@ -62,8 +62,8 @@ def main():
             bad_tags += [f"{t['topic']} 沒有「{x}」（{'、'.join(sorted(got))}）" for x in t["has"] if x not in got]
             bad_tags += [f"{t['topic']} 不該有「{x}」" for x in t["not"] if x in got]
         quiet = []
-        if case.get("no_event") is not None:   # 穩定的錄製：背景以外的 Topic 都不該有事件（同 analysis_regression 的「沒有事件」）
-            from evals.analysis_regression import EVENT_TAGS
+        if case.get("no_event") is not None:   # 穩定的錄製：背景以外的 Topic 都不該有事件（同 evals/analysis/regression.py 的「沒有事件」）
+            from evals.analysis.regression import EVENT_TAGS
             bg = set(case["no_event"].get("background") or [])
             quiet = [f"{r['topic']}（{'、'.join(x for x in r['tags'] if x in EVENT_TAGS)}）" for r in facts["topics"]
                      if r["topic"] not in bg and any(x in EVENT_TAGS for x in r["tags"])]

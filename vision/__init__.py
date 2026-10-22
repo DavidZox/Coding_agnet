@@ -8,8 +8,9 @@
                 Web Console 附圖用它，模型呼叫仍走 analyze()
 - session.py    VisionSession：Web Console／sniper 共用的「擷取→框選→清單→取出」工作階段
 - web/          前端共用資源（snip.js / snip.css）與靜態檔案服務
+- sniper.py     獨立的「截圖 → 框選 → 推論」小工具（python3 -m vision.sniper）
 
-使用者：web_console.py（📷 附圖）、subagent/screen_gemma4_web.py（獨立 sniper）、
+使用者：web_console.py（📷 附圖）、vision/sniper.py（獨立 sniper）、
 skills_system/scripts/image_inspect_cmd.py（Agent 對檔案路徑做圖像推論）。
 新增影像來源時只要能產出 PIL.Image 或檔案路徑，呼叫 analyze() 即可。
 """

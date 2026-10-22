@@ -4,7 +4,7 @@
 - claude_code：相信模型——工具回傳的原文直接進上下文（raw_result_for_context，太大時保留頭尾＋存檔編號），
   要查細節、要不要把一大份原文交給獨立 session 提煉（result_recall），由模型自己決定；harness 只提供安全網：
   截斷、上下文超過水位時先清除舊的工具回傳（clear_old_tool_results，原文在存檔、可還原），不夠才滾動摘要。
-各模式給模型的規則文字在 context_modes/<模式>.md（get_system_prompt 依目前模式載入）。"""
+各模式給模型的規則文字在 prompts/context_modes/<模式>.md（get_system_prompt 依目前模式載入）。"""
 import os
 import re
 from .config import (
@@ -13,6 +13,7 @@ from .config import (
     CONTEXT_MODES,
     CONTEXT_MODES_DIRNAME,
     DERIVED_RESULT_SCRIPTS,
+    PROMPTS_DIR,
     RAW_RESULT_MAX_TOKENS,
     TOOL_CLEARED_TAG,
     TOOL_RESULT_FRAME,
@@ -44,8 +45,8 @@ class ContextModeMixin:
         return name
 
     def context_mode_rules(self):
-        """context_modes/<模式>.md 的內容（接在 AGENT.md 後面進 system prompt）；檔案不在時回空字串。"""
-        path = os.path.join(self.script_dir, CONTEXT_MODES_DIRNAME, f"{self.context_mode}.md")
+        """prompts/context_modes/<模式>.md 的內容（接在 AGENT.md 後面進 system prompt）；檔案不在時回空字串。"""
+        path = os.path.join(PROMPTS_DIR, CONTEXT_MODES_DIRNAME, f"{self.context_mode}.md")
         try:
             with open(path, encoding="utf-8") as f:
                 return f.read().strip()

@@ -58,14 +58,14 @@ from .config import (
     ANALYSIS_THINK_DEFAULT,
     ANALYSIS_WORKER_MODEL,
     NUM_CTX,
-    PROJECT_ROOT,
+    PROMPTS_DIR,
     THINK_EXTRA_PREDICT,
 )
 from .model_caps import think_arg
 from .schemas import (ANALYSIS_CHECK_SCHEMA, ANALYSIS_NOTE_MAX, ANALYSIS_PLAN_SCHEMA, ANALYSIS_SUMMARY_SCHEMA,
                       ANALYSIS_WORKER_SCHEMA)
 
-_PROMPTS = os.path.join(PROJECT_ROOT, ANALYSIS_AGENTS_DIRNAME)
+_PROMPTS = os.path.join(PROMPTS_DIR, ANALYSIS_AGENTS_DIRNAME)
 ROLES = ("orchestrator", "worker", "synthesizer")
 ROLE_LABELS = {"orchestrator": "Orchestrator", "worker": "Worker", "synthesizer": "Synthesizer"}
 DEFAULT_QUESTION = "這段錄製期間發生了哪些狀態變化？"

@@ -3,8 +3,11 @@ import os
 import re
 
 
-# 專案根目錄（AGENT.md、Memory.md、skills_system/、logs/ 所在）：agent_core/ 的上一層
+# 專案根目錄（prompts/、skills_system/、logs/ 所在）：agent_core/ 的上一層
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# 給模型的文字都在 prompts/（可以直接改）：AGENT.md（主對話的 system prompt）、Memory.md（長期記憶）、
+# context_modes/（兩種上下文模式的規則）、analysis/（數據解析各角色）、ops/（多步驟維運的規劃與 worker）
+PROMPTS_DIR = os.path.join(PROJECT_ROOT, "prompts")
 
 
 
@@ -199,7 +202,7 @@ PROCEDURE_DOC_TYPE = "Procedure"
 # harness：harness 替模型做決定——大量回傳交給獨立 session 依問題擷取、附下一步建議（原本的設計）。
 # claude_code：相信模型——回傳原文直接進上下文（太大保留頭尾＋存檔編號），要查細節、要不要委派獨立 session
 #   （result_recall）由模型自己決定；harness 只提供截斷、清除舊回傳、滾動摘要這些安全網。
-# 兩種模式共用：原文存檔、檢索清單、執行前關卡、記憶、滾動摘要。規則文字在 context_modes/<模式>.md。
+# 兩種模式共用：原文存檔、檢索清單、執行前關卡、記憶、滾動摘要。規則文字在 prompts/context_modes/<模式>.md。
 # =========================================================
 CONTEXT_MODES = ("harness", "claude_code")
 CONTEXT_MODE_DEFAULT = os.environ.get("AGENT_CONTEXT_MODE", "harness").strip().lower()
@@ -280,7 +283,7 @@ OPS_WORKER_MAX_STEPS = 10                # 每一步的 worker 最多幾輪（�
 # =========================================================
 ANALYSIS_JOBS_DIRNAME = "analysis_jobs"
 ANALYSIS_SETTINGS_NAME = "analysis_settings.json"   # logs/ 下：各角色的模型、數據根目錄、worker 數…（Web 的 📊 分析面板 ⚙️ 設定）
-ANALYSIS_AGENTS_DIRNAME = "analysis_agents"         # orchestrator.md／orchestrator_check.md／worker.md／synthesizer.md：各角色的 system prompt（可直接改）
+ANALYSIS_AGENTS_DIRNAME = "analysis"                # prompts/ 下：orchestrator.md／orchestrator_check.md／worker.md／synthesizer.md（各角色的 system prompt，可直接改）
 # 各角色的模型：預設同主模型（AGENT_ANALYSIS_*_MODEL 可分別指定，例如 Orchestrator 與 Synthesizer 用 gemma4:26b、worker 用 e4b）
 ANALYSIS_ORCHESTRATOR_MODEL = os.environ.get("AGENT_ANALYSIS_ORCHESTRATOR_MODEL", "").strip() or None
 ANALYSIS_WORKER_MODEL = os.environ.get("AGENT_ANALYSIS_WORKER_MODEL", "").strip() or None
