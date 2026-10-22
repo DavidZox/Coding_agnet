@@ -1,119 +1,40 @@
 {
- "version": 3,
- "created": "2026-10-14 09:56:48",
- "label": "exp_20261014_084506",
- "bag_dir": "/workspace/app/diagnostics_package/toolkit/experiment_logs/exp_20261014_084506/bag",
- "exp_dir": "/workspace/app/diagnostics_package/toolkit/experiment_logs/exp_20261014_084506",
+ "version": 4,
+ "created": "2026-10-17 09:48:34",
+ "label": "exp_5090_overheat",
+ "bag_dir": "/workspace/experiment_logs/exp_5090_overheat/bag",
+ "exp_dir": "/workspace/experiment_logs/exp_5090_overheat",
  "kind": "experiment",
  "source_files": [
   {
-   "path": "/workspace/app/diagnostics_package/toolkit/experiment_logs/exp_20261014_084506/bag/bag_0.mcap",
-   "size": 2423695,
-   "mtime": 1791967558
+   "path": "/workspace/experiment_logs/exp_5090_overheat/bag/bag_0.mcap",
+   "size": 2247129,
+   "mtime": 1792125038
   }
  ],
- "rosout_log": "/workspace/app/diagnostics_package/toolkit/experiment_logs/exp_20261014_084506/rosout.log",
- "start_ns": 1791967507011698835,
- "end_ns": 1791967558900941226,
- "start_sec": 1791967507.011699,
- "end_sec": 1791967558.900941,
- "duration_sec": 51.889,
- "message_count": 2592,
+ "rosout_log": "/workspace/experiment_logs/exp_5090_overheat/rosout.log",
+ "start_ns": 1792124993868927843,
+ "end_ns": 1792125038735565985,
+ "start_sec": 1792124993.868928,
+ "end_sec": 1792125038.735566,
+ "duration_sec": 44.867,
+ "message_count": 2675,
  "topics": [
   {
    "topic": "/blackbox_recorder/transition_event",
    "type": "lifecycle_msgs/msg/TransitionEvent",
-   "message_count": 4,
-   "first_sec": 1791967507.532077,
-   "last_sec": 1791967507.5405,
-   "avg_frequency_hz": 0.077,
-   "keys": [
-    {
-     "key": "timestamp",
-     "type": "uint64",
-     "category": "numeric",
-     "dim": "scalar",
-     "note": "整數、相異值少：量測時當狀態跳轉",
-     "values": [
-      "0"
-     ]
-    },
-    {
-     "key": "transition.id",
-     "type": "uint8",
-     "category": "state",
-     "dim": "scalar",
-     "values": [
-      "0"
-     ]
-    },
-    {
-     "key": "transition.label",
-     "type": "string",
-     "category": "state",
-     "dim": "scalar",
-     "values": [
-      ""
-     ]
-    },
-    {
-     "key": "start_state.id",
-     "type": "uint8",
-     "category": "state",
-     "dim": "scalar",
-     "values": [
-      "1",
-      "10",
-      "2",
-      "13"
-     ]
-    },
-    {
-     "key": "start_state.label",
-     "type": "string",
-     "category": "state",
-     "dim": "scalar",
-     "values": [
-      "unconfigured",
-      "configuring",
-      "inactive",
-      "activating"
-     ]
-    },
-    {
-     "key": "goal_state.id",
-     "type": "uint8",
-     "category": "state",
-     "dim": "scalar",
-     "values": [
-      "10",
-      "2",
-      "13",
-      "3"
-     ]
-    },
-    {
-     "key": "goal_state.label",
-     "type": "string",
-     "category": "state",
-     "dim": "scalar",
-     "values": [
-      "configuring",
-      "inactive",
-      "activating",
-      "active"
-     ]
-    }
-   ],
-   "role": "worker"
+   "message_count": 0,
+   "first_sec": null,
+   "last_sec": null,
+   "role": "empty"
   },
   {
    "topic": "/cmd_vel",
    "type": "geometry_msgs/msg/Twist",
-   "message_count": 1010,
-   "first_sec": 1791967508.159757,
-   "last_sec": 1791967558.860126,
-   "avg_frequency_hz": 19.465,
+   "message_count": 899,
+   "first_sec": 1792124993.885539,
+   "last_sec": 1792125038.735566,
+   "avg_frequency_hz": 20.037,
    "keys": [
     {
      "key": "linear",
@@ -141,12 +62,45 @@
    "role": "worker"
   },
   {
-   "topic": "/diagnostics_agg",
+   "topic": "/cmd_vel_raw",
+   "type": "geometry_msgs/msg/Twist",
+   "message_count": 252,
+   "first_sec": 1792125003.107536,
+   "last_sec": 1792125028.107343,
+   "avg_frequency_hz": 5.617,
+   "keys": [
+    {
+     "key": "linear",
+     "type": "geometry_msgs/Vector3",
+     "category": "vector",
+     "dim": "vector [3]",
+     "components": [
+      "x",
+      "y",
+      "z"
+     ]
+    },
+    {
+     "key": "angular",
+     "type": "geometry_msgs/Vector3",
+     "category": "vector",
+     "dim": "vector [3]",
+     "components": [
+      "x",
+      "y",
+      "z"
+     ]
+    }
+   ],
+   "role": "worker"
+  },
+  {
+   "topic": "/diagnostics",
    "type": "diagnostic_msgs/msg/DiagnosticArray",
-   "message_count": 514,
-   "first_sec": 1791967507.544415,
-   "last_sec": 1791967558.844555,
-   "avg_frequency_hz": 9.906,
+   "message_count": 142,
+   "first_sec": 1792125010.366474,
+   "last_sec": 1792125038.600567,
+   "avg_frequency_hz": 3.165,
    "keys": [
     {
      "key": "header.stamp",
@@ -171,14 +125,13 @@
      "map_by": [
       "status.name"
      ],
-     "entries": 44,
+     "entries": 1,
      "examples": [
-      "/Actuators",
-      "/Actuators/Drivetrain & Base Control",
-      "/Actuators/Drivetrain & Base Control/Base Drivers & Control"
+      "act_motor_left"
      ],
      "values": [
-      "0"
+      "0",
+      "1"
      ]
     },
     {
@@ -189,14 +142,13 @@
      "map_by": [
       "status.name"
      ],
-     "entries": 44,
+     "entries": 1,
      "examples": [
-      "/Actuators",
-      "/Actuators/Drivetrain & Base Control",
-      "/Actuators/Drivetrain & Base Control/Base Drivers & Control"
+      "act_motor_left"
      ],
      "values": [
-      "OK"
+      "OK",
+      "Motor overheat"
      ]
     },
     {
@@ -207,14 +159,12 @@
      "map_by": [
       "status.name"
      ],
-     "entries": 44,
+     "entries": 1,
      "examples": [
-      "/Actuators",
-      "/Actuators/Drivetrain & Base Control",
-      "/Actuators/Drivetrain & Base Control/Base Drivers & Control"
+      "act_motor_left"
      ],
      "values": [
-      ""
+      "motor_left"
      ]
     },
     {
@@ -225,11 +175,109 @@
      "map_by": [
       "status.name"
      ],
-     "entries": 39,
+     "entries": 1,
+     "examples": [
+      "act_motor_left"
+     ],
+     "numeric_entries": 0
+    }
+   ],
+   "role": "worker"
+  },
+  {
+   "topic": "/diagnostics_agg",
+   "type": "diagnostic_msgs/msg/DiagnosticArray",
+   "message_count": 449,
+   "first_sec": 1792124993.873624,
+   "last_sec": 1792125038.673359,
+   "avg_frequency_hz": 10.007,
+   "keys": [
+    {
+     "key": "header.stamp",
+     "type": "builtin_interfaces/Time",
+     "category": "time",
+     "dim": "scalar"
+    },
+    {
+     "key": "header.frame_id",
+     "type": "string",
+     "category": "state",
+     "dim": "scalar",
+     "values": [
+      ""
+     ]
+    },
+    {
+     "key": "status.level",
+     "type": "octet",
+     "category": "state",
+     "dim": "scalar",
+     "map_by": [
+      "status.name"
+     ],
+     "entries": 45,
      "examples": [
       "/Actuators",
       "/Actuators/Drivetrain & Base Control",
-      "/Actuators/Energy System"
+      "/Actuators/Drivetrain & Base Control/Base Drivers & Control"
+     ],
+     "values": [
+      "0",
+      "1"
+     ]
+    },
+    {
+     "key": "status.message",
+     "type": "string",
+     "category": "state",
+     "dim": "scalar",
+     "map_by": [
+      "status.name"
+     ],
+     "entries": 45,
+     "examples": [
+      "/Actuators",
+      "/Actuators/Drivetrain & Base Control",
+      "/Actuators/Drivetrain & Base Control/Base Drivers & Control"
+     ],
+     "values": [
+      "OK",
+      "Warning",
+      "Motor overheat"
+     ]
+    },
+    {
+     "key": "status.hardware_id",
+     "type": "string",
+     "category": "state",
+     "dim": "scalar",
+     "map_by": [
+      "status.name"
+     ],
+     "entries": 45,
+     "examples": [
+      "/Actuators",
+      "/Actuators/Drivetrain & Base Control",
+      "/Actuators/Drivetrain & Base Control/Base Drivers & Control"
+     ],
+     "values": [
+      "",
+      "motor_left"
+     ]
+    },
+    {
+     "key": "status.values",
+     "type": "sequence<diagnostic_msgs/KeyValue>",
+     "category": "kv",
+     "dim": "map",
+     "map_by": [
+      "status.name"
+     ],
+     "entries": 41,
+     "examples": [
+      "/Actuators",
+      "/Actuators/Drivetrain & Base Control",
+      "/Actuators/Drivetrain & Base Control/Motors"
      ],
      "numeric_entries": 0
     }
@@ -239,10 +287,10 @@
   {
    "topic": "/diagnostics_toplevel_state",
    "type": "diagnostic_msgs/msg/DiagnosticStatus",
-   "message_count": 514,
-   "first_sec": 1791967507.54445,
-   "last_sec": 1791967558.844619,
-   "avg_frequency_hz": 9.906,
+   "message_count": 449,
+   "first_sec": 1792124993.873382,
+   "last_sec": 1792125038.673373,
+   "avg_frequency_hz": 10.007,
    "keys": [
     {
      "key": "level",
@@ -250,7 +298,8 @@
      "category": "state",
      "dim": "scalar",
      "values": [
-      "0"
+      "0",
+      "1"
      ]
     },
     {
@@ -268,7 +317,8 @@
      "category": "state",
      "dim": "scalar",
      "values": [
-      ""
+      "",
+      "/Actuators/Drivetrain & Base Control/Mo…"
      ]
     },
     {
@@ -277,7 +327,8 @@
      "category": "state",
      "dim": "scalar",
      "values": [
-      ""
+      "",
+      "motor_left"
      ]
     },
     {
@@ -301,27 +352,407 @@
   {
    "topic": "/parameter_events",
    "type": "rcl_interfaces/msg/ParameterEvent",
-   "message_count": 0,
-   "first_sec": null,
-   "last_sec": null,
-   "role": "empty"
+   "message_count": 6,
+   "first_sec": 1792124993.915244,
+   "last_sec": 1792125009.343533,
+   "avg_frequency_hz": 0.134,
+   "keys": [
+    {
+     "key": "stamp",
+     "type": "builtin_interfaces/Time",
+     "category": "time",
+     "dim": "scalar"
+    },
+    {
+     "key": "node",
+     "type": "string",
+     "category": "state",
+     "dim": "scalar",
+     "values": [
+      "/_ros2cli_463",
+      "/_ros2cli_515",
+      "/diag_injector"
+     ]
+    },
+    {
+     "key": "new_parameters.value.type",
+     "type": "uint8",
+     "category": "state",
+     "dim": "scalar",
+     "map_by": [
+      "new_parameters.name"
+     ],
+     "entries": 2,
+     "examples": [
+      "start_type_description_service",
+      "use_sim_time"
+     ],
+     "values": [
+      "1"
+     ]
+    },
+    {
+     "key": "new_parameters.value.bool_value",
+     "type": "boolean",
+     "category": "state",
+     "dim": "scalar",
+     "map_by": [
+      "new_parameters.name"
+     ],
+     "entries": 2,
+     "examples": [
+      "start_type_description_service",
+      "use_sim_time"
+     ],
+     "values": [
+      "False",
+      "True"
+     ]
+    },
+    {
+     "key": "new_parameters.value.integer_value",
+     "type": "int64",
+     "category": "numeric",
+     "dim": "scalar",
+     "map_by": [
+      "new_parameters.name"
+     ],
+     "entries": 2,
+     "examples": [
+      "start_type_description_service",
+      "use_sim_time"
+     ],
+     "note": "整數、相異值少：量測時當狀態跳轉",
+     "values": [
+      "0"
+     ]
+    },
+    {
+     "key": "new_parameters.value.double_value",
+     "type": "double",
+     "category": "numeric",
+     "dim": "scalar",
+     "map_by": [
+      "new_parameters.name"
+     ],
+     "entries": 2,
+     "examples": [
+      "start_type_description_service",
+      "use_sim_time"
+     ],
+     "range": [
+      0.0,
+      0.0
+     ]
+    },
+    {
+     "key": "new_parameters.value.string_value",
+     "type": "string",
+     "category": "state",
+     "dim": "scalar",
+     "map_by": [
+      "new_parameters.name"
+     ],
+     "entries": 2,
+     "examples": [
+      "start_type_description_service",
+      "use_sim_time"
+     ],
+     "values": [
+      ""
+     ]
+    },
+    {
+     "key": "new_parameters.value.byte_array_value",
+     "type": "sequence<octet>",
+     "category": "state",
+     "dim": "set",
+     "map_by": [
+      "new_parameters.name"
+     ],
+     "entries": 2,
+     "examples": [
+      "start_type_description_service",
+      "use_sim_time"
+     ]
+    },
+    {
+     "key": "new_parameters.value.bool_array_value",
+     "type": "sequence<boolean>",
+     "category": "state",
+     "dim": "set",
+     "map_by": [
+      "new_parameters.name"
+     ],
+     "entries": 2,
+     "examples": [
+      "start_type_description_service",
+      "use_sim_time"
+     ]
+    },
+    {
+     "key": "new_parameters.value.integer_array_value",
+     "type": "sequence<int64>",
+     "category": "state",
+     "dim": "set",
+     "map_by": [
+      "new_parameters.name"
+     ],
+     "entries": 2,
+     "examples": [
+      "start_type_description_service",
+      "use_sim_time"
+     ]
+    },
+    {
+     "key": "new_parameters.value.double_array_value",
+     "type": "sequence<double>",
+     "category": "array",
+     "dim": "vector [dynamic]",
+     "map_by": [
+      "new_parameters.name"
+     ],
+     "entries": 2,
+     "examples": [
+      "start_type_description_service",
+      "use_sim_time"
+     ]
+    },
+    {
+     "key": "new_parameters.value.string_array_value",
+     "type": "sequence<string>",
+     "category": "state",
+     "dim": "set",
+     "map_by": [
+      "new_parameters.name"
+     ],
+     "entries": 2,
+     "examples": [
+      "start_type_description_service",
+      "use_sim_time"
+     ]
+    },
+    {
+     "key": "changed_parameters.value.type",
+     "type": "uint8",
+     "category": "state",
+     "dim": "scalar",
+     "map_by": [
+      "changed_parameters.name"
+     ],
+     "entries": 0
+    },
+    {
+     "key": "changed_parameters.value.bool_value",
+     "type": "boolean",
+     "category": "state",
+     "dim": "scalar",
+     "map_by": [
+      "changed_parameters.name"
+     ],
+     "entries": 0
+    },
+    {
+     "key": "changed_parameters.value.integer_value",
+     "type": "int64",
+     "category": "numeric",
+     "dim": "scalar",
+     "map_by": [
+      "changed_parameters.name"
+     ],
+     "entries": 0
+    },
+    {
+     "key": "changed_parameters.value.double_value",
+     "type": "double",
+     "category": "numeric",
+     "dim": "scalar",
+     "map_by": [
+      "changed_parameters.name"
+     ],
+     "entries": 0
+    },
+    {
+     "key": "changed_parameters.value.string_value",
+     "type": "string",
+     "category": "state",
+     "dim": "scalar",
+     "map_by": [
+      "changed_parameters.name"
+     ],
+     "entries": 0,
+     "values": []
+    },
+    {
+     "key": "changed_parameters.value.byte_array_value",
+     "type": "sequence<octet>",
+     "category": "state",
+     "dim": "set",
+     "map_by": [
+      "changed_parameters.name"
+     ],
+     "entries": 0
+    },
+    {
+     "key": "changed_parameters.value.bool_array_value",
+     "type": "sequence<boolean>",
+     "category": "state",
+     "dim": "set",
+     "map_by": [
+      "changed_parameters.name"
+     ],
+     "entries": 0
+    },
+    {
+     "key": "changed_parameters.value.integer_array_value",
+     "type": "sequence<int64>",
+     "category": "state",
+     "dim": "set",
+     "map_by": [
+      "changed_parameters.name"
+     ],
+     "entries": 0
+    },
+    {
+     "key": "changed_parameters.value.double_array_value",
+     "type": "sequence<double>",
+     "category": "array",
+     "dim": "vector [dynamic]",
+     "map_by": [
+      "changed_parameters.name"
+     ],
+     "entries": 0
+    },
+    {
+     "key": "changed_parameters.value.string_array_value",
+     "type": "sequence<string>",
+     "category": "state",
+     "dim": "set",
+     "map_by": [
+      "changed_parameters.name"
+     ],
+     "entries": 0
+    },
+    {
+     "key": "deleted_parameters.value.type",
+     "type": "uint8",
+     "category": "state",
+     "dim": "scalar",
+     "map_by": [
+      "deleted_parameters.name"
+     ],
+     "entries": 0
+    },
+    {
+     "key": "deleted_parameters.value.bool_value",
+     "type": "boolean",
+     "category": "state",
+     "dim": "scalar",
+     "map_by": [
+      "deleted_parameters.name"
+     ],
+     "entries": 0
+    },
+    {
+     "key": "deleted_parameters.value.integer_value",
+     "type": "int64",
+     "category": "numeric",
+     "dim": "scalar",
+     "map_by": [
+      "deleted_parameters.name"
+     ],
+     "entries": 0
+    },
+    {
+     "key": "deleted_parameters.value.double_value",
+     "type": "double",
+     "category": "numeric",
+     "dim": "scalar",
+     "map_by": [
+      "deleted_parameters.name"
+     ],
+     "entries": 0
+    },
+    {
+     "key": "deleted_parameters.value.string_value",
+     "type": "string",
+     "category": "state",
+     "dim": "scalar",
+     "map_by": [
+      "deleted_parameters.name"
+     ],
+     "entries": 0,
+     "values": []
+    },
+    {
+     "key": "deleted_parameters.value.byte_array_value",
+     "type": "sequence<octet>",
+     "category": "state",
+     "dim": "set",
+     "map_by": [
+      "deleted_parameters.name"
+     ],
+     "entries": 0
+    },
+    {
+     "key": "deleted_parameters.value.bool_array_value",
+     "type": "sequence<boolean>",
+     "category": "state",
+     "dim": "set",
+     "map_by": [
+      "deleted_parameters.name"
+     ],
+     "entries": 0
+    },
+    {
+     "key": "deleted_parameters.value.integer_array_value",
+     "type": "sequence<int64>",
+     "category": "state",
+     "dim": "set",
+     "map_by": [
+      "deleted_parameters.name"
+     ],
+     "entries": 0
+    },
+    {
+     "key": "deleted_parameters.value.double_array_value",
+     "type": "sequence<double>",
+     "category": "array",
+     "dim": "vector [dynamic]",
+     "map_by": [
+      "deleted_parameters.name"
+     ],
+     "entries": 0
+    },
+    {
+     "key": "deleted_parameters.value.string_array_value",
+     "type": "sequence<string>",
+     "category": "state",
+     "dim": "set",
+     "map_by": [
+      "deleted_parameters.name"
+     ],
+     "entries": 0
+    }
+   ],
+   "role": "worker"
   },
   {
    "topic": "/rosout",
    "type": "rcl_interfaces/msg/Log",
-   "message_count": 31,
-   "first_sec": 1791967507.011699,
-   "last_sec": 1791967558.900941,
-   "avg_frequency_hz": 0.597,
+   "message_count": 24,
+   "first_sec": 1792124993.868928,
+   "last_sec": 1792125028.635857,
+   "avg_frequency_hz": 0.535,
    "role": "log"
   },
   {
    "topic": "/system/safety_command",
    "type": "diagnostics_package/msg/SystemSafetyStatus",
-   "message_count": 514,
-   "first_sec": 1791967507.544962,
-   "last_sec": 1791967558.844821,
-   "avg_frequency_hz": 9.906,
+   "message_count": 449,
+   "first_sec": 1792124993.973498,
+   "last_sec": 1792125038.673498,
+   "avg_frequency_hz": 10.007,
    "keys": [
     {
      "key": "header.stamp",
@@ -345,7 +776,7 @@
      "dim": "scalar",
      "values": [
       "NONE",
-      "INIT"
+      "LIMIT_SPEED"
      ]
     },
     {
@@ -355,7 +786,7 @@
      "dim": "scalar",
      "values": [
       "Unknown",
-      "SystemHealthMonitor"
+      "/Actuators/Drivetrain & Base Control/Mo…"
      ]
     },
     {
@@ -364,7 +795,8 @@
      "category": "state",
      "dim": "scalar",
      "values": [
-      "0"
+      "0",
+      "1"
      ]
     },
     {
@@ -374,7 +806,7 @@
      "dim": "scalar",
      "values": [
       "",
-      "System is in initialization phase. Diag…"
+      "馬達發熱，降速運轉保護硬體"
      ]
     },
     {
@@ -385,7 +817,14 @@
      "map_by": [
       "action_params.name"
      ],
-     "entries": 0
+     "entries": 1,
+     "examples": [
+      "speed_ratio"
+     ],
+     "range": [
+      0.5,
+      0.5
+     ]
     },
     {
      "key": "active_error_tasks",
@@ -397,7 +836,10 @@
      "key": "active_warn_tasks",
      "type": "sequence<string>",
      "category": "state",
-     "dim": "set"
+     "dim": "set",
+     "values": [
+      "/Actuators/Drivetrain & Base Control/Mo…"
+     ]
     },
     {
      "key": "active_error_codes",
@@ -409,13 +851,19 @@
      "key": "active_warn_codes",
      "type": "sequence<uint32>",
      "category": "state",
-     "dim": "set"
+     "dim": "set",
+     "values": [
+      "54536449"
+     ]
     },
     {
      "key": "active_reasons",
      "type": "sequence<string>",
      "category": "state",
-     "dim": "set"
+     "dim": "set",
+     "values": [
+      "[/Actuators/Drivetrain & Base Control/M…"
+     ]
     }
    ],
    "role": "worker"
@@ -423,10 +871,10 @@
   {
    "topic": "/system/safety_gate_status",
    "type": "diagnostics_package/msg/SafetyGateStatus",
-   "message_count": 3,
-   "first_sec": 1791967508.16434,
-   "last_sec": 1791967522.547375,
-   "avg_frequency_hz": 0.058,
+   "message_count": 5,
+   "first_sec": 1792124993.87107,
+   "last_sec": 1792125028.635912,
+   "avg_frequency_hz": 0.111,
    "keys": [
     {
      "key": "header.stamp",
@@ -449,8 +897,8 @@
      "category": "state",
      "dim": "scalar",
      "values": [
-      "PROTECTIVE_STOP",
-      "NORMAL"
+      "NORMAL",
+      "LIMITED"
      ]
     },
     {
@@ -468,9 +916,7 @@
      "category": "state",
      "dim": "set",
      "values": [
-      "NO_CMD_VEL_RAW",
-      "NO_SAFETY_COMMAND_YET",
-      "MON_INITIALIZING"
+      "NO_CMD_VEL_RAW"
      ]
     },
     {
@@ -479,9 +925,8 @@
      "category": "state",
      "dim": "scalar",
      "values": [
-      "",
-      "INIT",
-      "NONE"
+      "NONE",
+      "LIMIT_SPEED"
      ]
     },
     {
@@ -527,83 +972,24 @@
   {
    "topic": "/system_health_monitor/transition_event",
    "type": "lifecycle_msgs/msg/TransitionEvent",
-   "message_count": 2,
-   "first_sec": 1791967507.525636,
-   "last_sec": 1791967507.525783,
-   "avg_frequency_hz": 0.039,
-   "keys": [
-    {
-     "key": "timestamp",
-     "type": "uint64",
-     "category": "numeric",
-     "dim": "scalar",
-     "note": "整數、相異值少：量測時當狀態跳轉",
-     "values": [
-      "0"
-     ]
-    },
-    {
-     "key": "transition.id",
-     "type": "uint8",
-     "category": "state",
-     "dim": "scalar",
-     "values": [
-      "0"
-     ]
-    },
-    {
-     "key": "transition.label",
-     "type": "string",
-     "category": "state",
-     "dim": "scalar",
-     "values": [
-      ""
-     ]
-    },
-    {
-     "key": "start_state.id",
-     "type": "uint8",
-     "category": "state",
-     "dim": "scalar",
-     "values": [
-      "2",
-      "13"
-     ]
-    },
-    {
-     "key": "start_state.label",
-     "type": "string",
-     "category": "state",
-     "dim": "scalar",
-     "values": [
-      "inactive",
-      "activating"
-     ]
-    },
-    {
-     "key": "goal_state.id",
-     "type": "uint8",
-     "category": "state",
-     "dim": "scalar",
-     "values": [
-      "13",
-      "3"
-     ]
-    },
-    {
-     "key": "goal_state.label",
-     "type": "string",
-     "category": "state",
-     "dim": "scalar",
-     "values": [
-      "activating",
-      "active"
-     ]
-    }
-   ],
-   "role": "worker"
+   "message_count": 0,
+   "first_sec": null,
+   "last_sec": null,
+   "role": "empty"
   }
  ],
+ "msg_definitions": {
+  "lifecycle_msgs/msg/TransitionEvent": "# The time point at which this event occurred.\nuint64 timestamp\n\n# The id and label of this transition event.\nTransition transition\n\n# The starting state from which this event transitioned.\nState start_state\n\n# The end state of this transition event.\nState goal_state",
+  "diagnostics_package/msg/SystemSafetyStatus": "# MON（system_health_monitor）決定的安全處置，發布於 /system/safety_command（QoS：depth 10、RELIABLE、VOLATILE）\n# MON 在 active 時每收到一筆 /diagnostics_agg 就發布一筆；\n# GATE（safety_motion_controller）依 primary_reaction 與 action_params 決定速度模式，\n# BBX（blackbox_recorder）依 primary_reaction 判斷是否寫出事故快照，並把各欄位記進快照\n# action_params 取代原本的 action_params_json 字串（JSON 物件，例如 {\"speed_ratio\":0.5}）：\n# 每個處置參數一筆 ActionParam（名稱與數值），沒有參數時是空陣列\n\nstd_msgs/Header header\n\nstring primary_reaction\nstring winning_task\nuint8 winning_level\nstring winning_reason\nActionParam[] action_params\n\nstring[] active_error_tasks\nstring[] active_warn_tasks\nuint32[] active_error_codes\nuint32[] active_warn_codes\nstring[] active_reasons",
+  "rcl_interfaces/msg/Log": "##\n## Severity level constants\n## \n## These logging levels follow the Python Standard\n## https://docs.python.org/3/library/logging.html#logging-levels\n## And are implemented in rcutils as well\n## https://github.com/ros2/rcutils/blob/35f29850064e0c33a4063cbc947ebbfeada11dba/include/rcutils/logging.h#L164-L172\n## This leaves space for other standard logging levels to be inserted in the middle in the future,\n## as well as custom user defined levels.\n## Since there are several other logging enumeration standard for different implementations,\n## other logging implementations may need to provide level mappings to match their internal implementations.\n##\n\n# Debug is for pedantic information, which is useful when debugging issues.\nuint8 DEBUG=10\n\n# Info is the standard informational level and is used to report expected\n# information.\nuint8 INFO=20\n\n# Warning is for information that may potentially cause issues or possibly unexpected\n# behavior.\nuint8 WARN=30\n\n# Error is for information that this node cannot resolve.\nuint8 ERROR=40\n\n# Information about a impending node shutdown.\nuint8 FATAL=50\n\n##\n## Fields\n##\n\n# Timestamp when this message was generated by the node.\nbuiltin_interfaces/Time stamp\n\n# Corresponding log level, see above definitions.\nuint8 level\n\n# The name representing the logger this message came from.\nstring name\n\n# The full log message.\nstring msg\n\n# The file the message came from.\nstring file\n\n# The function the message came from.\nstring function\n\n# The line in the file the message came from.\nuint32 line",
+  "rosbag2_interfaces/msg/WriteSplitEvent": "# The full path of the file that was finished and closed\nstring closed_file\n\n# The full path of the new file that was created to continue recording\nstring opened_file\n\n# The fully qualified node name of the event sender\nstring node_name",
+  "diagnostic_msgs/msg/DiagnosticStatus": "# This message holds the status of an individual component of the robot.\n\n# Possible levels of operations.\nbyte OK=0\nbyte WARN=1\nbyte ERROR=2\nbyte STALE=3\n\n# Level of operation enumerated above.\nbyte level\n# A description of the test/component reporting.\nstring name\n# A description of the status.\nstring message\n# A hardware unique string.\nstring hardware_id\n# An array of values associated with the status.\nKeyValue[] values",
+  "diagnostic_msgs/msg/DiagnosticArray": "# This message is used to send diagnostic information about the state of the robot.\nstd_msgs/Header header # for timestamp\nDiagnosticStatus[] status # an array of components being reported on",
+  "diagnostics_package/msg/SafetyGateStatus": "# State of the safety gate (safety_motion_controller, GATE).\n# Published on /system/safety_gate_status (RELIABLE, TRANSIENT_LOCAL, depth 1)\n# whenever the state changes, and after every reset request.\n\n# mode\nstring MODE_NORMAL=\"NORMAL\"\nstring MODE_LIMITED=\"LIMITED\"\nstring MODE_PAUSED=\"PAUSED\"\nstring MODE_ESTOP_LATCHED=\"ESTOP_LATCHED\"\nstring MODE_PROTECTIVE_STOP=\"PROTECTIVE_STOP\"\n\n# stop_reasons: zero or more, always in this order\nstring REASON_ESTOP_LATCHED=\"ESTOP_LATCHED\"\nstring REASON_NO_SAFETY_COMMAND_YET=\"NO_SAFETY_COMMAND_YET\"\nstring REASON_SAFETY_COMMAND_TIMEOUT=\"SAFETY_COMMAND_TIMEOUT\"\nstring REASON_MON_INITIALIZING=\"MON_INITIALIZING\"\nstring REASON_PAUSE_REQUESTED=\"PAUSE_REQUESTED\"\nstring REASON_INVALID_PARAMS=\"INVALID_PARAMS\"\nstring REASON_UNKNOWN_REACTION=\"UNKNOWN_REACTION\"\nstring REASON_WAITING_ZERO_AFTER_RESET=\"WAITING_ZERO_AFTER_RESET\"\nstring REASON_INTERNAL_ERROR=\"INTERNAL_ERROR\"\nstring REASON_NO_CMD_VEL_RAW=\"NO_CMD_VEL_RAW\"\n\n# last_reset_reason: one of RESET_* below, or REASON_SAFETY_COMMAND_TIMEOUT,\n# REASON_MON_INITIALIZING, REASON_UNKNOWN_REACTION\nstring RESET_ACCEPTED=\"ACCEPTED\"\nstring RESET_NOT_LATCHED=\"NOT_LATCHED\"\nstring RESET_ESTOP_CAUSE_ACTIVE=\"ESTOP_CAUSE_ACTIVE\"\n\nstd_msgs/Header header\nstring mode\nbool estop_latched\nstring[] stop_reasons\nstring latest_reaction\nuint32 reset_request_count\nstring last_reset_source\nbool last_reset_accepted\nstring last_reset_reason",
+  "geometry_msgs/msg/Twist": "# This expresses velocity in free space broken into its linear and angular parts.\n\nVector3  linear\nVector3  angular",
+  "rcl_interfaces/msg/ParameterEvent": "# This message contains a parameter event.\n# Because the parameter event was an atomic update, a specific parameter name\n# can only be in one of the three sets.\n\n# The time stamp when this parameter event occurred.\nbuiltin_interfaces/Time stamp\n\n# Fully qualified ROS path to node.\nstring node\n\n# New parameters that have been set for this node.\nParameter[] new_parameters\n\n# Parameters that have been changed during this event.\nParameter[] changed_parameters\n\n# Parameters that have been deleted during this event.\nParameter[] deleted_parameters"
+ },
  "cached": true
 }
-[ANALYSIS_DATA] /workspace/app/diagnostics_package/toolkit/experiment_logs/exp_20261014_084506
+[ANALYSIS_DATA] /workspace/experiment_logs/exp_5090_overheat
+[TARGET_CONTAINER] cah_analysis_test

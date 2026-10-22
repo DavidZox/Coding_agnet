@@ -232,23 +232,27 @@ CMD_VEL_FEATURES = """[PASS] 特徵量測：/cmd_vel（geometry_msgs/msg/Twist�
        最大跳變 0→0.42 @ 1791967530.102[+23.09s]
 程式判斷的異常（訊息中斷）：沒有
 量到的變化（事實，不代表異常）：沒有尖峰、沒有狀態跳轉、沒有中途開始或停止發布"""
-ANALYSIS_REPORT = """[PASS] 📊 數據事實報告（job 20261014_181445：3 個 worker、模型呼叫 12 次、18 秒）
+ANALYSIS_REPORT = """[PASS] 📊 數據事實報告（job 20261014_181445：2 個 worker、模型呼叫 6 次、14 秒）
 問題：安全閘為什麼一開始是 PROTECTIVE_STOP？什麼時候恢復？
 數據：exp_20261014_084506（51.889 秒）
-摘要：+0.75s safety_motion_controller 印出 L28 WARN（mode=PROTECTIVE_STOP，reasons 有 NO_SAFETY_COMMAND_YET、NO_CMD_VEL_RAW）。+1.22s /system/safety_gate_status 的 stop_reasons 從 [NO_CMD_VEL_RAW, NO_SAFETY_COMMAND_YET] 變成 [MON_INITIALIZING, NO_CMD_VEL_RAW]。+15.53s /system/safety_command 的 primary_reaction 從 INIT 變成 NONE；+15.54s 安全閘的 mode 從 PROTECTIVE_STOP 變成 NORMAL，同一時間印出 L30 INFO。/cmd_vel 整段沒有變化。
-各 Topic：
-- W1 /system/safety_gate_status｜狀態改變｜3 則（則數少）｜mode：PROTECTIVE_STOP → NORMAL（+15.54s）｜到最後：mode＝NORMAL（開頭 PROTECTIVE_STOP）
-- W2 /system/safety_command｜狀態改變｜整段持續發布（514 則，平均 10.0 Hz）｜primary_reaction：INIT → NONE（+15.53s）｜到最後：primary_reaction＝NONE（開頭 INIT）
-- W3 /cmd_vel｜沒有變化｜整段持續發布（1010 則，平均 20.0 Hz）
-時間線（重點 5/5 列）：
-- +0.75s｜L28 WARN safety_motion_controller｜GATE mode=PROTECTIVE_STOP latched=False reasons=['NO_SAFETY_COMMAND_YET', 'NO_CMD_VEL_RAW']｜前後 1 秒內：沒有對應的變化
-- +1.22s｜W1 /system/safety_gate_status｜stop_reasons：[NO_CMD_VEL_RAW, NO_SAFETY_COMMAND_YET] → [MON_INITIALIZING, NO_CMD_VEL_RAW]｜前後 1 秒內：L28（早 0.47 秒）、L29（同時）
-- +15.53s｜W2 /system/safety_command｜primary_reaction：INIT → NONE｜前後 1 秒內：L30（晚 0.01 秒）
-- +15.54s｜W1 /system/safety_gate_status｜mode：PROTECTIVE_STOP → NORMAL｜前後 1 秒內：L30（同時）
-- +15.54s｜L30 INFO safety_motion_controller｜GATE mode=NORMAL latched=False reasons=['NO_CMD_VEL_RAW']｜前後 1 秒內：W2（早 0.01 秒）、W1（同時）
-沒有分析的 Topic：沒有分析：/diagnostics_agg、/diagnostics_toplevel_state
-完整報告：logs/analysis_jobs/20261014_181445/report.md（各 worker 的局部報告在 workers/）
-（依這份報告回答使用者：只陳述報告裡的事實——時間、數值、狀態、Log 的原文。報告沒有判斷原因：使用者問「為什麼」時，照事實說明發生了什麼、先後順序，並說明原因要對照源碼另外分析）"""
+總覽（程式）：5 個 Topic：有事件的 2 個（狀態改變 2）、只有數值連續變動的 0 個、沒有變化的 3 個；Log 5 個訊號（WARN 以上 1 個）
+重點（時間由程式依編號補上；引用的事件與 Log 的內容由程式列在下面）：
+- +0.75s　1 則 WARN Log：安全閘一開始是 PROTECTIVE_STOP（L28）
+  - L28 WARN safety_motion_controller：GATE mode=PROTECTIVE_STOP latched=False reasons=['NO_SAFETY_COMMAND_YET', 'NO_CMD_VEL_RAW']
+- +1.22s　安全閘的停止原因換成監控節點初始化中（E1）
+  - E1 /system/safety_gate_status：stop_reasons：[NO_CMD_VEL_RAW, NO_SAFETY_COMMAND_YET] → [MON_INITIALIZING, NO_CMD_VEL_RAW]
+- +15.53s～+15.54s　安全指令的反應變成 NONE，安全閘回到 NORMAL；同一時間 1 則 INFO Log（E2、E3、L30）
+  - E2 /system/safety_command：primary_reaction：INIT → NONE
+  - E3 /system/safety_gate_status：mode：PROTECTIVE_STOP → NORMAL
+  - L30 INFO safety_motion_controller：GATE mode=NORMAL latched=False reasons=['NO_CMD_VEL_RAW']
+- 整段　/cmd_vel、/diagnostics_agg、/diagnostics_toplevel_state 沒有變化（T3、T4、T5）
+有變化的 Topic：
+- T1 /system/safety_gate_status｜狀態改變｜狀態改變時才發布：3 則（+0.75s、+1.22s、+15.54s）｜mode：PROTECTIVE_STOP → NORMAL（+15.54s）｜到最後：mode＝NORMAL（開頭 PROTECTIVE_STOP）
+- T2 /system/safety_command｜狀態改變｜整段持續發布（514 則，固定頻率（週期 0.1 秒））｜primary_reaction：INIT → NONE（+15.53s）｜到最後：primary_reaction＝NONE（開頭 INIT）
+沒有變化的 Topic（3 個）：/cmd_vel、/diagnostics_agg、/diagnostics_toplevel_state
+前後 1 秒內沒有任何 Topic 變化的 Log：L28 +0.75s safety_motion_controller：GATE mode=PROTECTIVE_STOP latched=False reasons=['NO_SAFETY_COMMAND_YET', 'NO_CMD_VEL_RAW']
+完整報告：logs/analysis_jobs/20261014_181445/report.md（各 worker 的說明在 workers/）
+（依這份報告回答使用者：只陳述報告裡的事實——時間、數值、狀態、Log 的原文，可以引用編號。報告沒有判斷原因：「前後 1 秒內」「同時」只是時間上的先後，不要寫成誰導致、造成、觸發誰；使用者問「為什麼」時，照事實說明發生了什麼、先後順序，並說明原因要對照源碼另外分析）"""
 
 # ---------------------------------------------------------------- 情境
 SCENARIOS = [

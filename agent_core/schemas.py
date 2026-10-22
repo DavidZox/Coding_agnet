@@ -258,44 +258,32 @@ ANALYSIS_PLAN_SCHEMA = {
     "required": ["understanding", "related_signals", "assignments"],
 }
 
-# worker 每一步的決定：同主對話的 {thought, reply, action}，字串有上限
-ANALYSIS_WORKER_REPLY_SCHEMA = {
+# 事實由程式量（全部的 Topic、全部的 Key），模型只「選」和「說明」：worker 與 Synthesizer 的輸出是一則一則的短說明，每一則用 refs 指到
+# 程式整理的事實的編號（E#＝Topic 的事件、L#＝Log 訊號、T#＝Topic），時間由程式依 refs 補上。沒有一整段的長文字：
+# 舊版摘要是一個 1200 字的欄位，事件多的數據（開機）寫到上限被截斷在半句；拆成一則一則之後，一則出問題只影響那一則。
+# 上限只防模型失控（一則說明寫到上限＝失控：程式交回修一次，還是一樣就只留完整的句子）。則數的上限讓重點留在重要的事件（完整的事實在時間線）。
+ANALYSIS_NOTE_MAX = 300
+_NOTE = {
     "type": "object",
-    "properties": {
-        "thought": _text(500),
-        "reply": _text(1500),
-        "action": {"anyOf": [
-            {"type": "null"},
-            {
-                "type": "object",
-                "properties": {"command": _text(120), "args": _text(600)},
-                "required": ["command", "args"],
-            },
-        ]},
-    },
-    "required": ["thought", "reply", "action"],
+    "properties": {"refs": {"type": "array", "maxItems": 10, "items": _text(12)}, "text": _text(ANALYSIS_NOTE_MAX)},
+    "required": ["refs", "text"],
 }
 
-# worker 的局部報告：analyzed_keys 程式會核對是不是真的量過；事實（時間、數值、跳轉）一律由程式從量測結果整理，
-# 模型只寫量到的現象的文字說明
-ANALYSIS_WORKER_REPORT_SCHEMA = {
+# worker：說明一個 Topic 量到的事實（refs 只能是這個 Topic 的 E#／T#）
+ANALYSIS_WORKER_SCHEMA = {
     "type": "object",
-    "properties": {
-        "analyzed_keys": {"type": "array", "maxItems": 6, "items": _text(120)},
-        "summary": _text(800),
-    },
-    "required": ["analyzed_keys", "summary"],
+    "properties": {"notes": {"type": "array", "maxItems": 5, "items": _NOTE}},
+    "required": ["notes"],
 }
 
-# Synthesizer：程式整理好的事實（各 Topic 的結果、時間線）寫成摘要。上限放寬（實測 26b 的摘要中位數約 700 字，上限 800 時
-# 三成被截斷在半句、交回縮短也一半還是截斷）：長度靠 prompt 的「三到六句」，上限只防失控
+# Synthesizer：整段數據的重點，依時間一則一則寫（refs：E#、L#、T#）
 ANALYSIS_SUMMARY_SCHEMA = {
     "type": "object",
-    "properties": {"summary": _text(1200)},
-    "required": ["summary"],
+    "properties": {"highlights": {"type": "array", "maxItems": 8, "items": _NOTE}},
+    "required": ["highlights"],
 }
 
-# Orchestrator 的檢查：前後量到的 Topic 都沒有變化的 Log，要不要補量還沒量的 Topic（空陣列＝不補）；每一項寫它對應哪一則 Log
+# Orchestrator 的檢查：WARN 以上或相關的 Log 前後有變化、但還沒有 worker 說明的 Topic，要不要補派 worker（空陣列＝不補）；每一項寫它對應哪一則 Log
 ANALYSIS_CHECK_SCHEMA = {
     "type": "object",
     "properties": {

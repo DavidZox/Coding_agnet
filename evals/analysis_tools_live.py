@@ -48,6 +48,19 @@ def main():
     check("至少一個 worker 可分析的 Topic（訊息型別解得開）", bool(workers), json.dumps(idx["topics"], ensure_ascii=False)[:800])
     out = run("mcap_analyzer_cmd.py", a.data, env=env)
     check("mcap_analyzer：總表與 [ANALYSIS_DATA] 標記", out.startswith("[PASS] Topic Metadata") and "[ANALYSIS_DATA]" in out, out)
+    # 全部 Topic 的事實（analysis_run 的事實就是這一份）：每個可以解碼的 Topic 一行；JSON 有版本與每個 Topic 的訊息流
+    out = run("mcap_analyzer_cmd.py", a.data, "--facts", env=env)
+    decodable = [t["topic"] for t in idx["topics"] if t["role"] in ("worker", "text_only")]
+    check("mcap_analyzer --facts：全部 Topic 的事實（每個 Topic 一行：發布方式、事件與變化）",
+          out.startswith("[PASS] 全部 Topic 的事實") and all(f"- {t}｜" in out for t in decodable), out)
+    out = run("mcap_analyzer_cmd.py", a.data, "--facts", "--json", env=env)
+    try:
+        scan = json.loads(out[out.index("{"):out.rindex("}") + 1])
+    except ValueError:
+        scan = None
+    check("mcap_analyzer --facts --json：版本、每個 Topic 的訊息流（發布方式）與項目",
+          bool(scan and scan.get("version") and set(decodable) <= set(scan.get("topics") or {})
+               and all("pattern" in scan["topics"][t]["rate"] for t in decodable if scan["topics"][t]["rate"].get("messages"))), out[:800])
     if workers:
         t = workers[0]
         key = next((k for k in t["keys"] if k["category"] in ("state", "numeric", "vector")), None)
@@ -99,7 +112,8 @@ def main():
     out = run("mcap_slicer_cmd.py", a.data, "--at", "+999999", "--out", "/tmp/agent_live_slices", env=env)
     check("時間點不在數據範圍內：不切、回錯誤", out.startswith("[ERROR]") and "不在數據範圍內" in out, out)
     # analysis_run 的動態時間切片：明確的時間窗、只切指定的 Topic、帶時間窗之前的最後一則；讀切片量到的要跟讀原本的數據一樣
-    st = next((t for t in workers if any(k["category"] == "state" for k in t["keys"])), None)
+    # 有狀態 Key、訊息最多的 Topic（訊息很少的 Topic 在時間窗之前可能一則都沒有，切出 0 則才是對的）
+    st = max((t for t in workers if any(k["category"] == "state" for k in t["keys"])), key=lambda t: t.get("message_count") or 0, default=None)
     if st:
         skey = next(k["key"] for k in st["keys"] if k["category"] == "state")
         span = (idx["end_ns"] - idx["start_ns"]) / 1e9

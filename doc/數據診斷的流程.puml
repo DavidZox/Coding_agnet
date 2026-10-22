@@ -7,21 +7,21 @@ skinparam ActivityBorderColor #996633
 skinparam NoteBackgroundColor #FFFFE0
 skinparam PartitionBorderColor #996633
 
-title 數據分析（事實報告）：問題 → 資料預備 → Orchestrator 規劃 → Workers（量整段）→ 事實（程式）→ Synthesizer 摘要 → Orchestrator 檢查 ⇄ 補量 → 報告\n藍＝程式（整理事實、量測，不呼叫模型）；橘＝模型；綠＝程式核對。只要有 .mcap 就能用，不判斷原因。每一步的輸入與產物都留在 logs/analysis_jobs/<編號>/
+title 數據分析（事實報告）：問題 → 資料預備＋量全部 Topic（程式）→ Orchestrator 規劃 → Workers 說明 → Synthesizer 重點 → Orchestrator 檢查 ⇄ 補派 → 報告\n藍＝程式（量測、整理事實，不呼叫模型）；橘＝模型；綠＝程式核對。事實由程式量，模型只「選」和「說明」；只要有 .mcap 就能用，不判斷原因。每一步的輸入與產物都留在 logs/analysis_jobs/<編號>/
 
 partition "收到問題" {
 start
 :主對話的 AI 呼叫 analysis_run（偽技能，在本程式內執行，不用使用者確認）
 ／Web 的分析模式、/analyze <問題>；CLI：/analyze <問題>
 參數：~--data（實驗資料夾、bag、切片、實驗名稱、latest；省略＝目前的數據）、
-~--topic（一定要分析的 Topic）、~--workers、~--rounds（1＝不補量）
+~--topic（一定要說明的 Topic）、~--workers、~--rounds（1＝不補派）
 問題省略＝這段錄製期間發生了哪些狀態變化; <<#DDEBF7>>
 }
 
-partition "① 資料預備（程式，不用模型）" {
+partition "① 資料預備與事實（程式，不用模型）" {
 :mcap_analyzer ~--json：全域 Topic Metadata
-（Topic、型別、筆數、頻率、起訖；每個 Key 的類別與維度）
-錄製時建好的索引直接讀; <<#DDEBF7>>
+（Topic、型別、筆數、頻率、起訖；每個 Key 的類別與維度；
+每個型別的訊息定義 .msg，含註解）; <<#DDEBF7>>
 if (數據超過 3 分鐘（以整秒算）？) then (超過)
   :回 [ERROR]：先用 mcap_slicer 切出要看的時間段
   （3 分鐘以內），再對切片分析;
@@ -31,101 +31,100 @@ endif
 :rosout_parser ~--json：/rosout 去重成唯一訊號 L#
 （層級、節點、次數、每一次的時間戳；每則 Log 帶 MCAP 記的
 file、function、line →「＠檔名:行 函式」；略過 rosbag2 自己的 Log）; <<#DDEBF7>>
-if (數據裡有可以分析的 Topic？) then (沒有)
-  :回 [ERROR]（都是 Log、沒有訊息或無法解碼）;
-  stop
-else (有)
-endif
+:mcap_analyzer ~--facts：一次讀完整份數據，**每個 Topic 量全部的 Key**
+發布方式：固定頻率／狀態改變時才發布／不定期／只有一兩則（由時間與內容判斷）；
+只有固定頻率的判斷訊息中斷、中途開始／停止發布；狀態跳轉、數值切換、
+尖峰（跳出去又回來）、數值範圍、到最後的值 → 快取 topic_facts.json; <<#DDEBF7>>
+:build_facts：有編號的事實——T#＝Topic（類別、發布、變化、到最後的值）、
+E#＝事件（同一則訊息裡一起改變的算一個）、L#＝Log；
+時間線（事件＋WARN 以上、規劃挑的、前後有事件的 Log，附前後 1 秒內的對照，
+只寫早或晚幾秒，不代表誰造成誰）、同時發生（0.1 秒內）、
+前後沒有任何 Topic 事件的 Log、沒有量的 Topic、一句話的總覽; <<#DDEBF7>>
 note right
-  產物：topic_metadata.md、log_digest.md
+  產物：topic_facts.json、topic_metadata.md（全部 Topic 的事實）、
+  log_digest.md。同一份數據每次一樣，不靠模型挑 Topic、挑 Key
 end note
 }
 
 partition "② Orchestrator：規劃（模型）" {
 :**看得到**：問題、去重後的 Log（最多 60 個訊號，WARN 以上全部；
-每行接「＠檔名:行 函式」）、Topic Metadata、限制（最多 6 個 worker）
-**輸出**：對問題的理解、相關的 L#（通常 1～4 個）、
-每個 worker 的 Topic 與子任務（要觀測的現象，不叫 worker 證明原因）; <<#FCE5CD>>
-:程式檢查：L# 要存在、Topic 要存在而且可分析、不重複、
-不派 /rosout、不超過上限 → 有問題列出具體的問題，交回修一次；
-還是沒有可用的指派 → 程式依關聯度補指派; <<#E2EFDA>>
+每行接「＠檔名:行 函式」）、全部 Topic 的事實總表（T#）、限制（最多 4 個 worker）
+**輸出**：對問題的理解、相關的 L#、要說明的 Topic（名稱或 T#）與子任務; <<#FCE5CD>>
+:程式檢查：L# 要存在、Topic 要在事實裡、不重複、不派 /rosout 與框架的 Topic、
+不超過上限；沒有變化的 Topic 不派（不算問題）→ 有問題列出具體的問題，交回修一次；
+還是沒有可用的指派 → 程式依「事件在相關的 Log 前後」補指派; <<#E2EFDA>>
+:規劃挑的 Log 也放進時間線（編號不變）; <<#DDEBF7>>
 note right
-  產物：plan.json、prompts/orchestrator.md
+  產物：plan.json、prompts/orchestrator.md。
+  worker 上限只決定「誰來說明」，沒派到的 Topic 照樣有完整的事實
 end note
 }
 
 repeat
-partition "③ Workers（每個 Topic 一個乾淨的 session，同時 2 個）" {
-:**看得到**：子任務（L# 由程式換成時間）、自己的 Topic、
-整段數據的時間範圍、可量測的 Key 目錄（類別寫中文、維度、抽樣值）
+partition "③ Workers（每個 Topic 一次模型呼叫，同時 2 個）" {
+:**看得到**：子任務（L# 由程式換成時間）、自己那個 Topic 的事實與事件（E#）、
+訊息定義（.msg 的註解：用來說明欄位與值的意思）
 **看不到**：Log、其他 Topic、使用者的問題、Orchestrator 的理解
-（實測理解裡的推測會被 worker 照著寫成事實）; <<#FCE5CD>>
-:每一步（最多 6 步）決定量哪些 Key：
-只准 mcap_feature_measure、mcap_analyzer；Topic、數據由系統固定，
-時間窗拿掉（量整段數據）；同一個量測第 3 次擋下；
-沒量測先催一次，還是沒有就由系統代選 Key; <<#FCE5CD>>
-:局部報告：量過的 Key、摘要（量到的現象）; <<#FCE5CD>>
-:程式核對：量測沒有訊息中斷卻寫「中斷／間歇／丟失」、
-寫了原因或推測 → 交回修一次; <<#E2EFDA>>
-:程式用 ~--json 把量過的 Key 再量一次 → measure（訊息流與每個項目的
-跳轉、切換、尖峰、開頭與最後的值）、program_anomalies（只有訊息中斷）; <<#DDEBF7>>
+**輸出**：1～5 則說明，每則 refs（這個 Topic 的 E#／T#）＋ text（一兩句話）; <<#FCE5CD>>
+:程式核對每一則：編號要能引用；不寫原因、推測；寫「中斷」「開始發布」「停止發布」
+要引用那種事件；寫的時間要對得上；太長＝失控 → **只交回有問題的那幾則**，
+通過的保留、修好的併進來；還是太長的截到完整的句子；還是不行的不列; <<#E2EFDA>>
+:時間由程式依編號補上; <<#DDEBF7>>
 note right
-  產物：workers/W<n>_<topic>.md（局部報告）、
-  .transcript.md（完整對話）
+  產物：workers/W<n>_<topic>.md（說明與沒通過的）、
+  prompts/worker_W<n>.md
 end note
 }
 
-partition "④ 事實（程式，不用模型）" {
-:每個 Topic 一列：類別（沒有變化／狀態改變／數值切換／數值變動／
-尖峰／開始或停止發布／訊息中斷）、發布、變化、到最後的值
-時間線：Topic 的事件＋Log（WARN 以上、規劃時挑的、對得到變化的），
-依時間排序；每一列附「前後 1 秒內」對照到的 Log 或 Topic 變化
-（只寫早或晚幾秒，不代表誰造成誰；對不上的照實標出）
-同時發生的變化（0.1 秒內）、前後量到的 Topic 都沒有變化的 Log、
-沒有分析的 Topic; <<#DDEBF7>>
-}
-
-partition "⑤ Synthesizer：摘要（模型）" {
-:**看得到**：④ 的事實、各 worker 的局部報告
+partition "④ Synthesizer：重點（模型）" {
+:**看得到**：事實（有變化的 Topic 一行一個、時間線最多 60 列、規劃挑的 L#）、
+**重要的時間點清單**（M#：事件與 WARN 以上的 Log，1 秒內的算一個）、各 worker 的說明
 **看不到**：使用者的問題、Orchestrator 的理解
-**輸出**：三到六句的事實摘要; <<#FCE5CD>>
-:程式核對：寫了原因、誰造成誰或推測；沒有量到中斷卻寫中斷；
-太長被截斷 → 交回修一次；還在就在報告標「程式核對：未修正」; <<#E2EFDA>>
+**輸出**：每個時間點至少一則重點，每則 refs（E#／L#／T#）＋ text（這一刻的重點）；
+則數上限跟著清單（時間點＋2，至少 8、最多 24）; <<#FCE5CD>>
+:程式核對每一則（同 worker）＋漏寫的時間點 → 只交回有問題的那幾則與漏寫的時間點
+（修正版重寫的不收）；還是漏的由程式補一則（標「程式列出」）；一則都沒有通過：程式一個時間點列一則; <<#E2EFDA>>
+:時間依編號補上；同一刻其他的事件與 Log 掛在第一則引用到那一刻的重點；
+引用的事件與 Log 的內容由程式列在那一則下面（模型不用逐項抄數值）; <<#DDEBF7>>
 }
 
-partition "⑥ Orchestrator 檢查：要不要補量（還沒補過才做）" {
-if (有 WARN 以上或相關的 Log，前後 1 秒內量到的 Topic 都沒有變化，
-而且數據裡還有沒量的 Topic？) then (有)
-  :Orchestrator 決定要不要補量（最多 2 個 Topic，每一項寫它對應哪一則 Log）; <<#FCE5CD>>
-  :程式核對：Log 要在那份清單裡、Topic 要可以分析而且還沒量過；
+partition "⑤ Orchestrator 檢查：要不要補派（還沒補過才做）" {
+if (有 Topic 在 WARN 以上或相關的 Log 前後 1 秒內有事件，
+而且還沒有 worker 說明？) then (有)
+  :Orchestrator 決定要不要補派（最多 2 個 Topic，每一項寫它對應哪一則 Log）; <<#FCE5CD>>
+  :程式核對：Topic 要在候選裡、Log 要是它前後的那幾則；
   不符合的不補 → 有要補的：這一輪的報告留成 report_r1.md; <<#E2EFDA>>
 else (沒有)
-  :不用問：沒有對應的變化本身就是事實，報告照實寫;
+  :不用問：事實已經量完，補派只是多一份說明;
 endif
 }
-repeat while (有補量的 Topic？) is (有：補派 worker，再整理事實、再寫摘要) not (沒有)
+repeat while (有補派的 Topic？) is (有：補派 worker 說明，再寫一次重點) not (沒有)
 
-partition "⑦ 報告（程式組合）" {
-:摘要＋各 Topic 的結果＋時間線＋同時發生的變化＋前後沒有變化的 Log＋
-沒有分析的 Topic＋分析過程 → report.md（Frontmatter Markdown）；
-重點回到主對話、存成 #編號（之後可以 result_recall）→ 主對話的 AI 依報告回答
-（問「為什麼」時照事實說明發生了什麼，並說明原因要對照源碼）; <<#DDEBF7>>
+partition "⑥ 報告（程式組合）與主對話的回答" {
+:重點（程式的總覽＋重點）＋各 Topic 的結果＋Workers 的說明＋時間線＋同時發生的變化＋
+前後沒有任何 Topic 事件的 Log＋沒有量的 Topic＋分析過程 → report.md（Frontmatter Markdown）；
+重點回到主對話、存成 #編號（之後可以 result_recall）; <<#DDEBF7>>
+:主對話的 AI 依報告回答（問「為什麼」時照事實說明發生了什麼與先後順序，
+並說明原因要對照源碼）; <<#FCE5CD>>
+:程式核對回答：寫了報告裡沒有的因果動詞（導致、造成、觸發…）→ 提醒一次，
+只陳述事實、先後不是因果; <<#E2EFDA>>
 note right
-  全部產物：job.json（計畫、每個 worker 的結果與量到的事實、報告、
-  核對與檢查的紀錄）、events.jsonl（進度）、log_digest.md、
-  topic_metadata.md、plan.json、workers/、report.md、report_r1.md（補量之前）、
-  prompts/（交給模型的完整輸入：orchestrator、synthesizer、
-  orchestrator_check，對照與重播用）
+  全部產物：job.json（計畫、事實、每個 worker 的說明、報告、
+  核對與檢查的紀錄）、events.jsonl（進度）、topic_facts.json、
+  log_digest.md、topic_metadata.md、plan.json、workers/、report.md、
+  report_r1.md（補派之前）、prompts/（交給模型的完整輸入：orchestrator、
+  worker_W<n>、synthesizer、orchestrator_check；_2＝交回修正那一次）
 end note
 stop
 }
 
 legend bottom
   **程式做的與模型做的**
-  ・程式（不呼叫模型）：Log 去重、時間換算、量測數字、事實的整理（類別、事件、到最後的值、時間上的對照、同時發生）、
-    計畫與補量的檢查、子任務的 L# 換成時間、報告組合
-  ・程式核對（交回修一次）：局部報告與摘要不寫原因與推測（同一張詞表）、用詞跟量測一致（沒有量到中斷就不能寫中斷）、摘要不能被截斷
-  ・模型：Orchestrator 理解問題、挑 Log、分派 Topic、決定要不要補量；Worker 選 Key、寫局部報告；Synthesizer 寫摘要
-  事實由程式產生，模型只負責「選」和「寫成文字」；原因要對照源碼另外分析（第九輪以前的做法在 root_cause_reference/）
+  ・程式（不呼叫模型）：Log 去重、量全部 Topic 的全部 Key、事實的整理（編號、類別、事件、到最後的值、時間線、時間上的對照、同時發生）、
+    說明與重點的時間、重點引用的事件與 Log 的內容、計畫與補派的檢查、子任務的 L# 換成時間、報告組合
+  ・程式核對（只交回有問題的那幾則）：worker 的說明與 Synthesizer 的重點——編號、不寫原因與推測（同一張詞表）、用詞跟引用的事件一致、
+    寫的時間對得上、太長；主對話依報告的回答不寫因果
+  ・模型：Orchestrator 理解問題、挑 Log、挑要說明的 Topic、決定要不要補派；Worker 說明一個 Topic 的事實；Synthesizer 挑重點、寫成文字
+  原因要對照源碼另外分析（第九輪以前的做法在 root_cause_reference/）
 endlegend
 @enduml

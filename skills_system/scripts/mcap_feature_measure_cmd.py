@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """mcap_feature_measure：對一個 Topic 的一個或幾個 Key，在指定的時間窗內按需量測特徵（Lazy Evaluation）。
 
-- 數值（scalar）：筆數、極值、均值、變異數、標準差、趨勢斜率、尖峰（離均值 >2.5σ，同 toolkit）、最大跳變；
+- 數值（scalar）：筆數、極值（與時間）、均值、變異數、標準差、趨勢斜率、尖峰（單獨幾筆跳出去又回來：跟前後 9 筆的中位數差超過
+  殘差 MAD 的 6 倍）、最大跳變；只有幾種值的列每次切換；
 - 向量（vector [n]）：每個分量各自量（x、y、z…）；矩陣、陣列：形狀與元素統計；
 - 狀態（uint8／bool／列舉字串／代碼集合）：狀態跳轉（Edge Detection：時間、從哪個值到哪個值、集合的增減）、各狀態的時間占比；
   整數而且相異值 ≤10 也當狀態（同 toolkit）；
 - 依名稱展開的項目（DiagnosticArray 的 status.level、status.values…）：每個名稱各自量，只列有變化的；
-- 每個時間窗另外量訊息頻率與中斷（間隔超過中位數週期 3 倍）。
+- 每個時間窗另外量訊息流：發布方式（固定頻率／狀態改變時才發布／不定期，由內容與時間判斷，同 analysis_run 的全部 Topic 量測）；
+  固定頻率的才判斷中斷（間隔超過週期 3 倍、且 ≥0.5 秒）與中途開始／停止發布。
 文字（自由文字）與時間欄位不量測：文字屬於 Orchestrator 的 Log 分析範圍。
 
 移植自 diagnostics_package/toolkit 的 mcap_feature_measure.py（compute_features）。analysis_run 的 worker 呼叫時，數據、Topic 與
@@ -140,8 +142,16 @@ def worker_main(argv):
                 src, via = sdata, f"（讀切片 {os.path.basename(sl.rstrip('/'))}）"
             else:
                 via = f"（切片 {sl} 讀不到：{serr}；改讀原本的數據）"
-        times, series, errors = rd.collect_series(src["mcap_files"], entry["topic"], entry["type"], keys, w)
-        rate = rd.rate_features(times, w, data_start_ns=idx["start_ns"])
+        # 發布方式要看這個 Topic 全部的狀態與數值（每一則是不是都帶著改變），跟 analysis_run 的全部 Topic 量測同一個判斷
+        extra = [k["key"] for k in entry.get("keys", []) if k["category"] in rd.SCAN_CATEGORIES and not k["key"].startswith("header.")
+                 and k["key"] not in keys]
+        all_descs = {k["key"]: k for k in entry.get("keys", [])}
+        all_descs.update(dict(zip(keys, descs)))
+        times, series, errors = rd.collect_series(src["mcap_files"], entry["topic"], entry["type"], keys + extra, w, descs=all_descs)
+        pattern_feats = []
+        for k in keys + extra:
+            pattern_feats += list(rd.measure_key(series[k], all_descs[k], w, k)[0].values())
+        rate = rd.rate_features(times, w, data_start_ns=idx["start_ns"], change_times=rd.change_times(pattern_feats))
         wname = w.get("label") or "時間窗"
         lines.append(f"{wname}：{rd.window_text(w, base)}" + ("（已限制在數據範圍內）" if w.get("clamped") else "")
                      + "；[+秒] 是距離數據開頭的時間" + via)
@@ -162,13 +172,15 @@ def worker_main(argv):
             results.append({"window": rd.jsonable(w), "rate": rate, "keys": {}})
             continue
         first, last = rd.fmt_rel(times[0], rel_base), rd.fmt_rel(times[-1], rel_base)
-        r = f"  訊息 {rate['messages']} 筆（第一筆 {first}、最後一筆 {last}）"
+        r = f"  訊息 {rate['messages']} 筆（第一筆 {first}、最後一筆 {last}）；發布方式：{rd.pattern_text(rate)}"
         if rate.get("avg_hz"):
             r += f"，平均 {rate['avg_hz']} Hz，最大間隔 {rate['max_gap_sec']} 秒"
         if rate.get("gaps"):
             r += "；中斷 " + "、".join(f"{rd.fmt_t(int(g['start_sec'] * 1e9))}[{rd.fmt_rel(int(g['start_sec'] * 1e9), rel_base)}] 起 "
-                                     f"{g['duration_sec']} 秒" for g in rate["gaps"])
-            all_flags.append(f"{wname} 訊息中斷 {len(rate['gaps'])} 次（最長 {rate['max_gap_sec']} 秒）")
+                                     f"{g['duration_sec']} 秒" for g in rate["gaps"][:6])
+            if rate["gap_count"] > 6:
+                r += f"…共 {rate['gap_count']} 次"
+            all_flags.append(f"{wname} 訊息中斷 {rate['gap_count']} 次（最長 {max(g['duration_sec'] for g in rate['gaps'])} 秒）")
             anomalies.append(all_flags[-1])
         if rate.get("single_session"):   # 一段連續的發布寫成一句（分開寫，模型會讀成「間歇性」）；寫明是完整的發布（實測會被說成「指令中斷」）
             span = (times[-1] - times[0]) / 1e9
@@ -185,8 +197,10 @@ def worker_main(argv):
         if rate.get("stopped_early") and not rate.get("single_session"):
             r += f"；{last} 之後停止發布（到時間窗結束 {rate['ends_before_window_sec']} 秒沒有訊息）"
             all_flags.append(f"{wname} {last} 之後停止發布（到時間窗結束 {rate['ends_before_window_sec']} 秒沒有訊息）")
-        if rate["messages"] < rd.EDGE_MIN_MESSAGES:
-            r += "；筆數少：可能只在狀態改變時才發布，看狀態跳轉，不要用頻率或間隔判斷中斷"
+        if rate.get("pattern") != "periodic":
+            r += "；不是固定頻率：不判斷中斷與開始／停止發布（隔很久沒有訊息不代表中斷）"
+            if rate.get("times_sec"):
+                r += "；每一則：" + "、".join(rd.fmt_rel(int(x * 1e9), rel_base) for x in rate["times_sec"])
         lines.append(r)
         # 狀態沿用時間窗開始前的最後一則（只在改變時才發布的 Topic）；時間窗從數據開頭起算就沒有「之前」
         carry = (rd.carry_in_values(src["mcap_files"], entry["topic"], entry["type"], keys, w["start_ns"])
@@ -215,7 +229,7 @@ def worker_main(argv):
             if quiet:
                 lines.append(f"     其餘 {len(quiet)} 項在時間窗內沒有變化（{_unchanged_summary([f for _, f in quiet])}）")
             wkeys[k] = {"category": d["category"], "dim": dim, "type": d["type"], "data_type": rd.data_type_of(d),
-                        "map_by": d.get("map_by"), "entries": feats, "flags": flags}
+                        "map_by": d.get("map_by"), "entries": {lab: rd.trim_changes(f) for lab, f in feats.items()}, "flags": flags}
         results.append({"window": w, "rate": rate, "keys": wkeys, "errors": errors, "source": src["bag_dir"]})
     if skipped:
         lines.append("沒有量測：" + "；".join(skipped) + (f"（可以量測的 Key：{avail}）" if unknown else ""))

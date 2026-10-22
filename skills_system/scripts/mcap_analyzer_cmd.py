@@ -6,6 +6,8 @@
 - --topic：這個 Topic 每個 Key 的型別、維度（scalar／vector [n]／matrix／set／map）、資料類別（數值／向量／狀態／鍵值／文字／時間）
   與抽樣看到的值。
 - --topic --key：原始值預覽（前 N 筆，可限時間窗）。
+- --facts：全部 Topic 的事實（程式一次讀完整份數據量的：每個 Topic 的發布方式、中斷、開始／停止發布，每個 Key 的狀態跳轉、
+  數值切換、尖峰、範圍）；快取成 bag 資料夾的 topic_facts.json。analysis_run 的事實就是這一份。
 
 移植自 diagnostics_package/toolkit 的 mcap_analyzer.py（Metadata 摘要、檔案級 Metadata、Topic 與欄位維度、原始時序預覽）；
 特徵量測另外是 mcap_feature_measure。主機端只負責把工作送進目標容器，讀檔與反序列化在容器內做。"""
@@ -18,7 +20,7 @@ import _ros2_data_common as rd  # noqa: E402
 
 DEFAULT_TIMEOUT = 180
 MAX_TIMEOUT = 570
-USAGE = ("scripts/mcap_analyzer_cmd.py [數據] [--topic TOPIC] [--key KEY [--preview N] [--window 開始,結束]] "
+USAGE = ("scripts/mcap_analyzer_cmd.py [數據] [--topic TOPIC] [--key KEY [--preview N] [--window 開始,結束]] [--facts] "
          "[--refresh] [--json] [--container 名稱] [--timeout 秒]")
 ROLE_TEXT = {"worker": "可分析", "log": "Log（用 rosout_parser）", "text_only": "只有文字欄位", "empty": "沒有訊息",
              "undecodable": "無法解碼"}
@@ -33,6 +35,7 @@ def build_parser():
             .add("--key", default="")
             .add("--preview", type=int, default=15)
             .add("--window", default="")
+            .add("--facts", action="store_true")
             .add("--refresh", action="store_true")
             .add("--json", action="store_true")
             .add("--container", default="")
@@ -145,6 +148,36 @@ def _preview(data, idx, entry, key, n, window_arg):
     return 0, "\n".join(lines)
 
 
+def _facts_text(data, idx, scan):
+    """--facts 的文字輸出：每個 Topic 一行（發布方式、則數、中斷、開始／停止發布、有變化的項目）。"""
+    base = idx["start_ns"]
+    rel = lambda t: rd.fmt_rel(int(round(float(t) * 1e9)), base)  # noqa: E731
+    lines = [f"[PASS] 全部 Topic 的事實：{idx['label']}（{idx['duration_sec']} 秒；" + ("讀快取" if scan.get("cached") else
+             f"剛量完，{scan.get('seconds')} 秒") + "）", "Topic｜發布｜事件與變化（時間＝距離數據開頭）"]
+    for t, e in sorted(scan["topics"].items()):
+        r = e["rate"]
+        pub = f"{r['messages']} 則，{rd.pattern_text(r)}" if r.get("messages") else "沒有訊息"
+        ev = []
+        if r.get("single_session"):
+            ev.append(f"只在 {rel(r['first_sec'])}～{rel(r['last_sec'])} 發布")
+        else:
+            if r.get("started_late"):
+                ev.append(f"{rel(r['first_sec'])} 才開始發布")
+            if r.get("stopped_early"):
+                ev.append(f"{rel(r['last_sec'])} 之後停止發布")
+        if r.get("gaps"):
+            ev.append(f"訊息中斷 {r['gap_count']} 次（" + "、".join(f"{rel(g['start_sec'])} 起 {g['duration_sec']} 秒" for g in r["gaps"][:3]) + "）")
+        for it in e["items"]:
+            if it.get("changes"):
+                ev.append(f"{it['name']}：{rd.short(str(it['changes'][0]['from']), 30)} → " + " → ".join(
+                    f"{rd.short(str(c['to']), 30)}（{rel(c['t'])}）" for c in it["changes"][:3]) + (f" …共 {it['count']} 次" if it["count"] > 3 else ""))
+            if it.get("spike_count"):
+                ev.append(f"{it['name']} 尖峰 {it['spike_count']} 個（第一個 {rel(it['spikes'][0]['t'])}）")
+        lines.append(f"- {t}｜{pub}｜{'；'.join(ev) or '沒有事件'}")
+    lines.append("（--json 看完整的事實：每個項目的開頭與最後的值、範圍、跳轉的時間）")
+    return "\n".join(lines)
+
+
 def worker_main(argv):
     args = build_parser().parse(argv)
     data, err = rd.resolve_data(args.data or args.data_opt, args.data_root or None)
@@ -152,6 +185,11 @@ def worker_main(argv):
         print(f"[ERROR] {err}")
         return 2
     idx = rd.build_index(data, refresh=args.refresh)
+    if args.facts:
+        scan = rd.scan_facts(data, idx, refresh=args.refresh)
+        print(json.dumps(scan, ensure_ascii=False) if args.json else _facts_text(data, idx, scan))
+        print(rd.marker_line(data).strip())
+        return 0
     if not args.topic:
         if args.json:
             print(json.dumps(idx, ensure_ascii=False, indent=1))
@@ -197,7 +235,7 @@ def host_main(argv):
         wargs += ["--key", args.key, "--preview", str(args.preview)]
     if args.window:
         wargs += ["--window", rd.resolve_window_ids(args.window)]
-    wargs += [f for f, on in (("--refresh", args.refresh), ("--json", args.json)) if on]
+    wargs += [f for f, on in (("--facts", args.facts), ("--refresh", args.refresh), ("--json", args.json)) if on]
     rc, out = rd.run_in_container(os.path.abspath(__file__), wargs, container=container, timeout=timeout,
                                   what="mcap_analyzer（Topic Metadata）",
                                   timeout_hint="第一次建立大型 bag 的索引要讀完整份資料；可以加大 --timeout，建好之後會讀快取。")

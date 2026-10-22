@@ -344,8 +344,8 @@ def run_turn(events):
         if outcome == "continue" and agent.stuck:
             return False                     # 同樣的動作 3 次得到同樣的結果：停下來交回使用者（turn_guard.py）
         if outcome == "end":
-            # 這一回合沒有執行任何工具、回覆卻說「已經做了」：提醒一次（要做就執行，沒做就照實說）
-            claim = agent.claim_without_action(parsed)
+            # 這一回合沒有執行任何工具、回覆卻說「已經做了」（要做就執行，沒做就照實說），或依數據分析的報告回答卻寫成因果：提醒一次
+            claim = agent.claim_without_action(parsed) or agent.analysis_reply_check(parsed)
             for notice in agent.pop_notices():
                 events.append({"channel": "system", "text": notice})
             if claim:

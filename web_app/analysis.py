@@ -1,4 +1,4 @@
-"""📊 數據分析面板的後端：analysis job 的清單與內容（/api/analysis/state 輪詢）、job 資料夾裡的檔案（局部報告、worker 對話、報告）、
+"""📊 數據分析面板的後端：analysis job 的清單與內容（/api/analysis/state 輪詢）、job 資料夾裡的檔案（worker 的說明、報告）、
 設定（數據根目錄、預設容器、worker 數、最多幾輪）、目前的數據，以及 /analyze 系列指令。
 
 analysis_run 本身在主對話的回合裡同步執行（agent_core/analysis_job.py，主模型選用、或 /analyze 與 📊 分析模式直接交給它），
@@ -75,9 +75,9 @@ def analysis_action(action, data):
                 cfg["max_workers"] = _num(data["max_workers"], int, 1, 8)
             if "parallel" in data:
                 cfg["parallel"] = _num(data["parallel"], int, 1, 8)
-            if "rounds" in data:   # 最多幾輪：相關的 Log 前後量到的 Topic 都沒有變化時，Orchestrator 可以補量一輪（1＝不補）
+            if "rounds" in data:   # 最多幾輪：相關的 Log 前後有變化、還沒有說明的 Topic，Orchestrator 可以補派 worker 一輪（1＝不補）
                 cfg["rounds"] = _num(data["rounds"], int, 1, 2)
-                msgs.append(f"最多 {cfg['rounds']} 輪（{'可以補量一輪' if cfg['rounds'] > 1 else '不補量'}）")
+                msgs.append(f"最多 {cfg['rounds']} 輪（{'可以補派一輪' if cfg['rounds'] > 1 else '不補派'}）")
         except ValueError as e:
             return {"ok": False, "error": str(e)}
         agent.save_analysis_settings()
@@ -101,17 +101,17 @@ def header_label():
 
 
 ANALYSIS_HELP = """📊 數據分析指令：
-/analyze [問題]                 直接交給數據分析（analysis_run：Log 去重＋Topic Metadata → Orchestrator 分派 → Workers 量整段數據 →
-                                程式整理事實、Synthesizer 寫摘要 → 事實報告；不判斷原因）；問題省略＝這段數據發生了哪些狀態變化；
+/analyze [問題]                 直接交給數據分析（analysis_run：Log 去重＋程式量全部 Topic 的事實 → Orchestrator 分派 → Workers 說明 →
+                                Synthesizer 整理重點 → 事實報告；不判斷原因）；問題省略＝這段數據發生了哪些狀態變化；
                                 數據用目前的數據（沒有就用 latest）；一次最多 3 分鐘，更長的先用 mcap_slicer 切
 /analysis                       看最近一次數據分析 job；/analysis jobs 列出最近的 job
 /analysis_data <數據>            設定目前分析的數據（實驗資料夾、bag、切片、.mcap、實驗名稱或 latest；主機路徑會自動換成容器路徑）
 /analysis_root <路徑>|-          數據根目錄（mcap_recorder 錄到這裡、實驗名稱與 latest 相對於它；- 改回自動尋找 experiment_logs）
 /analysis_container <容器>|-     數據分析預設的容器（目標容器沒設定時用）
 /analysis_model <角色|all> <模型> orchestrator／worker／synthesizer 的模型（- 改回跟著主對話）
-/analysis_workers <N>           一次最多派幾個 worker（1～8）
+/analysis_workers <N>           一次最多派幾個 worker 說明 Topic（1～8；事實由程式量全部的 Topic，不受這個上限影響）
 /analysis_mode on|off          📊 分析模式（同輸入框旁的按鈕）：送出的問題直接交給 analysis_run
-右欄「📊 數據分析」面板：計畫（相關的 Log 訊號、每個 worker 的 Topic）、每個 worker 的局部報告、最後的事實報告。"""
+右欄「📊 數據分析」面板：計畫（相關的 Log 訊號、每個 worker 的 Topic）、每個 worker 的說明、最後的事實報告。"""
 
 
 def handle_analysis_command(text, events):
@@ -154,7 +154,7 @@ def handle_analysis_command(text, events):
         res = analysis_action("settings", {"max_workers": arg})
         events.append({"channel": "system", "text": res.get("message") or "⚠️ " + res.get("error", "")})
     elif cmd in ("/analysis_slice", "/analysis_source", "/analysis_hints"):   # 第九輪以前的設定：動態時間切片、源碼脈絡、推理提示
-        events.append({"channel": "system", "text": f"📊 {cmd} 已經拿掉：數據分析只做事實報告，每個 worker 量整段數據，不用源碼。"
+        events.append({"channel": "system", "text": f"📊 {cmd} 已經拿掉：數據分析只做事實報告，程式量整段數據的全部 Topic，不用源碼。"
                                                      "只想看其中一段，先用 mcap_slicer 切出來再分析。"})
     elif cmd == "/analysis_model":
         bits = arg.split()

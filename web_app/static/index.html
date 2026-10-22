@@ -263,7 +263,7 @@
     <div class="tabs">
       <button class="tab active" data-tab="tools" onclick="showTab('tools')">🛠️ 系統 / 工具回傳</button>
       <button class="tab" data-tab="analysis" onclick="showTab('analysis')">📊 數據分析<span class="badge" id="analysis-badge"></span></button>
-      <button class="tab" id="widen-btn" style="margin-left:auto" title="放大／縮小右欄（看 worker 的局部報告與報告比較清楚）" onclick="toggleWide()">⇔ 放大</button>
+      <button class="tab" id="widen-btn" style="margin-left:auto" title="放大／縮小右欄（看 worker 的說明與報告比較清楚）" onclick="toggleWide()">⇔ 放大</button>
     </div>
     <div class="log" id="tool-log"></div>
     <div class="log" id="analysis-panel"></div>
@@ -951,8 +951,8 @@ function renderAnalysisSettings(d) {
       <span>worker 上限／同時執行</span>
       <span><input id="an-workers" type="number" min="1" max="8" style="width:60px" value="${esc(s.max_workers)}"> 個／
         <input id="an-parallel" type="number" min="1" max="8" style="width:60px" value="${esc(s.parallel)}"> 個（Ollama 同一個模型只有一個 slot 時模型呼叫仍會排隊）</span>
-      <span title="相關的 Log 前後量到的 Topic 都沒有變化時，Orchestrator 可以補量還沒量的 Topic 一輪（1＝不補）">補量</span>
-      <span>最多 <input id="an-rounds" type="number" min="1" max="2" style="width:50px" value="${esc(s.rounds || 2)}"> 輪（每個 worker 量整段數據；一次最多 3 分鐘）
+      <span title="WARN 以上或相關的 Log 前後有變化、還沒有說明的 Topic，Orchestrator 可以補派 worker 一輪（1＝不補）">補派</span>
+      <span>最多 <input id="an-rounds" type="number" min="1" max="2" style="width:50px" value="${esc(s.rounds || 2)}"> 輪（事實由程式量全部的 Topic；一次最多 3 分鐘）
         <button class="mini-btn primary" onclick="saveAnalysisSettings()">套用</button></span>
       <span>目前的數據</span>
       <span><input id="an-data" style="width:70%" value="${esc(d.data)}" placeholder="實驗資料夾、bag、切片、實驗名稱或 latest"> <button class="mini-btn" onclick="saveAnalysisData()">設定</button></span>
@@ -975,7 +975,7 @@ function renderAnalysisPanel() {
     html += `<div class="code-empty">還沒有數據分析 job。<br>
       ① 數據：用現有的實驗資料夾，或跟 AI 說「錄 30 秒的核心 Topic」（mcap_recorder，錄完自動建立 Topic Metadata 索引）。<br>
       ② 問問題：直接跟 AI 說（像「為什麼車子在這段時間停下來？」，它會選 analysis_run），或輸入 <code>/analyze &lt;問題&gt;</code>，或按輸入框旁的 <b>📊 分析</b>。<br>
-      ③ 這裡會顯示：Orchestrator 從去重後的 Log 挑出的訊號、每個 worker 負責的 Topic 與局部報告（Frontmatter Markdown）、最後的事實報告（量到什麼、什麼時候、Log 說了什麼；不判斷原因）。</div>`;
+      ③ 這裡會顯示：Orchestrator 從去重後的 Log 挑出的訊號、每個 worker 說明的 Topic（一則一則，附事實的編號）、最後的事實報告（程式量的全部 Topic 的事實、重點、時間線；不判斷原因）。</div>`;
     analysisPanel.innerHTML = html;
     return;
   }
@@ -1001,7 +1001,7 @@ function renderAnalysisPanel() {
       <div class="item-card st-done"><div class="item-body" style="padding:10px">
         <div class="item-goal">${esc(plan.understanding || '（沒有）')}</div>
         ${rel ? `<div style="margin-top:6px">${rel}</div>` : '<div class="plan-notes">沒有挑相關的 Log 訊號</div>'}
-        ${(plan.followups || []).length ? `<div class="plan-notes"><b>補量</b> ${esc(plan.followups.map(a => a.topic + '（為了 ' + (a.signal || '-') + '）').join('、'))}</div>` : ''}
+        ${(plan.followups || []).length ? `<div class="plan-notes"><b>補派</b> ${esc(plan.followups.map(a => a.topic + '（為了 ' + (a.signal || '-') + '）').join('、'))}</div>` : ''}
         ${(plan.issues || []).length ? `<div class="plan-notes">⚠️ 程式檢查：${esc(plan.issues.join('；'))}</div>` : ''}
       </div></div>`;
   }
@@ -1011,7 +1011,7 @@ function renderAnalysisPanel() {
   (j.workers || []).forEach(w => { done[w.n] = w; });
   const assigns = ((plan && plan.assignments) || []).concat((plan && plan.followups) || []);
   const tagsOf = {};
-  ((j.report && j.report.topics) || []).forEach(r => { tagsOf[r.w] = r.tags || []; });
+  (j.workers || []).forEach(w => { tagsOf[w.n] = w.tags || []; });
   if (assigns.length) html += `<div class="section-title"><span>🔧 Workers（每個 worker 一個 Topic）</span></div>`;
   assigns.forEach((a, i) => {
     const n = i + 1, w = done[n];
@@ -1022,21 +1022,19 @@ function renderAnalysisPanel() {
     const open = an.open.has('w' + n) || running;
     let body = `<div class="item-goal">${esc(a.subtask)}</div>`;
     if (w) {
-      body += `<div class="item-summary">${esc(w.summary || w.error || '')}</div>`;
-      if ((w.program_flags || []).length) body += `<div class="plan-notes">量測工具：${esc(w.program_flags.join('；'))}</div>`;
-      if (w.file) body += `<div class="btn-row"><button class="mini-btn" onclick="openAnalysisFile('${esc(w.file)}', 'W${n} ${esc(a.topic)} 的局部報告')">📄 局部報告（Frontmatter Markdown）</button>
-        <button class="mini-btn" onclick="openAnalysisFile('${esc(w.file.replace(/\.md$/, '.transcript.md'))}', 'W${n} ${esc(a.topic)} 的完整對話')">📜 worker 對話</button></div>`;
+      body += `<div class="item-summary">${(w.notes || []).map(h => `<div>${esc(h.time || '整段')}　${esc(h.text)}（${esc((h.refs || []).join('、'))}）</div>`).join('') || esc(w.error || '（沒有說明）')}</div>`;
+      if ((w.dropped || []).length) body += `<div class="plan-notes">⚠️ ${w.dropped.length} 則說明沒有通過程式核對，沒有列出</div>`;
+      if (w.file) body += `<div class="btn-row"><button class="mini-btn" onclick="openAnalysisFile('${esc(w.file)}', 'W${n} ${esc(a.topic)} 的說明')">📄 說明（Frontmatter Markdown）</button></div>`;
     }
     if (evs.length) body += `<div class="timeline">${evs.slice(-12).map(e => `<div class="tl"><span class="ts">${esc(e.ts)}</span>${esc(e.text)}</div>`).join('')}</div>`;
     html += `<div class="item-card st-${st}">
         <div class="item-head" onclick="toggleAnOpen('w${n}')"><span>${mark}</span><span class="item-title">W${n} ${esc(a.topic)}</span>
-          <span class="item-meta">${w ? `${esc((tagsOf[n] || []).join('、') || w.data_type || '')}${w.round ? ' · 補量' : ''}${w.key_selection === 'fallback' ? ' · 系統代選 Key' : ''}` : (running ? '分析中' : '等待')}</span></div>
-        <div class="item-sub">${(w && w.analyzed_keys || []).map(k => `<span class="chip">${esc(k)}</span>`).join('')}</div>
+          <span class="item-meta">${w ? `${esc((tagsOf[n] || []).join('、') || w.data_type || '')}${w.tid ? ' · ' + esc(w.tid) : ''}${w.round ? ' · 補派' : ''}` : (running ? '分析中' : '等待')}</span></div>
         ${open ? `<div class="item-body">${body}</div>` : ''}
       </div>`;
   });
   if (files['report.md']) {
-    html += `<div class="section-title"><span>📄 事實報告（程式整理的事實＋Synthesizer 的摘要）</span><span><button class="mini-btn" onclick="openAnalysisFile('report.md', '數據事實報告')">開啟（含 Frontmatter）</button></span></div>
+    html += `<div class="section-title"><span>📄 事實報告（程式整理的事實＋Synthesizer 的重點）</span><span><button class="mini-btn" onclick="openAnalysisFile('report.md', '數據事實報告')">開啟（含 Frontmatter）</button></span></div>
       <div class="item-card st-done"><div class="item-body" style="padding:10px"><div class="item-goal">${esc(stripFrontmatter(files['report.md']))}</div></div></div>`;
   }
   html += `<details style="margin-top:10px"><summary class="section-title" style="display:list-item">全部進度（${events.length} 筆）</summary>
@@ -1075,9 +1073,9 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closeViewer(
 const modelCfg = { open: false, data: null };
 const MODEL_ROLES = [
   ['main', '主對話', '一般對話、查詢、操作技能用的模型；摘要模型沒有另外指定時跟著它換'],
-  ['orchestrator', '分析 Orchestrator', '數據分析：看去重後的 Log 與 Topic Metadata、挑 Log 訊號、把不同的 Topic 分派給 worker、檢查要不要補量（下一次分析生效）'],
-  ['worker', '分析 Worker', '數據分析：每個 worker 一個 Topic，自己選 Key 量整段數據、寫局部報告（下一次分析生效）'],
-  ['synthesizer', '分析 Synthesizer', '數據分析：把程式整理的事實與各 worker 的局部報告寫成事實摘要（下一次分析生效）'],
+  ['orchestrator', '分析 Orchestrator', '數據分析：看去重後的 Log 與全部 Topic 的事實、挑 Log 訊號、把要說明的 Topic 分派給 worker、檢查要不要補派（下一次分析生效）'],
+  ['worker', '分析 Worker', '數據分析：每個 worker 說明一個 Topic 的事實（一則一則，附事實的編號；事實由程式量）（下一次分析生效）'],
+  ['synthesizer', '分析 Synthesizer', '數據分析：把程式整理的事實與各 worker 的說明整理成重點（一則一則，附事實的編號）（下一次分析生效）'],
 ];
 function mpThinkOk(name) { return !!(modelCfg.data && modelCfg.data.thinking && modelCfg.data.thinking[name]); }
 async function toggleModelPanel(force) {

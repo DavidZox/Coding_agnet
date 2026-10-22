@@ -12,7 +12,7 @@
 
 ## ROS 2 數據解析（主要功能）
 > 問題要同時看 Log 與好幾個 Topic（「發生了什麼、前後有哪些變化、什麼時候恢復」）用 analysis_run；只看一個 Topic、一個值、Log 的時間點，直接用下面對應的技能。
-- [analysis_run](tools/analysis_run.md) — 數據分析：Log 去重＋Topic Metadata → Orchestrator 分派不同的 Topic 給多個 worker 量整段數據 → 程式整理事實、Synthesizer 寫摘要（事實報告：各 Topic 的結果、時間線、Log 的對照；不判斷原因）
+- [analysis_run](tools/analysis_run.md) — 數據分析：Log 去重＋程式量全部 Topic 的事實 → Orchestrator 挑相關的 Log、分派要說明的 Topic 給 worker → Synthesizer 整理重點（事實報告：重點、各 Topic 的結果、時間線、Log 的對照；不判斷原因）
 - [mcap_recorder](tools/mcap_recorder.md) — 在目標容器內定時錄製 ROS 2 Topic（toolkit 格式：bag、rosout.log、terminal.log），錄完自動建立全域 Topic Metadata 索引
 - [rosout_parser](tools/rosout_parser.md) — Log 智慧過濾：重複的 Log 合併成唯一訊號（L#：層級、Node、次數、時間戳），找異常的時間點
 - [mcap_analyzer](tools/mcap_analyzer.md) — 全域 Topic Metadata（時間範圍、每個 Topic 的型別、筆數、頻率、角色）；`--topic` 看每個 Key 的型別、維度與類別；`--key --preview` 看原始值

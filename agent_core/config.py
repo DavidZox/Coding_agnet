@@ -169,6 +169,8 @@ TOOL_SUMMARY_TAG = "[tool result - 任務導向摘要]"
 # analysis_run 的回傳（程式組好的事實報告）固定以這個開頭：它本身就是多個 agent 依問題整理好的事實，跟 result_recall
 # 一樣不再交給摘要 session（is_exempt_result），主對話直接收到完整的報告。
 ANALYSIS_REPORT_HEAD = "[PASS] 📊 數據事實報告"
+# 報告最後一行（給主對話的回答說明）的開頭：turn_guard 核對回答時，這一行的字（「不要寫成誰導致…」）不算報告裡本來就有的字
+ANALYSIS_ANSWER_NOTE = "（依這份報告回答使用者"
 # _content_for_context 退回「只給成功／失敗判定」時的固定開頭（/summarize off 或摘要 session 失敗）；UI 據此標示 AI 實際收到的是哪一種。
 TOOL_REDUCED_TAG = "[tool result - 已精簡]"
 # 獨立 session 一次最多讀多少原始輸出（字元）：超過就保留頭尾、明確告知中間省略了多少（見 _clip_tool_output）。
@@ -268,14 +270,13 @@ OPS_WORKER_MAX_STEPS = 10                # 每一步的 worker 最多幾輪（�
 # =========================================================
 # 📊 數據解析的多 agent 協同（agent_core/analysis_job.py，analysis_run 技能）：只要有 .mcap 就能用的事實報告——
 # 量到什麼、什麼時候、Log 說了什麼，不做因果推論（原因要對照源碼另外分析；第九輪的源碼脈絡與因果推論留在 root_cause_reference/）。
-# 1. 資料預備（程式）：rosout_parser 把 Log 去重成唯一訊號、mcap_analyzer 讀全域 Topic Metadata 索引（錄製時已建立的就讀快取）；
-# 2. Orchestrator（一次模型呼叫）：同時看去重後的 Log 與 Topic Metadata，挑出跟問題有關的 Log 訊號、把不同的 Topic 指派給不同的
-#    worker（一個 Topic 只給一個 worker，擴大分析廣度）；
-# 3. Workers（每個一個乾淨的 session＋自己的工具迴圈）：只看自己的 Topic，自己決定量測哪些 Key（mcap_feature_measure，整段數據），
-#    不碰 Log 字串；局部報告的數字由程式從量測結果填，不讓模型抄；
-# 4. 事實由程式整理（每個 Topic 的類別、事件、到最後的值；Topic 的事件與 Log 依時間對照），Synthesizer 寫成摘要；
-# 5. Orchestrator 檢查：相關的 Log 前後量到的 Topic 都沒有變化時，決定要不要補量還沒量的 Topic（最多補一輪）。
-# job 的計畫、每個 worker 的報告與對話、最後的報告都在 logs/analysis_jobs/<編號>/。
+# 1. 資料預備（程式）：rosout_parser 把 Log 去重成唯一訊號；mcap_analyzer --facts 量全部的 Topic、全部的 Key（發布方式、中斷、
+#    開始／停止發布、狀態跳轉、數值切換、尖峰、範圍），整理成有編號的事實（T#＝Topic、E#＝事件）——事實不靠模型挑，每次一樣；
+# 2. Orchestrator（一次模型呼叫）：看問題、去重後的 Log 與全部 Topic 的事實總表，挑出相關的 Log 訊號、把要說明的 Topic 指派給 worker；
+# 3. Workers（每個一次模型呼叫）：說明自己那個 Topic 的事實（一則一則，每則用 refs 指到事實的編號）；
+# 4. Synthesizer：整段數據的重點（一則一則、refs 指到 E#／L#／T#，時間由程式補）；
+# 5. Orchestrator 檢查：WARN 以上或相關的 Log 前後有變化、還沒有 worker 說明的 Topic，決定要不要補派 worker（最多補一輪）。
+# job 的計畫、每個 worker 的說明、最後的報告都在 logs/analysis_jobs/<編號>/。
 # =========================================================
 ANALYSIS_JOBS_DIRNAME = "analysis_jobs"
 ANALYSIS_SETTINGS_NAME = "analysis_settings.json"   # logs/ 下：各角色的模型、數據根目錄、worker 數…（Web 的 📊 分析面板 ⚙️ 設定）
@@ -291,18 +292,16 @@ ANALYSIS_DATA_ROOT = os.environ.get("AGENT_ANALYSIS_DATA_ROOT", "").strip()
 # 一次分析最長幾秒（以整秒算）：每個 worker 量整段數據，事實才不會因為規劃時漏挑某則 Log 而少一段。更長的數據先用 mcap_slicer
 # 切成這個長度以內的片段再分析（之後要分析更長的時間跨度，是多組 Orchestrator → Workers → Synthesizer 各管一段，再往上整合）
 ANALYSIS_MAX_SECONDS = int(os.environ.get("AGENT_ANALYSIS_MAX_SECONDS", "180"))
-ANALYSIS_MAX_WORKERS = int(os.environ.get("AGENT_ANALYSIS_MAX_WORKERS", "6"))        # 一次最多派幾個 worker（＝最多分析幾個 Topic；4 個時 14 份數據有 3 份常漏掉 /cmd_vel 或 /cmd_vel_raw，6 個時時間線 52/65 → 65/65）
+# 一次最多派幾個 worker（＝最多說明幾個 Topic）。事實由程式量全部的 Topic，不受這個上限影響（第十輪 worker 自己量測時，4 個常漏掉
+# /cmd_vel、/cmd_vel_raw，時間線 52/65；改成程式量全部之後跟上限無關）
+ANALYSIS_MAX_WORKERS = int(os.environ.get("AGENT_ANALYSIS_MAX_WORKERS", "4"))
 ANALYSIS_PARALLEL_WORKERS = int(os.environ.get("AGENT_ANALYSIS_PARALLEL", "2"))      # 同時跑幾個 worker（Ollama 同一個模型只有一個 slot
 #                                                                                       時模型呼叫仍會排隊，但容器內的量測可以重疊）
-ANALYSIS_WORKER_MAX_STEPS = int(os.environ.get("AGENT_ANALYSIS_WORKER_STEPS", "6"))  # 一個 worker 最多幾個動作
 ANALYSIS_DIGEST_MAX_SIGNALS = 60         # 交給 Orchestrator 的去重後 Log 最多幾個訊號（WARN 以上全部，其餘依時間補到上限）
-ANALYSIS_TOOL_RESULT_MAX_CHARS = 5000    # worker 的工具回傳進上下文的上限（超過保留頭尾）
-# worker 可以用的腳本（其餘一律拒絕）：特徵量測與 Key／原始值檢視；Topic 由系統固定成指派的那一個
-ANALYSIS_WORKER_SCRIPTS = {"mcap_feature_measure_cmd.py", "mcap_analyzer_cmd.py"}
 # 事實的對照（程式）：Topic 的變化與 Log 前後這麼多秒內就列在一起（只寫時間差，不代表誰造成誰）；不同 Topic 這麼多秒內一起變化＝「同時」
 ANALYSIS_ALIGN_SEC = 1.0
 ANALYSIS_SAME_TIME_SEC = 0.1
-# 補量：相關的 Log 前後量到的 Topic 都沒有變化時，Orchestrator 可以補派還沒量的 Topic，再整理一次事實。
-# 最多幾輪（1＝不補、2＝最多補一輪；補量之前的報告留成 report_r<n>.md）、每輪補派最多幾個 worker
+# 補派：WARN 以上或相關的 Log 前後有變化、但還沒有 worker 說明的 Topic，Orchestrator 可以補派 worker，再寫一次重點。
+# 最多幾輪（1＝不補、2＝最多補一輪；補派之前的報告留成 report_r<n>.md）、每輪補派最多幾個 worker
 ANALYSIS_MAX_ROUNDS = int(os.environ.get("AGENT_ANALYSIS_ROUNDS", "2"))
 ANALYSIS_FOLLOWUP_WORKERS = 2

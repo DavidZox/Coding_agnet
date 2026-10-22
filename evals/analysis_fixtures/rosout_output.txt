@@ -1,14 +1,14 @@
 {
  "source": "bag 的 /rosout（時間＝MCAP log_time，與其他 Topic 同一個時鐘）",
- "data": "exp_20261014_084506",
+ "data": "exp_5090_overheat",
  "time_range_sec": [
-  1791967507.011699,
-  1791967558.900941
+  1792124993.868928,
+  1792125038.735566
  ],
- "total_events": 31,
- "signals_total": 31,
+ "total_events": 24,
+ "signals_total": 23,
  "level_counts": {
-  "INFO": 29,
+  "INFO": 22,
   "WARN": 2
  },
  "signals": [
@@ -18,403 +18,462 @@
    "node": "rosbag2_recorder",
    "count": 1,
    "message": "Press SPACE for pausing/resuming",
-   "first_sec": 1791967507.011699,
-   "last_sec": 1791967507.011699,
+   "first_sec": 1792124993.868928,
+   "last_sec": 1792124993.868928,
    "times_sec": [
-    1791967507.011699
+    1792124993.868928
    ],
-   "first_rel": 0.0
+   "first_rel": 0.0,
+   "sources": [
+    {
+     "file": "./src/rosbag2_transport/recorder.cpp",
+     "function": "RecorderImpl",
+     "line": 190
+    }
+   ]
   },
   {
    "id": "L2",
    "level": "INFO",
    "node": "rosbag2_recorder",
    "count": 1,
-   "message": "Event publisher thread: Started",
-   "first_sec": 1791967507.011708,
-   "last_sec": 1791967507.011708,
+   "message": "Listening for topics...",
+   "first_sec": 1792124993.869023,
+   "last_sec": 1792124993.869023,
    "times_sec": [
-    1791967507.011708
+    1792124993.869023
    ],
-   "first_rel": 0.0
+   "first_rel": 0.0,
+   "sources": [
+    {
+     "file": "./src/rosbag2_transport/recorder.cpp",
+     "function": "record",
+     "line": 353
+    }
+   ]
   },
   {
    "id": "L3",
    "level": "INFO",
    "node": "rosbag2_recorder",
    "count": 1,
-   "message": "Starting recording to '/workspace/app/diagnostics_package/toolkit/experiment_logs/exp_20261014_084506/bag'",
-   "first_sec": 1791967507.01171,
-   "last_sec": 1791967507.01171,
+   "message": "Event publisher thread: Starting",
+   "first_sec": 1792124993.869026,
+   "last_sec": 1792124993.869026,
    "times_sec": [
-    1791967507.01171
+    1792124993.869026
    ],
-   "first_rel": 0.0
+   "first_rel": 0.0,
+   "sources": [
+    {
+     "file": "./src/rosbag2_transport/recorder.cpp",
+     "function": "event_publisher_thread_main",
+     "line": 371
+    }
+   ]
   },
   {
    "id": "L4",
    "level": "INFO",
    "node": "rosbag2_recorder",
    "count": 1,
-   "message": "Subscribed to topic '/rosout'",
-   "first_sec": 1791967507.011837,
-   "last_sec": 1791967507.011837,
+   "message": "Subscribed to topic '/system_health_monitor/transition_event'",
+   "first_sec": 1792124993.869029,
+   "last_sec": 1792124993.869029,
    "times_sec": [
-    1791967507.011837
+    1792124993.869029
    ],
-   "first_rel": 0.0
+   "first_rel": 0.0,
+   "sources": [
+    {
+     "file": "./src/rosbag2_transport/recorder.cpp",
+     "function": "subscribe_topic",
+     "line": 574
+    }
+   ]
   },
   {
    "id": "L5",
    "level": "INFO",
    "node": "rosbag2_recorder",
    "count": 1,
-   "message": "Subscribed to topic '/events/write_split'",
-   "first_sec": 1791967507.012486,
-   "last_sec": 1791967507.012486,
+   "message": "Subscribed to topic '/system/safety_command'",
+   "first_sec": 1792124993.869032,
+   "last_sec": 1792124993.869032,
    "times_sec": [
-    1791967507.012486
+    1792124993.869032
    ],
-   "first_rel": 0.001
+   "first_rel": 0.0,
+   "sources": [
+    {
+     "file": "./src/rosbag2_transport/recorder.cpp",
+     "function": "subscribe_topic",
+     "line": 574
+    }
+   ]
   },
   {
    "id": "L6",
    "level": "INFO",
    "node": "rosbag2_recorder",
    "count": 1,
-   "message": "Listening for topics...",
-   "first_sec": 1791967507.01286,
-   "last_sec": 1791967507.01286,
+   "message": "Subscribed to topic '/rosout'",
+   "first_sec": 1792124993.869035,
+   "last_sec": 1792124993.869035,
    "times_sec": [
-    1791967507.01286
+    1792124993.869035
    ],
-   "first_rel": 0.001
+   "first_rel": 0.0,
+   "sources": [
+    {
+     "file": "./src/rosbag2_transport/recorder.cpp",
+     "function": "subscribe_topic",
+     "line": 574
+    }
+   ]
   },
   {
    "id": "L7",
    "level": "INFO",
    "node": "rosbag2_recorder",
    "count": 1,
-   "message": "Recording...",
-   "first_sec": 1791967507.012964,
-   "last_sec": 1791967507.012964,
+   "message": "Subscribed to topic '/events/write_split'",
+   "first_sec": 1792124993.869146,
+   "last_sec": 1792124993.869146,
    "times_sec": [
-    1791967507.012964
+    1792124993.869146
    ],
-   "first_rel": 0.001
+   "first_rel": 0.0,
+   "sources": [
+    {
+     "file": "./src/rosbag2_transport/recorder.cpp",
+     "function": "subscribe_topic",
+     "line": 574
+    }
+   ]
   },
   {
    "id": "L8",
    "level": "INFO",
    "node": "rosbag2_recorder",
    "count": 1,
-   "message": "Topics discovery started.",
-   "first_sec": 1791967507.013047,
-   "last_sec": 1791967507.013047,
+   "message": "Subscribed to topic '/diagnostics_toplevel_state'",
+   "first_sec": 1792124993.86957,
+   "last_sec": 1792124993.86957,
    "times_sec": [
-    1791967507.013047
+    1792124993.86957
    ],
-   "first_rel": 0.001
+   "first_rel": 0.001,
+   "sources": [
+    {
+     "file": "./src/rosbag2_transport/recorder.cpp",
+     "function": "subscribe_topic",
+     "line": 574
+    }
+   ]
   },
   {
    "id": "L9",
    "level": "INFO",
    "node": "rosbag2_recorder",
    "count": 1,
-   "message": "Subscribed to topic '/parameter_events'",
-   "first_sec": 1791967507.054288,
-   "last_sec": 1791967507.054288,
+   "message": "Subscribed to topic '/diagnostics_agg'",
+   "first_sec": 1792124993.869801,
+   "last_sec": 1792124993.869801,
    "times_sec": [
-    1791967507.054288
+    1792124993.869801
    ],
-   "first_rel": 0.043
+   "first_rel": 0.001,
+   "sources": [
+    {
+     "file": "./src/rosbag2_transport/recorder.cpp",
+     "function": "subscribe_topic",
+     "line": 574
+    }
+   ]
   },
   {
    "id": "L10",
    "level": "INFO",
    "node": "rosbag2_recorder",
    "count": 1,
-   "message": "Subscribed to topic '/system_health_monitor/transition_event'",
-   "first_sec": 1791967507.431814,
-   "last_sec": 1791967507.431814,
+   "message": "Subscribed to topic '/system/safety_gate_status'",
+   "first_sec": 1792124993.870015,
+   "last_sec": 1792124993.870015,
    "times_sec": [
-    1791967507.431814
+    1792124993.870015
    ],
-   "first_rel": 0.42
+   "first_rel": 0.001,
+   "sources": [
+    {
+     "file": "./src/rosbag2_transport/recorder.cpp",
+     "function": "subscribe_topic",
+     "line": 574
+    }
+   ]
   },
   {
    "id": "L11",
    "level": "INFO",
    "node": "rosbag2_recorder",
    "count": 1,
-   "message": "Subscribed to topic '/system/safety_command'",
-   "first_sec": 1791967507.444546,
-   "last_sec": 1791967507.444546,
+   "message": "Subscribed to topic '/cmd_vel'",
+   "first_sec": 1792124993.870503,
+   "last_sec": 1792124993.870503,
    "times_sec": [
-    1791967507.444546
+    1792124993.870503
    ],
-   "first_rel": 0.433
+   "first_rel": 0.002,
+   "sources": [
+    {
+     "file": "./src/rosbag2_transport/recorder.cpp",
+     "function": "subscribe_topic",
+     "line": 574
+    }
+   ]
   },
   {
    "id": "L12",
    "level": "INFO",
    "node": "rosbag2_recorder",
    "count": 1,
-   "message": "Subscribed to topic '/blackbox_recorder/transition_event'",
-   "first_sec": 1791967507.446058,
-   "last_sec": 1791967507.446058,
+   "message": "Subscribed to topic '/parameter_events'",
+   "first_sec": 1792124993.871018,
+   "last_sec": 1792124993.871018,
    "times_sec": [
-    1791967507.446058
+    1792124993.871018
    ],
-   "first_rel": 0.434
+   "first_rel": 0.002,
+   "sources": [
+    {
+     "file": "./src/rosbag2_transport/recorder.cpp",
+     "function": "subscribe_topic",
+     "line": 574
+    }
+   ]
   },
   {
    "id": "L13",
    "level": "INFO",
    "node": "rosbag2_recorder",
    "count": 1,
-   "message": "Subscribed to topic '/diagnostics_agg'",
-   "first_sec": 1791967507.44768,
-   "last_sec": 1791967507.44768,
+   "message": "Subscribed to topic '/blackbox_recorder/transition_event'",
+   "first_sec": 1792124993.871171,
+   "last_sec": 1792124993.871171,
    "times_sec": [
-    1791967507.44768
+    1792124993.871171
    ],
-   "first_rel": 0.436
+   "first_rel": 0.002,
+   "sources": [
+    {
+     "file": "./src/rosbag2_transport/recorder.cpp",
+     "function": "subscribe_topic",
+     "line": 574
+    }
+   ]
   },
   {
    "id": "L14",
    "level": "INFO",
    "node": "rosbag2_recorder",
    "count": 1,
-   "message": "Subscribed to topic '/diagnostics_toplevel_state'",
-   "first_sec": 1791967507.448619,
-   "last_sec": 1791967507.448619,
+   "message": "Recording...",
+   "first_sec": 1792124993.871203,
+   "last_sec": 1792124993.871203,
    "times_sec": [
-    1791967507.448619
+    1792124993.871203
    ],
-   "first_rel": 0.437
+   "first_rel": 0.002,
+   "sources": [
+    {
+     "file": "./src/rosbag2_transport/recorder.cpp",
+     "function": "record",
+     "line": 365
+    }
+   ]
   },
   {
    "id": "L15",
    "level": "INFO",
-   "node": "blackbox_recorder",
+   "node": "rosbag2_recorder",
    "count": 1,
-   "message": "Configuring BlackboxRecorderNode...",
-   "first_sec": 1791967507.532209,
-   "last_sec": 1791967507.532209,
+   "message": "Subscribed to topic '/cmd_vel_raw'",
+   "first_sec": 1792125003.001898,
+   "last_sec": 1792125003.001898,
    "times_sec": [
-    1791967507.532209
+    1792125003.001898
    ],
-   "first_rel": 0.521
+   "first_rel": 9.133,
+   "sources": [
+    {
+     "file": "./src/rosbag2_transport/recorder.cpp",
+     "function": "subscribe_topic",
+     "line": 574
+    }
+   ]
   },
   {
    "id": "L16",
    "level": "INFO",
-   "node": "diagnostics_lifecycle_manager",
-   "count": 1,
-   "message": "Starting Diagnostics Lifecycle Restart Sequence...",
-   "first_sec": 1791967507.534477,
-   "last_sec": 1791967507.534477,
+   "node": "safety_motion_controller",
+   "count": 2,
+   "message": "event=GATE_STATE_CHANGED mode=NORMAL latched=false reasons=[] reaction=NONE",
+   "first_sec": 1792125003.007856,
+   "last_sec": 1792125016.473886,
    "times_sec": [
-    1791967507.534477
+    1792125003.007856,
+    1792125016.473886
    ],
-   "first_rel": 0.523
+   "first_rel": 9.139,
+   "sources": [
+    {
+     "file": "/workspace/ws/install/diagnostics_package/lib/diagnostics_package/safety_motion_controller.py",
+     "function": "_refresh",
+     "line": 321
+    }
+   ]
   },
   {
    "id": "L17",
    "level": "INFO",
-   "node": "diagnostics_lifecycle_manager",
+   "node": "rosbag2_recorder",
    "count": 1,
-   "message": "Node [system_health_monitor] -> CONFIGURED",
-   "first_sec": 1791967507.534491,
-   "last_sec": 1791967507.534491,
+   "message": "Subscribed to topic '/diagnostics'",
+   "first_sec": 1792125009.425634,
+   "last_sec": 1792125009.425634,
    "times_sec": [
-    1791967507.534491
+    1792125009.425634
    ],
-   "first_rel": 0.523
+   "first_rel": 15.557,
+   "sources": [
+    {
+     "file": "./src/rosbag2_transport/recorder.cpp",
+     "function": "subscribe_topic",
+     "line": 574
+    }
+   ]
   },
   {
    "id": "L18",
-   "level": "INFO",
-   "node": "diagnostics_lifecycle_manager",
+   "level": "WARN",
+   "node": "system_health_monitor",
    "count": 1,
-   "message": "Node [system_health_monitor] -> ACTIVATED",
-   "first_sec": 1791967507.534491,
-   "last_sec": 1791967507.534491,
+   "message": "event=MON_FAULT_RAISED code=0x03402901 severity=WARN task=\"/Actuators/Drivetrain & Base Control/Motors/act_motor_left\"",
+   "first_sec": 1792125010.373461,
+   "last_sec": 1792125010.373461,
    "times_sec": [
-    1791967507.534491
+    1792125010.373461
    ],
-   "first_rel": 0.523
+   "first_rel": 16.505,
+   "sources": [
+    {
+     "file": "/workspace/ws/src/diagnostics_package/src/system_health_monitor_node.cpp",
+     "function": "logEvent",
+     "line": 162
+    }
+   ]
   },
   {
    "id": "L19",
-   "level": "INFO",
+   "level": "WARN",
    "node": "system_health_monitor",
    "count": 1,
-   "message": "Configuring SystemHealthMonitorNode...",
-   "first_sec": 1791967507.535451,
-   "last_sec": 1791967507.535451,
+   "message": "event=MON_REACTION_CHANGED from=NONE to=LIMIT_SPEED latched=false latched_codes=[] winning_level=1 error_codes=[] warn_codes=[0x03402901] winning_task=\"/Actuators/Drivetrain & Base Control/Motors/act_motor_left\" winning_reason=馬達發熱，降速運轉保護硬體",
+   "first_sec": 1792125010.373488,
+   "last_sec": 1792125010.373488,
    "times_sec": [
-    1791967507.535451
+    1792125010.373488
    ],
-   "first_rel": 0.524
+   "first_rel": 16.505,
+   "sources": [
+    {
+     "file": "/workspace/ws/src/diagnostics_package/src/system_health_monitor_node.cpp",
+     "function": "logEvent",
+     "line": 162
+    }
+   ]
   },
   {
    "id": "L20",
    "level": "INFO",
-   "node": "system_health_monitor",
+   "node": "safety_motion_controller",
    "count": 1,
-   "message": "Activating SystemHealthMonitorNode...",
-   "first_sec": 1791967507.535452,
-   "last_sec": 1791967507.535452,
+   "message": "event=GATE_STATE_CHANGED mode=LIMITED latched=false reasons=[] reaction=LIMIT_SPEED",
+   "first_sec": 1792125010.373755,
+   "last_sec": 1792125010.373755,
    "times_sec": [
-    1791967507.535452
+    1792125010.373755
    ],
-   "first_rel": 0.524
+   "first_rel": 16.505,
+   "sources": [
+    {
+     "file": "/workspace/ws/install/diagnostics_package/lib/diagnostics_package/safety_motion_controller.py",
+     "function": "_refresh",
+     "line": 321
+    }
+   ]
   },
   {
    "id": "L21",
    "level": "INFO",
-   "node": "diagnostics_lifecycle_manager",
+   "node": "system_health_monitor",
    "count": 1,
-   "message": "Node [blackbox_recorder] -> CONFIGURED",
-   "first_sec": 1791967507.539297,
-   "last_sec": 1791967507.539297,
+   "message": "event=MON_FAULT_CLEARED code=0x03402901 severity=WARN task=\"/Actuators/Drivetrain & Base Control/Motors/act_motor_left\"",
+   "first_sec": 1792125016.473498,
+   "last_sec": 1792125016.473498,
    "times_sec": [
-    1791967507.539297
+    1792125016.473498
    ],
-   "first_rel": 0.528
+   "first_rel": 22.605,
+   "sources": [
+    {
+     "file": "/workspace/ws/src/diagnostics_package/src/system_health_monitor_node.cpp",
+     "function": "logEvent",
+     "line": 159
+    }
+   ]
   },
   {
    "id": "L22",
    "level": "INFO",
-   "node": "blackbox_recorder",
+   "node": "system_health_monitor",
    "count": 1,
-   "message": "Activating BlackboxRecorderNode...",
-   "first_sec": 1791967507.540417,
-   "last_sec": 1791967507.540417,
+   "message": "event=MON_REACTION_CHANGED from=LIMIT_SPEED to=NONE latched=false latched_codes=[] winning_level=0 error_codes=[] warn_codes=[] winning_task=Unknown winning_reason=\"\"",
+   "first_sec": 1792125016.473512,
+   "last_sec": 1792125016.473512,
    "times_sec": [
-    1791967507.540417
+    1792125016.473512
    ],
-   "first_rel": 0.529
+   "first_rel": 22.605,
+   "sources": [
+    {
+     "file": "/workspace/ws/src/diagnostics_package/src/system_health_monitor_node.cpp",
+     "function": "logEvent",
+     "line": 159
+    }
+   ]
   },
   {
    "id": "L23",
    "level": "INFO",
-   "node": "diagnostics_lifecycle_manager",
-   "count": 1,
-   "message": "Node [blackbox_recorder] -> ACTIVATED",
-   "first_sec": 1791967507.540826,
-   "last_sec": 1791967507.540826,
-   "times_sec": [
-    1791967507.540826
-   ],
-   "first_rel": 0.529
-  },
-  {
-   "id": "L24",
-   "level": "INFO",
-   "node": "diagnostics_lifecycle_manager",
-   "count": 1,
-   "message": ">>> Diagnostics Lifecycle Nodes Restart Complete <<<",
-   "first_sec": 1791967507.54094,
-   "last_sec": 1791967507.54094,
-   "times_sec": [
-    1791967507.54094
-   ],
-   "first_rel": 0.529
-  },
-  {
-   "id": "L25",
-   "level": "INFO",
-   "node": "rosbag2_recorder",
-   "count": 1,
-   "message": "Subscribed to topic '/cmd_vel'",
-   "first_sec": 1791967507.710928,
-   "last_sec": 1791967507.710928,
-   "times_sec": [
-    1791967507.710928
-   ],
-   "first_rel": 0.699
-  },
-  {
-   "id": "L26",
-   "level": "INFO",
-   "node": "rosbag2_recorder",
-   "count": 1,
-   "message": "Subscribed to topic '/system/safety_gate_status'",
-   "first_sec": 1791967507.711878,
-   "last_sec": 1791967507.711878,
-   "times_sec": [
-    1791967507.711878
-   ],
-   "first_rel": 0.7
-  },
-  {
-   "id": "L27",
-   "level": "INFO",
    "node": "safety_motion_controller",
    "count": 1,
-   "message": "Safety Motion Controller initialized with SystemSafetyStatus interface. safety_command_timeout_sec=0.5, cmd_vel_raw_timeout_sec=0.5, output_rate_hz=20.0",
-   "first_sec": 1791967507.760681,
-   "last_sec": 1791967507.760681,
+   "message": "event=GATE_STATE_CHANGED mode=NORMAL latched=false reasons=[NO_CMD_VEL_RAW] reaction=NONE",
+   "first_sec": 1792125028.635857,
+   "last_sec": 1792125028.635857,
    "times_sec": [
-    1791967507.760681
+    1792125028.635857
    ],
-   "first_rel": 0.749
-  },
-  {
-   "id": "L28",
-   "level": "WARN",
-   "node": "safety_motion_controller",
-   "count": 1,
-   "message": "GATE mode=PROTECTIVE_STOP latched=False reasons=['NO_SAFETY_COMMAND_YET', 'NO_CMD_VEL_RAW'] reaction=''",
-   "first_sec": 1791967507.760701,
-   "last_sec": 1791967507.760701,
-   "times_sec": [
-    1791967507.760701
-   ],
-   "first_rel": 0.749
-  },
-  {
-   "id": "L29",
-   "level": "WARN",
-   "node": "safety_motion_controller",
-   "count": 1,
-   "message": "GATE mode=PROTECTIVE_STOP latched=False reasons=['MON_INITIALIZING', 'NO_CMD_VEL_RAW'] reaction='INIT'",
-   "first_sec": 1791967508.236099,
-   "last_sec": 1791967508.236099,
-   "times_sec": [
-    1791967508.236099
-   ],
-   "first_rel": 1.224
-  },
-  {
-   "id": "L30",
-   "level": "INFO",
-   "node": "safety_motion_controller",
-   "count": 1,
-   "message": "GATE mode=NORMAL latched=False reasons=['NO_CMD_VEL_RAW'] reaction='NONE'",
-   "first_sec": 1791967522.547365,
-   "last_sec": 1791967522.547365,
-   "times_sec": [
-    1791967522.547365
-   ],
-   "first_rel": 15.536
-  },
-  {
-   "id": "L31",
-   "level": "INFO",
-   "node": "rosbag2_recorder",
-   "count": 1,
-   "message": "Topics discovery stopped.",
-   "first_sec": 1791967558.900941,
-   "last_sec": 1791967558.900941,
-   "times_sec": [
-    1791967558.900941
-   ],
-   "first_rel": 51.889
+   "first_rel": 34.767,
+   "sources": [
+    {
+     "file": "/workspace/ws/install/diagnostics_package/lib/diagnostics_package/safety_motion_controller.py",
+     "function": "_refresh",
+     "line": 321
+    }
+   ]
   }
  ]
 }
-[ANALYSIS_DATA] /workspace/app/diagnostics_package/toolkit/experiment_logs/exp_20261014_084506
+[ANALYSIS_DATA] /workspace/experiment_logs/exp_5090_overheat
+[TARGET_CONTAINER] cah_analysis_test

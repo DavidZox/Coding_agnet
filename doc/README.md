@@ -6,7 +6,7 @@
 | [設計筆記與已知限制](設計筆記與已知限制.md) | 想知道某個機制為什麼長這樣的人 | 每個機制的做法、理由與實測數據；完整技能清單；驗證方法；已知限制；未來方向（2026-09-26 從 README 移來） |
 | [長期願景](長期願景.md) | 關心延伸方向的人 | AGV/AMR 車隊調度場景的構想（尚未實作） |
 | [評測](../evals/README.md) | 改了 prompt、門檻或模式邏輯、想知道有沒有變好的人 | 同一組情境跑 harness／claude_code 兩種上下文模式：怎麼跑、情境清單、怎麼加情境、怎麼讀報表；數據解析的離線自我測試與實機測試 |
-| [架構說明 §13](架構說明.md#13-數據解析的多-agent-協同agent_coreanalysis_jobpy) | 想看懂或修改數據解析的人 | Orchestrator → Workers → 事實（程式）→ Synthesizer → Orchestrator 檢查的流程、模組（含數據技能的共用層 `_ros2_data_common.py`）、worker 的一步、產物存在哪裡、常數、要改什麼看哪裡（設計理由與實測在設計筆記 2.18） |
+| [架構說明 §13](架構說明.md#13-數據解析的多-agent-協同agent_coreanalysis_jobpy) | 想看懂或修改數據解析的人 | 事實（程式量全部 Topic）→ Orchestrator → Workers 說明 → Synthesizer 重點 → Orchestrator 檢查的流程、模組（含數據技能的共用層 `_ros2_data_common.py`）、事實與說明的核對、產物存在哪裡、常數、要改什麼看哪裡（設計理由與實測在設計筆記 2.18） |
 | [待辦清單](待辦清單.md) | 要決定下一步做什麼的人 | 數據解析 agent 的下一步建議（coding 的待辦在 Coding_agent_harness） |
 
 ## 圖
@@ -16,7 +16,7 @@
 | ![架構](images/AI_agent_harness的說明.png) | `AI_agent_harness的說明.puml` | 元件與資料流；`vision/`（框選／上傳 → 結構化提取 → `[vision result]`）與使用者介面、SkillAgent、技能、存檔的關係 |
 | ![一回合](images/AI_agent_harness的狀態轉移.png) | `AI_agent_harness的狀態轉移.puml` | 一回合的狀態機；附圖時的視覺提取（1b），以及附圖分析在 prompt、壓縮、下一句話裡的位置 |
 | ![工具回傳管線](images/AI_agent_harness的工具回傳管線.png) | `AI_agent_harness的工具回傳管線.puml` | 原文存檔 → 摘要 → 檢索清單 → result_recall；中段是附圖的影像分析（提取 → 存成 #編號 → 〔附圖分析〕進清單 → 併進訊息），同一套 recall |
-| ![數據分析的流程](images/數據診斷的流程.png) | `數據診斷的流程.puml` | 數據分析（事實報告）的完整流程（活動圖，2026-10-17 改寫）：收到問題 → 資料預備（超過 3 分鐘先切）→ Orchestrator 規劃 → Workers（量整段數據、每一步的程式檢查與量測）→ 事實（程式）→ Synthesizer 摘要 → Orchestrator 檢查 ⇄ 補量（最多一輪）→ 程式組報告；藍＝程式、橘＝模型、綠＝程式核對，底部是程式做的與模型做的（文字版的說明在 README〈每一步的細節〉）；第九輪的流程圖在 `root_cause_reference/doc/` |
+| ![數據分析的流程](images/數據診斷的流程.png) | `數據診斷的流程.puml` | 數據分析（事實報告）的完整流程（活動圖，2026-10-22 改寫）：收到問題 → 資料預備與事實（超過 3 分鐘先切；程式量全部 Topic 的全部 Key、整理成有編號的事實）→ Orchestrator 規劃 → Workers 說明 → Synthesizer 重點（每一則的程式核對、只交回有問題的）→ Orchestrator 檢查 ⇄ 補派（最多一輪）→ 程式組報告 → 主對話的回答與核對；藍＝程式、橘＝模型、綠＝程式核對，底部是程式做的與模型做的（文字版的說明在 README〈每一步的細節〉）；第九輪的流程圖在 `root_cause_reference/doc/` |
 
 改完 `.puml` 後重新產生 PNG。建議用本機離線渲染（不把圖的內容送到外部服務）：這台機器有 Java、Graphviz（`dot`）與
 `/home/david/Software_quality_checking_pipeline/tools`（PlantUML 與 Microsoft JhengHei 字型）：

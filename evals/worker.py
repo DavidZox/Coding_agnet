@@ -148,7 +148,7 @@ def main():
                     break
             result = agent.run_tool(parsed, approved=bool(guard))
             if not result:
-                claim = agent.claim_without_action(parsed)    # 沒執行卻說做完了：跟 CLI／Web 一樣提醒一次
+                claim = agent.claim_without_action(parsed) or agent.analysis_reply_check(parsed)   # 沒執行卻說做完了、依數據分析的報告回答卻寫成因果：跟 CLI／Web 一樣提醒一次
                 if claim:
                     turn.setdefault("claim_nudges", 0)
                     turn["claim_nudges"] += 1

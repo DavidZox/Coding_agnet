@@ -8,12 +8,16 @@
 2. 沒有執行卻宣稱做完了（claim_without_action）：這一回合一個工具都沒有執行，回覆卻說「已重新啟動／已建立／已刪除…」，
    多半是模型以為說了就等於做了（跟 coding worker「沒有改任何檔案就回報完成」同一類）。提醒一次：要做就填 action，
    只是說明就不要說已經做了。用否定、疑問、條件句的回覆（還沒、如果、要不要…嗎）不算。
+3. 依數據分析的報告回答時把事實寫成因果（analysis_reply_check）：這一回合執行了 analysis_run，回覆卻寫「L16 觸發…導致…」——
+   報告只有事實與先後順序（「前後 1 秒內」只是時間上的對照），誰造成誰要對照源碼另外分析。提醒一次改寫。報告的原文（Log）本來就有的
+   字、否定或條件的說法（不代表誰造成誰、如果…）不算。實測：Web 的 /analyze，報告只有事實，主對話的第一個回答卻寫了因果。
 回合的起點是使用者送出新訊息（set_current_task 會呼叫 begin_turn）。
 評測的對照組（benchmark_study 的穩健性情境）用環境變數 AGENT_ABLATE=turn_guard 把兩個把關都關掉；平常不要設。
 """
 import os
 import re
 
+from .config import ANALYSIS_ANSWER_NOTE, ANALYSIS_REPORT_HEAD
 from .protocol import action_text
 
 REPEAT_HINT_AT = 2
@@ -26,6 +30,11 @@ _CLAIM_RE = re.compile(
     r"(?:^|(?<=[，。；！!、：:「（(\n])|(?<=我)|(?<=我們))(已經?|剛剛?)(?:幫你|為你|替你|順利|成功)?(?:地)?"
     r"(執行|完成|重新啟動|重啟|啟動|停止|關閉|建立|新增|刪除|移除|修改|更新|切換|設定|安裝|寫入|儲存|送出|發布|部署|下載|上傳|複製|搬移|清除|派送|派工)")
 _HEDGE_RE = re.compile(r"(沒有|尚未|還沒|未能|無法|不能|失敗|如果|若是|假如|要不要|是否|可以幫|需要我|請問|嗎[？?]|\?|？)")
+# 依數據分析的報告回答時不能有的說法：把先後寫成誰造成誰（報告只有事實與時間上的對照）
+_CAUSAL_WORDS = ("導致", "造成", "引起", "引發", "觸發", "使得", "歸因", "根因")
+# 同一個子句裡在它前面有這些字＝否定或條件的說法（「時間上的先後不代表誰造成誰」「如果是…造成的」「是否…導致」），不算
+_CAUSAL_HEDGE = re.compile(r"(不代表|不表示|不等於|不能說|不能確定|無法判斷|無法確定|看不出|不是|並非|沒有|未|是否|有沒有|如果|若|假如|"
+                           r"要對照|需要對照|另外分析|源碼)")
 
 
 class TurnGuardMixin:
@@ -37,6 +46,8 @@ class TurnGuardMixin:
         self.stuck = None
         self.turn_tool_runs = 0
         self._claim_nudged = False
+        self._analysis_report = None
+        self._analysis_nudged = False
 
     def note_tool_result(self, parsed, output):
         """run_tool 執行完一個動作之後呼叫：計數、必要時在 output 後面附提醒或設 self.stuck。回傳（可能附了提醒的）output。"""
@@ -45,6 +56,8 @@ class TurnGuardMixin:
         if not hasattr(self, "_rep_errors"):
             self.begin_turn()
         self.turn_tool_runs += 1
+        if output.startswith(ANALYSIS_REPORT_HEAD):   # 這一回合的回覆要依這份報告：analysis_reply_check 核對（最後那行回答的說明不算報告的字）
+            self._analysis_report = "\n".join(ln for ln in output.splitlines() if not ln.startswith(ANALYSIS_ANSWER_NOTE))
         if "turn_guard" in os.environ.get("AGENT_ABLATE", ""):
             return output
         key = (action_text(parsed["action"]).strip(), output.strip()[:500])
@@ -91,3 +104,29 @@ class TurnGuardMixin:
         self._add_notice(f"⚠️ AI 的回覆說「{m.group(0)}」，但這一回合沒有執行任何工具：已提醒它確認（要做就實際執行，沒做就照實說）。")
         return ("[harness] 你在這一回合沒有執行任何工具（action 都是 null），但回覆說「" + m.group(0) + "」。系統沒有執行過任何動作，"
                 "使用者要求的事其實還沒有發生。如果要做，現在就在 action 填要執行的技能；如果只是說明或建議，請改口，不要說已經做了。")
+
+    def analysis_reply_check(self, parsed):
+        """這一回合執行了 analysis_run、最後的回覆把報告的事實寫成因果（導致、造成、觸發…）：回傳要接在對話後面的提醒（每回合最多一次），
+        否則 None。報告裡本來就有的字（Log 原文）、同一個子句前面有否定或條件的說法不算。"""
+        report = getattr(self, "_analysis_report", None)
+        if not report or getattr(self, "_analysis_nudged", False) or not parsed or parsed.get("action") or not parsed.get("valid", True):
+            return None
+        if "turn_guard" in os.environ.get("AGENT_ABLATE", ""):
+            return None
+        reply = parsed.get("reply") or ""
+        hits = []
+        for w in _CAUSAL_WORDS:
+            if w in report:
+                continue
+            for m in re.finditer(w, reply):
+                start = max(reply.rfind(p, 0, m.start()) for p in "，。；;,、\n！？!?") + 1
+                if not _CAUSAL_HEDGE.search(reply[start:m.start()]):
+                    hits.append(w)
+                    break
+        if not hits:
+            return None
+        self._analysis_nudged = True
+        self._add_notice(f"⚠️ AI 依數據分析的報告回答時寫了「{'、'.join(hits)}」（把先後寫成因果），報告只有事實：已請它改寫。")
+        return ("[harness] 你的回答寫了「" + "、".join(hits) + "」，把報告裡的事件寫成誰造成誰。數據分析的報告只有事實與先後順序"
+                "（「前後 1 秒內」「同時」只是時間上的對照），沒有判斷原因。請改寫：照報告說明發生了什麼、時間與先後順序，可以引用編號"
+                "（E#、L#）；不要用「導致、造成、引起、觸發」把先後寫成因果。使用者想知道原因時，說明原因要對照源碼另外分析。")

@@ -47,7 +47,7 @@ SLASH_COMMANDS = [
     {"cmd": "/objective show", "desc": "查看目前的 Objective", "group": "動作與查詢"},
     {"cmd": "/objective clear", "desc": "清除 Objective", "group": "動作與查詢"},
     {"cmd": "/clear", "desc": "清空對話記憶，重新開始（選取後需再按 Enter 才會送出）", "group": "動作與查詢"},
-    {"cmd": "/analyze ", "desc": "數據分析：直接交給 analysis_run（Log 去重＋Topic Metadata → Orchestrator 分派 → Workers 量測 → 事實報告），後接問題", "group": "數據分析", "args": True},
+    {"cmd": "/analyze ", "desc": "數據分析：直接交給 analysis_run（Log 去重＋程式量全部 Topic 的事實 → Orchestrator 分派 → Workers 說明 → 事實報告），後接問題", "group": "數據分析", "args": True},
     {"cmd": "/analyze", "desc": "數據分析（不帶問題）：整理目前數據發生了哪些狀態變化", "group": "數據分析"},
     {"cmd": "/analysis", "desc": "看最近一次數據分析的報告", "group": "數據分析"},
     {"cmd": "/analysis jobs", "desc": "列出最近的數據分析 job", "group": "數據分析"},
@@ -66,7 +66,7 @@ SLASH_COMMANDS = [
 
 MENU_TEXT = """可用指令：
 /menu                  顯示本說明
-/analyze [問題]         數據分析：直接交給 analysis_run（Log 去重＋Topic Metadata → Orchestrator 分派 → Workers 量測 → 事實報告）；
+/analyze [問題]         數據分析：直接交給 analysis_run（Log 去重＋程式量全部 Topic 的事實 → Orchestrator 分派 → Workers 說明 → 事實報告）；
                         /analysis_help 看全部數據分析指令
 /clear                  清空對話記憶，重新開始
 /model [模型]           查看四個角色的模型與 thinking；給模型名稱＝換主對話的模型（也可以按標題列的 🧠）
