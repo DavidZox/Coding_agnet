@@ -236,7 +236,7 @@ GUARD_DENIED_TAG = "[DENIED]"
 # =========================================================
 # ⏱️ 每次模型呼叫的耗時記錄（logs/perf.jsonl）：Ollama 回報的 prompt_eval_count 在 KV cache 命中時仍是完整值，
 # 看不出 cache 有沒有命中；prompt_eval_duration 才看得出來（命中時只算新的部分）。每筆記呼叫種類、token、毫秒、
-# 以及主對話呼叫前「system prompt 有沒有變」「中間跑了幾次獨立 session」，evals/perf_report.py 依此分組比較。
+# 以及主對話呼叫前「system prompt 有沒有變」「中間跑了幾次獨立 session」，evals/chat/perf_report.py 依此分組比較。
 # =========================================================
 PERF_LOG = "perf.jsonl"
 PERF_LOG_ENABLED = os.environ.get("AGENT_PERF_LOG", "1").strip().lower() not in ("0", "off", "false", "no")
@@ -272,7 +272,7 @@ OPS_WORKER_MAX_STEPS = 10                # 每一步的 worker 最多幾輪（�
 
 # =========================================================
 # 📊 數據解析的多 agent 協同（agent_core/analysis_job.py，analysis_run 技能）：只要有 .mcap 就能用的事實報告——
-# 量到什麼、什麼時候、Log 說了什麼，不做因果推論（原因要對照源碼另外分析；第九輪的源碼脈絡與因果推論留在 root_cause_reference/）。
+# 量到什麼、什麼時候、Log 說了什麼，不做因果推論（原因要對照源碼另外分析；第九輪的源碼脈絡與因果推論留在 doc/archive/root_cause_reference/）。
 # 1. 資料預備（程式）：rosout_parser 把 Log 去重成唯一訊號；mcap_analyzer --facts 量全部的 Topic、全部的 Key（發布方式、中斷、
 #    開始／停止發布、狀態跳轉、數值切換、尖峰、範圍），整理成有編號的事實（T#＝Topic、E#＝事件）——事實不靠模型挑，每次一樣；
 # 2. Orchestrator（一次模型呼叫）：看問題、去重後的 Log 與全部 Topic 的事實總表，挑出相關的 Log 訊號、把要說明的 Topic 指派給 worker；

@@ -33,7 +33,7 @@ rectangle NodeVision #DDEEF6 [
   * inference.py：analyze()＝唯一呼叫視覺模型的地方
     （VISION_MODEL、逾時與錯誤分類）
   * 另外兩個使用者：image_inspect 技能（對影像檔路徑）、
-    subagent/screen_gemma4_web.py（獨立的框選工具）
+    vision/sniper.py（獨立的框選工具）
 ]
 
 rectangle NodeAgent #D1E5F0 [
@@ -109,7 +109,7 @@ rectangle NodeStore #E1D5E7 [
     可以 result_recall；原圖不保存，保留上限另計（100 份）
   * trajectory.jsonl（操作軌跡）、summary_*.md／.json（滾動摘要＋
     使用者原話）、perf.jsonl（每次模型呼叫的耗時）
-  * Memory.md（長期記憶，整份常駐；記憶只寫這裡）
+  * prompts/Memory.md（長期記憶，整份常駐；記憶只寫這裡）
 ]
 
 NodeUser -down-> NodeAgent : 任務／slash

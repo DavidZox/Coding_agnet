@@ -12,7 +12,7 @@
    報告只有事實與先後順序（「前後 1 秒內」只是時間上的對照），誰造成誰要對照源碼另外分析。提醒一次改寫。報告的原文（Log）本來就有的
    字、否定或條件的說法（不代表誰造成誰、如果…）不算。實測：Web 的 /analyze，報告只有事實，主對話的第一個回答卻寫了因果。
 回合的起點是使用者送出新訊息（set_current_task 會呼叫 begin_turn）。
-評測的對照組（benchmark_study 的穩健性情境）用環境變數 AGENT_ABLATE=turn_guard 把兩個把關都關掉；平常不要設。
+評測的對照組（evals/chat/run.py --suite robust 的穩健性情境）用環境變數 AGENT_ABLATE=turn_guard 把兩個把關都關掉；平常不要設。
 """
 import os
 import re

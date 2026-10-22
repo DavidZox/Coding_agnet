@@ -125,6 +125,6 @@ legend bottom
   ・程式核對（只交回有問題的那幾則）：worker 的說明與 Synthesizer 的重點——編號、不寫原因與推測（同一張詞表）、用詞跟引用的事件一致、
     寫的時間對得上、太長；主對話依報告的回答不寫因果
   ・模型：Orchestrator 理解問題、挑 Log、挑要說明的 Topic、決定要不要補派；Worker 說明一個 Topic 的事實；Synthesizer 挑重點、寫成文字
-  原因要對照源碼另外分析（第九輪以前的做法在 root_cause_reference/）
+  原因要對照源碼另外分析（第九輪以前的做法在 doc/archive/root_cause_reference/）
 endlegend
 @enduml

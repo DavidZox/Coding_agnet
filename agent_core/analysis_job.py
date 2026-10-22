@@ -1,7 +1,7 @@
 """AnalysisMixin：數據解析的多 agent 協同——analysis_run 偽技能（同 ops_run、result_recall：要呼叫模型，在 harness 的 process 裡做）。
 
 只要有 .mcap 就能用的事實報告：量到什麼、什麼時候、Log 說了什麼；不做因果推論（原因要對照源碼另外分析——第九輪的源碼脈絡與因果推論
-留在 root_cause_reference/）。一次分析一整段數據，最長 ANALYSIS_MAX_SECONDS 秒；更長的數據先用 mcap_slicer 切出要看的時間段。
+留在 doc/archive/root_cause_reference/）。一次分析一整段數據，最長 ANALYSIS_MAX_SECONDS 秒；更長的數據先用 mcap_slicer 切出要看的時間段。
 
 事實由程式量，模型只「選」和「說明」：
 0. 資料預備（程式）：rosout_parser --json 把 Log 去重成唯一訊號（L#：層級、Node、次數、每一次的時間戳、印出 Log 的檔案:行 函式——
@@ -82,7 +82,7 @@ _FRAMEWORK_TOPICS = ("/parameter_events", "/clock", "/events/write_split")
 _TIMELINE_MAX = 60       # 交給 Synthesizer 的時間線最多幾列（超過時依重要性留；報告裡的時間線是完整的）
 _MAIN_TIMELINE_MAX = 15  # 回到主對話的時間線重點
 _FLAP_KEEP = (5, 2)      # 同一個 Topic 的變化事件太多（反覆切換）：時間線只列前 5 個與最後 2 個，次數在各 Topic 的結果
-_TIME_TOL = 0.35         # 說明裡寫的時間跟引用的事實差多少以內算同一個（同 evals/analysis_regression.py 的 TOL）
+_TIME_TOL = 0.35         # 說明裡寫的時間跟引用的事實差多少以內算同一個（同 evals/analysis/regression.py 的 TOL）
 _HIGHLIGHTS_HARD = 24    # 重點的則數上限跟著事實（_highlight_cap）；這個是防失控的硬上限
 _MOMENT_KINDS = ("start", "stop", "gap", "resume", "change", "first")   # 算「重要的時間點」的事件（一則訊息、尖峰不算）
 _EVENT_RANK = {"start": 1, "stop": 1, "gap": 1, "resume": 1, "change": 2, "first": 3, "spike": 3, "message": 6}

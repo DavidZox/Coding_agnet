@@ -3,7 +3,7 @@
 為什麼要記：Ollama 回報的 prompt_eval_count 在 KV cache 命中時仍是完整的 prompt 長度（已實測），看不出 cache
 有沒有命中；prompt_eval_duration 才看得出來——命中時只算新增的那一段，毫秒數會小很多。主對話的每一筆另外記
 「system prompt 跟上一次主對話呼叫比有沒有變」與「中間跑了幾次獨立 session」（同一個模型只有一個 slot 時，
-獨立 session 會把主對話的 cache 洗掉），evals/perf_report.py 依這兩個欄位分組比較。"""
+獨立 session 會把主對話的 cache 洗掉），evals/chat/perf_report.py 依這兩個欄位分組比較。"""
 import json
 import os
 import time

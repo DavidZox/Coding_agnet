@@ -10,7 +10,7 @@
    計畫沒有核准的狀態變更一律 [DENIED]。worker 回報完成後由程式跑 check；沒過就換一個 worker 帶著原因重試一次，還是沒過就停下來
    （後面的步驟不做），把每一步的結果交還主對話。
 
-設計依據（benchmark_study_3 的文獻整理）：小模型「先規劃再照表執行」常輸給邊做邊調整（ADaPT、InterCode），所以只在複雜的任務才用
+設計依據（~/Coding_agent_harness/benchmark_study_3 的文獻整理）：小模型「先規劃再照表執行」常輸給邊做邊調整（ADaPT、InterCode），所以只在複雜的任務才用
 （主對話依 AGENT.md 判斷），每一步留給 worker 自己探索的空間；驗證由程式集中做（MAST：驗證不足是多 agent 系統主要的失敗原因）；
 agent 之間只傳精簡的結果摘要（ReWOO）。
 """

@@ -1,7 +1,7 @@
 # 隨機情境錄製產生器（`evals/datagen/`）
 
 大量數據的穩定度測試用：隨機組合這台機器人在開發的六個套件的情境，產生跟 `ros2 bag record -a` 同格式的 MCAP，
-**評分標準由注入的事件自動產生**（不用人工標註），直接套用數據分析的回歸評分（`evals/analysis_regression.py`）。
+**評分標準由注入的事件自動產生**（不用人工標註），直接套用數據分析的回歸評分（`evals/analysis/regression.py`）。
 
 ## 怎麼用
 
@@ -12,7 +12,7 @@ PY=~/aiagent_venv_env/.venv/bin/python
 python3 evals/datagen/generate.py --set s2 --seed 2 --n 60                     # → test_data/recordings/gen/s2/（60 份＋cases.json）
 python3 evals/datagen/generate.py --set s3 --seed 3 --n 20 --require bridge    # 每一份都有 bridge（只測某個子系統時）
 python3 evals/datagen/check_facts.py test_data/recordings/gen/s2/cases.json    # 程式那一層：分析程式量到的事實 vs 評分標準（不呼叫模型）
-$PY evals/analysis_regression.py --run --runs 2 --model gemma4:26b --container cah_analysis_test \
+$PY evals/analysis/regression.py --run --runs 2 --model gemma4:26b --container cah_analysis_test \
     --cases-file test_data/recordings/gen/s2/cases.json --data-root /workspace/experiment_logs/gen/s2 \
     --out evals/results/analysis_gen_s2                                         # 有模型的回歸
 $PY test_data/tools/stability.py evals/results/analysis_gen_s2/runs.json      # 產物穩定性
@@ -95,7 +95,7 @@ ROS 2 Jazzy（`amr_base:latest`），`test_data/recordings` 掛載成 `/workspac
 
 有模型的回歸（2026-10-22 第十一輪最終版，gemma4:26b，`evals/results/analysis_r11f_gen_s*/`）：s1 ×2、s2 ×1、s3 ×2 的時間線、類別、用詞、
 時間有根據、重點涵蓋、沒有事件全部通過（s1：98/98、114/114、120/120、120/120、96/96、20/20）；程式產物與 Topic 的事件每份每次相同；一次約 8～13 秒。
-各版本的比較與還在的問題見 `doc/設計筆記與已知限制.md` 2.18〈六〉。
+各版本的比較與還在的問題見 `doc/設計筆記與已知限制.md` 2.15〈六〉。
 
 加 bridge 改變了子系統的抽法：同一個 seed 用現在的程式產生的數據跟 s1 不同（s1 的數據與 cases.json 仍是一致的一組）。
 

@@ -33,8 +33,8 @@ rectangle StateVision #DDEEF6 [
 
 rectangle State2 #F5F5F5 [
   **2. Prompt**
-  system prompt（只放不常變的）：AGENT.md → Context Mode 規則
-  → Memory.md（整份）→ 滾動摘要 → 使用者原話
+  system prompt（只放不常變的）：prompts/AGENT.md → Context Mode 規則
+  → prompts/Memory.md（整份）→ 滾動摘要 → 使用者原話
   → SKILLS.md → **工具使用檢索清單（最近 30 筆，含〔附圖分析〕）**
   動態區（接在最後一則訊息後、不寫進歷史）：
   Current Agent State → Objective → 核准的計畫 → 清單最新一筆

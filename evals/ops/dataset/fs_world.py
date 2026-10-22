@@ -177,7 +177,7 @@ def build(root, extra=None, urls=None):
         os.utime(p, (ts, ts))
     # 目錄的修改時間＝裡面最新的檔案或子目錄（跟真實的檔案系統一樣：最新的 log 資料夾排在 ls -t 的最前面）。
     # 2026-10-14 修正：以前一律設成同一個時間，list_dir --newest 對一層都是資料夾的 logs/ 會隨便挑一個（第一次評測後發現，
-    # 見 benchmark_study_3 的技術報告 5.1 節；fs_newest_log 兩個版本都重跑）
+    # 見 ~/Coding_agent_harness/benchmark_study_3 的技術報告 5.1 節；fs_newest_log 兩個版本都重跑）
     for dp, dns, fns in os.walk(root, topdown=False):
         times = [os.path.getmtime(os.path.join(dp, n)) for n in dns + fns]
         t = max(times) if times else BASE_TS - 60

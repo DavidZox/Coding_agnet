@@ -1,5 +1,5 @@
 {
- "_說明": "數據分析的回歸評分標準（只評事實：時間線該有的事件、摘要的用詞、沒有事件時的事實）。第九輪以前的根因評分（cause／character／upstream／slice）留在 root_cause_reference/evals/。",
+ "_說明": "數據分析的回歸評分標準（只評事實：時間線該有的事件、摘要的用詞、沒有事件時的事實）。第九輪以前的根因評分（cause／character／upstream／slice）留在 doc/archive/root_cause_reference/evals/。",
  "data_root": "/workspace/app/diagnostics_package/toolkit/experiment_logs",
  "cases": [
   {"id": "steady", "data": "exp_20261015_005616", "seconds": 30, "title": "穩定狀態（沒有事件）", "no_event": {"forbid": ["PROTECTIVE_STOP", "保護停止", "中斷", "停止發布"]}},

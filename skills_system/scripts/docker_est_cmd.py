@@ -1,6 +1,6 @@
 """docker_est：用映像檔建立並在背景啟動一個容器（docker run -d），成為目前的目標容器。
 
-v2（2026-10，benchmark_study_3）：可以指定容器名稱（--name）與要執行的指令（--cmd），映像檔可以帶 tag（ubuntu:24.04）。
+v2（2026-10，~/Coding_agent_harness/benchmark_study_3 的維運評測）：可以指定容器名稱（--name）與要執行的指令（--cmd），映像檔可以帶 tag（ubuntu:24.04）。
 舊版容器名稱固定等於映像檔名稱、也不能帶 tag：實測使用者要「用 ubuntu:24.04 建一個叫 scratch_box 的容器」時，模型只能建出叫
 ubuntu 的容器，再自己用 host_runcmd 補建、留下多餘的容器。參數不清楚（例如 tag 被拆成另一個參數）時先回錯誤、不建任何東西。
 """

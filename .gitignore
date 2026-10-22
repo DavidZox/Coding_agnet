@@ -8,7 +8,7 @@ logs/
 # make_skill 的技能草稿（核准後才搬進 tools/ 與 scripts/，草稿是暫時檔）
 skills_system/drafts/
 
-# 評測結果（evals/run_evals.py 產生，每次一個時間戳資料夾）
+# 評測結果（evals/ 底下各組評測產生，每次一個時間戳資料夾）
 evals/results/
 
 # 實機測試資料（錄製檔、分析 job 的複本、對話紀錄，約 13 MB，見 test_data/README.md）：只留在本機
