@@ -1,4 +1,0 @@
-Creative Commons Attribution {{ version }}
-Copyright (c) {{ year }} {{ organization }}
-
-{{ project }} is licensed under the Creative Commons Attribution {{ version }} license.

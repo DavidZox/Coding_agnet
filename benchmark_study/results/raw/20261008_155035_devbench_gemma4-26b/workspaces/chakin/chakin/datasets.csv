@@ -1,7 +1,0 @@
-Name,Dimension,Corpus,VocabularySize,Method,Language,Paper,Author,URL
-test(en),1,Test,1,Test,English,Test,Test,https://www.google.com/robots.txt
-fastText(en),300,Wikipedia,2M,fastText,English,Enriching Word Vectors with Subword Information,Facebook,https://dl.fbaipublicfiles.com/fasttext/vectors-crawl/cc.en.300.vec.gz
-fastText(ar),300,Wikipedia,610K,fastText,Arabic,Enriching Word Vectors with Subword Information,Facebook,https://dl.fbaipublicfiles.com/fasttext/vectors-crawl/cc.ar.300.vec.gz
-fastText(de),300,Wikipedia,2.3M,fastText,German,Enriching Word Vectors with Subword Information,Facebook,https://dl.fbaipublicfiles.com/fasttext/vectors-crawl/cc.de.300.vec.gz
-fastText(fr),300,Wikipedia,1.5M,fastText,French,Enriching Word Vectors with Subword Information,Facebook,https://dl.fbaipublicfiles.com/fasttext/vectors-crawl/cc.fr.300.vec.gz
-fastText(es),300,Wikipedia,1.8M,fastText,Spanish,Enriching Word Vectors with Subword Information,Facebook,https://dl.fbaipublicfiles.com/fasttext/vectors-crawl/cc.es.300.vec.gz

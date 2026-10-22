@@ -1,2 +1,0 @@
-{{ project }}
-Copyright (C) {{ year }} {{ organization }}

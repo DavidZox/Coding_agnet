@@ -1,9 +1,0 @@
-AD	AND	020	AN	Andorra	Andorra la Vella	468	84000	EU	.ad	EUR	Euro	376	AD###	^(?:AD)*(\d{3})$	ca	3041565	ES,FR
-BR	BRA	076	BR	Brazil	Brasília	8547400	22125972	SA	.br	BRL	Real	55	BR###	^(?:BR)*(\d{3})$	pt	3483000	AR,UY,PY,CO
-DE	DEU	276	DE	Germany	Berlin	83240520	357022	EU	.de	EUR	Euro	49	DE###	^(?:DE)*(\d{3})$	de	452111
-IE	IRL	978	IE	Ireland	Dublin	5023134	71235	EU	.ie	EUR	Euro	353	IE###	^(?:IE)*(\d{3})$	en	159430
-IT	ITA	380	IT	Italy	Rome	59110000	300344	EU	.it	EUR	Euro	39	IT###	^(?:IT)*(\d{3})$	it	602545
-JP	JPN	392	JP	Japan	Tokyo	125800000	377041	AS	.jp	JPY	Yen	81	JP###	^(?:JP)*(\d{3})$	ja	524333
-PE	PER	604	PE	Peru	Lima	32971800	185711	SA	.pe	PEN	Sol	51	PE###	^(?:PE)*(\d{3})$	es	343571
-RU	RUS	643	RU	Russia	Moscow	144100000	17098235	EU	.ru	RUB	Ruble	7	RU###	^(?:RU)*(\d{3})$	ru	241337
-US	USA	840	US	United States	Washington	331000000	9833517	NA	.us	USD	Dollar	1	US###	^(?:US)*(\d{3})$	en	132353

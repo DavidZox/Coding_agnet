@@ -1,7 +1,0 @@
-# 沙盒用到的 Docker 映像（主機上的 DinD 映像，與 DinD 裡面的映像）
-docker:27-dind sha256:aa3df78ecf320f5fafdce71c659f1629e96e9de0968305fe1de670e0ca9176ce docker@sha256:aa3df78ecf320f5fafdce71c659f1629e96e9de0968305fe1de670e0ca9176ce
-## cah_ops_dind 裡面
-cahtest/rmf_sim:jazzy 7bce3e003eb0 <none> 889MB
-ros:jazzy-ros-base 04b9d24bad69 sha256:066420e07f60aa18262f2479981def87ebcfcec42eefb0c0c57c4a46098348ca 888MB
-ubuntu:latest 6e92c4fd8dfd sha256:f144425ff09be612d6d9ad965196e9cdc23dae1f42110a8a11a3e9a8198759f7 101MB
-ubuntu:24.04 69f919497cad sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55 78.2MB

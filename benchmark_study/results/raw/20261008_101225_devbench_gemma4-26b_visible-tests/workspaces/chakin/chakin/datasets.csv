@@ -1,5 +1,0 @@
-Name,Dimension,Corpus,VocabularySize,Method,Language,Paper,Author,URL
-fastText(ar),300,Wikipedia,610K,fastText,Arabic,Enriching Word Vectors with Subword Information,Facebook,https://dl.fbaipublicfiles.com/fasttext/vectors-crawl/cc.ar.300.vec.gz
-fastText(de),300,Wikipedia,2.3M,fastText,German,Enriching Word Vectors with Subword Information,Facebook,https://dl.fbaipublicfiles.com/fasttext/vectors-crawl/cc.de.300.vec.gz
-fastText(en),300,Wikipedia,2.0M,fastText,English,Enriching Word Vectors with Subword Information,Facebook,https://dl.fbaipublicfiles.com/fasttext/vectors-crawl/cc.en.300.vec.gz
-word2vec.Wiki-NEologd.50d,50,Wiki-NEologd,N/A,word2vec,Japanese,N/A,N/A,https://example.com/word2vec.Wiki-NEologd.50d
