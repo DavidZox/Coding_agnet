@@ -261,7 +261,11 @@ def main():
             assert raw["tags"] == ["開始或停止發布"] and "只在 +9.24s～+34.24s 連續發布（一段完整的發布，中間沒有中斷）" in raw["publish"], raw
             assert [f["events"][e]["kind"] for e in raw["events"]] == ["start", "stop"]
             cmd = rows["/cmd_vel"]
-            assert cmd["tags"] == ["數值切換"] and cmd["publish"].startswith("整段持續發布") and cmd["end"] == ["linear.x＝0.0（跟開頭一樣）"], cmd
+            assert cmd["tags"] == ["數值切換"] and cmd["publish"].startswith("整段持續發布") and cmd["end"] == ["linear.x＝0.0（中間變過，最後回到開頭的值）"], cmd
+            agg = rows["/diagnostics_agg"]
+            assert any("（+16.50s 才出現，那時是 1）" in x for x in agg["end"]) and agg["end"][0].endswith("那時是 1）"), \
+                "中途才出現的項目：寫出現的時間，不寫成錄製開始時的值"
+            assert agg["values"]["status.level[/Actuators/Drivetrain & Base Control/Motors/act_motor_left]"]["late"], agg["values"]
             assert [r["topic"] for r in f["topics"]][:3] == ["/system/safety_gate_status", "/cmd_vel", "/cmd_vel_raw"], "依第一個事件的時間編號"
             assert [int(e[1:]) for e in sorted(f["events"], key=lambda e: f["events"][e]["t"])] == sorted(int(e[1:]) for e in f["events"])
             e8 = f["events"]["E8"]
@@ -297,18 +301,19 @@ def main():
             bad = {"understanding": "x", "related_signals": [{"id": "L99", "why": "不存在"}, {"id": "L18", "why": "ok"}],
                    "assignments": [{"topic": "/nonexistent", "subtask": "a"}, {"topic": "/rosout", "subtask": "b"},
                                    {"topic": "cmd_vel", "subtask": "c"}, {"topic": "/cmd_vel", "subtask": "d"},
-                                   {"topic": "/parameter_events", "subtask": "e"}]}
-            fake, calls = setup(plans=[bad, dict(GOOD_PLAN, assignments=GOOD_PLAN["assignments"] + [{"topic": "T3", "subtask": "看指令"}])])
+                                   {"topic": "/parameter_events", "subtask": "e"}, {"topic": "T3 /cmd_vel", "subtask": "f"}]}
+            fake, calls = setup(plans=[bad, dict(GOOD_PLAN, assignments=GOOD_PLAN["assignments"] + [{"topic": "T3 /cmd_vel_raw", "subtask": "看指令"}])])
             out = agent.analysis_run(f'--data {DATA} "馬達過熱的前後發生了什麼"')
             assert out.startswith(ANALYSIS_REPORT_HEAD), out[:300]
             assert len(fake.seen["plan"]) == 2, "計畫有問題：交回 Orchestrator 修一次"
             fix_prompt = fake.seen["plan"][1][1]["content"]
-            for issue in ("L99 不存在", "/nonexistent」不在事實裡", "/rosout 不能指派", "/cmd_vel 重複指派", "/parameter_events」不在事實裡"):
+            for issue in ("L99 不存在", "/nonexistent」不在事實裡", "/rosout 不能指派", "/cmd_vel 重複指派", "/parameter_events」不在事實裡",
+                          "T3 是 /cmd_vel_raw，寫的名稱卻是 /cmd_vel"):
                 assert issue in fix_prompt, (issue, fix_prompt[-800:])
             plan_prompt = fake.seen["plan"][0][1]["content"]
             assert "【全部 Topic 的事實（程式量測整段數據的全部 Key；T# 是 Topic 的編號）】" in plan_prompt and "- T1 /system/safety_gate_status｜" in plan_prompt
             d, job = last_job()
-            assert [a["topic"] for a in job["plan"]["assignments"]] == ["/system/safety_gate_status", "/cmd_vel_raw"], "可以寫 T#"
+            assert [a["topic"] for a in job["plan"]["assignments"]] == ["/system/safety_gate_status", "/cmd_vel_raw"], "可以寫 T# 加名稱"
             assert any(c["script"] == "mcap_analyzer_cmd.py" and "--facts" in c["args"] for c in calls), "事實由程式量全部的 Topic"
             assert not any(c["script"] in ("mcap_feature_measure_cmd.py", "mcap_slicer_cmd.py") for c in calls), "worker 不再自己量、不切片"
             assert os.path.exists(os.path.join(d, "topic_facts.json")) and "facts" in job and "scan" not in job
@@ -459,7 +464,7 @@ def main():
             long_one = {"refs": ["L18", "E8", "E9"], "text": "；".join(["L18 WARN system_health_monitor：MON_FAULT_RAISED"] * 7)}
             seven = {"highlights": [{"refs": ["E3"], "text": "/cmd_vel_raw 開始發布"}, long_one, long_one,
                                     {"refs": ["E14"], "text": "安全閘回到 NORMAL"}, {"refs": ["E14"], "text": "安全閘回到 NORMAL"},
-                                    {"refs": ["E16"], "text": "/cmd_vel_raw 停止發布"}, {"refs": ["T5"], "text": "整段沒有變化"}]}
+                                    {"refs": ["E16"], "text": "/cmd_vel_raw 停止發布"}, {"refs": ["T5"], "text": "/diagnostics_agg 中間變過，最後回到開頭的值"}]}
             fixed = {"highlights": [{"refs": ["L18", "E8", "E9"], "text": "同一時間 1 則 WARN Log；mode 變成 LIMITED、/cmd_vel 的 linear.x 由 0.2 變成 0.1"}]}
             fake, calls = setup(plans=[GOOD_PLAN], summaries=[seven, fixed])
             agent.analysis_run(f'--data {DATA} "看一下"')
@@ -469,6 +474,22 @@ def main():
             assert not job["report"]["dropped"] and {"E8", "E9", "L18"} <= {x.split()[0] for x in hl[1]["facts"]} and "同一時間 1 則 WARN Log" in hl[1]["text"], hl[1]
             ask = fake.seen["summary"][1][1]["content"].split("【上一版有問題的那幾則")[1]
             assert ask.count("MON_FAULT_RAISED；L18") >= 1 and "/cmd_vel_raw 開始發布" not in ask, ask[:600]
+            # 句子的意思跟事實對不上（實測 lidar：「/diagnostics_agg 整段沒有變化」、方向寫反）→ 只交回那幾則；寫對的（回到初始）照留
+            wrong = {"highlights": [{"refs": ["E3"], "text": "/cmd_vel_raw 開始發布"},
+                                    {"refs": ["L18", "E8", "E9"], "text": "同一時間 1 則 WARN Log；mode 從 LIMITED 變成 NORMAL"},
+                                    {"refs": ["E13", "E14"], "text": "/system/safety_command 的狀態回到初始狀態，安全閘回到 NORMAL"},
+                                    {"refs": ["E16"], "text": "/cmd_vel_raw 停止發布"},
+                                    {"refs": ["T5"], "text": "/diagnostics_agg 整段沒有變化"}]}
+            right = {"highlights": [{"refs": ["L18", "E8", "E9"], "text": "同一時間 1 則 WARN Log；mode 從 NORMAL 變成 LIMITED"},
+                                    {"refs": ["T5"], "text": "/diagnostics_agg 中間變過，最後回到開頭的值"}]}
+            fake, calls = setup(plans=[GOOD_PLAN], summaries=[wrong, right])
+            agent.analysis_run(f'--data {DATA} "看一下"')
+            d, job = last_job()
+            ask = fake.seen["summary"][1][1]["content"].split("【上一版有問題的那幾則")[1]
+            assert "寫「mode 從 LIMITED 變成 NORMAL」，但引用的事件裡 mode 是 NORMAL → LIMITED" in ask, ask[:1200]
+            assert "寫「/diagnostics_agg 沒有變化」，但它有 2 個事件（E5、E11）" in ask and "safety_command 的狀態回到初始" not in ask, ask[:1200]
+            assert [h["refs"] for h in job["report"]["highlights"]] == [["E3"], ["L18", "E8", "E9"], ["E13", "E14"], ["E16"], ["T5"]], \
+                [h["refs"] for h in job["report"]["highlights"]]
             # 實測（第十一輪 cmdvel_holdout）：修正版沒照指示，把通過的那幾則拆開重寫一遍——引用的編號全部已經在通過的裡面＝重複，不收
             first = {"highlights": [{"refs": ["E3", "E16"], "text": "/cmd_vel_raw 開始發布，之後停止發布"},
                                     {"refs": ["L18", "E8", "E9"], "text": "同一時間 1 則 WARN Log；安全閘進入 LIMITED，/cmd_vel 降速"},
@@ -517,13 +538,15 @@ def main():
             follow = {"followups": [{"signal": "L18（+16.50s）", "topic": "cmd_vel", "subtask": "說明降速"},
                                     {"signal": "L99", "topic": "/diagnostics_agg", "subtask": "x"},
                                     {"signal": "L18", "topic": "/system/safety_gate_status", "subtask": "y"},
-                                    {"signal": "L19", "topic": "T7", "subtask": "z"}]}
+                                    {"signal": "L19", "topic": "T7 /cmd_vel_raw", "subtask": "w"},
+                                    {"signal": "L19", "topic": "T7 /system/safety_command", "subtask": "z"}]}
             fake, calls = setup(plans=[GOOD_PLAN], checks=[follow])
             agent.analysis_run(f'--data {DATA} "馬達過熱的前後發生了什麼"')
             d, job = last_job()
             c = job["checks"][0]
             assert c["asked"] and [a["topic"] for a in c["followups"]] == ["/cmd_vel", "/system/safety_command"], c
             assert any("「L99」不是它前後的那幾則" in x for x in c["issues"]) and any("/system/safety_gate_status：不在" in x for x in c["issues"]), c["issues"]
+            assert any("T7 是 /system/safety_command，寫的名稱卻是 /cmd_vel_raw" in x for x in c["issues"]), "編號與名稱對不上：不猜"
             prompt = fake.seen["check"][0][1]["content"]
             cand = prompt.split("還沒有說明的 Topic（程式量的事實）】")[1].split("【要決定的】")[0]
             assert "- T2 /cmd_vel｜前後的 Log：L18 WARN" in cand and "/system/safety_gate_status" not in cand and "/cmd_vel_raw" not in cand, cand
@@ -551,6 +574,73 @@ def main():
             d, job = last_job()
             assert not fake.seen["check"] and "checks" not in job and len(job["workers"]) == 1
 
+        # ------------------------------------------------------------ 句子的意思（agent_core/claims.py）
+        def t_claims():
+            from agent_core.analysis_job import build_facts
+            from agent_core.claims import problems
+            facts = build_facts({"index": IDX, "scan": SCAN, "signals": LOGS["signals"], "plan": {"related": []}})
+            ok = [("mode 從 NORMAL 變成 LIMITED", ["E8"]), ("安全閘的mode從NORMAL變成LIMITED（限速）", ["E8"]),
+                  ("linear.x：0.2 → 0.1", ["E9"]), ("/cmd_vel 的 linear.x 由 0.2 降為 0.1", ["E9"]),
+                  ("status.message 從 Motor overheat 變成 OK，error_code 為 0x03402901", ["E10"]),
+                  ("到數據結束時 mode 是 NORMAL，primary_reaction 為 NONE", ["T1", "T7"]),
+                  ("/system/safety_command 的狀態與數值回到初始狀態", ["E13"]), ("/diagnostics_agg 回到初始狀態", ["E11"]),
+                  ("安全閘回到 NORMAL", ["E14"]), ("其餘項目沒有變化", ["T7"]), ("mode 是否回到初始狀態", ["E8"]),
+                  ("/cmd_vel_raw 開始發布", ["E3"]), ("這個 Topic 從 +9.14s 開始發布", ["T3"]),
+                  # 第十二輪 a 實測的誤擋（修正後要放行）：照訊息定義寫常數名稱（OK=0、WARN=1）、整句的「其餘」、沒有變化的群組、
+                  # 錄製中途才開始發布的 Topic 沒有初始值、「相關數值」只看那一刻變過的、「或」是列舉
+                  ("level 從 OK 變成 WARN，hardware_id 變成 motor_left", ["E6"]), ("level 回到 OK", ["E12"]),
+                  ("linear.x 為 0.2，其餘項目皆為 0.0，且沒有變化", ["T2"]), ("其中 status.hardware_id 沒有變化", ["T5"]),
+                  ("/diagnostics 中間變過，最後回到開頭的值", ["T4"]), ("mode 為 NORMAL 或 LIMITED", ["E8"]),
+                  ("/system/safety_command 的相關數值回到初始值", ["E13"]),
+                  # 第十二輪 c 實測：句子裡寫的 T# 是主詞、接著說的子句沿用主詞、有自己的中文主詞的子句不沿用、Topic 的第一則訊息算「變成」
+                  ("/cmd_vel 降速；T2 中間變過，最後回到開頭的值", ["E9"]), ("/cmd_vel 的 angular.z 為 0.0，沒有變化", ["T2"]),
+                  ("/system/safety_gate_status 的 mode 變成 LIMITED，各項診斷層級回到初始值", ["E8", "E5"]),
+                  ("/cmd_vel_raw 開始發布，linear.x 變成 0.2", ["E3"]),
+                  # 第十二輪 d 實測：否定的「沒有回到初始」、寫明的例外（「但 X 仍是 V」）、一組 Key 的共同開頭（「winning 項目」）
+                  ("/system/safety_command 的狀態沒有回到初始狀態", ["E7"]),
+                  ("/system/safety_gate_status 回到初始狀態，但 stop_reasons 仍是 []", ["E14"]),
+                  ("/system/safety_gate_status 回到初始狀態。但仍是 []。", ["E14"]),
+                  ("/system/safety_gate_status 的 latest 項目回到初始值", ["E14"]),
+                  # 子句中間的「但」、只說其中幾項（照抄事實的「回到開頭的值 N 項」）、停止發布之前的值
+                  ("/system/safety_gate_status 回到初始值（mode、latest_reaction）但 stop_reasons 仍是 []", ["E14"]),
+                  ("/system/safety_gate_status 變過又回到開頭的值 2 項", ["E14"]), ("/cmd_vel_raw 在停止發布前沒有變化", ["T3"]),
+                  # 引用的幾次變化合起來（0 → 0.2 → 0.1）、「到最後」只管它後面的說法、並列的主詞（有一個對得上就不擋）
+                  ("linear.x 從 0.0 變成 0.1", ["E2", "E9"]), ("linear.x 降為 0.1，此時 linear.x 為 0.1，到最後 linear.x 為 0.0", ["E9"]),
+                  ("/diagnostics_toplevel_state 與 /diagnostics 的 level 變為 1", ["E6", "E10"]),
+                  # 「回到初始值或變更」（列舉）、句子自己寫出的發布事件不算、「為 X」之後列的才是「沒有變化」的主詞
+                  ("/system/safety_command 回到初始值或變更", ["E7"]), ("/cmd_vel_raw 在發布期間沒有變化，最後停止發布", ["T3"]),
+                  ("mode 為 NORMAL、linear.y 整段沒有變化", ["T1", "T2"])]
+            for text, refs in ok:
+                assert problems(text, refs, facts) == [], (text, problems(text, refs, facts))
+            bad = [("mode 從 LIMITED 變成 NORMAL", ["E8"], "引用的事件裡 mode 是 NORMAL → LIMITED"),
+                   ("linear.x：0.1 → 0.2", ["E9"], "linear.x 是 0.2 → 0.1"),
+                   ("primary_reaction 變為 HARD_STOP", ["E7"], "引用的事件裡 primary_reaction 是 NONE → LIMIT_SPEED"),
+                   ("到數據結束時 mode 仍是 LIMITED", ["T1"], "到數據結束時 mode＝NORMAL"),
+                   ("/system/safety_command 的狀態回到初始狀態", ["E7"], "+16.50s 之後 primary_reaction＝LIMIT_SPEED（開頭 NONE）"),
+                   ("/diagnostics_agg 整段沒有變化", ["T5"], "它有 2 個事件（E5、E11）"),
+                   ("mode 之後沒有再改變", ["E8"], "mode 在 +22.61s 從 LIMITED 變成 NORMAL"),
+                   ("level 從 OK 變成 ERROR", ["E6"], "引用的事件裡 level 是 0 → 1"),
+                   ("到數據結束時 mode 回到 LIMITED", ["T1"], "到數據結束時 mode＝NORMAL"),
+                   ("/cmd_vel_raw 開始發布；T1 整段沒有變化", ["E3"], "它有 4 個事件"),
+                   ("/system/safety_gate_status 回到初始狀態，但 mode 仍是 NORMAL", ["E14"], "stop_reasons＝[]（開頭 [NO_CMD_VEL_RAW]）"),
+                   ("/system/safety_gate_status 的 stop 項目回到初始值", ["E14"], "stop_reasons＝[]"),
+                   ("/system/safety_command 回到初始狀態，但 active_error_tasks 沒有回到初始", ["E7"], "primary_reaction＝LIMIT_SPEED"),
+                   ("/system/safety_gate_status 回到初始值（mode、stop_reasons）但 latest_reaction 仍是 NONE", ["E14"], "stop_reasons＝[]"),
+                   ("/cmd_vel 在停止發布前沒有變化", ["T2"], "它有 4 個事件"),
+                   ("linear.x 從 0.0 變成 0.3", ["E2", "E9"], "引用的事件裡 linear.x 是 0 → 0.2"),
+                   ("此時 linear.x 為 0.3，到最後 linear.x 為 0.0", ["E9"], "引用的那一刻 linear.x 是 0.2／0.1"),
+                   ("/diagnostics_toplevel_state 與 /diagnostics 的 level 變為 2", ["E6", "E10"], "status.level[act_motor_left] 是 1 → 0"),
+                   ("/cmd_vel_raw 整段沒有變化", ["T3"], "它有 2 個事件（E3、E16）"),
+                   ("mode 為 NORMAL、linear.x 整段沒有變化", ["T1", "T2"], "linear.x 在 +9.17s 從 0 變成 0.2")]
+            for text, refs, want in bad:
+                got = problems(text, refs, facts)
+                assert got and want in got[0], (text, got)
+            assert problems("mode 從 LIMITED 變成 NORMAL", ["E8"], {"topics": [], "events": {}}) == [], "第十一輪以前的 job（沒有 values）不核對"
+            # 第十二輪 a 的 job 沒有 fields：接著說、自己寫了 Key 的子句，Key 用自己的（實測 overheat 把它當成整個 Topic 沒有變化）
+            old = dict(facts, topics=[{k: v for k, v in r.items() if k != "fields"} for r in facts["topics"]])
+            text = "這個 Topic 中間變過，最後回到開頭的值，且 active_error_tasks 與 active_error_codes 沒有變化"
+            assert problems(text, ["T7"], old) == [], problems(text, ["T7"], old)
+
         # ------------------------------------------------------------ 主對話
         def t_main_reply_check():
             agent.begin_turn()
@@ -563,6 +653,18 @@ def main():
             assert nudge and "「導致」" in nudge and "原因要對照源碼另外分析" in nudge, nudge
             assert agent.analysis_reply_check({"reply": "再一次導致", "action": None}) is None, "每回合最多提醒一次"
             agent.pop_notices()
+            # 回答寫的變化、值跟這份報告的事實對不上（實測 lidar：「status.level 從 0 變為 2（E6）」）：事實從 job 讀
+            fake, calls = setup(plans=[GOOD_PLAN])
+            out = agent.analysis_run(f'--data {DATA} "看一下"')
+            agent.begin_turn()
+            agent.note_tool_result({"action": {"command": "scripts/analysis_run_cmd.py", "args": ""}}, out)
+            ok = ("- **+16.50s**：`mode` 從 `NORMAL` 變成 `LIMITED`（E8），`/cmd_vel` 的 linear.x 由 0.2 降為 0.1（E9）\n"
+                  "- 到數據結束時 mode 是 NORMAL（T1）；/system/safety_command 在 +22.60s 回到初始狀態（E13）")
+            assert agent.analysis_reply_check({"reply": ok, "action": None}) is None, "寫對的不提醒"
+            bad = "- `/cmd_vel` 的 `linear.x` 從 0.1 變成 0.2（E9）\n- 到數據結束時 mode 仍是 LIMITED（T1）"
+            nudge = agent.analysis_reply_check({"reply": bad, "action": None})
+            assert nudge and "跟報告的事實對不上" in nudge and "引用的事件裡 linear.x 是 0.2 → 0.1" in nudge and "到數據結束時 mode＝NORMAL" in nudge, nudge
+            assert "「導致」" not in nudge and any("跟報告的事實對不上" in x for x in agent.pop_notices())
 
         def t_dispatch_and_state():
             fake, calls = setup(plans=[GOOD_PLAN])
@@ -713,7 +815,8 @@ def main():
                          ("Worker：每一則說明的核對（編號、原因、時間、中斷、太長）交回修一次；修不好的不列；時間由程式補", t_worker_notes),
                          ("Synthesizer：每一則重點的核對交回修一次；時間依編號補上、依時間排；沒有可用的重點時程式列出", t_summary_highlights),
                          ("Orchestrator 檢查：相關的 Log 前後有變化、還沒有說明的才問；補派的核對；第 2 輪不再問；--rounds 1 不檢查", t_check_followup),
-                         ("主對話：依報告回答卻寫成因果 → 提醒一次；否定、條件、Log 原文不算", t_main_reply_check),
+                         ("句子的意思：變化、某一刻與到最後的值、沒有變化、回到初始（中途才出現的不算）跟事實核對；中文主詞、部分、疑問不核對", t_claims),
+                         ("主對話：依報告回答卻寫成因果、或寫錯事實 → 提醒一次；否定、條件、Log 原文不算", t_main_reply_check),
                          ("dispatch：analysis_run 偽技能存檔與軌跡、[ANALYSIS_DATA] 同步、省略 --data、腳本拿得到環境變數", t_dispatch_and_state),
                          ("Web：/analyze 的回合（進度、報告進主對話、寫成因果時改寫）、面板 state 與設定、拿掉的指令、分析模式", t_web),
                          ("限制與設定：一次最多 3 分鐘（以整秒算）、拿掉的選項、設定檔只存改過的值", t_limits_and_settings),

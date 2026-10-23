@@ -1375,7 +1375,7 @@ def numeric_features(points):
     constant = std <= 1e-9 * max(1.0, abs(mean))
     out = {"kind": "numeric", "samples": n, "min": arr[i_min], "min_t_ns": ts[i_min], "max": arr[i_max], "max_t_ns": ts[i_max],
            "mean": mean, "variance": var, "std": std, "slope_per_sec": slope, "first": arr[0], "last": arr[-1], "constant": constant,
-           "spike_count": 0, "spikes": [], "max_jump": None}
+           "first_t_ns": ts[0], "spike_count": 0, "spikes": [], "max_jump": None}
     if constant:
         return out
     levels = len(set(arr))
@@ -1427,7 +1427,7 @@ def state_features(points, window_end_ns, initial=None, window_start_ns=None):
     share = sorted(((_state_str(k), round(v / total, 3)) for k, v in dwell.items()), key=lambda x: -x[1])
     out = {"kind": "state", "samples": len(vals) - (carried is not None), "first": _state_str(vals[0]),
            "last": _state_str(vals[-1]), "distinct": len(dwell), "transition_count": len(transitions),
-           "transitions": transitions, "time_share": share[:6]}
+           "transitions": transitions, "time_share": share[:6], "first_t_ns": ts[0]}
     if carried is not None:
         out["carried_from_ns"] = carried
         out["carried_age_sec"] = round((window_start_ns - carried) / 1e9, 3)
@@ -1623,7 +1623,8 @@ def feature_lines(label, f, base_ns, indent="     "):
 # 容器端：全部 Topic 的事實（一次讀完整份數據，程式量測，快取成 topic_facts.json）
 # =====================================================================================================================
 SCAN_NAME = "topic_facts"
-SCAN_VERSION = 3                # 量測或輸出的規則改了就加一（舊的快取自動重建）；2：尖峰要回到原來的水準；3：尖峰要夠陡
+SCAN_VERSION = 4                # 量測或輸出的規則改了就加一（舊的快取自動重建）；2：尖峰要回到原來的水準；3：尖峰要夠陡；
+                                # 4：每個項目第一次出現的時間 first_t（核對「回到初始」用：中途才出現的項目沒有錄製開始時的值）
 SCAN_CATEGORIES = ("numeric", "vector", "state", "kv", "array")   # 矩陣（共變異數）不量：多半是常數或濾波器內部的值
 LISTED_SPIKES = 10
 
@@ -1652,6 +1653,8 @@ def fact_item(name, f):
     """一個項目的特徵 → 事實（時間是 epoch 秒；跳轉、切換只留頭尾，count 是總數）。"""
     kind = f["kind"]
     it = {"name": name, "kind": kind}
+    if f.get("first_t_ns") is not None:
+        it["first_t"] = sec(f["first_t_ns"])
     f = trim_changes(f)
     if kind == "state":
         it.update(first=f["first"], last=f["last"], count=f["transition_count"], share=f["time_share"],

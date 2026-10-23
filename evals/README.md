@@ -6,7 +6,7 @@
 | 組 | 不用模型 | 真模型 | 測什麼 |
 |---|---|---|---|
 | `chat/` 主對話 | `selftest.py` | `run.py`（情境在 `scenarios.py`，`worker.py` 跑一個情境）、`perf_report.py`（KV cache 分析） | 選技能、兩階段揭露、大量回傳與回存檔查、執行前確認、記憶、程式把關、對數據技能的路由；兩種上下文模式比較 |
-| `analysis/` 數據解析 | `selftest.py`（數據技能用錄下的真實輸出 `fixtures/`） | `regression.py`（評分標準 `regression_cases.json`）、`tools_live.py`（在真的容器裡跑數據技能，不需要 Ollama） | 事實的整理、計畫的檢查、說明與重點的核對、報告；回歸評分只評事實 |
+| `analysis/` 數據解析 | `selftest.py`（數據技能用錄下的真實輸出 `fixtures/`） | `regression.py`（評分標準 `regression_cases.json`）、`tools_live.py`（在真的容器裡跑數據技能，不需要 Ollama）、`ablation.py`（三個版本的比較） | 事實的整理、計畫的檢查、說明與重點的核對、報告；回歸評分只評事實 |
 | `datagen/` 隨機情境的錄製產生器 | `check_facts.py`（只驗程式那一層，需要容器） | 產生的錄製交給 `analysis/regression.py` | 六個開發中套件的模擬，評分標準由注入的事件自動產生（見 [`datagen/README.md`](datagen/README.md)） |
 | `ops/` 多步驟維運 | `selftest.py` | `run.py`（情境在 `dataset/`，在 Docker-in-Docker 沙盒裡真的執行；`worker.py` 跑一個情境） | ops_plan／ops_run、file_ops、維運技能的確認關卡 |
 
@@ -115,6 +115,7 @@ python3 evals/chat/run.py --modes harness --only analysis_route_diagnose,analysi
 python3 evals/analysis/regression.py --run --runs 3 [--model gemma4:26b] [--synthesizer deepseek-r1:8b] [--think-roles synthesizer] \
     [--rounds N] [--cases-file <cases.json>] [--data-root <容器內路徑>]   # 真模型：回歸評分（--rounds 1＝不補派）
 python3 evals/analysis/regression.py --score-file <runs.json>   # 只評分已經跑過的 job
+python3 evals/analysis/ablation.py --runs-file <runs.json> --out evals/results/ablation_<名稱>   # 三個版本的比較（只有程式／只呼叫一次模型／三個角色）
 python3 evals/datagen/generate.py --set s2 --seed 2 --n 60      # 隨機情境的錄製＋評分標準（見 evals/datagen/README.md）
 python3 evals/datagen/check_facts.py test_data/recordings/gen/s2/cases.json   # 產生的數據：只驗程式那一層（不呼叫模型）
 ```
@@ -138,6 +139,11 @@ python3 evals/datagen/check_facts.py test_data/recordings/gen/s2/cases.json   # 
   沒有事件（steady：每個 Topic 都沒有事件）；另外列每份數據的平均秒數、問了要不要補派、補派、沒通過核對的說明、Topic 組合有幾種、
   同一個 Topic 的事實有沒有不一致。評分標準沒有 (b)、(e) 的資料時那一欄是「—」；分析失敗的一次在適用的欄位都算沒過（不從分母裡消失）。
   全部由程式判，不需要人工標註。
+- **`evals/analysis/ablation.py`**（三個版本的比較：模型到底有沒有幫上忙）：同一份數據、同一份程式量的事實，只換「重點」是誰寫的——
+  P＝只有程式（照規則寫每個重要的時間點、到最後跟開頭不同的值、沒有變化的 Topic）、S＝只呼叫一次模型（Synthesizer，沒有 Orchestrator 與
+  Worker）、F＝現在的三個角色（`--runs-file` 給的已經跑過的 job，每份數據取第一次）。量：模型第一版的重點有幾則因為意思跟事實對不上被交回、
+  讀者答題（另一次模型呼叫只看主對話收到的報告，回答依事實自動出的題目：到最後的值、有沒有回到開頭的值、什麼時候變的、有沒有變化、
+  ERROR 以上的 Log、開始／停止發布）、模型呼叫與秒數；`--rating <case,…>` 另外把幾份數據的三個版本並排、標籤打亂（`rating/`，對照表 `key.json`），給人看。
   模型可以分角色指定（`--model`／`--orchestrator`／`--worker`／`--synthesizer`、`--think-roles`），只改這次執行、不寫回設定。
   結果在 `evals/results/analysis_<時間>/scorecard.md`（`--out` 可以指定）。第九輪以前的根因評分在 `doc/archive/root_cause_reference/evals/`。
   換機器時把 `test_data/recordings/` 複製到那台的數據根目錄（或 `--data-root`）。

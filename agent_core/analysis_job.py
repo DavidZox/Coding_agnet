@@ -61,6 +61,7 @@ from .config import (
     PROMPTS_DIR,
     THINK_EXTRA_PREDICT,
 )
+from . import claims
 from .model_caps import think_arg
 from .schemas import (ANALYSIS_CHECK_SCHEMA, ANALYSIS_NOTE_MAX, ANALYSIS_PLAN_SCHEMA, ANALYSIS_SUMMARY_SCHEMA,
                       ANALYSIS_WORKER_SCHEMA)
@@ -759,16 +760,18 @@ class AnalysisMixin:
                                  "在相關的 Log 前後有變化、還沒有說明，檢查要不要補派…")
         data = self._analysis_session(job, "analysis_orchestrator_check", "orchestrator", _read_prompt("orchestrator_check.md"),
                                       _check_user(job, facts, summary, cands), ANALYSIS_CHECK_SCHEMA, 1536, label="orchestrator_check")
-        by_topic = {c["topic"].lower(): c for c in cands}
-        by_tid = {c["tid"]: c for c in cands}
+        by_topic = {c["topic"]: c for c in cands}
         fresh, problems = [], []
         for f in (data or {}).get("followups") or []:
             f = f if isinstance(f, dict) else {}
             m = re.search(r"L\d+", str(f.get("signal") or "").upper())
             sid = m.group() if m else ""
             raw = str(f.get("topic") or "").strip()
-            c = by_tid.get(raw.upper()) or by_topic.get((raw if raw.startswith("/") else "/" + raw).lower())
-            if not c:
+            name, problem = _topic_ref(raw, facts)
+            c = by_topic.get(name)
+            if problem:
+                problems.append(f"{raw}：{problem}，不補")
+            elif not c:
                 problems.append(f"{raw}：不在「相關的 Log 前後有變化、還沒有說明」的 Topic 清單裡，不補")
             elif sid not in c["near"]:
                 problems.append(f"{c['topic']}：對應的 Log「{sid or f.get('signal')}」不是它前後的那幾則（{'、'.join(c['near'])}），不補")
@@ -902,27 +905,51 @@ class AnalysisMixin:
 
 
 # ---------------------------------------------------------------- 指派（程式檢查與補指派）
+_TID_HEAD = re.compile(r"\s*T\s*(\d+)(?![0-9A-Za-z_])", re.I)
+_TOPIC_SPLIT = re.compile(r"[\s，、；;,（）()｜|：:「」『』\"'`]+")
+
+
+def _topic_ref(raw, facts):
+    """模型寫的 Topic → (事實裡的 Topic 名稱或 None, 問題或 None)。計畫與補派共用這一個：可以寫名稱（開頭的 / 可省）、T#、
+    或 T# 加名稱（「T3 /diagnostics_toplevel_state」——以前補派只認其中一種，模型寫成這樣的對的決定被擋掉）。
+    編號與名稱指到不同的 Topic → 問題（不猜是哪一個）；名稱對不到任何 Topic 時以編號為準。找不到 → (None, None)，由呼叫的地方說明。"""
+    raw = str(raw or "").strip()
+    by_tid = {r["id"].upper(): r["topic"] for r in facts["topics"]}
+    by_name = {r["topic"].lower(): r["topic"] for r in facts["topics"]}
+    m = _TID_HEAD.match(raw)
+    rest = raw[m.end():] if m else raw
+    tokens = [t for t in _TOPIC_SPLIT.split(rest) if t]
+    word = next((t for t in tokens if "/" in t), tokens[0] if tokens else "")
+    named = by_name.get(("/" + word.lstrip("/")).lower()) if word else None
+    if not m:
+        return named, None
+    tid = f"T{int(m.group(1))}"
+    by = by_tid.get(tid)
+    if by is None:
+        return None, f"{tid} 不存在（只能用事實裡的編號）"
+    if named and named != by:
+        return None, f"{tid} 是 {by}，寫的名稱卻是 {named}（編號與名稱對不上）"
+    return by, None
+
+
 def _clean_assignments(job, items, forced):
-    """模型的指派 → (檢查過的指派, 問題清單, 沒有派的 Topic)：Topic 要在事實裡（可以寫名稱或 T#）、不是框架的 Topic、不重複，最多 N 個；
-    沒有變化的 Topic 不派（不算問題，程式已經寫了「沒有變化」）；使用者指定的 Topic 一定有。"""
+    """模型的指派 → (檢查過的指派, 問題清單, 沒有派的 Topic)：Topic 要在事實裡（名稱、T# 或 T# 加名稱，`_topic_ref`）、不是框架的
+    Topic、不重複，最多 N 個；沒有變化的 Topic 不派（不算問題，程式已經寫了「沒有變化」）；使用者指定的 Topic 一定有。"""
     facts = job["facts"]
     rows = {r["topic"]: r for r in facts["topics"]}
-    lower = {k.lower(): k for k in rows}
-    by_tid = {r["id"]: r["topic"] for r in facts["topics"]}
     issues, skipped, assigns, seen = [], [], [], set()
     for a in items or []:
         a = a if isinstance(a, dict) else {}
         raw = str(a.get("topic", "")).strip()
-        m = re.fullmatch(r"(T\d+)(?:\s+(\S+))?", raw.upper())
-        name = by_tid.get(m.group(1)) if m else None
-        if name is None:
-            name = raw.split()[0] if raw else ""
-            name = name if name.startswith("/") else "/" + name
-            name = lower.get(name.lower(), name)
+        name, problem = _topic_ref(raw, facts)
+        if problem:
+            issues.append(f"Topic「{raw}」：{problem}")
+            continue
         r = rows.get(name)
         if not r:
-            if name == "/rosout" or name in ("/rosout_agg",):
-                issues.append(f"{name} 不能指派給 worker（Log 由 Orchestrator 自己看）")
+            word = "/" + raw.split()[0].lstrip("/") if raw else ""
+            if word in ("/rosout", "/rosout_agg"):
+                issues.append(f"{word} 不能指派給 worker（Log 由 Orchestrator 自己看）")
             else:
                 issues.append(f"Topic「{raw}」不在事實裡（只能從全部 Topic 的事實選，可以寫名稱或 T#）")
             continue
@@ -1042,7 +1069,8 @@ def _check_note(note, allowed, facts):
     - 太長（寫到格式的上限）＝失控、被截斷在半句；
     - 寫了原因、誰造成誰或推測（Log 原文、量到的字串裡本來就有的不算）；
     - 寫了「中斷」「開始發布」「停止發布」「恢復發布」，引用的事件裡卻沒有那種事件；
-    - 寫了時間（+秒），引用的事實裡沒有這個時間（時間由程式依 refs 補上，不用自己寫）。
+    - 寫了時間（+秒），引用的事實裡沒有這個時間（時間由程式依 refs 補上，不用自己寫）；
+    - 句子的意思跟事實對不上（agent_core/claims.py）：寫的變化、某一刻或到最後的值、「沒有變化」「回到初始」。
     T#（整個 Topic）連同它的事件算引用（_with_topic_events）。"""
     note = note if isinstance(note, dict) else {}
     refs = list(dict.fromkeys(r for r in (_norm_ref(x) for x in note.get("refs") or []) if r in allowed))
@@ -1073,6 +1101,7 @@ def _check_note(note, allowed, facts):
     loose = [m.group(0) for m in _TIME_IN_TEXT.finditer(text) if not any(abs(float(m.group(1)) - t) <= _TIME_TOL for t in ref_t)]
     if loose:
         issues.append(f"寫了 {'、'.join(loose[:3])}，引用的事實裡沒有這個時間（時間由程式依編號補上，不用自己寫）")
+    issues += [f"{p}：照引用的事實改寫這一句" for p in claims.problems(text, refs, facts)]   # 句子的意思（變化、某一刻的值、沒有變化、回到初始）
     return {"refs": refs, "text": text}, issues
 
 
@@ -1352,8 +1381,21 @@ def _topic_entry(topic, meta, entry, base):
     同一則訊息裡的變化（狀態跳轉、數值切換，同一個時間的合成一個事件）、尖峰。"""
     rate, items = entry.get("rate") or {}, entry.get("items") or []
     row = {"topic": topic, "type": meta.get("type"), "pattern": rate.get("pattern"), "tags": [], "publish": "", "changes": [],
-           "ranges": [], "end": [], "still": [], "events": []}
+           "ranges": [], "end": [], "still": [], "events": [], "values": {}, "quiet_keys": list((entry.get("quiet") or {}).keys())}
     evs, tags = [], []
+    # 中途才出現的項目（DiagnosticArray 的某一項在故障時才加進來）：它的「開頭」是出現那一刻的值，不是錄製開始時的狀態
+    late_after = (rate.get("first_sec") or 0) + max(1.0, 3 * float(rate.get("period_sec") or 0))
+
+    def late(it):
+        return bool(rate.get("first_sec")) and it.get("first_t") is not None and float(it["first_t"]) > late_after
+
+    def end_text(it):
+        name = it["name"]
+        if late(it):
+            return f"{name}＝{_val(it.get('last'))}（{_plus(float(it['first_t']) - base)} 才出現，那時是 {_val(it.get('first'))}）"
+        if it.get("last") != it.get("first"):
+            return f"{name}＝{_val(it.get('last'))}（開頭 {_val(it.get('first'))}）"
+        return f"{name}＝{_val(it.get('last'))}（中間變過，最後回到開頭的值）"
 
     def ev(t_epoch, kind, text):
         if t_epoch is not None:
@@ -1418,8 +1460,7 @@ def _topic_entry(topic, meta, entry, base):
                 for c in it.get("changes") or []:
                     change_at.setdefault(c["t"], []).append(f"{name}：{_val(c['from'], 40)} → {_val(c['to'], 40)}")
                 row["changes"].append(_path(name, it, base))
-                row["end"].append(f"{name}＝{_val(it.get('last'))}" + (f"（開頭 {_val(it.get('first'))}）" if it.get("last") != it.get("first")
-                                                                       else "（跟開頭一樣）"))
+                row["end"].append(end_text(it))
             else:
                 row["still"].append(f"{name}＝{_val(it.get('first'))}")
         elif kind == "numeric":
@@ -1430,8 +1471,7 @@ def _topic_entry(topic, meta, entry, base):
                 for c in it["changes"]:
                     change_at.setdefault(c["t"], []).append(f"{name}：{_val(c['from'])} → {_val(c['to'])}")
                 row["changes"].append(_path(name, it, base))
-                row["end"].append(f"{name}＝{_val(it.get('last'))}" + (f"（開頭 {_val(it.get('first'))}）" if it.get("last") != it.get("first")
-                                                                       else "（跟開頭一樣）"))
+                row["end"].append(end_text(it))
             else:   # 連續變動的數值（沒有切換、只看得到範圍）：不列成時間線的事件
                 tags.append("數值變動")
                 row["ranges"].append(f"{name}：{_val(it.get('first'))} → {_val(it.get('last'))}（最小 {_val(it.get('min'))}＠"
@@ -1460,8 +1500,53 @@ def _topic_entry(topic, meta, entry, base):
         row["still"].append(f"{key}：{q['count']} 項沒有變化（{q['values']}）")
     for t, texts in change_at.items():   # 同一則訊息裡改變的項目全部列（事實要完整；給模型看的地方另外截短）
         ev(t, "change", "；".join(texts))
+    # 到最後仍跟開頭不同的排在前面（最後的狀態是什麼，常常就是使用者要問的）
+    row["end"].sort(key=lambda x: 0 if "（開頭 " in x else 1 if "才出現" in x else 2)
+    row["values"] = _key_values(items, base, late)
+    row["fields"] = [it["name"] for it in items] + row["quiet_keys"]   # 句子裡寫到這些名稱＝主詞是某個項目（不是整個 Topic）
     row["tags"] = list(dict.fromkeys(tags)) or ["沒有變化"]
     return row, evs
+
+
+_CONST = re.compile(r"^\s*[A-Za-z0-9_/]+\s+([A-Z][A-Z0-9_]*)\s*=\s*\"?([^\"#\s]+)\"?", re.M)
+_FIELD_TYPE = re.compile(r"^\s*([A-Za-z][A-Za-z0-9_/]*)(?:\[[^\]]*\])?\s+[a-z_][A-Za-z0-9_]*\s*(?:#.*)?$", re.M)
+
+
+def _msg_aliases(defs, typ):
+    """訊息定義裡的常數（byte OK=0、uint8 LIMIT_SPEED=1）→ {值: [名稱…]}：模型照定義把值寫成名稱（level 的 0 寫 OK、1 寫 WARN）也算對
+    （實測第十二輪：worker 寫「level 從 OK 變成 WARN」被當成跟事實的 0 → 1 對不上）。巢狀的型別（DiagnosticArray 的 DiagnosticStatus[]）一起看。"""
+    by_short = {k.split("/")[-1]: k for k in defs}
+    out, seen, todo = {}, set(), [typ]
+    while todo:
+        t = todo.pop()
+        if not t or t in seen or t not in defs:
+            continue
+        seen.add(t)
+        text = defs[t] if isinstance(defs[t], str) else ""
+        for name, value in _CONST.findall(text):
+            out.setdefault(value, []).append(name)
+        for ft in _FIELD_TYPE.findall(text):
+            todo.append(by_short.get(ft.split("/")[-1]))
+    return out
+
+
+def _key_values(items, base, late):
+    """每個 Key 的值（核對模型寫的「從 A 變成 B」「沒有變化」「回到初始」「到最後是 X」用，agent_core/claims.py）：
+    {Key: {first, last, changes: [[+秒, 從, 到]…], count（變化的總次數；changes 只留頭尾時比較多）, varies（有沒有變過）,
+    late（中途才出現）}}。狀態與只有幾種值的數值有每一次的變化；連續變動的數值只有開頭與最後的值。"""
+    out = {}
+    for it in items:
+        kind = it["kind"]
+        if kind not in ("state", "numeric"):
+            continue
+        changes = [[round(float(c["t"]) - base, 3), c["from"], c["to"]] for c in it.get("changes") or []]
+        varies = bool(it.get("count")) if kind == "state" else not it.get("constant")
+        count = it.get("count") or len(changes)
+        if late(it):   # 中途才出現：出現的那一刻也算一次變化（之前沒有值，None）——「…變成 2（出現的那一則）」是對的
+            changes = [[round(float(it["first_t"]) - base, 3), None, it.get("first")]] + changes
+        out[it["name"]] = {"first": it.get("first"), "last": it.get("last"), "changes": changes, "count": count,
+                           "varies": varies, "continuous": kind == "numeric" and varies and not it.get("changes"), "late": late(it)}
+    return out
 
 
 def _log_events(job, base):
@@ -1528,6 +1613,7 @@ def build_facts(job):
             unreadable.setdefault("沒有量到", []).append(t)
             continue
         row, e = _topic_entry(t, meta, entry, base)
+        row["aliases"] = _msg_aliases(idx.get("msg_definitions") or {}, meta.get("type"))
         rows.append(row)
         evs += e
     # 同一個 Topic 的變化事件太多（反覆切換）：只留頭尾
@@ -1684,7 +1770,7 @@ def _summary_user(job, facts, cap=None):
     quiet = [f"{r['id']} {r['topic']}" for r in facts["topics"] if not (r["events"] or "數值變動" in r["tags"])]
     lines = [f"- {r['id']} {r['topic']}｜{'、'.join(r['tags'])}｜{_short(r['publish'], 70)}"
              + (f"｜事件：{'、'.join(r['events'][:10])}{'…' if len(r['events']) > 10 else ''}" if r["events"] else "")
-             + (f"｜到最後：{'；'.join(_short(x, 60) for x in r['end'][:3])}" if r["end"] else "") for r in busy]
+             + (f"｜到最後：{_end_summary(r)}" if r["end"] else "") for r in busy]
     notes = "\n".join(f"- W{w['n']} {w.get('tid') or ''} {w['topic']}：\n" + "\n".join(f"  - [{', '.join(h['refs'])}] {h['text']}" for h in w["notes"])
                       for w in job["workers"] if w.get("notes"))
     related = "、".join(r["id"] for r in job["plan"]["related"]) or "（沒有）"
@@ -1707,6 +1793,23 @@ def _summary_user(job, facts, cap=None):
               "text 一兩句話，寫這一刻的重點：引用的事件的完整內容與每則 Log，程式會列在這一則下面，數值與 Log 不用逐項抄"
               "（同一時間好幾個 Topic 改變時寫最重要的變化，其他的編號放在 refs；好幾則 Log 寫則數與層級）；"
               "時間由程式依編號補上。只寫事實：不寫原因、不寫誰造成誰、不推測；繁體中文）")
+
+
+def _end_summary(r, n=3):
+    """Synthesizer 看的「到最後」（一行裡放不下全部的項目）：跟開頭不同的先列（最多 n 項），中途才出現的、變過又回到開頭的值的
+    寫項數——只列前幾項時，不會被讀成「沒有變化」（實測 lidar：/diagnostics_agg 只看到前 3 項「跟開頭一樣」，重點寫成「整段沒有變化」）。"""
+    diff = [x for x in r["end"] if "（開頭 " in x]
+    late = [x for x in r["end"] if "才出現" in x]
+    back = [x for x in r["end"] if "回到開頭的值" in x]
+    parts = []
+    if diff:
+        parts.append(f"跟開頭不同 {len(diff)} 項：" + "；".join(_short(x, 60) for x in diff[:n]) + ("…" if len(diff) > n else ""))
+    if late:
+        parts.append(f"中途才出現 {len(late)} 項：" + "；".join(_short(x, 70) for x in late[:2]) + ("…" if len(late) > 2 else ""))
+    if back:
+        names = "、".join(x.split("＝")[0] for x in back[:n]) + ("…" if len(back) > n else "")
+        parts.append(f"變過又回到開頭的值 {len(back)} 項（{names}）")
+    return "；".join(parts)
 
 
 def _max_items(schema, field):
