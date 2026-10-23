@@ -235,40 +235,42 @@ CMD_VEL_FEATURES = """[PASS] 特徵量測：/cmd_vel（geometry_msgs/msg/Twist�
        最大跳變 0→0.42 @ 1791967530.102[+23.09s]
 程式判斷的異常（訊息中斷）：沒有
 量到的變化（事實，不代表異常）：沒有尖峰、沒有狀態跳轉、沒有中途開始或停止發布"""
-ANALYSIS_REPORT = """[PASS] 📊 數據事實報告（job 20261014_181445：2 個 worker、模型呼叫 6 次、14 秒）
+ANALYSIS_REPORT = """[PASS] 📊 數據事實報告（job 20261014_181445：程式整理，2 秒）
 問題：安全閘為什麼一開始是 PROTECTIVE_STOP？什麼時候恢復？
 數據：exp_20261014_084506（51.889 秒）
-總覽（程式）：5 個 Topic：有事件的 2 個（狀態改變 2）、只有數值連續變動的 0 個、沒有變化的 3 個；Log 5 個訊號（WARN 以上 1 個）
-重點（時間由程式依編號補上；引用的事件與 Log 的內容由程式列在下面）：
-- +0.75s　1 則 WARN Log：安全閘一開始是 PROTECTIVE_STOP（L28）
+總覽：5 個 Topic：有事件的 2 個（狀態改變 2）、只有數值連續變動的 0 個、沒有變化的 3 個；Log 5 個訊號（WARN 以上 1 個）
+重點（程式整理；引用的事件與 Log 的內容列在每一則下面）：
+- +0.75s　1 則 Log（WARN 1）（L28）
   - L28 WARN safety_motion_controller：GATE mode=PROTECTIVE_STOP latched=False reasons=['NO_SAFETY_COMMAND_YET', 'NO_CMD_VEL_RAW']
-- +1.22s　安全閘的停止原因換成監控節點初始化中（E1）
+- +1.22s　/system/safety_gate_status stop_reasons：[NO_CMD_VEL_RAW, NO_SAFETY_COMMAND_YET] → [MON_INITIALIZING, NO_CMD_VEL_RAW]（E1）
   - E1 /system/safety_gate_status：stop_reasons：[NO_CMD_VEL_RAW, NO_SAFETY_COMMAND_YET] → [MON_INITIALIZING, NO_CMD_VEL_RAW]
-- +15.53s～+15.54s　安全指令的反應變成 NONE，安全閘回到 NORMAL；同一時間 1 則 INFO Log（E2、E3、L30）
+- +15.53s～+15.54s　/system/safety_command primary_reaction：INIT → NONE；/system/safety_gate_status mode：PROTECTIVE_STOP → NORMAL（E2、E3）
   - E2 /system/safety_command：primary_reaction：INIT → NONE
   - E3 /system/safety_gate_status：mode：PROTECTIVE_STOP → NORMAL
-  - L30 INFO safety_motion_controller：GATE mode=NORMAL latched=False reasons=['NO_CMD_VEL_RAW']
-- 整段　/cmd_vel、/diagnostics_agg、/diagnostics_toplevel_state 沒有變化（T3、T4、T5）
+- 整段　到數據結束時跟開頭不同：/system/safety_gate_status 的 mode＝NORMAL（開頭 PROTECTIVE_STOP）；/system/safety_command 的 primary_reaction＝NONE（開頭 INIT）（T1、T2）
+- 整段　整段沒有變化：/cmd_vel、/diagnostics_agg、/diagnostics_toplevel_state（T3、T4、T5）
 有變化的 Topic：
 - T1 /system/safety_gate_status｜狀態改變｜狀態改變時才發布：3 則（+0.75s、+1.22s、+15.54s）｜mode：PROTECTIVE_STOP → NORMAL（+15.54s）｜到最後：mode＝NORMAL（開頭 PROTECTIVE_STOP）
 - T2 /system/safety_command｜狀態改變｜整段持續發布（514 則，固定頻率（週期 0.1 秒））｜primary_reaction：INIT → NONE（+15.53s）｜到最後：primary_reaction＝NONE（開頭 INIT）
 沒有變化的 Topic（3 個）：/cmd_vel、/diagnostics_agg、/diagnostics_toplevel_state
+時間線（重點沒有引用的 1 列中的 1 列；完整的 6 列在報告）：
+- L30｜+15.54s｜safety_motion_controller（INFO）｜GATE mode=NORMAL latched=False reasons=['NO_CMD_VEL_RAW']｜前後 1 秒內：E2、E3
 前後 1 秒內沒有任何 Topic 變化的 Log：L28 +0.75s safety_motion_controller：GATE mode=PROTECTIVE_STOP latched=False reasons=['NO_SAFETY_COMMAND_YET', 'NO_CMD_VEL_RAW']
-完整報告：logs/analysis_jobs/20261014_181445/report.md（各 worker 的說明在 workers/）
-（依這份報告回答使用者：只陳述報告裡的事實——時間、數值、狀態、Log 的原文，可以引用編號。報告沒有判斷原因：「前後 1 秒內」「同時」只是時間上的先後，不要寫成誰導致、造成、觸發誰；使用者問「為什麼」時，照事實說明發生了什麼、先後順序，並說明原因要對照源碼另外分析）"""
+完整報告：logs/analysis_jobs/20261014_181445/report.md
+（依這份報告回答使用者：只陳述報告裡的事實——時間、數值、狀態、Log 的原文，可以引用編號。報告沒有判斷原因：「前後 1 秒內」「同時」只是時間上的先後，不要寫成誰導致、造成、觸發誰；使用者問「為什麼」時，照事實說明發生了什麼、先後順序，並說明原因要對照源碼另外分析；要細看某個 Topic、某一段時間或某則 Log，用數據技能（mcap_feature_measure、mcap_analyzer、rosout_parser、mcap_slicer）查）"""
 
 # ---------------------------------------------------------------- 情境
 SCENARIOS = [
-    {"id": "analysis_route_diagnose", "desc": "問「為什麼、什麼時候恢復」要同時看 Log 與多個 Topic：用 analysis_run（多 agent 數據分析），依事實報告回答",
+    {"id": "analysis_route_diagnose", "desc": "問「為什麼、什麼時候恢復」要同時看 Log 與多個 Topic：用 analysis_run（程式整理的事實報告），依報告回答",
      "state": {"target_container": "ros2_web", "analysis_data": DATA_PATH}, "pseudo": {"analysis_run": ANALYSIS_REPORT},
      "turns": [{"user": "剛剛錄的那份數據裡，安全閘為什麼一開始是 PROTECTIVE_STOP？什麼時候恢復的？幫我找根因",
                 "expect": {"tools_any": ["analysis_run"], "reply_any": ["15.5"]}}]},
-    {"id": "analysis_route_single_key", "desc": "只問一個 Topic 的一個數值：直接用 mcap_feature_measure，不用派多 agent 的 analysis_run",
+    {"id": "analysis_route_single_key", "desc": "只問一個 Topic 的一個數值：直接用 mcap_feature_measure，不用 analysis_run",
      "state": {"target_container": "ros2_web", "analysis_data": DATA_PATH},
      "fixtures": {"mcap_feature_measure_cmd.py": CMD_VEL_FEATURES}, "pseudo": {"analysis_run": ANALYSIS_REPORT},
      "turns": [{"user": "這份數據裡 /cmd_vel 的 linear.x 最大是多少？",
                 "expect": {"tools_any": ["mcap_feature_measure"], "tools_none": ["analysis_run"], "reply_any": ["0.42"]}}]},
-    {"id": "analysis_route_log", "desc": "問 Log 裡有哪些警告：用 rosout_parser（去重後的唯一訊號），不用派 analysis_run",
+    {"id": "analysis_route_log", "desc": "問 Log 裡有哪些警告：用 rosout_parser（去重後的唯一訊號），不用 analysis_run",
      "state": {"target_container": "ros2_web", "analysis_data": DATA_PATH},
      "fixtures": {"rosout_parser_cmd.py": ROSOUT_DIGEST}, "pseudo": {"analysis_run": ANALYSIS_REPORT},
      "turns": [{"user": "這份數據錄製期間有哪些 WARN 等級的 Log？",

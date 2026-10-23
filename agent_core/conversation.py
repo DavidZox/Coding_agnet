@@ -22,6 +22,7 @@ class ConversationMixin:
 
     def reset_conversation(self):
         self.begin_turn()
+        self._analysis_ctx = None   # /clear：之後的回答不再對照上一份數據分析的報告（turn_guard.analysis_reply_check）
         self.plan_clear()         # /clear 時一併清掉草稿與進行中的計畫，避免舊計畫殘留誤導新任務
         self.ops_draft = None     # 同上：還沒執行的維運計畫草稿（ops_plan）
         self.current_task = None  # 同上，避免舊任務敘述殘留誤導下一次的摘要 session

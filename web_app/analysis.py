@@ -1,11 +1,11 @@
-"""📊 數據分析面板的後端：analysis job 的清單與內容（/api/analysis/state 輪詢）、job 資料夾裡的檔案（worker 的說明、報告）、
-設定（數據根目錄、預設容器、worker 數、最多幾輪）、目前的數據，以及 /analyze 系列指令。
+"""📊 數據分析面板的後端：analysis job 的清單與內容（/api/analysis/state 輪詢）、job 資料夾裡的檔案（報告、去重後的 Log、Topic 的事實）、
+設定（數據根目錄、預設容器）、目前的數據，以及 /analyze 系列指令。
 
-analysis_run 本身在主對話的回合裡同步執行（agent_core/analysis_job.py，主模型選用、或 /analyze 與 📊 分析模式直接交給它），
+analysis_run 本身在主對話的回合裡同步執行（agent_core/analysis_job.py，全部由程式做；主模型選用、或 /analyze 與 📊 分析模式直接交給它），
 這裡只讀它寫在 logs/analysis_jobs/<編號>/ 的檔案，所以分析進行中也能輪詢（ThreadingHTTPServer，不進主對話的 lock）。"""
 import os
 import re
-from agent_core.analysis_job import ROLES, ROLE_LABELS, _STATUS_TEXT
+from agent_core.analysis_job import _STATUS_TEXT
 from .state import agent, state
 
 
@@ -23,11 +23,7 @@ def available_models():
 
 def settings_view():
     cfg = agent.analysis_cfg
-    return {"data_root": cfg.get("data_root") or "", "container": cfg.get("container") or "",
-            "max_workers": cfg.get("max_workers"), "parallel": cfg.get("parallel"), "rounds": cfg.get("rounds"),
-            "models": {r: agent.analysis_model(r) for r in ROLES},
-            "think": {r: agent.analysis_think(r) for r in ROLES},
-            "follows_main": {r: not cfg.get(r) for r in ROLES}}
+    return {"data_root": cfg.get("data_root") or "", "container": cfg.get("container") or ""}
 
 
 def analysis_state(job_id=None):
@@ -47,42 +43,21 @@ def analysis_file(job_id, rel):
         return f.read()
 
 
-def _num(v, cast, lo, hi):
-    try:
-        x = cast(v)
-    except (TypeError, ValueError):
-        raise ValueError(f"{v!r} 不是數字")
-    if not lo <= x <= hi:
-        raise ValueError(f"{x} 要介於 {lo}～{hi}")
-    return x
-
-
 def analysis_action(action, data):
-    """面板的操作：settings（數據根目錄、預設容器、worker 數、同時幾個、最多幾輪）、data（目前的數據）。回傳 {ok, message}。"""
+    """面板的操作：settings（數據根目錄、預設容器）、data（目前的數據）。回傳 {ok, message}。"""
     cfg = agent.analysis_cfg
     if action == "settings":
         msgs = []
-        try:
-            if "data_root" in data:
-                cfg["data_root"] = str(data.get("data_root") or "").strip()
-                msgs.append(f"數據根目錄：{cfg['data_root'] or '自動尋找（容器的 /workspace 底下的 experiment_logs）'}")
-            if "container" in data:
-                cfg["container"] = str(data.get("container") or "").strip()
-                if cfg["container"] and not agent.target_container:
-                    agent.target_container = cfg["container"]
-                msgs.append(f"預設容器：{cfg['container'] or '（沒有）'}")
-            if "max_workers" in data:
-                cfg["max_workers"] = _num(data["max_workers"], int, 1, 8)
-            if "parallel" in data:
-                cfg["parallel"] = _num(data["parallel"], int, 1, 8)
-            if "rounds" in data:   # 最多幾輪：相關的 Log 前後有變化、還沒有說明的 Topic，Orchestrator 可以補派 worker 一輪（1＝不補）
-                cfg["rounds"] = _num(data["rounds"], int, 1, 2)
-                msgs.append(f"最多 {cfg['rounds']} 輪（{'可以補派一輪' if cfg['rounds'] > 1 else '不補派'}）")
-        except ValueError as e:
-            return {"ok": False, "error": str(e)}
+        if "data_root" in data:
+            cfg["data_root"] = str(data.get("data_root") or "").strip()
+            msgs.append(f"數據根目錄：{cfg['data_root'] or '自動尋找（容器的 /workspace 底下的 experiment_logs）'}")
+        if "container" in data:
+            cfg["container"] = str(data.get("container") or "").strip()
+            if cfg["container"] and not agent.target_container:
+                agent.target_container = cfg["container"]
+            msgs.append(f"預設容器：{cfg['container'] or '（沒有）'}")
         agent.save_analysis_settings()
-        msgs.append(f"worker 上限 {cfg['max_workers']}、同時 {cfg['parallel']} 個")
-        return {"ok": True, "message": "📊 已更新：" + "；".join(msgs)}
+        return {"ok": True, "message": "📊 已更新：" + ("；".join(msgs) or "（沒有改變）")}
     if action == "data":
         agent.analysis_data = str(data.get("path") or "").strip()
         return {"ok": True, "message": f"📊 目前分析的數據：{agent.analysis_data or '（沒有）'}"}
@@ -101,17 +76,15 @@ def header_label():
 
 
 ANALYSIS_HELP = """📊 數據分析指令：
-/analyze [問題]                 直接交給數據分析（analysis_run：Log 去重＋程式量全部 Topic 的事實 → Orchestrator 分派 → Workers 說明 →
-                                Synthesizer 整理重點 → 事實報告；不判斷原因）；問題省略＝這段數據發生了哪些狀態變化；
+/analyze [問題]                 直接交給數據分析（analysis_run：Log 去重＋程式量全部 Topic 的事實 → 程式寫重點 → 事實報告，
+                                全部由程式做；不判斷原因，AI 依報告回答）；問題省略＝這段數據發生了哪些狀態變化；
                                 數據用目前的數據（沒有就用 latest）；一次最多 3 分鐘，更長的先用 mcap_slicer 切
 /analysis                       看最近一次數據分析 job；/analysis jobs 列出最近的 job
 /analysis_data <數據>            設定目前分析的數據（實驗資料夾、bag、切片、.mcap、實驗名稱或 latest；主機路徑會自動換成容器路徑）
 /analysis_root <路徑>|-          數據根目錄（mcap_recorder 錄到這裡、實驗名稱與 latest 相對於它；- 改回自動尋找 experiment_logs）
 /analysis_container <容器>|-     數據分析預設的容器（目標容器沒設定時用）
-/analysis_model <角色|all> <模型> orchestrator／worker／synthesizer 的模型（- 改回跟著主對話）
-/analysis_workers <N>           一次最多派幾個 worker 說明 Topic（1～8；事實由程式量全部的 Topic，不受這個上限影響）
 /analysis_mode on|off          📊 分析模式（同輸入框旁的按鈕）：送出的問題直接交給 analysis_run
-右欄「📊 數據分析」面板：計畫（相關的 Log 訊號、每個 worker 的 Topic）、每個 worker 的說明、最後的事實報告。"""
+右欄「📊 數據分析」面板：進度、去重後的 Log、Topic 的事實、最後的事實報告。"""
 
 
 def handle_analysis_command(text, events):
@@ -150,31 +123,15 @@ def handle_analysis_command(text, events):
             events.append({"channel": "system", "text": res.get("message") or "⚠️ " + res.get("error", "")})
         else:
             events.append({"channel": "system", "text": f"📊 預設容器：{cfg.get('container') or '（沒有）'}；目前的目標容器：{agent.target_container or '（沒有）'}"})
-    elif cmd == "/analysis_workers":
-        res = analysis_action("settings", {"max_workers": arg})
-        events.append({"channel": "system", "text": res.get("message") or "⚠️ " + res.get("error", "")})
-    elif cmd in ("/analysis_slice", "/analysis_source", "/analysis_hints"):   # 第九輪以前的設定：動態時間切片、源碼脈絡、推理提示
-        events.append({"channel": "system", "text": f"📊 {cmd} 已經拿掉：數據分析只做事實報告，程式量整段數據的全部 Topic，不用源碼。"
-                                                     "只想看其中一段，先用 mcap_slicer 切出來再分析。"})
-    elif cmd == "/analysis_model":
-        bits = arg.split()
-        if len(bits) != 2 or bits[0].lower() not in ROLES + ("all",):
-            desc = "、".join(f"{ROLE_LABELS[r]} {agent.analysis_model(r)}" for r in ROLES)
-            events.append({"channel": "system", "text": f"📊 {desc}\n用法：/analysis_model orchestrator|worker|synthesizer|all <模型>（- ＝跟著主對話）"})
-        else:
-            names = available_models()
-            model = None if bits[1] == "-" else bits[1]
-            if model and names and model not in names:
-                events.append({"channel": "system", "text": f"⚠️ 模型 {model} 不在 Ollama 裡（ollama list 看得到的才能用）"})
-            else:
-                agent.set_analysis_model(bits[0].lower(), model or "")
-                desc = "、".join(f"{ROLE_LABELS[r]} {agent.analysis_model(r)}" for r in ROLES)
-                events.append({"channel": "system", "text": f"📊 已更新（下一次分析生效，已存檔）：{desc}"})
+    elif cmd in ("/analysis_slice", "/analysis_source", "/analysis_hints", "/analysis_model", "/analysis_workers"):
+        # 第九輪以前的設定（動態時間切片、源碼脈絡、推理提示）；2026-10-23 改成全部由程式做之後，各角色的模型與 worker 上限也拿掉了
+        events.append({"channel": "system", "text": f"📊 {cmd} 已經拿掉：數據分析全部由程式做（量整段數據的全部 Topic、程式寫重點），"
+                                                     "不用源碼、不呼叫模型。只想看其中一段，先用 mcap_slicer 切出來再分析。"})
     elif cmd == "/analysis":
         jobs = agent.analysis_list_jobs(15)
         if arg.lower() == "jobs":
             events.append({"channel": "system", "text": "📊 最近的數據分析 job：\n" + ("\n".join(
-                f"- {j['id']}｜{_STATUS_TEXT.get(j['status'], j['status'])}｜{j['data_label']}｜{j['workers']} 個 worker｜{j['question'][:50]}"
+                f"- {j['id']}｜{_STATUS_TEXT.get(j['status'], j['status'])}｜{j['data_label']}｜重點 {j['highlights']} 則｜{j['question'][:50]}"
                 for j in jobs) or "（沒有）")})
         else:
             jid = arg if re.match(r"^\d{8}_\d{6}", arg or "") else (jobs[0]["id"] if jobs else None)

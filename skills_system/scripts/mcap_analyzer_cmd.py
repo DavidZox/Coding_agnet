@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """mcap_analyzer：全域 Topic Metadata 索引與 Key 檢視。
 
-- 不帶 --topic：整份數據的索引——時間範圍、每個 Topic 的型別、筆數、頻率、起訖、角色（worker 可分析／log 只給 Orchestrator／
+- 不帶 --topic：整份數據的索引——時間範圍、每個 Topic 的型別、筆數、頻率、起訖、角色（worker＝可以量測的 Topic／log＝/rosout，用 rosout_parser 看／
   text_only／empty／undecodable）與 Key 摘要。第一次建立後快取在 bag 資料夾的 topic_metadata.json（.yaml 給人看），之後直接讀。
 - --topic：這個 Topic 每個 Key 的型別、維度（scalar／vector [n]／matrix／set／map）、資料類別（數值／向量／狀態／鍵值／文字／時間）
   與抽樣看到的值。

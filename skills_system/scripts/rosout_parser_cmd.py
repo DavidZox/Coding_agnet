@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """rosout_parser：Log 智慧過濾——解析 /rosout（bag 裡的 /rosout 或實驗資料夾的 rosout.log），把重複出現的 Log 合併成
-「唯一訊號」（L1、L2…：層級、Node、次數、每一次的時間戳），給 Orchestrator 與使用者看全局。
+「唯一訊號」（L1、L2…：層級、Node、次數、每一次的時間戳），給主對話與使用者看全局。
 
 移植自 diagnostics_package/toolkit 的 rosout_parser.py（層級檢視）與 mcap_slicer.py 步驟 3（字串去重、整合為單一訊號），
 改成非互動：篩選用參數、編號依第一次出現的時間排序而且在篩選前就編好（mcap_slicer --signal 與 analysis_run 用同一份編號）。

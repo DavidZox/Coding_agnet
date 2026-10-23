@@ -1,7 +1,8 @@
-"""模型寫的句子跟程式量到的事實核對「意思」：worker 的說明、Synthesizer 的重點、主對話依數據分析報告的回答共用。
+"""模型寫的句子跟程式量到的事實核對「意思」：主對話依數據分析報告的回答（turn_guard.analysis_reply_check）。
+（2026-10-22 第十二輪做的時候，也核對數據分析的 worker 說明與 Synthesizer 重點；2026-10-23 數據分析改成全部由程式做，模型寫的只剩主對話的回答。）
 
-analysis_job._check_note 核對編號、用詞、時間；這裡核對句子說了什麼（實測 lidar：重點寫「/diagnostics_agg 整段沒有變化」「+20.51s
-/system/safety_command 的狀態與數值回到初始狀態」，主對話寫「/diagnostics 的 status.level 從 0 變為 2（E6）」——都通過了原本的核對）：
+核對句子說了什麼（實測 lidar：重點寫「/diagnostics_agg 整段沒有變化」「+20.51s /system/safety_command 的狀態與數值回到初始狀態」，
+主對話寫「/diagnostics 的 status.level 從 0 變為 2（E6）」——當時的編號、用詞、時間的核對都沒有擋下）：
 1. 變化：「mode 從 NORMAL 變成 LIMITED」「level：0 → 2」「primary_reaction 變為 HARD_STOP」→ 引用的事件裡要有這個 Key 的這個變化
    （引用 T#＝那個 Topic 全部的變化；句子寫了 Topic 名稱、但沒有引用它的事件＝那個 Topic 全部的變化）。
 2. 某一刻的值：「error_code 為 0x04100101」→ 引用的那一刻之前或之後的值；句子寫的是到數據結束（「到最後」「數據結束時」）→ 最後的值。

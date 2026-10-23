@@ -6,7 +6,7 @@
 | 組 | 不用模型 | 真模型 | 測什麼 |
 |---|---|---|---|
 | `chat/` 主對話 | `selftest.py` | `run.py`（情境在 `scenarios.py`，`worker.py` 跑一個情境）、`perf_report.py`（KV cache 分析） | 選技能、兩階段揭露、大量回傳與回存檔查、執行前確認、記憶、程式把關、對數據技能的路由；兩種上下文模式比較 |
-| `analysis/` 數據解析 | `selftest.py`（數據技能用錄下的真實輸出 `fixtures/`） | `regression.py`（評分標準 `regression_cases.json`）、`tools_live.py`（在真的容器裡跑數據技能，不需要 Ollama）、`ablation.py`（三個版本的比較） | 事實的整理、計畫的檢查、說明與重點的核對、報告；回歸評分只評事實 |
+| `analysis/` 數據解析 | `selftest.py`（數據技能用錄下的真實輸出 `fixtures/`） | `regression.py`（評分標準 `regression_cases.json`；數據分析全部由程式做，不需要 Ollama）、`tools_live.py`（在真的容器裡跑數據技能） | 事實的整理、重點、報告、主對話回答的核對；回歸評分只評事實 |
 | `datagen/` 隨機情境的錄製產生器 | `check_facts.py`（只驗程式那一層，需要容器） | 產生的錄製交給 `analysis/regression.py` | 六個開發中套件的模擬，評分標準由注入的事件自動產生（見 [`datagen/README.md`](datagen/README.md)） |
 | `ops/` 多步驟維運 | `selftest.py` | `run.py`（情境在 `dataset/`，在 Docker-in-Docker 沙盒裡真的執行；`worker.py` 跑一個情境） | ops_plan／ops_run、file_ops、維運技能的確認關卡 |
 
@@ -49,7 +49,7 @@ python3 evals/chat/perf_report.py                # 平常使用 CLI／Web 累積
 
 | 情境 | 要測的行為 |
 |---|---|
-| analysis_route_diagnose | 問「為什麼、什麼時候恢復」：要用 analysis_run（多 agent 數據分析），依報告回答（analysis_run 用固定的報告代替） |
+| analysis_route_diagnose | 問「為什麼、什麼時候恢復」：要用 analysis_run（程式整理的事實報告），依報告回答（analysis_run 用固定的報告代替） |
 | analysis_route_single_key | 只問一個 Topic 的一個數值：直接用 mcap_feature_measure，不派 analysis_run |
 | analysis_route_log | 問 Log 裡有哪些警告：用 rosout_parser，不派 analysis_run |
 | containers_basic | 小回傳：列容器並回答哪些在跑 |
@@ -108,25 +108,22 @@ AGENT_TURN_GUARD_RULE=v4 AGENT_ABLATE=docker_hint python3 evals/chat/run.py --su
 ## 數據解析（`analysis/`、`datagen/`）
 
 ```bash
-python3 evals/analysis/selftest.py          # 離線：假模型照劇本回答、數據技能用錄下的真實輸出（evals/analysis/fixtures/）——13 組情境，約 1 分鐘
+python3 evals/analysis/selftest.py          # 離線：數據技能用錄下的真實輸出（evals/analysis/fixtures/），主對話用假模型——10 組情境，約半分鐘
 python3 evals/analysis/tools_live.py --container ros2_web_container \
     --data /workspace/app/diagnostics_package/toolkit/experiment_logs/exp_20261014_084506 [--record]   # 實機：五支數據技能（不需要 Ollama）
 python3 evals/chat/run.py --modes harness --only analysis_route_diagnose,analysis_route_single_key,analysis_route_log   # 真模型：主對話的路由
-python3 evals/analysis/regression.py --run --runs 3 [--model gemma4:26b] [--synthesizer deepseek-r1:8b] [--think-roles synthesizer] \
-    [--rounds N] [--cases-file <cases.json>] [--data-root <容器內路徑>]   # 真模型：回歸評分（--rounds 1＝不補派）
+python3 evals/analysis/regression.py --run --runs 2 [--cases-file <cases.json>] [--data-root <容器內路徑>]   # 回歸評分（不呼叫模型，一份約 2 秒）
 python3 evals/analysis/regression.py --score-file <runs.json>   # 只評分已經跑過的 job
-python3 evals/analysis/ablation.py --runs-file <runs.json> --out evals/results/ablation_<名稱>   # 三個版本的比較（只有程式／只呼叫一次模型／三個角色）
 python3 evals/datagen/generate.py --set s2 --seed 2 --n 60      # 隨機情境的錄製＋評分標準（見 evals/datagen/README.md）
 python3 evals/datagen/check_facts.py test_data/recordings/gen/s2/cases.json   # 產生的數據：只驗程式那一層（不呼叫模型）
 ```
 
 - **`evals/analysis/selftest.py`** 測 harness 的程式把關：量測工具的特徵（發布方式由內容與時間判斷、只有固定頻率的才判斷中斷、尖峰不含雜訊與
   換了水準的地方、反覆切換只留頭尾、陣列只量長度）；事實的整理（T#／E# 每次一樣、同一則訊息的變化合成一個事件、時間線與前後 1 秒的對照、
-  前後沒有任何變化的 Log、沒有量的 Topic）；Orchestrator 的計畫（不存在的 L#／Topic、Log 與框架的 Topic、重複，交回修一次；可以寫 T#；
-  沒有變化的不派、不交回；給不出計畫時程式補指派）；worker 的說明與 Synthesizer 的重點（編號、原因、時間、中斷、開始／停止發布、太長，
-  只交回有問題的那幾則、通過的保留、重複的只留一則、太長的截到完整的句子；時間與引用的 Log 由程式補；沒有可用的重點時程式列出）；
-  Orchestrator 檢查（相關的 Log 前後有變化、還沒有說明的才問，補派的核對，第 2 輪不再問）；主對話依報告回答時把先後寫成因果 → 提醒一次；
-  dispatch 與 Web 的回合；一次最多 3 分鐘、拿掉的選項、設定檔只存改過的值；程式重新啟動時標成中斷；錄製的資料夾名稱。
+  前後沒有任何變化的 Log、沒有量的 Topic）；報告（每個重要的時間點一則重點、那一刻全部的 Log 與事件、到最後跟開頭不同的值依 Topic 分組、
+  指定的 Topic、不呼叫模型）；句子的意思（`agent_core/claims.py`：每一類誤擋都有放行與照樣擋的案例）；主對話依報告回答時把先後寫成因果
+  或寫錯事實 → 提醒一次（之後的回合核對寫到報告的那幾行、`/clear` 之後不再對照）；dispatch 與 Web 的回合；一次最多 3 分鐘、只有 Log 的錄製、
+  拿掉的選項、設定檔只存改過的值；程式重新啟動時標成中斷；錄製的資料夾名稱。
   `evals/analysis/fixtures/` 是 `exp_5090_overheat` 錄下的 `mcap_analyzer --json`、`--facts --json`、`rosout_parser --json` 輸出；
   量測或輸出的格式改了就重錄一次（`SCAN_VERSION` 加一時一定要）。
 - **`evals/analysis/tools_live.py`** 在真的容器裡跑：全域索引、Key 檢視、特徵量測（含寬鬆的時間寫法、不認識的參數、混了不存在的 Key 或「類別.Key」）、原始值、錯誤處理、Log 去重、
@@ -134,21 +131,17 @@ python3 evals/datagen/check_facts.py test_data/recordings/gen/s2/cases.json   # 
 - **`evals/analysis/regression.py`**（回歸評分，另一個方法——原本的產物照舊產生、照舊保留，評分只讀 `logs/analysis_jobs/<job>/` 不改）：
   每份數據各跑 N 次，依評分標準（`--cases-file`；預設 `evals/analysis/regression_cases.json`，這台的 14 份數據用 `test_data/cases_5090.json`
   ——或經 `test_data/tools/run_regression.py`——，產生器的用 `test_data/recordings/gen/<組>/cases.json`）自動評分，只評事實：
-  (a) 時間線有沒有該有的事件（時間±容許＋關鍵字）、(b) Topic 類別（該有、不該有的類別）、(c) 用詞（重點與 worker 的說明沒有原因、推測、
-  這份數據不該有的說法）、(d) 時間有根據（模型寫的 +秒 對得上程式整理的事實）、(e) 重點涵蓋（標成 key 的事件，重點裡有沒有一則引用它）、
-  沒有事件（steady：每個 Topic 都沒有事件）；另外列每份數據的平均秒數、問了要不要補派、補派、沒通過核對的說明、Topic 組合有幾種、
-  同一個 Topic 的事實有沒有不一致。評分標準沒有 (b)、(e) 的資料時那一欄是「—」；分析失敗的一次在適用的欄位都算沒過（不從分母裡消失）。
+  (a) 時間線有沒有該有的事件（時間±容許＋關鍵字）、(b) Topic 類別（該有、不該有的類別）、(c) 用詞（重點沒有原因、推測、這份數據不該有的
+  說法）、(d) 時間有根據（重點寫的 +秒 對得上程式整理的事實）、(e) 重點涵蓋（標成 key 的事件，重點裡有沒有一則引用它）、沒有事件（steady：
+  每個 Topic 都沒有事件）；另外列每份數據的平均秒數、同一份數據的事實與重點有沒有不一致。2026-10-23 起報告全部由程式產生，(c)～(e) 檢查的是
+  程式本身；2026-10-22 以前的 job（模型寫說明與重點）照樣評得了。評分標準沒有 (b)、(e) 的資料時那一欄是「—」；分析失敗的一次在適用的欄位都算沒過（不從分母裡消失）。
   全部由程式判，不需要人工標註。
-- **`evals/analysis/ablation.py`**（三個版本的比較：模型到底有沒有幫上忙）：同一份數據、同一份程式量的事實，只換「重點」是誰寫的——
-  P＝只有程式（照規則寫每個重要的時間點、到最後跟開頭不同的值、沒有變化的 Topic）、S＝只呼叫一次模型（Synthesizer，沒有 Orchestrator 與
-  Worker）、F＝現在的三個角色（`--runs-file` 給的已經跑過的 job，每份數據取第一次）。量：模型第一版的重點有幾則因為意思跟事實對不上被交回、
-  讀者答題（另一次模型呼叫只看主對話收到的報告，回答依事實自動出的題目：到最後的值、有沒有回到開頭的值、什麼時候變的、有沒有變化、
-  ERROR 以上的 Log、開始／停止發布）、模型呼叫與秒數；`--rating <case,…>` 另外把幾份數據的三個版本並排、標籤打亂（`rating/`，對照表 `key.json`），給人看。
-  模型可以分角色指定（`--model`／`--orchestrator`／`--worker`／`--synthesizer`、`--think-roles`），只改這次執行、不寫回設定。
   結果在 `evals/results/analysis_<時間>/scorecard.md`（`--out` 可以指定）。第九輪以前的根因評分在 `doc/archive/root_cause_reference/evals/`。
   換機器時把 `test_data/recordings/` 複製到那台的數據根目錄（或 `--data-root`）。
-- **產物穩定性與報告的時間**：`test_data/tools/stability.py <runs.json>`（同一份數據 N 次：程式產物與事件是否每次相同、計畫、worker、
-  重點的交回與救回）、`test_data/tools/fact_check.py <runs.json>`（報告裡的每個 +秒 對 ground truth，只用在這台錄的 14 份）。
+- **三個版本的比較**（`evals/analysis/ablation.py`，2026-10-22～23）：只有程式／只呼叫一次模型／三個角色，讀者只看報告答題（261／261／257 題）；
+  比完決定報告全部由程式產生，工具已經拿掉，結果在 `evals/results/ablation_r12d/`、設計筆記 2.15〈七〉。
+- **產物穩定性與報告的時間**：`test_data/tools/stability.py <runs.json>`（同一份數據 N 次：程式產物、事件、重點是否每次相同；以前的 job
+  另有計畫、worker、重點的交回與救回）、`test_data/tools/fact_check.py <runs.json>`（報告裡的每個 +秒 對 ground truth，只用在這台錄的 14 份）。
 - **實機事件測試**（2026-10-15）的錄製、ground truth、每次分析與對照結果在 `test_data/`（見 `test_data/README.md`）。
 - **大量數據的穩定度**：隨機情境的錄製產生器 `evals/datagen/`（六個套件的模擬，評分標準由注入的事件自動產生，見 `evals/datagen/README.md`）。
 

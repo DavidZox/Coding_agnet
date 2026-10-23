@@ -1,10 +1,10 @@
-"""數據分析 agent 的回歸測試：同一套數據＋ground truth，自動評分每一次分析的事實報告。
-原本的產物（logs/analysis_jobs/<job>/ 的 job.json、report.md、workers/*.md、transcript）照舊產生、照舊保留，評分只讀不改。
+"""數據分析（analysis_run，全部由程式做）的回歸測試：同一套數據＋ground truth，自動評分每一次分析的事實報告。
+原本的產物（logs/analysis_jobs/<job>/ 的 job.json、report.md…）照舊產生、照舊保留，評分只讀不改。
 評分標準在 evals/analysis/regression_cases.json（ground truth 見 test_data/ground_truth/；這台的數據用 test_data/cases_5090.json）。
 
-    # 跑分析再評分：每份數據 N 次；模型可以分角色指定
-    python3 evals/analysis/regression.py --run --runs 3 [--model gemma4:26b] [--synthesizer deepseek-r1:8b] [--think-roles synthesizer] [--cases cmdvel,fault]
-    # 只評分已經跑過的 job（不跑模型）
+    # 跑分析再評分：每份數據 N 次（不呼叫模型；同一份數據每次應該一樣）
+    python3 evals/analysis/regression.py --run --runs 2 [--cases cmdvel,fault]
+    # 只評分已經跑過的 job
     python3 evals/analysis/regression.py --score 20261015_094317 20261015_094154
     python3 evals/analysis/regression.py --score-file test_data/repeat_runs.json
 
@@ -14,12 +14,12 @@
 只評事實，全部由程式判，不需要人工判讀：
 (a) 時間線：該有的事件（ground truth 的時間 ± 容許誤差、關鍵字）有沒有出現在報告的時間線（程式量的事實）；
 (b) Topic 類別：指定的 Topic 該有、不該有的類別（例如只在狀態改變時才發布的 Topic 不能是「訊息中斷」）；
-(c) 用詞：模型寫的文字（重點與 worker 的說明）有沒有寫原因、推測（_NOT_FACT_WORDS）或這份數據不該有的說法（forbid）；
-(d) 時間有根據：模型寫的每一個 +秒，都對得上報告裡程式整理的事實（時間線、各 Topic 的變化）；
+(c) 用詞：重點的文字（2026-10-23 以前的 job 還有 worker 的說明，是模型寫的）有沒有寫原因、推測（_NOT_FACT_WORDS）或這份數據不該有的說法（forbid）；
+(d) 時間有根據：重點寫的每一個 +秒，都對得上報告裡程式整理的事實（時間線、各 Topic 的變化）；
 (e) 重點涵蓋：標成 key 的事件，重點裡有沒有一則引用它（refs 指到時間線上對得到的那一列）；
 沒有事件（steady）：沒有任何 Topic 有事件（數值連續變動不算；評分標準的 background 列的 Topic 本來就會有事件，不算），
 重點也沒有寫不存在的事件。
-同一份數據跑好幾次時另外列一致性：指派的 Topic 有幾種組合、同一個 Topic 的事實與時間線（程式整理的，應該只有一種）有幾種。
+同一份數據跑好幾次時另外列一致性：同一個 Topic 的事實與時間線（程式整理的，應該只有一種）有幾種。
 評分標準：--cases-file（或環境變數 ANALYSIS_CASES）換成別的 cases 檔，例如 test_data/cases_5090.json、隨機情境產生器的 cases.json。"""
 import argparse
 import json
@@ -36,7 +36,7 @@ QUESTION = "這 {} 秒系統發生了什麼？有哪些狀態變化？"
 COLUMNS = [("timeline", "(a) 時間線"), ("tags", "(b) Topic 類別"), ("clean", "(c) 用詞"), ("grounded", "(d) 時間有根據"),
            ("covered", "(e) 重點涵蓋"), ("no_event", "沒有事件")]
 EVENT_TAGS = ("訊息中斷", "開始或停止發布", "狀態改變", "數值切換", "尖峰", "第一則在中途")   # 同 analysis_job._EVENT_TAGS
-TOL = 0.35   # 模型寫的時間跟事實的時間差多少以內算同一個（同 analysis_job._TIME_TOL、test_data/tools/fact_check.py）
+TOL = 0.35   # 重點寫的時間跟事實的時間差多少以內算同一個（同 test_data/tools/fact_check.py）
 _T = re.compile(r"\+\s?(\d{1,4}(?:\.\d+)?)\s?(?:s|秒)")
 
 sys.path.insert(0, PROJECT)
@@ -80,7 +80,7 @@ def fact_times(rep):
 
 
 def model_texts(rep):
-    """報告裡模型寫的文字：重點（Synthesizer）與 worker 的說明。"""
+    """報告裡的文字：重點與 worker 的說明（2026-10-23 以前的 job：模型寫的；之後重點由程式寫，沒有 worker）。"""
     hl = [str(h.get("text") or "") for h in rep.get("highlights") or []]
     notes = [str(n.get("text") or "") for ns in (rep.get("notes") or {}).values() for n in ns]
     return hl, notes
@@ -103,12 +103,7 @@ def score_job(job_id, case):
     hl, notes = model_texts(rep)
     text = "\n".join(hl + notes)
     rows = [r for r in rep.get("timeline") or [] if isinstance(r, dict)]
-    checks = job.get("checks") or []
-    res = {"job": job_id, "case": case["id"], "status": job.get("status"), "seconds": job.get("seconds"), "calls": job.get("model_calls"),
-           "models": job.get("models"), "topics": sorted(w["topic"] for w in job.get("workers") or []),
-           "dropped": len(rep.get("dropped") or []) + sum(len(w.get("dropped") or []) for w in job.get("workers") or []),
-           "fallback": bool(rep.get("fallback")), "highlights": len(hl), "asked": any(c.get("asked") for c in checks),
-           "followups": [a["topic"] for c in checks for a in c.get("followups") or []], "why": {}}
+    res = {"job": job_id, "case": case["id"], "status": job.get("status"), "seconds": job.get("seconds"), "highlights": len(hl), "why": {}}
     if job.get("status") != "done":   # 失敗的一次：適用的欄位都算沒過（不從分母裡消失）；用詞、時間有根據沒有文字可評
         why = job.get("error") or job.get("status")
         res["why"]["status"] = why
@@ -141,12 +136,12 @@ def score_job(job_id, case):
     bad = [f"「{f}」" for f in case.get("forbid") or [] if said(plain, f)] + [f"「{w}」" for w in _not_fact_words(text, quoted)]
     res["clean"] = not bad
     if bad:
-        res["why"]["clean"] = "模型寫了" + "、".join(bad)
+        res["why"]["clean"] = "報告的文字寫了" + "、".join(bad)
     ref = fact_times(rep) + [0.0, float(job.get("duration_sec") or 0)]
     loose = [m.group(0) for m in _T.finditer(text) if not any(abs(float(m.group(1)) - r) <= TOL for r in ref)]
     res["grounded"] = not loose
     if loose:
-        res["why"]["grounded"] = "模型寫的時間對不上事實：" + "、".join(loose[:4])
+        res["why"]["grounded"] = "重點寫的時間對不上事實：" + "、".join(loose[:4])
     keys = [ev for ev in case.get("timeline") or [] if ev.get("key")]
     if keys:
         used = {r for h in rep.get("highlights") or [] for r in (h.get("refs") or []) + (h.get("also") or [])}   # also：同一刻程式補上、列在那一則下面的
@@ -160,7 +155,7 @@ def score_job(job_id, case):
         hit = [f for f in case["no_event"].get("forbid") or [] if said(text, f)]
         res["no_event"] = not busy and not hit
         if not res["no_event"]:
-            res["why"]["no_event"] = "；".join(([f"量到 {'、'.join(busy)}"] if busy else []) + ([f"模型寫了 {'、'.join(hit)}"] if hit else []))
+            res["why"]["no_event"] = "；".join(([f"量到 {'、'.join(busy)}"] if busy else []) + ([f"重點寫了 {'、'.join(hit)}"] if hit else []))
     return res
 
 
@@ -170,11 +165,12 @@ def facts_signature(job_id):
     rep = job.get("report") or {}
     sig = {r["topic"]: json.dumps([r.get("tags"), r.get("changes"), r.get("end")], ensure_ascii=False) for r in rep.get("topics") or []}
     sig["（時間線）"] = json.dumps([(r.get("ref"), r.get("time"), r.get("event")) for r in rep.get("timeline") or []], ensure_ascii=False)
+    sig["（重點）"] = json.dumps([(h.get("refs"), h.get("time"), h.get("text")) for h in rep.get("highlights") or []], ensure_ascii=False)
     return sig
 
 
 def consistency(results):
-    """每份數據跑好幾次的一致性：指派的 Topic 組合有幾種；每次都有的 Topic（與時間線），事實有幾種寫法（程式整理的，應該只有一種）。"""
+    """每份數據跑好幾次的一致性：每次都有的 Topic（與時間線）、重點，事實有幾種寫法（程式整理的，應該只有一種）。"""
     out = {}
     for cid in dict.fromkeys(r["case"] for r in results):
         rs = [r for r in results if r["case"] == cid and r.get("status") == "done"]
@@ -182,8 +178,7 @@ def consistency(results):
             continue
         sigs = [facts_signature(r["job"]) for r in rs]
         common = set.intersection(*(set(s) for s in sigs))
-        out[cid] = {"runs": len(rs), "topic_sets": len({tuple(r["topics"]) for r in rs}),
-                    "fact_variants": {t: len({s[t] for s in sigs}) for t in sorted(common)}}
+        out[cid] = {"runs": len(rs), "fact_variants": {t: len({s[t] for s in sigs}) for t in sorted(common)}}
     return out
 
 
@@ -196,21 +191,8 @@ def case_of(job_id, cases):
 def run_cases(cases, args, root):
     from agent_core.agent import SkillAgent
     os.chdir(PROJECT)
-    agent = SkillAgent(model=args.model or "gemma4:e4b")
+    agent = SkillAgent(model="gemma4:e4b")   # 數據分析不呼叫模型；主模型的名稱只是建立 agent 用
     agent.target_container = args.container
-    for role in ("orchestrator", "worker", "synthesizer"):   # 只改這次執行的設定（不寫回 logs/analysis_settings.json）
-        m = getattr(args, role) or args.model
-        if m:
-            agent.analysis_cfg[role] = m
-    for role in filter(None, args.think_roles.split(",")):   # 這些角色開 thinking（模型支援才會真的開）
-        agent.analysis_cfg[f"{role.strip()}_think"] = True
-    for item in args.ctx:   # 角色的上下文長度（例如 synthesizer=12288：8 GB 顯卡上讓 deepseek-r1:8b 大部分放進 GPU）
-        role, _, n = item.partition("=")
-        agent.analysis_cfg[f"{role.strip()}_ctx"] = int(n)
-    if args.rounds:
-        agent.analysis_cfg["rounds"] = args.rounds
-    if args.workers:
-        agent.analysis_cfg["max_workers"] = args.workers
     runs = []
     for case in cases:
         for i in range(args.runs):
@@ -233,7 +215,7 @@ def write_scorecard(results, out_dir, title):
     cons = consistency(results)
     lines = [f"# {title}", "", f"產生時間：{time.strftime('%Y-%m-%d %H:%M:%S')}", "",
              "## 各數據的通過數", "", "| 數據 | 次數 | " + " | ".join(lab for k, lab in COLUMNS if k in used)
-             + " | 平均秒數 | 問了要不要補派 | 補派 | 沒通過核對的說明 | Topic 組合 | 事實不一致的 Topic |", "|---|---|" + "---|" * len(used) + "---|---|---|---|---|---|"]
+             + " | 平均秒數 | 事實不一致的項目 |", "|---|---|" + "---|" * len(used) + "---|---|"]
     for cid in dict.fromkeys(r["case"] for r in results):
         rs = [r for r in results if r["case"] == cid]
         cells = []
@@ -244,18 +226,15 @@ def write_scorecard(results, out_dir, title):
         c = cons.get(cid) or {}
         uneven = [t for t, n in (c.get("fact_variants") or {}).items() if n > 1]
         lines.append(f"| {cid} | {len(rs)} | " + " | ".join(cells)
-                     + f" | {f'{sum(secs) / len(secs):.1f}' if secs else '—'} | {sum(1 for r in rs if r.get('asked'))} | "
-                     + f"{sum(len(r.get('followups') or []) for r in rs)} | "
-                     + f"{sum(r.get('dropped') or 0 for r in rs)} | "
-                     + f"{c.get('topic_sets', '—')} | {'、'.join(uneven) or '—'} |")
+                     + f" | {f'{sum(secs) / len(secs):.1f}' if secs else '—'} | {'、'.join(uneven) or ('—' if not c else '（每次一樣）')} |")
     tot = {k: [r.get(k) for r in results if r.get(k) is not None] for k in used}
-    lines.append("| **合計** | " + str(len(results)) + " | " + " | ".join(f"**{sum(v)}/{len(v)}**" for v in tot.values()) + " | | | | | | |")
-    lines += ["", "## 每一次", "", "| 數據 | job | 秒 | " + " | ".join(lab for k, lab in COLUMNS if k in used) + " | 補派 | 沒通過核對 | 沒過的原因 |",
-              "|---|---|---|" + "---|" * len(used) + "---|---|---|"]
+    lines.append("| **合計** | " + str(len(results)) + " | " + " | ".join(f"**{sum(v)}/{len(v)}**" for v in tot.values()) + " | | |")
+    lines += ["", "## 每一次", "", "| 數據 | job | 秒 | " + " | ".join(lab for k, lab in COLUMNS if k in used) + " | 重點 | 沒過的原因 |",
+              "|---|---|---|" + "---|" * len(used) + "---|---|"]
     for r in results:
         why = "；".join(f"{k}：{v}" for k, v in r["why"].items())
         lines.append(f"| {r['case']} | {r['job']} | {r.get('seconds')} | " + " | ".join(mark(r.get(k)) for k in used)
-                     + f" | {'、'.join(r.get('followups') or [])} | {r.get('dropped') or ''}{'（程式列重點）' if r.get('fallback') else ''} | {why} |")
+                     + f" | {r.get('highlights')} | {why} |")
     md = "\n".join(lines) + "\n"
     with open(os.path.join(out_dir, "scorecard.md"), "w", encoding="utf-8") as f:
         f.write(md)
@@ -269,15 +248,7 @@ def main():
     p.add_argument("--run", action="store_true", help="跑分析再評分")
     p.add_argument("--runs", type=int, default=3)
     p.add_argument("--cases", default="", help="只跑這些 case（逗號分隔），省略＝全部")
-    p.add_argument("--model", default="", help="三個角色都用這個模型")
-    p.add_argument("--orchestrator", default="")
-    p.add_argument("--worker", default="")
-    p.add_argument("--synthesizer", default="")
-    p.add_argument("--think-roles", default="", help="開 thinking 的角色（逗號分隔，例如 synthesizer 或 orchestrator,synthesizer）")
-    p.add_argument("--ctx", nargs="*", default=[], help="角色的上下文長度，例如 synthesizer=12288（省略＝NUM_CTX）")
-    p.add_argument("--rounds", type=int, default=0, help="最多幾輪（1＝不補派、2＝可以補派一輪；省略＝照設定）")
     p.add_argument("--cases-file", default="", help="評分標準（cases 檔），省略＝evals/analysis/regression_cases.json 或環境變數 ANALYSIS_CASES")
-    p.add_argument("--workers", type=int, default=0, help="worker 上限（省略＝照設定）")
     p.add_argument("--container", default="ros2_web_container")
     p.add_argument("--data-root", default="")
     p.add_argument("--score", nargs="*", default=None, help="只評分這些 job 編號")

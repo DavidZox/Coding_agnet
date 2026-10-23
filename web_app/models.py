@@ -1,15 +1,14 @@
-"""「🧠 模型」設定的後端：主對話與數據分析三個角色（Orchestrator、Worker、Synthesizer）各自的模型與 thinking 開關。
+"""「🧠 模型」設定的後端：主對話的模型與 thinking 開關（數據分析 2026-10-23 起全部由程式做，沒有自己的模型）。
 
 GET /api/models 回傳目前的設定、Ollama 裡的模型、每個模型支不支援 thinking（畫面只在支援時顯示開關）；
-POST /api/models 一次套用（沒給的欄位不變）。主對話的設定存在 logs/model_settings.json、數據分析的存在 logs/analysis_settings.json，
-重開 Web Console 也記得。/model 與 /think 指令（commands.py）走同一組函式。"""
-from agent_core.analysis_job import ROLES
+POST /api/models 一次套用（沒給的欄位不變）。設定存在 logs/model_settings.json，重開 Web Console 也記得。
+/model 與 /think 指令（commands.py）走同一組函式。"""
 from agent_core.model_caps import supports_thinking
 from .analysis import available_models
 from .state import agent
 
-ROLE_LABELS = {"main": "主對話", "orchestrator": "分析 Orchestrator", "worker": "分析 Worker", "synthesizer": "分析 Synthesizer"}
-ALL_ROLES = ("main",) + ROLES
+ROLE_LABELS = {"main": "主對話"}
+ALL_ROLES = ("main",)
 
 
 def thinking_map(names):
@@ -18,15 +17,9 @@ def thinking_map(names):
 
 def model_view():
     names = available_models()
-    current = {"main": agent.model, **{r: agent.analysis_model(r) for r in ROLES}}
-    view = {"main": agent.model, "main_think": bool(agent.main_think),
+    return {"main": agent.model, "main_think": bool(agent.main_think),
             "summary_model": agent.summary_model, "summary_follows_main": agent._summary_follows_main,
-            "available": names, "thinking": thinking_map(set(names) | set(current.values())),
-            "follows_main": {r: not agent.analysis_cfg.get(r) for r in ROLES}}
-    for r in ROLES:
-        view[r] = current[r]
-        view[f"{r}_think"] = agent.analysis_think(r)
-    return view
+            "available": names, "thinking": thinking_map(set(names) | {agent.model}), "follows_main": {}}
 
 
 def _flag(v):
@@ -40,8 +33,7 @@ def _flag(v):
 
 
 def model_update(data):
-    """套用設定；回傳 {ok, message, models}。模型名稱不在 Ollama 裡 → ValueError（server 轉成 400）。
-    數據分析的角色選了跟主對話一樣的模型時記成「跟著主對話」（之後換主模型會一起換）。"""
+    """套用設定；回傳 {ok, message, models}。模型名稱不在 Ollama 裡 → ValueError（server 轉成 400）。"""
     names = available_models()
     for role in ALL_ROLES:
         m = str(data.get(role) or "").strip()
@@ -53,15 +45,8 @@ def model_update(data):
     if "main_think" in data and _flag(data["main_think"]) is not None:
         agent.main_think = _flag(data["main_think"])
     agent.save_model_settings()
-    for r in ROLES:
-        m = str(data.get(r) or "").strip()
-        if m:
-            agent.analysis_cfg[r] = None if m == agent.model else m
-        if f"{r}_think" in data and _flag(data[f"{r}_think"]) is not None:
-            agent.analysis_cfg[f"{r}_think"] = _flag(data[f"{r}_think"])
-    agent.save_analysis_settings()
     view = model_view()
-    return {"ok": True, "message": "🧠 " + describe(view) + "（主對話下一輪生效；數據分析下一次分析生效，已存檔）", "models": view}
+    return {"ok": True, "message": "🧠 " + describe(view) + "（下一輪生效，已存檔）", "models": view}
 
 
 def describe(view=None):
@@ -73,6 +58,5 @@ def describe(view=None):
             t = "thinking 開" if view[f"{role}_think"] else "thinking 關"
         else:
             t = "不支援 thinking"
-        follow = "，跟著主對話" if role != "main" and view["follows_main"].get(role) else ""
-        parts.append(f"{ROLE_LABELS[role]} {m}（{t}{follow}）")
+        parts.append(f"{ROLE_LABELS[role]} {m}（{t}）")
     return "、".join(parts) + f"；摘要模型 {view['summary_model']}" + ("（跟著主對話）" if view["summary_follows_main"] else "")

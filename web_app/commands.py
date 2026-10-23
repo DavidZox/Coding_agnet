@@ -47,30 +47,28 @@ SLASH_COMMANDS = [
     {"cmd": "/objective show", "desc": "查看目前的 Objective", "group": "動作與查詢"},
     {"cmd": "/objective clear", "desc": "清除 Objective", "group": "動作與查詢"},
     {"cmd": "/clear", "desc": "清空對話記憶，重新開始（選取後需再按 Enter 才會送出）", "group": "動作與查詢"},
-    {"cmd": "/analyze ", "desc": "數據分析：直接交給 analysis_run（Log 去重＋程式量全部 Topic 的事實 → Orchestrator 分派 → Workers 說明 → 事實報告），後接問題", "group": "數據分析", "args": True},
+    {"cmd": "/analyze ", "desc": "數據分析：直接交給 analysis_run（Log 去重＋程式量全部 Topic 的事實＋程式寫重點 → 事實報告，AI 依報告回答），後接問題", "group": "數據分析", "args": True},
     {"cmd": "/analyze", "desc": "數據分析（不帶問題）：整理目前數據發生了哪些狀態變化", "group": "數據分析"},
     {"cmd": "/analysis", "desc": "看最近一次數據分析的報告", "group": "數據分析"},
     {"cmd": "/analysis jobs", "desc": "列出最近的數據分析 job", "group": "數據分析"},
     {"cmd": "/analysis_data ", "desc": "設定目前分析的數據（實驗資料夾、bag、切片、.mcap、實驗名稱或 latest）", "group": "數據分析", "args": True},
     {"cmd": "/analysis_root ", "desc": "設定數據根目錄（錄製位置、實驗名稱與 latest 的基準；- 改回自動尋找）", "group": "數據分析", "args": True},
     {"cmd": "/analysis_container ", "desc": "設定數據分析預設的容器（目標容器沒設定時用；- 清除）", "group": "數據分析", "args": True},
-    {"cmd": "/analysis_model ", "desc": "設定 orchestrator／worker／synthesizer（或 all）的模型，例如 all gemma4:26b", "group": "數據分析", "args": True},
-    {"cmd": "/analysis_workers ", "desc": "一次最多派幾個 worker（1～8）", "group": "數據分析", "args": True},
     {"cmd": "/analysis_mode on", "desc": "📊 分析模式：送出的問題直接交給數據分析", "group": "數據分析"},
     {"cmd": "/analysis_mode off", "desc": "關閉分析模式（訊息回到主對話）", "group": "數據分析"},
     {"cmd": "/analysis_help", "desc": "數據分析的全部指令說明", "group": "數據分析"},
-    {"cmd": "/model", "desc": "查看四個角色（主對話、分析 Orchestrator／Worker／Synthesizer）的模型與 thinking 開關", "group": "模型"},
+    {"cmd": "/model", "desc": "查看主對話的模型與 thinking 開關", "group": "模型"},
     {"cmd": "/model ", "desc": "設定主對話的模型，例如 /model gemma4:26b", "group": "模型", "args": True},
-    {"cmd": "/think ", "desc": "thinking 開關：/think main|orchestrator|worker|synthesizer on|off（模型支援 thinking 才有作用）", "group": "模型", "args": True},
+    {"cmd": "/think ", "desc": "thinking 開關：/think main on|off（模型支援 thinking 才有作用）", "group": "模型", "args": True},
 ]
 
 MENU_TEXT = """可用指令：
 /menu                  顯示本說明
-/analyze [問題]         數據分析：直接交給 analysis_run（Log 去重＋程式量全部 Topic 的事實 → Orchestrator 分派 → Workers 說明 → 事實報告）；
+/analyze [問題]         數據分析：直接交給 analysis_run（Log 去重＋程式量全部 Topic 的事實＋程式寫重點 → 事實報告，AI 依報告回答）；
                         /analysis_help 看全部數據分析指令
 /clear                  清空對話記憶，重新開始
-/model [模型]           查看四個角色的模型與 thinking；給模型名稱＝換主對話的模型（也可以按標題列的 🧠）
-/think <角色> on|off    thinking 開關，角色是 main（主對話）、orchestrator／worker／synthesizer（數據分析）；模型支援才有作用
+/model [模型]           查看主對話的模型與 thinking；給模型名稱＝換主對話的模型（也可以按標題列的 🧠）
+/think main on|off      thinking 開關（模型支援才有作用）
 /compress               手動壓縮並歸檔目前的歷史對話
 /auto on / /auto off    切換 Auto Continue 模式（工具結果自動帶入下一輪，不需確認）
 /hybrid on / /hybrid off 切換 Hybrid 模式（每次工具結果都詢問是否加入上下文）
@@ -96,7 +94,7 @@ Enter 才送出（避免誤點 /clear）；選技能等同 /skill <名稱>：規
 出現 📘 chip，下一則訊息送出時附在後面，AI 就能直接依規格裡的腳本路徑執行，省掉一輪
 「先載規格」。chip 可個別移除；slash 指令、計畫回應、工具決策不會消耗它。
 
-標題列的 🧠 是主對話用的模型：點一下可以分別設定主對話與數據分析 Orchestrator／Worker／Synthesizer 的模型，模型支援 thinking 時旁邊會有
+標題列的 🧠 是主對話用的模型：點一下可以換模型，模型支援 thinking 時旁邊會有
 thinking 開關（Ollama 的 think 模式：先想再回答，比較慢；思考內容顯示在右欄的「🧠 模型的思考」卡片，不進對話）。
 摘要模型沒有另外指定（AGENT_SUMMARY_MODEL）時跟著主對話的模型換。設定會存檔，重開也記得。
 
@@ -366,19 +364,18 @@ def handle_slash_command(message, events):
 
 
 def _handle_model_command(text, events):
-    """/model：查看四個角色的模型與 thinking；/model <名稱>：換主對話的模型；/think <角色> on|off：thinking 開關。"""
+    """/model：查看主對話的模型與 thinking；/model <名稱>：換主對話的模型；/think main on|off：thinking 開關。"""
     from .models import ALL_ROLES, describe, model_update, model_view
     parts = text.split()
     try:
         if parts[0].lower() == "/model":
             if len(parts) == 1:
-                events.append({"channel": "system", "text": "🧠 " + describe() + "\n設定：/model <模型>（主對話）、/analysis_model orchestrator|worker|synthesizer|all <模型>、"
-                                                             "/think main|orchestrator|worker|synthesizer on|off；也可以按標題列的 🧠"})
+                events.append({"channel": "system", "text": "🧠 " + describe() + "\n設定：/model <模型>（主對話）、/think main on|off；也可以按標題列的 🧠"})
             else:
                 events.append({"channel": "system", "text": model_update({"main": parts[1]})["message"]})
             return True
         if len(parts) != 3 or parts[1].lower() not in ALL_ROLES or parts[2].lower() not in ("on", "off"):
-            events.append({"channel": "system", "text": "用法：/think main|orchestrator|worker|synthesizer on|off"})
+            events.append({"channel": "system", "text": "用法：/think main on|off"})
             return True
         role, on = parts[1].lower(), parts[2].lower() == "on"
         view = model_view()

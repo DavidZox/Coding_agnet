@@ -1,19 +1,16 @@
-"""數據分析（analysis_run：程式量全部的事實 → Orchestrator → Workers 說明 → Synthesizer 重點 → Orchestrator 檢查）的離線自我測試：
-假的 ollama.chat 照劇本回答、數據技能回傳用從真實數據錄下的輸出（evals/analysis/fixtures/，exp_5090_overheat：+16.50s 馬達過熱 WARN →
-安全閘 LIMITED、/cmd_vel 0.2 → 0.1，+22.61s 解除），不需要 Ollama、不需要 docker。
+"""數據分析（analysis_run：全部由程式做——Log 去重、量全部 Topic 的事實、程式寫重點、報告）的離線自我測試：數據技能回傳用從真實數據錄下的
+輸出（evals/analysis/fixtures/，exp_5090_overheat：+16.50s 馬達過熱 WARN → 安全閘 LIMITED、/cmd_vel 0.2 → 0.1，+22.61s 解除），
+不需要 Ollama、不需要 docker。
 
     python3 evals/analysis/selftest.py
 
-測的是 harness 的程式把關（模型能力用真模型量：test_data/tools/run_regression.py，或直接 /analyze）：
+測的是：
 - 量測（_ros2_data_common）：發布方式由內容與時間判斷（狀態改變時才發布的不算中斷、低頻的固定頻率照樣判斷停止）、尖峰（雜訊不算、
   單獨跳出去又回來的才算）、數值切換、反覆切換只留頭尾、陣列只量長度；
 - 事實（程式）：T#／E# 的編號每次一樣、同一則訊息的變化合成一個事件、時間線與前後 1 秒的對照、同時發生、前後沒有任何變化的 Log；
-- Orchestrator 的計畫檢查：不存在的 L#／Topic、Log Topic、重複 → 交回修一次；沒有變化的 Topic 不派（不算問題）；可以寫 T#；
-  給不出計畫時程式補指派；
-- Worker 與 Synthesizer：每一則說明的程式核對（編號、原因與推測、跟引用的事件不符的用詞、寫錯的時間、太長）→ 交回修一次，
-  還是不行的那一則不列；時間由程式依編號補上；Synthesizer 沒有可用的重點時由程式列出；
-- Orchestrator 檢查：相關的 Log 前後有變化、還沒有說明的 Topic 才問；補派的程式核對；最多補一輪、report_r1.md；
-- 主對話：依報告回答卻寫成因果 → 提醒一次改寫；
+- 報告（程式）：每個重要的時間點一則重點（引用那一刻全部的編號，Log 與事件的內容列在下面）、到最後跟開頭不同的值、指定的 Topic、
+  不呼叫模型；
+- 句子的意思（agent_core/claims.py）與主對話：依報告回答卻寫成因果、或寫錯事實 → 提醒一次改寫；
 - 一次最多 3 分鐘、拿掉的選項說清楚、設定檔只存改過的值；dispatch、Web 的 /analyze 回合、面板、程式重新啟動時標中斷。
 每一個情境都在臨時目錄複製一份專案，不碰正式的 logs/。"""
 import json
@@ -41,51 +38,17 @@ def fixture_json(name):
     return json.loads(fixture(name).split("\n[ANALYSIS_DATA]")[0])
 
 
-SUMMARY_DEFAULT = {"highlights": [{"refs": ["E3"], "text": "/cmd_vel_raw 開始發布"},
-                                  {"refs": ["L18", "E8"], "text": "L18 WARN system_health_monitor：MON_FAULT_RAISED；同一時間安全閘 mode 由 NORMAL 變成 LIMITED"},
-                                  {"refs": ["E14"], "text": "安全閘回到 NORMAL"},
-                                  {"refs": ["E16"], "text": "/cmd_vel_raw 停止發布"}]}   # overheat 的 4 個重要時間點都寫到
-
-
 class FakeChat:
-    """依 format（schema）分辨角色：Orchestrator 規劃／Orchestrator 檢查／Worker／Synthesizer／主對話。各自照劇本依序回答。
-    worker 沒有劇本時引用自己那個 Topic 的 T#（從任務說明讀）。"""
+    """假的 ollama.chat：只有主對話會呼叫（數據分析全部由程式做）；照劇本依序回答，記下每次的呼叫。"""
 
-    def __init__(self, schemas, plans=(), checks=(), worker=(), summaries=(), main=()):
-        self.s = schemas
-        self.q = {"plan": list(plans), "check": list(checks), "worker": list(worker), "summary": list(summaries), "main": list(main)}
-        self.seen = {k: [] for k in self.q}
-
-    def _next(self, role, default):
-        q = self.q[role]
-        return q.pop(0) if q else default
-
-    def _role(self, format):
-        """格式 → 角色：看格式最上層的欄位（Synthesizer 的則數上限每次不同，格式是複製的，不能用 is 比）。"""
-        props = set(((format or {}).get("properties") or {}).keys()) if isinstance(format, dict) else set()
-        for role in ("plan", "check", "summary", "worker"):
-            if props and props == set(self.s[role]["properties"]):
-                return role
-        return "main"
+    def __init__(self, main=()):
+        self.q = {"main": list(main)}
+        self.seen = {"main": []}
 
     def __call__(self, model=None, messages=None, format=None, **kw):
-        role = self._role(format)
-        self.formats = getattr(self, "formats", []) + [(role, format)]
-        if role == "plan":
-            role, default = "plan", {}
-        elif role == "check":
-            role, default = "check", {"followups": []}
-        elif role == "summary":
-            role, default = "summary", SUMMARY_DEFAULT
-        elif role == "worker":
-            m = re.search(r"【你負責的 Topic】(T\d+)", messages[-1]["content"])
-            role, default = "worker", {"notes": [{"refs": [m.group(1) if m else "T1"], "text": "這個 Topic 的變化如事件所列"}]}
-        else:
-            role, default = "main", {"thought": "依報告回答", "reply": "依報告：+16.50s 安全閘進入 LIMITED，+22.61s 回到 NORMAL。", "action": None}
-        self.seen[role].append(messages)
-        out = self._next(role, default)
-        if isinstance(out, Exception):   # 劇本裡放例外：模擬 Ollama 的錯誤（例如輸出重複被中止）
-            raise out
+        self.seen["main"].append(messages)
+        q = self.q["main"]
+        out = q.pop(0) if q else {"thought": "依報告回答", "reply": "依報告：+16.50s 安全閘進入 LIMITED，+22.61s 回到 NORMAL。", "action": None}
         content = out if isinstance(out, str) else json.dumps(out, ensure_ascii=False)
         return {"message": {"content": content}, "prompt_eval_count": 100, "eval_count": 20}
 
@@ -140,8 +103,6 @@ def main():
         from agent_core import model_caps
         model_caps._cache.clear()
         ollama.show = lambda model: {"capabilities": ["completion"]}
-        from agent_core.schemas import (ANALYSIS_CHECK_SCHEMA, ANALYSIS_NOTE_MAX, ANALYSIS_PLAN_SCHEMA, ANALYSIS_SUMMARY_SCHEMA,
-                                        ANALYSIS_WORKER_SCHEMA)
         from agent_core.config import ANALYSIS_REPORT_HEAD
         from agent_core.protocol import is_exempt_result
         from agent_core import analysis_job as aj
@@ -149,17 +110,11 @@ def main():
         from web_app import flows
         sys.path.insert(0, os.path.join(tmp, "skills_system", "scripts"))
         import _ros2_data_common as rd
-        schemas = {"plan": ANALYSIS_PLAN_SCHEMA, "check": ANALYSIS_CHECK_SCHEMA, "summary": ANALYSIS_SUMMARY_SCHEMA,
-                   "worker": ANALYSIS_WORKER_SCHEMA}
         agent.target_container = "ros2_web_container"
-        agent.analysis_cfg.update(parallel=1, max_workers=3, rounds=2)
-        GOOD_PLAN = {"understanding": "馬達過熱的前後安全閘與速度指令的變化",
-                     "related_signals": [{"id": "L18", "why": "馬達過熱 WARN"}, {"id": "L20", "why": "安全閘進入 LIMITED"}],
-                     "assignments": [{"topic": "/system/safety_gate_status", "subtask": "說明 L18 前後 mode 的跳轉"}]}
         IDX, SCAN, LOGS = fixture_json("index_output.txt"), fixture_json("facts_output.txt"), fixture_json("rosout_output.txt")
 
         def setup(extra_signals=(), index=None, scan=None, **kw):
-            fake = FakeChat(schemas, **kw)
+            fake = FakeChat(**kw)
             ollama.chat = fake
             calls = []
             agent._exec_script = fake_exec_factory(agent, calls, extra_signals, index, scan)
@@ -296,283 +251,52 @@ def main():
             row = next(r for r in f3["topics"] if r["topic"] == "/system/safety_command")
             assert len(row["events"]) == sum(aj._FLAP_KEEP) and any("變化共" in c for c in row["changes"]), row["events"]
 
-        # ------------------------------------------------------------ Orchestrator
-        def t_plan_repair():
-            bad = {"understanding": "x", "related_signals": [{"id": "L99", "why": "不存在"}, {"id": "L18", "why": "ok"}],
-                   "assignments": [{"topic": "/nonexistent", "subtask": "a"}, {"topic": "/rosout", "subtask": "b"},
-                                   {"topic": "cmd_vel", "subtask": "c"}, {"topic": "/cmd_vel", "subtask": "d"},
-                                   {"topic": "/parameter_events", "subtask": "e"}, {"topic": "T3 /cmd_vel", "subtask": "f"}]}
-            fake, calls = setup(plans=[bad, dict(GOOD_PLAN, assignments=GOOD_PLAN["assignments"] + [{"topic": "T3 /cmd_vel_raw", "subtask": "看指令"}])])
-            out = agent.analysis_run(f'--data {DATA} "馬達過熱的前後發生了什麼"')
-            assert out.startswith(ANALYSIS_REPORT_HEAD), out[:300]
-            assert len(fake.seen["plan"]) == 2, "計畫有問題：交回 Orchestrator 修一次"
-            fix_prompt = fake.seen["plan"][1][1]["content"]
-            for issue in ("L99 不存在", "/nonexistent」不在事實裡", "/rosout 不能指派", "/cmd_vel 重複指派", "/parameter_events」不在事實裡",
-                          "T3 是 /cmd_vel_raw，寫的名稱卻是 /cmd_vel"):
-                assert issue in fix_prompt, (issue, fix_prompt[-800:])
-            plan_prompt = fake.seen["plan"][0][1]["content"]
-            assert "【全部 Topic 的事實（程式量測整段數據的全部 Key；T# 是 Topic 的編號）】" in plan_prompt and "- T1 /system/safety_gate_status｜" in plan_prompt
+        # ------------------------------------------------------------ 報告（程式）
+        def t_program_report():
+            fake, calls = setup()
+            out = agent.analysis_run(f'--data {DATA} --topic /diagnostics_agg --topic nope "馬達過熱的前後發生了什麼"')
+            assert not fake.seen["main"], "數據分析不呼叫模型"
+            assert out.startswith(ANALYSIS_REPORT_HEAD + "（job ") and "：程式整理，" in out.split("\n")[0], out[:200]
             d, job = last_job()
-            assert [a["topic"] for a in job["plan"]["assignments"]] == ["/system/safety_gate_status", "/cmd_vel_raw"], "可以寫 T# 加名稱"
+            assert job["status"] == "done" and job["generated_by"] == "program" and not {"workers", "plan", "model_calls"} & set(job), sorted(job)
+            assert not os.path.exists(os.path.join(d, "prompts")) and os.path.exists(os.path.join(d, "topic_facts.json")), os.listdir(d)
             assert any(c["script"] == "mcap_analyzer_cmd.py" and "--facts" in c["args"] for c in calls), "事實由程式量全部的 Topic"
-            assert not any(c["script"] in ("mcap_feature_measure_cmd.py", "mcap_slicer_cmd.py") for c in calls), "worker 不再自己量、不切片"
-            assert os.path.exists(os.path.join(d, "topic_facts.json")) and "facts" in job and "scan" not in job
-            assert {"L18", "L19", "L20"} <= {r["ref"] for r in job["facts"]["timeline"]}, "WARN 以上與規劃時挑的 Log 進時間線"
-            dup = dict(GOOD_PLAN, related_signals=[{"id": "L18", "why": "a"}, {"id": "l18", "why": "b"}, {"id": "L20", "why": "c"}])
-            fake, calls = setup(plans=[dup])
-            agent.analysis_run(f'--data {DATA} "馬達過熱"')
-            d, job = last_job()
-            assert len(fake.seen["plan"]) == 1 and [r["id"] for r in job["plan"]["related"]] == ["L18", "L20"] and not job["plan"]["issues"]
-
-        def t_plan_quiet_and_auto():
-            # 沒有變化的 Topic 不派（程式已經寫了「沒有變化」，不算問題、不交回）；Orchestrator 給不出計畫 → 程式依事件與相關的 Log 指派
-            scan = json.loads(json.dumps(SCAN))
-            for it in scan["topics"]["/diagnostics_toplevel_state"]["items"]:
-                it.update(count=0, changes=[], last=it.get("first"))
-            plan = dict(GOOD_PLAN, assignments=[{"topic": "/diagnostics_toplevel_state", "subtask": "x"}] + GOOD_PLAN["assignments"])
-            fake, calls = setup(scan=scan, plans=[plan])
-            agent.analysis_run(f'--data {DATA} "看一下"')
-            d, job = last_job()
-            assert len(fake.seen["plan"]) == 1 and job["plan"]["skipped"] == ["/diagnostics_toplevel_state（沒有變化）"], job["plan"]
-            assert [a["topic"] for a in job["plan"]["assignments"]] == ["/system/safety_gate_status"]
-            fake, calls = setup(plans=[{}, "不是 JSON"])
-            out = agent.analysis_run(f'--data {DATA}')
-            d, job = last_job()
-            topics = [a["topic"] for a in job["plan"]["assignments"]]
-            assert out.startswith(ANALYSIS_REPORT_HEAD) and job["plan"].get("auto_assigned") and len(topics) == 3, job["plan"]
-            assert len(set(topics)) == 3 and "/rosout" not in topics and "/parameter_events" not in topics
-            assert job["question"] == "這段錄製期間發生了哪些狀態變化？", "沒有問題時用預設問題"
-
-        # ------------------------------------------------------------ Workers
-        def t_worker_notes():
-            # 每一則說明的程式核對：引用別的 Topic 的事件、寫原因、寫錯時間、寫「中斷」卻沒有引用中斷、太長 → 交回修一次；修好的照列，
-            # 時間由程式依編號補上
-            bad = {"notes": [{"refs": ["E9"], "text": "/cmd_vel 降速"},
-                             {"refs": ["E8"], "text": "馬達過熱導致 mode 變成 LIMITED"},
-                             {"refs": ["E8"], "text": "+12.00s mode 變成 LIMITED"},
-                             {"refs": ["E14"], "text": "安全閘的訊息中斷後回到 NORMAL"},
-                             {"refs": ["T1"], "text": "很長" * (ANALYSIS_NOTE_MAX // 2)},
-                             {"refs": ["E8"], "text": "mode 從 NORMAL 變成 LIMITED（定義：限速放行）"}]}
-            good = {"notes": [{"refs": ["E8"], "text": "mode 從 NORMAL 變成 LIMITED（定義：限速放行），latest_reaction 變成 LIMIT_SPEED"},
-                              {"refs": ["e14", "E 14"], "text": "+22.61s mode 回到 NORMAL"},
-                              {"refs": ["T1"], "text": "只在狀態改變時發布，整段 5 則"}]}
-            fake, calls = setup(plans=[GOOD_PLAN], worker=[bad, good])
-            agent.analysis_run(f'--data {DATA} "馬達過熱的前後發生了什麼"')
-            brief = fake.seen["worker"][0][1]["content"]
-            assert "【使用者的問題】" not in brief and GOOD_PLAN["understanding"] not in brief and "馬達過熱的前後" not in brief, brief[:400]
-            assert not re.search(r"\bL(18|20)\b", brief) and "說明 +16.50s 前後 mode 的跳轉" in brief, "L# 換成時間（worker 看不到 Log）"
-            assert "【訊息定義（錄製時存在 MCAP 裡的 .msg，含註解）】" in brief and "E8｜+16.50s｜mode：NORMAL → LIMITED" in brief, brief[-1500:]
-            ask = fake.seen["worker"][1][1]["content"]
-            for issue in ("第 1 則", "E9 不在可以引用的事實裡", "第 2 則", "寫了「導致」", "寫了 +12.00s", "寫了「中斷」", "太長、被截斷在半句"):
-                assert issue in ask, (issue, ask[-1500:])
-            assert "第 6 則" not in ask, "沒問題的不列"
-            d, job = last_job()
-            w = job["workers"][0]
-            assert [h["refs"] for h in w["notes"]] == [["E8"], ["E14"], ["T1"]] and w["notes"][0]["time"] == "+16.50s", w["notes"]
-            assert w["notes"][1]["time"] == "+22.61s" and w["notes"][2]["time"] == "" and len(w["issues"]) == 5 and "dropped" not in w, w
-            md = open(os.path.join(d, "workers", "W1_system_safety_gate_status.md"), encoding="utf-8").read()
-            assert md.startswith("---\nartifact: \"worker_notes\"") and "- **+16.50s**　mode 從 NORMAL 變成 LIMITED" in md, md[:1200]
-            assert os.path.exists(os.path.join(d, "prompts", "worker_W1_2.md"))
-            # 修一次還不行：那一則不列，記在 dropped；一則都沒有時用第一版通過的
-            fake, calls = setup(plans=[GOOD_PLAN], worker=[bad, {"notes": [{"refs": ["E8"], "text": "因為過熱所以限速"}]}])
-            agent.analysis_run(f'--data {DATA} "看一下"')
-            d, job = last_job()
-            w = job["workers"][0]
-            assert [h["text"] for h in w["notes"]] == ["mode 從 NORMAL 變成 LIMITED（定義：限速放行）"], w["notes"]
-            assert len(w["dropped"]) == 5, w["dropped"]
-            # 模型的輸出被 Ollama 中止（重複太多）：當成沒有輸出，交回一次；連線這類錯誤照樣丟出去
-            import ollama
-            abort = ollama.ResponseError("prediction aborted, token repeat limit reached", 500)
-            fake, calls = setup(plans=[GOOD_PLAN], worker=[abort, good])
-            agent.analysis_run(f'--data {DATA} "看一下"')
-            d, job = last_job()
-            w = job["workers"][0]
-            assert w["status"] == "done" and [h["refs"] for h in w["notes"]] == [["E8"], ["E14"], ["T1"]], w
-            assert len(job["model_aborted"]) == 1 and job["model_aborted"][0].startswith("worker_W1："), job.get("model_aborted")
-            assert "模型的輸出被 Ollama 中止 1 次" in open(os.path.join(d, "report.md"), encoding="utf-8").read()
-            fake, calls = setup(plans=[GOOD_PLAN], worker=[ollama.ResponseError("model 'x' not found", 404)])
-            agent.analysis_run(f'--data {DATA} "看一下"')
-            d, job = last_job()
-            assert job["workers"][0]["status"] == "failed" and "not found" in job["workers"][0]["error"], job["workers"][0]
-            # T#（整個 Topic）連同它的事件算引用：寫這個 Topic 的開始發布、那些時間都對
-            from agent_core.analysis_job import _check_note
-            facts = job["facts"]
-            t3 = next(r for r in facts["topics"] if r["topic"] == "/cmd_vel_raw")
-            note, issues = _check_note({"refs": [t3["id"]], "text": "這個 Topic 在 +9.24s 開始發布、+34.24s 之後停止發布"}, {t3["id"]}, facts)
-            assert not issues, issues
-            note, issues = _check_note({"refs": [t3["id"]], "text": "這個 Topic 在 +12.00s 訊息中斷"}, {t3["id"]}, facts)
-            assert len(issues) == 2, issues
-            from agent_core.analysis_job import _interrupt_words, _not_fact_words
-            assert not _interrupt_words("沒有任何狀態跳轉、數值尖峰或訊息中斷") and not _interrupt_words("是否中斷看不出來")
-            assert _interrupt_words("/cmd_vel_raw 指令源頭中斷") == ["中斷"]
-            assert _not_fact_words("可能是上游節點關閉") == ["可能是"] and _not_fact_words("因為 X", quoted="because 因為") == []
-
-        # ------------------------------------------------------------ Synthesizer
-        def t_summary_highlights():
-            bad = {"highlights": [{"refs": ["E99"], "text": "不存在的事件"},
-                                  {"refs": ["L18", "E8"], "text": "馬達過熱觸發安全閘限速"},
-                                  {"refs": ["E3"], "text": "/cmd_vel_raw 停止發布"},
-                                  {"refs": ["T2"], "text": "/cmd_vel 開始發布"},
-                                  {"refs": ["E14"], "text": "安全閘回到 NORMAL"}]}
-            good = {"highlights": [{"refs": ["E14"], "text": "安全閘回到 NORMAL"},
-                                   {"refs": ["L18", "E8", "E9"], "text": "L18 WARN system_health_monitor：MON_FAULT_RAISED；同一時間 mode 變成 LIMITED、/cmd_vel 的 linear.x 由 0.2 變成 0.1"},
-                                   {"refs": ["E3", "E16"], "text": "/cmd_vel_raw 開始發布，之後停止發布"}]}
-            fake, calls = setup(plans=[GOOD_PLAN], summaries=[bad, good])
-            out = agent.analysis_run(f'--data {DATA} "馬達過熱的前後發生了什麼"')
-            sp = fake.seen["summary"][0][1]["content"]
-            assert "【使用者的問題】" not in sp and "馬達過熱的前後" not in sp and "【Orchestrator 挑的相關 Log】L18、L20" in sp, sp[-800:]
-            assert "- E8｜+16.50s｜T1 /system/safety_gate_status｜" in sp and "【Workers 的說明" in sp, sp[:2000]
-            # 則數上限跟著事實：overheat 是 4 個重要的時間點（+9.1、+16.5、+22.5、+34.2～+34.8 秒）→ 上限照格式的預設 8；格式是複製的
-            fmt = [f for r, f in fake.formats if r == "summary"][0]
-            assert fmt["properties"]["highlights"]["maxItems"] == 8 and "最多 8 則（重要的時間點 4 個" in sp, sp[-400:]
-            from agent_core.analysis_job import _highlight_cap, _key_moments
-            from agent_core.schemas import ANALYSIS_SUMMARY_SCHEMA as SS
-            many = {"topics": [], "events": {f"E{i}": {"id": f"E{i}", "topic": f"/t{i}", "t": i * 3.0, "kind": "change"} for i in range(1, 15)},
-                    "logs": [{"id": "L1", "t": 1.5, "level": "WARN"}, {"id": "L2", "t": 2.0, "level": "INFO"}, {"id": "L3", "t": 6.4, "level": "ERROR"}]}
-            assert _key_moments(many) == 15 and _highlight_cap(many) == 17, "WARN 以上的 Log 也算；1 秒內的算同一個；INFO 不算"
-            assert _highlight_cap({"topics": [], "events": {f"E{i}": {"id": f"E{i}", "topic": "/x", "t": i * 2.0, "kind": "stop"} for i in range(60)},
-                                   "logs": []}) == 24, "防失控的硬上限"
-            flapping = dict(many, topics=[{"id": "T1", "topic": "/t1", "flap": 95}, {"id": "T2", "topic": "/t2", "flap": 30}])
-            assert _key_moments(flapping) == 14 and _highlight_cap(flapping) == 18, "反覆切換的 Topic 不逐次算時間點、整個算一則（另加一則）"
-            assert SS["properties"]["highlights"]["maxItems"] == 8, "共用的格式不被改到"
-            ask = fake.seen["summary"][1][1]["content"]
-            for issue in ("E99 不在可以引用的事實裡", "寫了「觸發」", "寫了「停止發布」，但引用的事件裡沒有停止發布", "寫了「開始發布」，但引用的事件裡沒有開始發布"):
-                assert issue in ask, (issue, ask[-1500:])
-            d, job = last_job()
+            assert not any(c["script"] in ("mcap_feature_measure_cmd.py", "mcap_slicer_cmd.py") for c in calls)
             hl = job["report"]["highlights"]
-            assert [h["time"] for h in hl] == ["+9.24s～+34.24s", "+16.50s～+16.52s", "+22.61s"], "時間由程式依編號補上、依時間排"
-            assert job["summary_checks"][0]["left"] == [] and not job["report"]["dropped"], job["summary_checks"]
+            moments = aj._moments(job["facts"])[0]
+            timed = [h for h in hl if h["t"] is not None]
+            assert len(timed) == 4 and all(set(m["refs"]) <= set(h["refs"]) for m, h in zip(moments, timed)), "每個重要的時間點一則，引用那一刻全部的編號"
+            m2 = timed[1]
+            assert m2["time"] == "+16.50s～+16.52s" and m2["text"].startswith("3 則 Log（WARN 2、INFO 1）；6 個事件：/diagnostics 開始發布、"), m2
+            assert [x.split()[0] for x in m2["facts"]] == ["L18", "L19", "L20", "E4", "E5", "E6", "E7", "E8", "E9"], "Log 在前、事件在後，那一刻全部列出"
+            assert "E8 /system/safety_gate_status：mode：NORMAL → LIMITED；latest_reaction：NONE → LIMIT_SPEED" in m2["facts"]
+            assert {"L21", "L22"} <= set(timed[2]["refs"]) and timed[2]["text"].startswith("3 則 Log（INFO 3）"), "前後 1 秒內時間線上的 INFO（故障清除）也列進那一刻"
+            assert timed[0]["text"] == "1 則 Log（INFO 1）；3 個事件：/system/safety_gate_status、/cmd_vel、/cmd_vel_raw 開始發布", timed[0]
+            whole = [h["text"] for h in hl if h["t"] is None]
+            assert whole[0] == ("到數據結束時跟開頭不同：/diagnostics：status.level[act_motor_left]＝0（開頭 1）、status.message[act_motor_left]＝OK"
+                                "（開頭 Motor overheat）（另 1 項）；中途才出現：/diagnostics_agg 4 項"), "依 Topic 分組：每個有變的 Topic 都看得到"
+            # 事件 2 個以內：寫第一個變化
+            few = aj._program_highlights({"events": {"E1": {"id": "E1", "topic": "/gate", "t": 1.0, "kind": "change", "text": "mode：A → B；x：1 → 2"}},
+                                          "signals": {}, "logs": [], "topics": [], "timeline": []})
+            assert few[0]["text"] == "/gate mode：A → B（另 1 項）", few
             md = open(os.path.join(d, "report.md"), encoding="utf-8").read()
-            assert "## 重點\n**總覽（程式）**：7 個 Topic：有事件的 7 個" in md and "- **+16.50s～+16.52s**　L18 WARN" in md, md[:2500]
-            assert "## Workers 的說明" in md and "## 各 Topic 的結果（程式量測整段數據的全部 Key）" in md and "| T1 | /system/safety_gate_status |" in md
-            assert "原因要對照源碼另外分析" in md and "## 根因" not in md and GOOD_PLAN["understanding"] not in md
-            assert out.startswith(ANALYSIS_REPORT_HEAD) and "重點（時間由程式依編號補上；引用的事件與 Log 的內容由程式列在下面）：\n- +9.24s～+34.24s　/cmd_vel_raw 開始發布" in out, out[:1500]
-            # 重點引用的事件與 Log 由程式列在下面（事件在前）；同一刻其他的編號掛在第一則引用到那一刻的重點（also）；主對話最多列 6 行
-            assert ("（L18、E8、E9；同一時間：E4、E5、E6、E7、L19）\n  - E4 /diagnostics：開始發布" in out
-                    and "\n  - E8 /system/safety_gate_status：mode：NORMAL → LIMITED" in out and "…另 2 個事件與 Log（完整的在報告）" in out), out[:2500]
-            assert "（L18、E8、E9；同一時間：E4、E5、E6、E7、L19）\n  - E4 /diagnostics：" in md and "\n  - L19 WARN system_health_monitor：" in md, md[:3000]
-            assert [x[:3] for x in hl[1]["facts"]] == ["E4 ", "E5 ", "E6 ", "E7 ", "E8 ", "E9 ", "L18", "L19"] and set(hl[1]["also"]) == {"E4", "E5", "E6", "E7", "L19"}, hl[1]
-            assert "\n  - E" not in md.split("## Workers 的說明")[1].split("## 時間線")[0], "worker 的說明只引用自己那個 Topic：不列內容"
+            assert md.startswith("---\nartifact: \"fact_report\"") and "generated_by: \"program\"" in md, md[:300]
+            assert "## 重點\n**總覽**：7 個 Topic：有事件的 7 個" in md and "- **+16.50s～+16.52s**　3 則 Log（WARN 2、INFO 1）" in md, md[:2000]
+            assert "## Workers" not in md and "## 各 Topic 的結果（程式量測整段數據的全部 Key）" in md and "## 資料來源" in md and "沒有呼叫模型" in md
+            assert "原因要對照源碼另外分析" in md
+            assert "指定的 Topic：\n- T5 /diagnostics_agg｜狀態改變｜" in out and "- /nope：這份數據裡沒有這個 Topic" in out, out[:1500]
+            assert "重點（程式整理；引用的事件與 Log 的內容列在每一則下面）：\n- +9.14s～+9.24s　1 則 Log（INFO 1）；3 個事件" in out, out[:2500]
+            assert "\n  - L18 WARN system_health_monitor：" in out and "…另" not in out.split("有變化的 Topic")[0], "主對話看得到那一刻全部的 Log 與事件"
+            assert "要細看某個 Topic" in out and "不要寫成誰導致、造成、觸發誰" in out and is_exempt_result(out, 5000)
             tl = out.split("時間線（重點沒有引用的")[1].split("\n同時發生")[0] if "時間線（重點沒有引用的" in out else ""
             assert "- E8｜" not in tl and "- E3｜" not in tl, "主對話的時間線只列重點沒有引用的"
-            ask = fake.seen["summary"][1][1]["content"]
-            assert "【上一版有問題的那幾則（其他的通過了，程式會保留，不用重寫）】" in ask and "安全閘回到 NORMAL" not in ask.split("【上一版有問題的那幾則")[1], \
-                "只交回有問題的那幾則"
-            assert "不要寫成誰導致、造成、觸發誰" in out and is_exempt_result(out, 5000)
-            # 實測（第十一輪 camera、lidar）：7 則裡 1 則太長，修正版只回修好的那一則（或整份少抄）——通過的 6 則要留著；
-            # 同一段寫了好幾次（模型重複）只留一則
-            long_one = {"refs": ["L18", "E8", "E9"], "text": "；".join(["L18 WARN system_health_monitor：MON_FAULT_RAISED"] * 7)}
-            seven = {"highlights": [{"refs": ["E3"], "text": "/cmd_vel_raw 開始發布"}, long_one, long_one,
-                                    {"refs": ["E14"], "text": "安全閘回到 NORMAL"}, {"refs": ["E14"], "text": "安全閘回到 NORMAL"},
-                                    {"refs": ["E16"], "text": "/cmd_vel_raw 停止發布"}, {"refs": ["T5"], "text": "/diagnostics_agg 中間變過，最後回到開頭的值"}]}
-            fixed = {"highlights": [{"refs": ["L18", "E8", "E9"], "text": "同一時間 1 則 WARN Log；mode 變成 LIMITED、/cmd_vel 的 linear.x 由 0.2 變成 0.1"}]}
-            fake, calls = setup(plans=[GOOD_PLAN], summaries=[seven, fixed])
-            agent.analysis_run(f'--data {DATA} "看一下"')
-            d, job = last_job()
-            hl = job["report"]["highlights"]
-            assert [h["refs"] for h in hl] == [["E3"], ["L18", "E8", "E9"], ["E14"], ["E16"], ["T5"]], [h["refs"] for h in hl]
-            assert not job["report"]["dropped"] and {"E8", "E9", "L18"} <= {x.split()[0] for x in hl[1]["facts"]} and "同一時間 1 則 WARN Log" in hl[1]["text"], hl[1]
-            ask = fake.seen["summary"][1][1]["content"].split("【上一版有問題的那幾則")[1]
-            assert ask.count("MON_FAULT_RAISED；L18") >= 1 and "/cmd_vel_raw 開始發布" not in ask, ask[:600]
-            # 句子的意思跟事實對不上（實測 lidar：「/diagnostics_agg 整段沒有變化」、方向寫反）→ 只交回那幾則；寫對的（回到初始）照留
-            wrong = {"highlights": [{"refs": ["E3"], "text": "/cmd_vel_raw 開始發布"},
-                                    {"refs": ["L18", "E8", "E9"], "text": "同一時間 1 則 WARN Log；mode 從 LIMITED 變成 NORMAL"},
-                                    {"refs": ["E13", "E14"], "text": "/system/safety_command 的狀態回到初始狀態，安全閘回到 NORMAL"},
-                                    {"refs": ["E16"], "text": "/cmd_vel_raw 停止發布"},
-                                    {"refs": ["T5"], "text": "/diagnostics_agg 整段沒有變化"}]}
-            right = {"highlights": [{"refs": ["L18", "E8", "E9"], "text": "同一時間 1 則 WARN Log；mode 從 NORMAL 變成 LIMITED"},
-                                    {"refs": ["T5"], "text": "/diagnostics_agg 中間變過，最後回到開頭的值"}]}
-            fake, calls = setup(plans=[GOOD_PLAN], summaries=[wrong, right])
-            agent.analysis_run(f'--data {DATA} "看一下"')
-            d, job = last_job()
-            ask = fake.seen["summary"][1][1]["content"].split("【上一版有問題的那幾則")[1]
-            assert "寫「mode 從 LIMITED 變成 NORMAL」，但引用的事件裡 mode 是 NORMAL → LIMITED" in ask, ask[:1200]
-            assert "寫「/diagnostics_agg 沒有變化」，但它有 2 個事件（E5、E11）" in ask and "safety_command 的狀態回到初始" not in ask, ask[:1200]
-            assert [h["refs"] for h in job["report"]["highlights"]] == [["E3"], ["L18", "E8", "E9"], ["E13", "E14"], ["E16"], ["T5"]], \
-                [h["refs"] for h in job["report"]["highlights"]]
-            # 實測（第十一輪 cmdvel_holdout）：修正版沒照指示，把通過的那幾則拆開重寫一遍——引用的編號全部已經在通過的裡面＝重複，不收
-            first = {"highlights": [{"refs": ["E3", "E16"], "text": "/cmd_vel_raw 開始發布，之後停止發布"},
-                                    {"refs": ["L18", "E8", "E9"], "text": "同一時間 1 則 WARN Log；安全閘進入 LIMITED，/cmd_vel 降速"},
-                                    {"refs": ["T1"], "text": "到數據結束時 mode 是 NORMAL，之後停止發布"}]}
-            again = {"highlights": [{"refs": ["E3"], "text": "/cmd_vel_raw 開始發布"}, {"refs": ["E16"], "text": "/cmd_vel_raw 停止發布"},
-                                    {"refs": ["E8"], "text": "安全閘進入 LIMITED"}, {"refs": ["T1"], "text": "到數據結束時 mode 是 NORMAL"},
-                                    {"refs": ["E14"], "text": "安全閘回到 NORMAL"}]}
-            fake, calls = setup(plans=[GOOD_PLAN], summaries=[first, again])
-            agent.analysis_run(f'--data {DATA} "看一下"')
-            d, job = last_job()
-            assert [h["refs"] for h in job["report"]["highlights"]] == [["E3", "E16"], ["L18", "E8", "E9"], ["E14"], ["T1"]], \
-                [h["refs"] for h in job["report"]["highlights"]]
-            # 漏寫的時間點（照時間寫、上限用完就停，實測任務失敗的那一刻被漏掉）：程式核對，跟有問題的那幾則一起交回一次補寫
-            part = {"highlights": [{"refs": ["L18", "E8"], "text": "同一時間 1 則 WARN Log；安全閘進入 LIMITED"},
-                                   {"refs": ["E14"], "text": "安全閘回到 NORMAL"}]}
-            add = {"highlights": [{"refs": ["E3"], "text": "/cmd_vel_raw 開始發布"}, {"refs": ["E16", "E17"], "text": "/cmd_vel_raw 停止發布，/cmd_vel 回到 0"}]}
-            fake, calls = setup(plans=[GOOD_PLAN], summaries=[part, add])
-            agent.analysis_run(f'--data {DATA} "看一下"')
-            d, job = last_job()
-            rec = job["summary_checks"][0]
-            assert rec["moments"] == 4 and [m.split()[0] for m in rec["missing"]] == ["M1", "M4"] and rec["left_missing"] == [], rec
-            ask = fake.seen["summary"][1][1]["content"]
-            assert "【沒有寫到的重要時間點" in ask and "- M1 +9.14s～+9.24s：" in ask and "上一版有問題的那幾則" not in ask, ask[-900:]
-            assert [h["refs"] for h in job["report"]["highlights"]] == [["E3"], ["L18", "E8"], ["E14"], ["E16", "E17"]]
-            sp = fake.seen["summary"][0][1]["content"]
-            assert "【重要的時間點（程式算的" in sp and "- M2 +16.50s～+16.52s：" in sp, sp[-1500:]
-            # 交回之後還是漏掉：程式補一則（標明程式列出，內容照樣列在下面），漏寫幾個記在 summary_checks
-            fake, calls = setup(plans=[GOOD_PLAN], summaries=[part, part])
-            agent.analysis_run(f'--data {DATA} "看一下"')
-            d, job = last_job()
-            rec, hl = job["summary_checks"][0], job["report"]["highlights"]
-            assert [m.split()[0] for m in rec["filled"]] == ["M1", "M4"] and [m.split()[0] for m in rec["left_missing"]] == ["M1", "M4"], rec
-            assert [h.get("program", False) for h in hl] == [True, False, False, True] and "（程式列出）" in hl[0]["text"], hl
-            assert hl[0]["facts"][0].startswith("E1 /system/safety_gate_status") and "E16" in hl[3]["refs"], hl[3]
-            # 兩次都沒有可用的重點：程式依事實列出（WARN 以上的 Log、有事件的 Topic 的第一個事件）
-            fake, calls = setup(plans=[GOOD_PLAN], summaries=["{壞掉的 JSON", {"highlights": [{"refs": ["E8"], "text": "因為過熱"}]}])
-            agent.analysis_run(f'--data {DATA} "看一下"')
-            d, job = last_job()
-            hl = job["report"]["highlights"]
-            assert job["report"]["fallback"] and len(hl) == 4 and hl[0]["refs"][0] == "E1" and "L18" in hl[1]["refs"], hl   # 一個時間點一則
-            assert hl[1]["facts"][0].startswith("E4 ") and any(x.startswith("L18 WARN") for x in hl[1]["facts"]), hl[1]
-            assert "以上由程式依事實列出" in open(os.path.join(d, "report.md"), encoding="utf-8").read()
-
-        # ------------------------------------------------------------ Orchestrator 檢查
-        def t_check_followup():
-            follow = {"followups": [{"signal": "L18（+16.50s）", "topic": "cmd_vel", "subtask": "說明降速"},
-                                    {"signal": "L99", "topic": "/diagnostics_agg", "subtask": "x"},
-                                    {"signal": "L18", "topic": "/system/safety_gate_status", "subtask": "y"},
-                                    {"signal": "L19", "topic": "T7 /cmd_vel_raw", "subtask": "w"},
-                                    {"signal": "L19", "topic": "T7 /system/safety_command", "subtask": "z"}]}
-            fake, calls = setup(plans=[GOOD_PLAN], checks=[follow])
-            agent.analysis_run(f'--data {DATA} "馬達過熱的前後發生了什麼"')
-            d, job = last_job()
-            c = job["checks"][0]
-            assert c["asked"] and [a["topic"] for a in c["followups"]] == ["/cmd_vel", "/system/safety_command"], c
-            assert any("「L99」不是它前後的那幾則" in x for x in c["issues"]) and any("/system/safety_gate_status：不在" in x for x in c["issues"]), c["issues"]
-            assert any("T7 是 /system/safety_command，寫的名稱卻是 /cmd_vel_raw" in x for x in c["issues"]), "編號與名稱對不上：不猜"
-            prompt = fake.seen["check"][0][1]["content"]
-            cand = prompt.split("還沒有說明的 Topic（程式量的事實）】")[1].split("【要決定的】")[0]
-            assert "- T2 /cmd_vel｜前後的 Log：L18 WARN" in cand and "/system/safety_gate_status" not in cand and "/cmd_vel_raw" not in cand, cand
-            assert [(w["topic"], w.get("round"), w.get("signal")) for w in job["workers"]] == [
-                ("/system/safety_gate_status", None, None), ("/cmd_vel", 2, "L18"), ("/system/safety_command", 2, "L19")], job["workers"]
-            assert len(job["rounds"]) == 2 and len(fake.seen["check"]) == 1 and [c["round"] for c in job["summary_checks"]] == [1, 2], \
-                "第 2 輪不再問；重點照全部的說明再寫一次"
-            assert os.path.exists(os.path.join(d, "report_r1.md")) and os.path.exists(os.path.join(d, "prompts", "orchestrator_check.md"))
-            md = open(os.path.join(d, "report.md"), encoding="utf-8").read()
-            assert "第 1 輪的檢查：補派 /cmd_vel（為了 L18）、/system/safety_command（為了 L19）" in md, md[-1500:]
-            # 相關的 Log 前後有變化的 Topic 都已經有說明：不問
-            agent.analysis_cfg["max_workers"] = 8
-            try:
-                every = dict(GOOD_PLAN, assignments=[{"topic": t, "subtask": "x"} for t in ("/system/safety_gate_status", "/cmd_vel", "/diagnostics",
-                                                                                              "/diagnostics_agg", "/diagnostics_toplevel_state", "/system/safety_command")])
-                fake, calls = setup(plans=[every])
-                agent.analysis_run(f'--data {DATA} "看一下"')
-            finally:
-                agent.analysis_cfg["max_workers"] = 3
-            d, job = last_job()
-            assert not fake.seen["check"] and job["checks"][0]["asked"] is False and len(job["rounds"]) == 1, job["checks"]
-            # --rounds 1：不檢查
-            fake, calls = setup(plans=[GOOD_PLAN], checks=[follow])
-            agent.analysis_run(f'--data {DATA} --rounds 1 "看一下"')
-            d, job = last_job()
-            assert not fake.seen["check"] and "checks" not in job and len(job["workers"]) == 1
+            for opt in ("--workers 3", "--rounds 1"):
+                res = agent.analysis_run(f'--data {DATA} {opt} "看一下"')
+                assert res.startswith(f"[ERROR] analysis_run 沒有 {opt.split()[0]} 這個選項了") and "全部由程式做" in res, res
+            # 主對話最多看 _MAIN_HIGHLIGHTS_MAX 則：整段的都留，時間點依重要性（ERROR、WARN 的 Log 多的先留），照時間排
+            many = [{"t": float(i), "refs": [f"E{i}"], "facts": ["L1 ERROR x"] if i == 9 else []} for i in range(1, 11)] + [{"t": None, "refs": ["T1"], "facts": []}]
+            top = aj._top_highlights(many, 4)
+            assert [h["refs"][0] for h in top] == ["E1", "E2", "E9", "T1"], [h["refs"] for h in top]
 
         # ------------------------------------------------------------ 句子的意思（agent_core/claims.py）
         def t_claims():
@@ -654,7 +378,7 @@ def main():
             assert agent.analysis_reply_check({"reply": "再一次導致", "action": None}) is None, "每回合最多提醒一次"
             agent.pop_notices()
             # 回答寫的變化、值跟這份報告的事實對不上（實測 lidar：「status.level 從 0 變為 2（E6）」）：事實從 job 讀
-            fake, calls = setup(plans=[GOOD_PLAN])
+            fake, calls = setup()
             out = agent.analysis_run(f'--data {DATA} "看一下"')
             agent.begin_turn()
             agent.note_tool_result({"action": {"command": "scripts/analysis_run_cmd.py", "args": ""}}, out)
@@ -665,9 +389,22 @@ def main():
             nudge = agent.analysis_reply_check({"reply": bad, "action": None})
             assert nudge and "跟報告的事實對不上" in nudge and "引用的事件裡 linear.x 是 0.2 → 0.1" in nudge and "到數據結束時 mode＝NORMAL" in nudge, nudge
             assert "「導致」" not in nudge and any("跟報告的事實對不上" in x for x in agent.pop_notices())
+            # 之後的回合（追問、討論那份報告）：只核對寫到報告的那幾行（編號、Topic、+秒）；跟報告無關的回答不核對；/clear 之後不再對照
+            # （實測：追問「為什麼一直鎖著」的回答寫了「觸發了緊急停止鎖定機制」，以前只核對執行報告的那一回合）
+            agent.begin_turn()
+            nudge = agent.analysis_reply_check({"reply": "安全閘是因為在 +16.50s 時觸發了限速，之後一直維持", "action": None})
+            assert nudge and "「觸發」" in nudge, nudge
+            agent.pop_notices()
+            agent.begin_turn()
+            assert agent.analysis_reply_check({"reply": "這個 Python 錯誤導致程式無法啟動", "action": None}) is None, "跟報告無關的回答不核對"
+            nudge = agent.analysis_reply_check({"reply": "另外，到數據結束時 mode 仍是 LIMITED（T1）", "action": None})
+            assert nudge and "到數據結束時 mode＝NORMAL" in nudge, nudge
+            agent.pop_notices()
+            agent.reset_conversation()
+            assert agent.analysis_reply_check({"reply": "+16.50s 觸發限速（E8）", "action": None}) is None, "/clear 之後不再對照"
 
         def t_dispatch_and_state():
-            fake, calls = setup(plans=[GOOD_PLAN])
+            fake, calls = setup()
             agent.analysis_data = ""
             out = agent.run_tool({"action": {"command": "scripts/analysis_run_cmd.py", "args": f'--data {DATA} "安全閘"'}})
             assert out.startswith(ANALYSIS_REPORT_HEAD) and agent.last_result_id, (out[:100], agent.last_result_id)
@@ -688,7 +425,7 @@ def main():
         def t_web():
             state["auto_mode"] = True
             causal = {"thought": "依報告回答", "reply": "L18 的馬達過熱觸發安全閘限速，導致 /cmd_vel 降到 0.1。", "action": None}
-            fake, calls = setup(plans=[GOOD_PLAN], main=[causal])
+            fake, calls = setup(main=[causal])
             events = []
             agent.progress_callback = lambda text: events.append({"channel": "progress", "text": text})
             try:
@@ -710,15 +447,14 @@ def main():
             st = analysis_state()
             assert st["detail"]["job"]["status"] == "done" and "report.md" in st["detail"]["files"], st["detail"]["job"]["status"]
             assert analysis_file(st["detail"]["job"]["id"], "../../model_settings.json") is None, "擋路徑穿越"
-            assert set(settings_view()) >= {"rounds", "max_workers"} and not {"before", "after", "source_root", "program_hints"} & set(settings_view())
+            assert set(settings_view()) == {"data_root", "container"}, settings_view()
             ev = []
             handle_analysis_command("/analysis_mode on", ev)
             assert state["analysis_mode"] and "分析模式" in ev[-1]["text"]
             handle_analysis_command("/analysis_mode off", ev)
-            handle_analysis_command("/analysis_workers 9", ev)
-            assert "⚠️" in ev[-1]["text"], "worker 上限 1～8"
-            handle_analysis_command("/analysis_source ~/ws/src", ev)
-            assert "已經拿掉" in ev[-1]["text"], "拿掉的設定說清楚"
+            for cmd in ("/analysis_workers 9", "/analysis_model all gemma4:26b", "/analysis_source ~/ws/src"):
+                handle_analysis_command(cmd, ev)
+                assert "已經拿掉" in ev[-1]["text"], (cmd, ev[-1])
             stats = flows.build_stats()
             assert stats["analysis"]["status"] == "done" and "analysis_mode" in stats
             seen = []
@@ -734,41 +470,43 @@ def main():
 
         def t_limits_and_settings():
             long_idx = dict(IDX, duration_sec=181.2)
-            fake, calls = setup(index=long_idx, plans=[GOOD_PLAN])
+            fake, calls = setup(index=long_idx)
             out = agent.analysis_run(f'--data {DATA} "看一下"')
             assert out.startswith("[ERROR] 數據") and "超過一次分析的上限 180 秒" in out and "mcap_slicer" in out, out
-            assert not fake.seen["plan"] and last_job()[1]["status"] == "failed"
+            assert last_job()[1]["status"] == "failed"
             assert not any("--facts" in c["args"] for c in calls), "太長就不量"
-            fake, calls = setup(index=dict(IDX, duration_sec=180.056), plans=[GOOD_PLAN])
+            fake, calls = setup(index=dict(IDX, duration_sec=180.056))
             assert agent.analysis_run(f'--data {DATA} "看一下"').startswith(ANALYSIS_REPORT_HEAD), "以整秒算：180.056 秒可以"
-            # 只有 Log（例如只錄到 bridge 的 /rosout）：照樣出報告——Log 的時間線與重點，沒有 Topic 可以量、不派 worker
+            # 只有 Log（例如只錄到 bridge 的 /rosout）：照樣出報告——Log 的時間線與重點，沒有 Topic 可以量
             only_log = dict(IDX, topics=[dict(t, role="empty") if t["role"] in ("worker", "text_only") else t for t in IDX["topics"]])
-            fake, calls = setup(index=only_log, scan={"version": 3, "topics": {}}, plans=[{"understanding": "看 Log", "related_signals": [], "assignments": []}],
-                                summaries=[{"highlights": [{"refs": ["L18"], "text": "1 則 WARN Log：馬達過熱"}]}])
+            fake, calls = setup(index=only_log, scan={"version": 3, "topics": {}})
             out = agent.analysis_run(f'--data {DATA} "看一下"')
             d, job = last_job()
-            assert out.startswith(ANALYSIS_REPORT_HEAD) and job["status"] == "done" and not job["workers"], out[:600]
-            assert job["report"]["highlights"][0]["refs"] == ["L18"] and any(r["ref"] == "L18" for r in job["report"]["timeline"]), job["report"]["highlights"]
+            assert out.startswith(ANALYSIS_REPORT_HEAD) and job["status"] == "done", out[:600]
+            hl = job["report"]["highlights"]
+            assert hl[0]["refs"] == ["L18", "L19"] and hl[0]["text"] == "2 則 Log（WARN 2）", "沒有事件：INFO 不進時間線，只有 WARN 以上的"
+            assert any(r["ref"] == "L18" for r in job["report"]["timeline"]), job["report"]["timeline"]
             assert any("只有 Log" in json.loads(x)["text"] for x in open(os.path.join(d, "events.jsonl"), encoding="utf-8"))
             # 有 Topic 卻一個都解不開：環境的問題，回錯誤
             undec = dict(IDX, topics=[dict(t, role="undecodable") if t["role"] in ("worker", "text_only") else t for t in IDX["topics"]])
-            fake, calls = setup(index=undec, plans=[GOOD_PLAN])
+            fake, calls = setup(index=undec)
             out = agent.analysis_run(f'--data {DATA} "看一下"')
             assert out.startswith("[ERROR] 這份數據的 Topic 都無法解碼") and "ROS2_workspace_env" in out, out
-            for opt in ("--before 3", "--source ~/ws/src", "--no-source"):
+            for opt, why in (("--before 3", "mcap_slicer"), ("--source ~/ws/src", "不用源碼"), ("--no-source", "不用源碼")):
                 out = agent.analysis_run(f'--data {DATA} {opt} "看一下"')
-                assert out.startswith(f"[ERROR] analysis_run 沒有 {opt.split()[0]} 這個選項了") and "mcap_slicer" in out, out
+                assert out.startswith(f"[ERROR] analysis_run 沒有 {opt.split()[0]} 這個選項了") and why in out, out
             path = agent.analysis_settings_file()
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump({"source_root": "/x", "program_hints": False, "before": 3, "slice": False, "max_workers": 5}, f)
+            with open(path, "w", encoding="utf-8") as f:   # 舊版的設定：各角色的模型、worker 上限、源碼目錄、時間窗…讀的時候略過
+                json.dump({"source_root": "/x", "program_hints": False, "before": 3, "slice": False, "max_workers": 5, "orchestrator": "m",
+                           "data_root": "/data/logs"}, f)
             cfg = agent.load_analysis_settings()
-            assert cfg["max_workers"] == 5 and not {"source_root", "program_hints", "before", "after", "slice"} & set(cfg), cfg
+            assert cfg == {"data_root": "/data/logs", "container": ""}, cfg
             # 設定檔只存跟預設值不同的：預設值以後改了，沒改過的設定跟著新的預設
             keep = dict(agent.analysis_cfg)
-            agent.analysis_cfg = dict(agent.analysis_defaults(), max_workers=5)
+            agent.analysis_cfg = dict(agent.analysis_defaults(), data_root="/data/logs")
             agent.save_analysis_settings()
             saved = json.load(open(path, encoding="utf-8"))
-            assert set(saved) == {"max_workers", "saved"} and saved["max_workers"] == 5, saved
+            assert set(saved) == {"data_root", "saved"} and saved["data_root"] == "/data/logs", saved
             agent.analysis_cfg = dict(agent.analysis_defaults())
             agent.save_analysis_settings()
             assert set(json.load(open(path, encoding="utf-8"))) == {"saved"}
@@ -810,16 +548,12 @@ def main():
 
         for name, fn in [("量測：發布方式由內容與時間判斷、低頻的照樣判斷停止、尖峰不含雜訊、反覆切換只留頭尾、陣列只量長度", t_measure),
                          ("事實（程式）：T#／E# 每次一樣、同一則訊息的變化合成一個事件、時間線與對照、前後沒有任何變化的 Log、反覆切換", t_facts),
-                         ("Orchestrator：不存在的 L#／Topic、Log Topic、框架的 Topic、重複交回修一次；可以寫 T#；同一個 L# 只合併", t_plan_repair),
-                         ("Orchestrator：沒有變化的 Topic 不派、不交回；給不出計畫時程式補指派；預設問題", t_plan_quiet_and_auto),
-                         ("Worker：每一則說明的核對（編號、原因、時間、中斷、太長）交回修一次；修不好的不列；時間由程式補", t_worker_notes),
-                         ("Synthesizer：每一則重點的核對交回修一次；時間依編號補上、依時間排；沒有可用的重點時程式列出", t_summary_highlights),
-                         ("Orchestrator 檢查：相關的 Log 前後有變化、還沒有說明的才問；補派的核對；第 2 輪不再問；--rounds 1 不檢查", t_check_followup),
+                         ("報告（程式）：每個時間點一則重點（那一刻全部的 Log 與事件）、到最後跟開頭不同的值、指定的 Topic、不呼叫模型", t_program_report),
                          ("句子的意思：變化、某一刻與到最後的值、沒有變化、回到初始（中途才出現的不算）跟事實核對；中文主詞、部分、疑問不核對", t_claims),
-                         ("主對話：依報告回答卻寫成因果、或寫錯事實 → 提醒一次；否定、條件、Log 原文不算", t_main_reply_check),
+                         ("主對話：依報告回答卻寫成因果、或寫錯事實 → 提醒一次（之後的回合核對寫到報告的那幾行）；否定、條件、Log 原文不算", t_main_reply_check),
                          ("dispatch：analysis_run 偽技能存檔與軌跡、[ANALYSIS_DATA] 同步、省略 --data、腳本拿得到環境變數", t_dispatch_and_state),
                          ("Web：/analyze 的回合（進度、報告進主對話、寫成因果時改寫）、面板 state 與設定、拿掉的指令、分析模式", t_web),
-                         ("限制與設定：一次最多 3 分鐘（以整秒算）、拿掉的選項、設定檔只存改過的值", t_limits_and_settings),
+                         ("限制與設定：一次最多 3 分鐘（以整秒算）、只有 Log 的錄製、拿掉的選項、設定檔只存改過的值", t_limits_and_settings),
                          ("程式重新啟動：沒做完的 job（進度很久沒更新）標成中斷，剛更新的不動", t_mark_interrupted),
                          ("錄製：資料夾名稱放錯在 --out-root 改當 --name；含 / 的相對路徑、--name 帶路徑擋下", t_recorder_target)]:
             if os.environ.get("SELFTEST_ONLY", "") in name:   # 只跑名稱含這個字的（除錯用）

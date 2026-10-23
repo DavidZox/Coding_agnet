@@ -168,10 +168,7 @@ def main():
                     first = next(line for line in f.read().splitlines() if line.strip())
                 assert first in text, f"system prompt 裡沒有 prompts/{rel}"
             assert agent._memory_entries(), "讀不到 prompts/Memory.md 的條目"
-            from agent_core.analysis_job import _read_prompt as analysis_prompt
             from agent_core.ops_job import _read_prompt as ops_prompt
-            for name in ("orchestrator.md", "orchestrator_check.md", "worker.md", "synthesizer.md"):
-                assert analysis_prompt(name).strip(), f"讀不到 prompts/analysis/{name}"
             for name in ("planner.md", "worker.md"):
                 assert ops_prompt(name).strip(), f"讀不到 prompts/ops/{name}"
 
@@ -238,30 +235,23 @@ def main():
             agent.set_main_model(old)
             note = agent.load_model_settings({old})     # 存的模型已經不在 Ollama 裡：不套用、說明原因
             assert agent.model == old and "不在 Ollama 裡" in (note or ""), note
-            # 📊 數據分析三個角色：各自的模型與 thinking（模型支援才送）、存檔、跟著主對話
+            # Web 的 🧠：主對話的模型與 thinking（模型支援才送）、/think、/model（數據分析全部由程式做，沒有自己的模型）
             from agent_core.model_caps import think_arg
-            agent.set_analysis_model("orchestrator", "deepseek-r1:32b", think=True)
-            agent.set_analysis_model("worker", "qwen2.5-coder:32b", think=True)
-            assert think_arg(agent.analysis_model("orchestrator"), agent.analysis_think("orchestrator")) is True
-            assert think_arg(agent.analysis_model("worker"), agent.analysis_think("worker")) is False, "worker 的模型不支援 thinking，不送"
-            with open(agent.analysis_settings_file(), encoding="utf-8") as f:
-                saved = json.load(f)
-            assert saved["orchestrator_think"] is True and saved["worker_think"] is True, saved
             from web_app.models import model_update, model_view
             view = model_view()
-            assert view["thinking"]["deepseek-r1:32b"] and not view["thinking"]["qwen2.5-coder:32b"], view["thinking"]
-            res = model_update({"main": "gemma4:e4b", "main_think": False, "worker_think": False})
-            assert res["ok"] and agent.model == "gemma4:e4b" and agent.main_think is False and agent.analysis_think("worker") is False, res
-            assert "分析 Worker qwen2.5-coder:32b（不支援 thinking）" in res["message"], res["message"]
+            assert view["thinking"].get(agent.model) is not None, view["thinking"]
+            res = model_update({"main": "gemma4:e4b", "main_think": True})
+            assert res["ok"] and agent.model == "gemma4:e4b" and agent.main_think is True, res
+            assert think_arg(agent.model, agent.main_think) is True, "gemma4 支援 thinking：照設定送"
+            assert "主對話 gemma4:e4b（thinking 開）" in res["message"], res["message"]
             ev = []
             from web_app.commands import handle_slash_command
+            handle_slash_command("/think main off", ev)
+            assert agent.main_think is False and "主對話 gemma4:e4b（thinking 關）" in ev[-1]["text"], ev
             handle_slash_command("/think orchestrator off", ev)
-            assert not agent.analysis_think("orchestrator") and "分析 Orchestrator deepseek-r1:32b（thinking 關）" in ev[-1]["text"], ev
+            assert "用法：/think main on|off" in ev[-1]["text"], ev
             handle_slash_command("/model gemma4:26b", ev)
             assert agent.model == "gemma4:26b", agent.model
-            assert agent.analysis_model("synthesizer") == "gemma4:26b", "沒有另外設定的角色跟著主對話"
-            agent.set_analysis_model("all", "", think=False)
-            assert agent.analysis_model("worker") == "gemma4:26b"
             agent.set_main_model(old)
 
         for name, fn in [("卡住偵測：同樣的動作第二次附提醒、第三次加強提醒、第四次停下這一回合（v4.1）", t_stuck),

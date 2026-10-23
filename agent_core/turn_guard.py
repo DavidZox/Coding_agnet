@@ -35,6 +35,8 @@ _CLAIM_RE = re.compile(
 _HEDGE_RE = re.compile(r"(沒有|尚未|還沒|未能|無法|不能|失敗|如果|若是|假如|要不要|是否|可以幫|需要我|請問|嗎[？?]|\?|？)")
 # 依數據分析的報告回答時不能有的說法：把先後寫成誰造成誰（報告只有事實與時間上的對照）
 _CAUSAL_WORDS = ("導致", "造成", "引起", "引發", "觸發", "使得", "歸因", "根因")
+# 回覆的一行寫到報告的哪裡：報告裡的編號（E#、L#、T#）、Topic 名稱、+秒（之後的回合只核對這種行，跟報告無關的回答不核對）
+_REPORT_REF = re.compile(r"(?<![A-Za-z0-9_])[ELT]\d+(?![0-9])|(?<![A-Za-z0-9_/])/[A-Za-z0-9_][A-Za-z0-9_/]*|[+＋]\s?\d{1,4}\.\d+\s?(?:s|秒)")
 # 同一個子句裡在它前面有這些字＝否定或條件的說法（「時間上的先後不代表誰造成誰」「如果是…造成的」「是否…導致」），不算
 _CAUSAL_HEDGE = re.compile(r"(不代表|不表示|不等於|不能說|不能確定|無法判斷|無法確定|看不出|不是|並非|沒有|未|是否|有沒有|如果|若|假如|"
                            r"要對照|需要對照|另外分析|源碼)")
@@ -64,6 +66,8 @@ class TurnGuardMixin:
             self._analysis_report = "\n".join(ln for ln in output.splitlines() if not ln.startswith(ANALYSIS_ANSWER_NOTE))
             m = re.search(r"（job ([^\s：）]+)", output.splitlines()[0])
             self._analysis_job_id = m.group(1) if m else None
+            # 之後的回合（追問、討論這份報告）也核對寫到報告的那幾行：最近一份報告一直算數，直到下一份報告或 /clear
+            self._analysis_ctx = {"report": self._analysis_report, "job": self._analysis_job_id}
         if "turn_guard" in os.environ.get("AGENT_ABLATE", ""):
             return output
         key = (action_text(parsed["action"]).strip(), output.strip()[:500])
@@ -112,14 +116,22 @@ class TurnGuardMixin:
                 "使用者要求的事其實還沒有發生。如果要做，現在就在 action 填要執行的技能；如果只是說明或建議，請改口，不要說已經做了。")
 
     def analysis_reply_check(self, parsed):
-        """這一回合執行了 analysis_run、最後的回覆把報告的事實寫成因果（導致、造成、觸發…），或寫的變化、值跟報告的事實對不上：
-        回傳要接在對話後面的提醒（每回合最多一次），否則 None。報告裡本來就有的字（Log 原文）、同一個子句前面有否定或條件的說法不算。"""
-        report = getattr(self, "_analysis_report", None)
-        if not report or getattr(self, "_analysis_nudged", False) or not parsed or parsed.get("action") or not parsed.get("valid", True):
+        """依數據分析的報告回答：回覆把報告的事實寫成因果（導致、造成、觸發…），或寫的變化、值跟報告的事實對不上 → 回傳要接在對話
+        後面的提醒（每回合最多一次），否則 None。執行 analysis_run 的那一回合核對整個回覆；之後的回合（追問、討論那份報告）只核對寫到
+        報告的那幾行（_about_report：報告裡的編號、Topic、+秒），跟報告無關的回答不核對。最近一份報告一直算數，直到下一份報告或 /clear
+        （實測：追問「為什麼一直鎖著」的回答寫了「觸發了緊急停止鎖定機制」「LiDAR 斷線導致…」，以前只核對執行報告的那一回合，沒有提醒）。
+        報告裡本來就有的字（Log 原文）、同一個子句前面有否定或條件的說法不算。"""
+        ctx = getattr(self, "_analysis_ctx", None)
+        if not ctx or getattr(self, "_analysis_nudged", False) or not parsed or parsed.get("action") or not parsed.get("valid", True):
             return None
         if "turn_guard" in os.environ.get("AGENT_ABLATE", ""):
             return None
+        report = ctx["report"]
         reply = parsed.get("reply") or ""
+        if not getattr(self, "_analysis_report", None):   # 不是這一回合的報告：只看寫到報告的那幾行
+            reply = _about_report(reply, report)
+            if not reply:
+                return None
         hits = []
         for w in _CAUSAL_WORDS:
             if w in report:
@@ -129,7 +141,7 @@ class TurnGuardMixin:
                 if not _CAUSAL_HEDGE.search(reply[start:m.start()]):
                     hits.append(w)
                     break
-        facts = self._analysis_report_facts()
+        facts = self._analysis_report_facts(ctx.get("job"))
         wrong = claims.reply_problems(reply, facts) if facts else []
         if not hits and not wrong:
             return None
@@ -146,9 +158,9 @@ class TurnGuardMixin:
                          + "\n請照報告改正這幾句（每則重點下面列了引用的事件的完整內容：從什麼變成什麼、到最後的值），其他照舊。")
         return "[harness] " + "\n\n".join(parts)
 
-    def _analysis_report_facts(self):
-        """這一回合的數據分析報告的事實（logs/analysis_jobs/<job>/job.json 的 facts）；讀不到就是 None（只核對因果的用詞）。"""
-        jid = getattr(self, "_analysis_job_id", None)
+    def _analysis_report_facts(self, jid=None):
+        """數據分析報告的事實（logs/analysis_jobs/<job>/job.json 的 facts）；讀不到就是 None（只核對因果的用詞）。"""
+        jid = jid or getattr(self, "_analysis_job_id", None)
         jobs_dir = getattr(self, "analysis_jobs_dir", None)
         if not jid or not jobs_dir:
             return None
@@ -157,3 +169,11 @@ class TurnGuardMixin:
                 return json.load(f).get("facts")
         except (OSError, ValueError):
             return None
+
+
+def _about_report(reply, report):
+    """回覆裡寫到這份報告的那幾行：有報告裡出現過的編號（E#、L#、T#）、Topic 名稱或 +秒。"""
+    known = set(m.group().replace("＋", "+").replace(" ", "") for m in _REPORT_REF.finditer(report))
+    keep = [ln for ln in reply.splitlines()
+            if any(m.group().replace("＋", "+").replace(" ", "") in known for m in _REPORT_REF.finditer(ln))]
+    return "\n".join(keep)

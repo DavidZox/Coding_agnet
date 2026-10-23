@@ -9,7 +9,7 @@
 - 依名稱展開的項目（DiagnosticArray 的 status.level、status.values…）：每個名稱各自量，只列有變化的；
 - 每個時間窗另外量訊息流：發布方式（固定頻率／狀態改變時才發布／不定期，由內容與時間判斷，同 analysis_run 的全部 Topic 量測）；
   固定頻率的才判斷中斷（間隔超過週期 3 倍、且 ≥0.5 秒）與中途開始／停止發布。
-文字（自由文字）與時間欄位不量測：文字屬於 Orchestrator 的 Log 分析範圍。
+文字（自由文字）與時間欄位不量測：Log 用 rosout_parser 看（去重後的唯一訊號）。
 
 移植自 diagnostics_package/toolkit 的 mcap_feature_measure.py（compute_features）。analysis_run 的 worker 呼叫時，數據、Topic 與
 時間窗由系統帶入（環境變數 ANALYSIS_DATA／ANALYSIS_TOPIC／ANALYSIS_WINDOWS），worker 只要選 Key。"""
@@ -69,7 +69,7 @@ def worker_main(argv):
         print(f"[ERROR] 數據 {idx['label']} 裡沒有 Topic {args.topic}。有的 Topic：{'、'.join(t['topic'] for t in idx['topics'])}")
         return 2
     if entry["role"] == "log":
-        print(f"[ERROR] {entry['topic']} 是 Log：Log 的字串由 rosout_parser 去重後交給 Orchestrator 看，不做特徵量測。")
+        print(f"[ERROR] {entry['topic']} 是 Log：Log 的字串用 rosout_parser 看（去重後的唯一訊號），不做特徵量測。")
         return 2
     if entry["role"] in ("undecodable", "empty"):
         print(f"[ERROR] {entry['topic']} 沒辦法量測：{entry.get('error') or '沒有任何訊息'}"
@@ -91,7 +91,7 @@ def worker_main(argv):
             continue
         if d["category"] in ("text", "time"):
             skipped.append(f"{k}（{rd.CATEGORY_LABELS[d['category']]}：不量測"
-                           + ("，自由文字屬於 Orchestrator 的 Log 分析範圍" if d["category"] == "text" else "") + "）")
+                           + ("，自由文字不量測" if d["category"] == "text" else "") + "）")
             continue
         keys.append(k)
         descs.append(d)
@@ -269,7 +269,7 @@ def host_main(argv):
     for k in args.key:
         wargs += ["--key", k]
     windows = [rd.resolve_window_ids(w) for w in args.window]
-    if not windows and not args.around:   # analysis worker 沒指定時間窗：用 Orchestrator 指派的全部時間窗
+    if not windows and not args.around:   # 沒指定時間窗：環境變數給的時間窗（第九輪以前 analysis_run 的 worker 用；沒有就是整段）
         windows = [rd.resolve_window_ids(w["id"]) for w in rd.analysis_windows()]
     for w in windows:
         wargs += ["--window", w]

@@ -169,7 +169,7 @@ TOOL_RESULT_TOKEN_THRESHOLD = 500
 TOOL_SUMMARY_DEFAULT = os.environ.get("AGENT_TOOL_SUMMARY", "1").strip().lower() not in ("0", "off", "false", "no")
 # summarize_tool_result() 產生的內容固定以這個標籤開頭：CLI 據此印出、Web 據此推 🧠 卡片，讓使用者看到主對話實際收到的內容。
 TOOL_SUMMARY_TAG = "[tool result - 任務導向摘要]"
-# analysis_run 的回傳（程式組好的事實報告）固定以這個開頭：它本身就是多個 agent 依問題整理好的事實，跟 result_recall
+# analysis_run 的回傳（程式整理好的事實報告）固定以這個開頭：它本身就是整理好、有編號的事實，跟 result_recall
 # 一樣不再交給摘要 session（is_exempt_result），主對話直接收到完整的報告。
 ANALYSIS_REPORT_HEAD = "[PASS] 📊 數據事實報告"
 # 報告最後一行（給主對話的回答說明）的開頭：turn_guard 核對回答時，這一行的字（「不要寫成誰導致…」）不算報告裡本來就有的字
@@ -258,9 +258,8 @@ TOOL_EXEC_TIMEOUT = 600
 
 # =========================================================
 # 🧠 模型的 thinking 與設定檔
-# 每個角色各自開關（主對話、數據分析的 Orchestrator／Worker／Synthesizer），模型不支援 thinking 時一律不送（Ollama 會回 400）。
-# 預設都關：主對話與 worker 要的是照格式的 JSON 決定，思考會多花時間。Web Console 的「🧠 模型」可以逐一切換
-# （存檔：logs/model_settings.json、logs/analysis_settings.json）。注意：有些模型關掉也還是會思考（deepseek-r1）。
+# 主對話的開關；模型不支援 thinking 時一律不送（Ollama 會回 400）。預設關：主對話要的是照格式的 JSON 決定，思考會多花時間。
+# Web Console 的「🧠 模型」可以切換（存檔：logs/model_settings.json）。注意：有些模型關掉也還是會思考（deepseek-r1）。
 # =========================================================
 MAIN_THINK_DEFAULT = os.environ.get("AGENT_MAIN_THINK", "").strip().lower() in ("1", "on", "true", "yes")
 THINK_EXTRA_PREDICT = 8192               # 開了 thinking 的呼叫若有 num_predict 上限，再加這麼多給思考（思考也算在 num_predict 裡）
@@ -271,40 +270,19 @@ OPS_MAX_ITEMS = 6                        # 計畫最多幾步（小模型規劃�
 OPS_WORKER_MAX_STEPS = 10                # 每一步的 worker 最多幾輪（每輪一個動作）
 
 # =========================================================
-# 📊 數據解析的多 agent 協同（agent_core/analysis_job.py，analysis_run 技能）：只要有 .mcap 就能用的事實報告——
-# 量到什麼、什麼時候、Log 說了什麼，不做因果推論（原因要對照源碼另外分析；第九輪的源碼脈絡與因果推論留在 doc/archive/root_cause_reference/）。
-# 1. 資料預備（程式）：rosout_parser 把 Log 去重成唯一訊號；mcap_analyzer --facts 量全部的 Topic、全部的 Key（發布方式、中斷、
-#    開始／停止發布、狀態跳轉、數值切換、尖峰、範圍），整理成有編號的事實（T#＝Topic、E#＝事件）——事實不靠模型挑，每次一樣；
-# 2. Orchestrator（一次模型呼叫）：看問題、去重後的 Log 與全部 Topic 的事實總表，挑出相關的 Log 訊號、把要說明的 Topic 指派給 worker；
-# 3. Workers（每個一次模型呼叫）：說明自己那個 Topic 的事實（一則一則，每則用 refs 指到事實的編號）；
-# 4. Synthesizer：整段數據的重點（一則一則、refs 指到 E#／L#／T#，時間由程式補）；
-# 5. Orchestrator 檢查：WARN 以上或相關的 Log 前後有變化、還沒有 worker 說明的 Topic，決定要不要補派 worker（最多補一輪）。
-# job 的計畫、每個 worker 的說明、最後的報告都在 logs/analysis_jobs/<編號>/。
+# 📊 數據分析（agent_core/analysis_job.py，analysis_run 技能）：只要有 .mcap 就能用的事實報告——量到什麼、什麼時候、Log 說了什麼，
+# 不做因果推論（原因要對照源碼另外分析；第九輪的源碼脈絡與因果推論留在 doc/archive/root_cause_reference/）。2026-10-23 起全部由程式做：
+# rosout_parser 把 Log 去重成唯一訊號；mcap_analyzer --facts 量全部的 Topic、全部的 Key，整理成有編號的事實（T#＝Topic、E#＝事件、
+# L#＝Log）、時間線與重要的時間點，重點照規則寫，不呼叫模型。模型在主對話依報告回答（回答寫的變化與值由程式核對，agent_core/claims.py）。
+# 每次的產物在 logs/analysis_jobs/<編號>/。
 # =========================================================
 ANALYSIS_JOBS_DIRNAME = "analysis_jobs"
-ANALYSIS_SETTINGS_NAME = "analysis_settings.json"   # logs/ 下：各角色的模型、數據根目錄、worker 數…（Web 的 📊 分析面板 ⚙️ 設定）
-ANALYSIS_AGENTS_DIRNAME = "analysis"                # prompts/ 下：orchestrator.md／orchestrator_check.md／worker.md／synthesizer.md（各角色的 system prompt，可直接改）
-# 各角色的模型：預設同主模型（AGENT_ANALYSIS_*_MODEL 可分別指定，例如 Orchestrator 與 Synthesizer 用 gemma4:26b、worker 用 e4b）
-ANALYSIS_ORCHESTRATOR_MODEL = os.environ.get("AGENT_ANALYSIS_ORCHESTRATOR_MODEL", "").strip() or None
-ANALYSIS_WORKER_MODEL = os.environ.get("AGENT_ANALYSIS_WORKER_MODEL", "").strip() or None
-ANALYSIS_SYNTHESIZER_MODEL = os.environ.get("AGENT_ANALYSIS_SYNTHESIZER_MODEL", "").strip() or None
-ANALYSIS_THINK_DEFAULT = os.environ.get("AGENT_ANALYSIS_THINK", "").strip().lower() in ("1", "on", "true", "yes")
+ANALYSIS_SETTINGS_NAME = "analysis_settings.json"   # logs/ 下：數據根目錄、預設容器（Web 的 📊 分析面板 ⚙️ 設定）
 # 數據根目錄（容器內或主機路徑都可以，主機路徑會依 bind mount 換成容器路徑）：mcap_recorder 錄到這裡、實驗名稱與 latest 相對於它；
 # 沒設定時工具在容器的 /workspace 底下找 experiment_logs
 ANALYSIS_DATA_ROOT = os.environ.get("AGENT_ANALYSIS_DATA_ROOT", "").strip()
-# 一次分析最長幾秒（以整秒算）：每個 worker 量整段數據，事實才不會因為規劃時漏挑某則 Log 而少一段。更長的數據先用 mcap_slicer
-# 切成這個長度以內的片段再分析（之後要分析更長的時間跨度，是多組 Orchestrator → Workers → Synthesizer 各管一段，再往上整合）
+# 一次分析最長幾秒（以整秒算）：量整段數據，事實才不會漏掉一段。更長的數據先用 mcap_slicer 切成這個長度以內的片段再分析
 ANALYSIS_MAX_SECONDS = int(os.environ.get("AGENT_ANALYSIS_MAX_SECONDS", "180"))
-# 一次最多派幾個 worker（＝最多說明幾個 Topic）。事實由程式量全部的 Topic，不受這個上限影響（第十輪 worker 自己量測時，4 個常漏掉
-# /cmd_vel、/cmd_vel_raw，時間線 52/65；改成程式量全部之後跟上限無關）
-ANALYSIS_MAX_WORKERS = int(os.environ.get("AGENT_ANALYSIS_MAX_WORKERS", "4"))
-ANALYSIS_PARALLEL_WORKERS = int(os.environ.get("AGENT_ANALYSIS_PARALLEL", "2"))      # 同時跑幾個 worker（Ollama 同一個模型只有一個 slot
-#                                                                                       時模型呼叫仍會排隊，但容器內的量測可以重疊）
-ANALYSIS_DIGEST_MAX_SIGNALS = 60         # 交給 Orchestrator 的去重後 Log 最多幾個訊號（WARN 以上全部，其餘依時間補到上限）
 # 事實的對照（程式）：Topic 的變化與 Log 前後這麼多秒內就列在一起（只寫時間差，不代表誰造成誰）；不同 Topic 這麼多秒內一起變化＝「同時」
 ANALYSIS_ALIGN_SEC = 1.0
 ANALYSIS_SAME_TIME_SEC = 0.1
-# 補派：WARN 以上或相關的 Log 前後有變化、但還沒有 worker 說明的 Topic，Orchestrator 可以補派 worker，再寫一次重點。
-# 最多幾輪（1＝不補、2＝最多補一輪；補派之前的報告留成 report_r<n>.md）、每輪補派最多幾個 worker
-ANALYSIS_MAX_ROUNDS = int(os.environ.get("AGENT_ANALYSIS_ROUNDS", "2"))
-ANALYSIS_FOLLOWUP_WORKERS = 2

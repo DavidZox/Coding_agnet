@@ -239,7 +239,7 @@
 <header>
   <h1>🤖 SkillAgent Web Console</h1>
   <div id="status">
-    <span id="stat-model" title="主對話用的模型；點一下可以分別設定主對話與數據分析 Orchestrator／Worker／Synthesizer 的模型與 thinking 開關" onclick="toggleModelPanel()">🧠 -</span>
+    <span id="stat-model" title="主對話用的模型；點一下可以換模型與 thinking 開關" onclick="toggleModelPanel()">🧠 -</span>
     <span id="stat-mode">mode: manual</span>
     <span id="stat-cmode" title="上下文模式（/context_mode 切換）：harness＝大量回傳由獨立 session 擷取重點；claude_code＝原文進上下文，查不查細節由 AI 決定">ctx-mode: -</span>
     <span id="stat-plan" title="計畫進度（/plan）"></span>
@@ -302,7 +302,7 @@
     </div>
     <button class="secondary" id="attach-btn" title="附加影像：框選畫面或選擇檔案" onclick="toggleAttachMenu()">📷</button>
     <button class="secondary" id="plan-btn" title="切換 Plan 模式：開啟後，下一個新任務會先規劃步驟、你核准才執行" onclick="togglePlanMode()">📝 Plan</button>
-    <button class="secondary" id="analysis-btn" title="📊 分析模式：開啟後，送出的問題直接交給數據分析（Orchestrator → Workers → Synthesizer，整理成事實報告），數據用目前的數據" onclick="toggleAnalysisMode()">📊 分析</button>
+    <button class="secondary" id="analysis-btn" title="📊 分析模式：開啟後，送出的問題直接交給數據分析（程式量全部的事實、整理成事實報告，AI 依報告回答），數據用目前的數據" onclick="toggleAnalysisMode()">📊 分析</button>
     <textarea id="msg" placeholder="輸入訊息；打「/」選擇功能開關或手動載入技能規格...（Enter 送出，Shift+Enter 換行；📷 可附加影像）"></textarea>
     <button id="send-btn" onclick="sendMessage()">送出</button>
     <input type="file" id="file-input" accept="image/*" multiple style="display:none">
@@ -849,12 +849,12 @@ msgBox.addEventListener('keydown', (e) => {
 
 
 // =====================================================================
-// 📊 數據分析面板：analysis_run 的 job（Orchestrator → Workers → Synthesizer）。分析在主對話的回合裡同步執行，進度同時推到
+// 📊 數據分析面板：analysis_run 的 job（全部由程式做；2026-10-22 以前的 job 另有 Orchestrator 的計畫與 Workers）。分析在主對話的回合裡同步執行，進度同時推到
 // 右欄的系統卡片；面板讀 job 資料夾的檔案，分析進行中或面板打開時每 1.5 秒輪詢 /api/analysis/state。
 // =====================================================================
 const AN_STATUS = { preparing: '資料預備', planning: 'Orchestrator 規劃', working: 'Workers 分析', synthesizing: 'Synthesizer 整合事實', checking: 'Orchestrator 檢查', done: '完成', failed: '失敗' };
-const AN_STEPS = ['preparing', 'planning', 'working', 'synthesizing', 'checking'];
-const AN_ACTIVE = new Set(AN_STEPS);
+const AN_STEPS = ['preparing'];   // 2026-10-23 起全部由程式做：資料預備（Log 去重、量全部 Topic 的事實）之後直接出報告
+const AN_ACTIVE = new Set(['preparing', 'planning', 'working', 'synthesizing', 'checking']);
 const an = { jobId: null, data: null, timer: null, lastKey: '', settingsOpen: false, open: new Set() };
 
 function esc(t) { return String(t == null ? '' : t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
@@ -942,22 +942,15 @@ function anStepsHtml(status) {
 
 function renderAnalysisSettings(d) {
   const s = d.settings || {};
-  const m = s.models || {};
   return `<div class="code-settings ${an.settingsOpen ? 'show' : ''}">
       <span title="mcap_recorder 錄到這裡；實驗名稱與 latest 相對於它；空白＝在容器的 /workspace 底下找 experiment_logs">數據根目錄</span>
       <span><input id="an-root" style="width:70%" value="${esc(s.data_root)}" placeholder="自動尋找 experiment_logs"></span>
       <span title="數據技能都在這個容器內執行（目標容器沒設定時用）">預設容器</span>
       <span><input id="an-container" style="width:50%" value="${esc(s.container)}" placeholder="例如 ros2_web_container">　目前的目標容器：<code>${esc(d.container || '（沒有）')}</code></span>
-      <span>worker 上限／同時執行</span>
-      <span><input id="an-workers" type="number" min="1" max="8" style="width:60px" value="${esc(s.max_workers)}"> 個／
-        <input id="an-parallel" type="number" min="1" max="8" style="width:60px" value="${esc(s.parallel)}"> 個（Ollama 同一個模型只有一個 slot 時模型呼叫仍會排隊）</span>
-      <span title="WARN 以上或相關的 Log 前後有變化、還沒有說明的 Topic，Orchestrator 可以補派 worker 一輪（1＝不補）">補派</span>
-      <span>最多 <input id="an-rounds" type="number" min="1" max="2" style="width:50px" value="${esc(s.rounds || 2)}"> 輪（事實由程式量全部的 Topic；一次最多 3 分鐘）
-        <button class="mini-btn primary" onclick="saveAnalysisSettings()">套用</button></span>
+      <span></span>
+      <span>全部由程式做（量全部的 Topic、程式寫重點，不呼叫模型；一次最多 3 分鐘）　<button class="mini-btn primary" onclick="saveAnalysisSettings()">套用</button></span>
       <span>目前的數據</span>
       <span><input id="an-data" style="width:70%" value="${esc(d.data)}" placeholder="實驗資料夾、bag、切片、實驗名稱或 latest"> <button class="mini-btn" onclick="saveAnalysisData()">設定</button></span>
-      <span>模型</span>
-      <span>Orchestrator <code>${esc(m.orchestrator)}</code>、Worker <code>${esc(m.worker)}</code>、Synthesizer <code>${esc(m.synthesizer)}</code>（點標題列的 🧠 修改）</span>
     </div>`;
 }
 
@@ -975,7 +968,7 @@ function renderAnalysisPanel() {
     html += `<div class="code-empty">還沒有數據分析 job。<br>
       ① 數據：用現有的實驗資料夾，或跟 AI 說「錄 30 秒的核心 Topic」（mcap_recorder，錄完自動建立 Topic Metadata 索引）。<br>
       ② 問問題：直接跟 AI 說（像「為什麼車子在這段時間停下來？」，它會選 analysis_run），或輸入 <code>/analyze &lt;問題&gt;</code>，或按輸入框旁的 <b>📊 分析</b>。<br>
-      ③ 這裡會顯示：Orchestrator 從去重後的 Log 挑出的訊號、每個 worker 說明的 Topic（一則一則，附事實的編號）、最後的事實報告（程式量的全部 Topic 的事實、重點、時間線；不判斷原因）。</div>`;
+      ③ 這裡會顯示：進度、去重後的 Log、全部 Topic 的事實、最後的事實報告（全部由程式整理：重點、各 Topic 的結果、時間線；不判斷原因）。AI 依報告回答你的問題。</div>`;
     analysisPanel.innerHTML = html;
     return;
   }
@@ -987,7 +980,7 @@ function renderAnalysisPanel() {
       <div class="job-task">${esc(j.question)}</div>
       ${anStepsHtml(j.status)}
       <div class="job-meta"><span>📁 ${esc(j.data_label || j.data)}${j.duration_sec ? `（${esc(j.duration_sec)} 秒）` : ''}</span>
-        <span>🧠 ${esc((j.models || {}).orchestrator)}／${esc((j.models || {}).worker)}／${esc((j.models || {}).synthesizer)}</span>
+        ${j.models ? `<span>🧠 ${esc(j.models.orchestrator)}／${esc(j.models.worker)}／${esc(j.models.synthesizer)}</span>` : '<span>🧮 程式整理</span>'}
         ${j.log_source ? `<span>📜 Log：${esc(j.log_source.split('（')[0])}</span>` : ''}</div>
       ${j.error ? `<div class="needs-box failure"><h3>❌ 分析中斷</h3>${esc(j.error)}</div>` : ''}
       <div class="btn-row">${files['log_digest.md'] ? `<button class="mini-btn" onclick="openAnalysisFile('log_digest.md', '去重後的 Log')">📜 去重後的 Log</button>` : ''}
@@ -1034,7 +1027,7 @@ function renderAnalysisPanel() {
       </div>`;
   });
   if (files['report.md']) {
-    html += `<div class="section-title"><span>📄 事實報告（程式整理的事實＋Synthesizer 的重點）</span><span><button class="mini-btn" onclick="openAnalysisFile('report.md', '數據事實報告')">開啟（含 Frontmatter）</button></span></div>
+    html += `<div class="section-title"><span>📄 事實報告${j.models ? '（程式整理的事實＋Synthesizer 的重點）' : '（程式整理）'}</span><span><button class="mini-btn" onclick="openAnalysisFile('report.md', '數據事實報告')">開啟（含 Frontmatter）</button></span></div>
       <div class="item-card st-done"><div class="item-body" style="padding:10px"><div class="item-goal">${esc(stripFrontmatter(files['report.md']))}</div></div></div>`;
   }
   html += `<details style="margin-top:10px"><summary class="section-title" style="display:list-item">全部進度（${events.length} 筆）</summary>
@@ -1054,9 +1047,7 @@ async function analysisPost(action, body) {
   fetch('/api/status').then(r => r.json()).then(updateStatus).catch(() => {});
 }
 function saveAnalysisSettings() {
-  analysisPost('settings', { data_root: document.getElementById('an-root').value.trim(), container: document.getElementById('an-container').value.trim(),
-    max_workers: document.getElementById('an-workers').value, parallel: document.getElementById('an-parallel').value,
-    rounds: document.getElementById('an-rounds').value });
+  analysisPost('settings', { data_root: document.getElementById('an-root').value.trim(), container: document.getElementById('an-container').value.trim() });
 }
 function saveAnalysisData() { analysisPost('data', { path: document.getElementById('an-data').value.trim() }); }
 
@@ -1069,13 +1060,10 @@ async function openAnalysisFile(rel, title) {
 function closeViewer() { document.getElementById('viewer-modal').classList.remove('show'); }
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeViewer(); });
 
-// ================================================================ 🧠 模型設定（主對話、數據分析 Orchestrator／Worker／Synthesizer）
+// ================================================================ 🧠 模型設定（主對話）
 const modelCfg = { open: false, data: null };
 const MODEL_ROLES = [
   ['main', '主對話', '一般對話、查詢、操作技能用的模型；摘要模型沒有另外指定時跟著它換'],
-  ['orchestrator', '分析 Orchestrator', '數據分析：看去重後的 Log 與全部 Topic 的事實、挑 Log 訊號、把要說明的 Topic 分派給 worker、檢查要不要補派（下一次分析生效）'],
-  ['worker', '分析 Worker', '數據分析：每個 worker 說明一個 Topic 的事實（一則一則，附事實的編號；事實由程式量）（下一次分析生效）'],
-  ['synthesizer', '分析 Synthesizer', '數據分析：把程式整理的事實與各 worker 的說明整理成重點（一則一則，附事實的編號）（下一次分析生效）'],
 ];
 function mpThinkOk(name) { return !!(modelCfg.data && modelCfg.data.thinking && modelCfg.data.thinking[name]); }
 async function toggleModelPanel(force) {
@@ -1093,7 +1081,7 @@ async function toggleModelPanel(force) {
 }
 function renderModelPanel() {
   const d = modelCfg.data;
-  const names = [...new Set((d.available || []).concat([d.main, d.orchestrator, d.worker, d.synthesizer]))].filter(Boolean);
+  const names = [...new Set((d.available || []).concat([d.main]))].filter(Boolean);
   const row = ([role, label, hint]) => `<span title="${esc(hint)}">${label}</span><span>
       <select id="mp-${role}" onchange="mpSync('${role}')">${names.map(m => `<option ${m === d[role] ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select>
       <label class="think-wrap" id="mp-${role}-think-wrap" title="thinking 模式：先想再回答（比較慢）；思考內容顯示在右欄，不進對話"><input type="checkbox" id="mp-${role}-think" ${d[role + '_think'] ? 'checked' : ''}> thinking</label>
@@ -1103,7 +1091,7 @@ function renderModelPanel() {
     <div class="mp-grid">${MODEL_ROLES.map(row).join('')}</div>
     <div class="mp-note">摘要模型（壓縮對話、整理工具回傳）：${esc(d.summary_model)}${d.summary_follows_main ? '，跟著主對話換' : '，由 AGENT_SUMMARY_MODEL 指定'}。<br>
       thinking 開關只在模型支援時出現（依 Ollama 回報的模型能力）；有些模型（例如 deepseek-r1）關掉也還是會思考。<br>
-      設定會存檔：主對話下一輪生效，數據分析下一次分析生效；分析的角色選跟主對話一樣的模型＝跟著主對話換。</div>
+      設定會存檔，下一輪生效。數據分析全部由程式做，不用模型。</div>
     <div><button class="mini-btn primary" onclick="saveModelPanel()">套用</button></div>`;
   MODEL_ROLES.forEach(([role]) => mpSync(role));
 }

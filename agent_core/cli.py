@@ -89,7 +89,6 @@ def _run_make_skill_flow(agent, arg_text):
 
 def _handle_analysis_command(agent, text):
     """CLI 的 /analysis 系列設定（/analyze 要跑一個回合，在 main() 處理；Web 是 web_app/analysis.py）。回傳 True＝已處理。"""
-    from .analysis_job import ROLES, ROLE_LABELS
     lower = text.lower()
     if not lower.startswith("/analysis"):
         return False
@@ -111,24 +110,17 @@ def _handle_analysis_command(agent, text):
             if agent.analysis_cfg["container"] and not agent.target_container:
                 agent.target_container = agent.analysis_cfg["container"]
         print(f"📊 預設容器：{agent.analysis_cfg.get('container') or '（沒有）'}；目前的目標容器：{agent.target_container or '（沒有）'}")
-    elif cmd in ("/analysis_source", "/analysis_hints"):   # 第九輪以前的設定：源碼脈絡、推理提示
-        print(f"📊 {cmd} 已經拿掉：數據分析只做事實報告，每個 worker 量整段數據，不用源碼。")
-    elif cmd == "/analysis_model":
-        bits = arg.split()
-        if len(bits) == 2 and bits[0].lower() in ROLES + ("all",):
-            agent.set_analysis_model(bits[0].lower(), "" if bits[1] == "-" else bits[1])
-        else:
-            print("用法：/analysis_model orchestrator|worker|synthesizer|all <模型>（- ＝跟著主對話）")
-        print("📊 " + "、".join(f"{ROLE_LABELS[r]} {agent.analysis_model(r)}" for r in ROLES))
+    elif cmd in ("/analysis_source", "/analysis_hints", "/analysis_model", "/analysis_workers"):
+        # 第九輪以前的設定（源碼脈絡、推理提示）；2026-10-23 數據分析改成全部由程式做之後，各角色的模型與 worker 上限也拿掉了
+        print(f"📊 {cmd} 已經拿掉：數據分析全部由程式做（量全部的 Topic、程式寫重點），不用源碼、不呼叫模型。")
     elif cmd == "/analysis":
         jobs = agent.analysis_list_jobs(10)
         for j in jobs:
-            print(f"- {j['id']}｜{j['status']}｜{j['data_label']}｜{j['workers']} 個 worker｜{j['question'][:50]}")
+            print(f"- {j['id']}｜{j['status']}｜{j['data_label']}｜重點 {j['highlights']} 則｜{j['question'][:50]}")
         if not jobs:
             print("📊 還沒有數據分析 job：/analyze [問題] 開始。")
     else:
-        print("📊 /analyze [問題]、/analysis（最近的 job）、/analysis_data <數據>、/analysis_root <路徑>、"
-              "/analysis_container <容器>、/analysis_model <角色|all> <模型>")
+        print("📊 /analyze [問題]、/analysis（最近的 job）、/analysis_data <數據>、/analysis_root <路徑>、/analysis_container <容器>")
     return True
 
 
@@ -295,7 +287,7 @@ def main():
                     _context_content_for_cli(agent, result, tokens, tool_summary_mode), action)})
                 execute_turn()
                 continue
-            if _handle_analysis_command(agent, user_msg.strip()):   # 📊 /analysis、/analysis_data、/analysis_model…
+            if _handle_analysis_command(agent, user_msg.strip()):   # 📊 /analysis、/analysis_data、/analysis_root…
                 continue
             if user_msg.lower() == '/clear':
                 agent.reset_conversation()

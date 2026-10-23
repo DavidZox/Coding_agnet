@@ -16,7 +16,7 @@ PROCEDURE_NEXT_STEP = ("這是流程技能，沒有自己的腳本：照規格�
 
 # 非編碼的多步驟任務（agent_core/ops_job.py）：在 _run_tool_once 裡攔下、交給 OpsMixin
 OPS_PSEUDO_SCRIPTS = ("ops_plan_cmd.py", "ops_run_cmd.py")
-# 數據解析的多 agent 協同（agent_core/analysis_job.py）：同上，交給 AnalysisMixin
+# 數據分析（agent_core/analysis_job.py，全部由程式做）：同上，交給 AnalysisMixin
 ANALYSIS_PSEUDO_SCRIPTS = ("analysis_run_cmd.py",)
 
 
@@ -247,7 +247,7 @@ class DispatchMixin:
                 self._record_trajectory(script_name, clean_args, output_text, cwd_before, container_before, target_before)
                 return output_text
             if script_name in ANALYSIS_PSEUDO_SCRIPTS:
-                # 偽技能：Orchestrator／Workers／Synthesizer 都要呼叫模型，在本 process 內做（agent_core/analysis_job.py）；
+                # 偽技能：在本 process 內做（agent_core/analysis_job.py：job 資料夾、進度推到 Web 右欄、目前的數據同步）；
                 # 報告記一筆軌跡並存檔（#編號），之後可以 result_recall
                 output_text = self.analysis_run(remainder)
                 self._record_trajectory(script_name, clean_args, output_text, cwd_before, container_before, target_before)

@@ -153,7 +153,7 @@ class ConsoleHandler(BaseHTTPRequestHandler):
             self._handle_analysis_get()
             return
         if self.path == "/api/models":
-            # 🧠 四個角色（主對話、數據分析 Orchestrator／Worker／Synthesizer）的模型與 thinking 開關
+            # 🧠 主對話的模型與 thinking 開關
             from .models import model_view
             self._send_json(model_view())
             return
