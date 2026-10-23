@@ -3,7 +3,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _results_common import INDEX_NAME, FILE_RE, current_session, list_result_files, results_dir
+from _results_common import INDEX_NAME, current_session, list_result_files, results_dir
 
 DEFAULT_N = 20
 MAX_N = 100
@@ -47,14 +47,15 @@ def main(argv):
         return (f"[PASS] 目前 session 還沒有工具結果存檔（之前的 session 共 {len(files)} 筆，加 --all 可列出）。")
     chosen = chosen[-n:][::-1]   # 新→舊
     head = (f"[PASS] 工具結果存檔：{'全部' if show_all or not sess else '目前 session'} 共 {len([f for f in files if show_all or not sess or f[0] == sess])} 筆"
-            f"（全部 session {len(files)} 筆），列出最近 {len(chosen)} 筆（新→舊；用 result_grep <編號> <關鍵字> 搜內容、result_view <編號> 看原文）：")
+            f"（全部 session {len(files)} 筆），列出最近 {len(chosen)} 筆（新→舊；依問題重新提煉用 result_recall <編號> \"<問題>\"、"
+            f"找字串用 result_grep <編號> <關鍵字>、看原文用 result_view <編號>）：")
     out = [head]
     for sess_id, rid, stem, fn in chosen:
         ln = by_file.get(fn)
         if ln:
-            out.append(ln if show_all or not sess or sess_id == sess else ln)
-        else:
-            out.append(f"#{rid} | ? | {stem} | ? | {os.path.getsize(os.path.join(d, fn))} 字 | {fn} | 任務：？ | 回答：")
+            out.append(ln)
+        else:   # index.md 沒有這一行（寫入失敗、或手動放進來的檔）：大小是檔案的位元組數
+            out.append(f"#{rid} | ? | {stem} | ? | {os.path.getsize(os.path.join(d, fn))} bytes | {fn} | 任務：？ | 回答：")
     return "\n".join(out)
 
 
@@ -62,5 +63,5 @@ if __name__ == "__main__":
     try:
         print(main(sys.argv[1:]))
     except Exception as e:
-        print(f"[ERROR] result_list 未預期的例外: {e}", file=sys.stderr)
+        print(f"[ERROR] result_list 未預期的例外: {type(e).__name__}: {e}", file=sys.stderr)
         sys.exit(1)

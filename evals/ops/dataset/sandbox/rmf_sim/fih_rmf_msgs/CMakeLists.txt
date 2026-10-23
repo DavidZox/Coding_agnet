@@ -6,11 +6,16 @@ find_package(rosidl_default_generators REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/AllocatorCommand.msg"
+  "msg/CancelOverpendingTask.msg"
+  "msg/CancelWorkPackage.msg"
   "msg/CurrentState.msg"
   "msg/HandshakeState.msg"
   "msg/RobotState.msg"
   "msg/Sequence.msg"
+  "msg/StationTask.msg"
   "msg/TaskExecutionFinished.msg"
+  "msg/WorkPackage.msg"
+  "msg/WorkPackageStop.msg"
 )
 
 ament_package()

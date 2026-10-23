@@ -2,28 +2,34 @@
 type: Tool
 title: 文件與目錄操作
 description: 在本機建目錄、複製、移動／改名、寫入或附加文字檔、取代檔案裡的一段文字（例如改設定檔的一個參數）；會先請使用者確認。
-version: 1.0.0
+version: 2.0.0
 dependencies: []
 ---
 
 # 用途
-需要「改」本機的文件時用（看用 view_file、找用 find_file／search_text）。會改變檔案，執行前系統會請使用者確認；
-覆寫、附加、取代、移動之前原本的檔案會自動備份到 harness 的 logs/file_backups/（不在使用者的目錄留下 .bak）。沒有刪除功能。
-改設定檔只改要改的那一行：用 `replace`，`--old` 照檔案的實際內容寫（先用 view_file 看），不要整份重寫。
+「改」本機的文件（看用 view_file、找用 find_file／search_text）。執行前系統會請使用者確認；覆寫、附加、取代前原檔自動備份到
+logs/file_backups/（移動不覆蓋任何東西，不備份）。沒有刪除。只改 UTF-8 文字檔。改設定檔用 `replace` 只改那一行，
+`--old` 照檔案實際內容寫（先 view_file 看；**不要抄行號 `12→`**）。
 
 # 語法
-`EXECUTE: scripts/file_ops_cmd.py <動作> …`（路徑相對於目前的工作目錄）
-* `mkdir <目錄>`；`copy <來源> <目的>`（目錄整個複製，目的已存在就不覆蓋）；`move <來源> <目的>`（目的是既有目錄時放進去）
-* `write <檔案> --text "內容"`：建立或覆寫（`\n` 代表換行，可以寫多行，例如 Markdown 表格）；`append <檔案> --text "內容"`：加在最後
-* `replace <檔案> --old "原文" --new "新的內容"`：原文要剛好出現一次
+`EXECUTE: scripts/file_ops_cmd.py <動作> …`（路徑相對於工作目錄，可用 `~`；不能寫 /etc、/usr 等系統目錄）
+* `mkdir <目錄>`；`copy <來源> <目的>`；`move <來源> <目的>`（目的是既有目錄時放進去）。目的已存在一律不覆蓋。
+* `write <檔案> --text "內容"` 建立或覆寫；`append <檔案> --text "內容"` 加在最後；
+  `replace <檔案> --old "原文" --new "新的內容"`：原文要剛好出現一次（`--new ""` 是刪掉原文）。
+* 選項順序不拘，內容用雙引號包住（裡面有引號也可以）。跳脫：`\n` 換行、`\t` tab、`\"` 引號、`\\` 反斜線（字面的 `\n` 寫 `\\n`）；
+  內容裡已經有真正的換行時只把 `\"` 換成 `"`，其他照原樣寫入。
 
 # 範例
 `EXECUTE: scripts/file_ops_cmd.py replace configs/nav/nav_params.yaml --old "max_vel_x: 0.5" --new "max_vel_x: 0.3"`
 `EXECUTE: scripts/file_ops_cmd.py write reports/battery.md --text "# 電量\n| 機器人 | 最低 |\n|---|---|\n| tb1 | 21.1 |"`
-`EXECUTE: scripts/file_ops_cmd.py move logs/2026-09-28 logs/archive/`　`EXECUTE: scripts/file_ops_cmd.py copy templates/mission_template missions/patrol_b`
+`EXECUTE: scripts/file_ops_cmd.py move logs/2026-09-28 logs/archive/`
 
 # 回傳
-`[PASS] 已修改／建立／覆寫／附加／複製／移動 …`（附備份的位置）。
+`[PASS] 已建立目錄／已複製（N 個檔案）／已移動／已建立（N 行）／已覆寫／已附加／已修改 <檔案> 第 N 行附近：「原文」→「新的」`，
+有備份時最後寫 `原本的檔案備份在 <路徑>`。
 
 # 異常
-找不到來源、目的已經存在、原文出現 0 次或好幾次（會列出檔案裡相關的行）、系統目錄：`[ERROR]` 說明原因，照著修正參數再試。
+* `出現 0 次`（列出相關的行）：照實際內容改 --old。`出現 N 次（第 a、b 行）`：--old 多帶前後文。`含有…行號`：去掉 `行號→`。
+* `找不到來源／檔案`：照相近的路徑修正。`目的已經存在`：換名稱或問使用者。`已經是一個檔案`、`到它自己裡面`、`是目錄`：修正路徑。
+* `需要 --text`／`需要 --old 與 --new`／`--old 是空的`／`出現了兩次`／`路徑太多`／`不認識的選項`／`第一個參數要是動作`：照語法改，內容一定加引號。
+* `不能在系統目錄操作`、`沒有權限`、`不是 UTF-8 文字檔`、`是二進位檔`、`太大`、`… 失敗`（磁碟）：換路徑或請使用者處理。

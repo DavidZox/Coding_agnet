@@ -14,6 +14,9 @@ PROCEDURE_NEXT_STEP = ("這是流程技能，沒有自己的腳本：照規格�
                        "檢查、告知的步驟依前面步驟的回傳做。")
 
 
+# 腳本輸出最後幾行的狀態標記（見 _trailing_markers；規範見 doc/技能撰寫規範.md）：跟腳本共用同一份清單（_shell_common.protect_tail 也用它）
+from skills_system.scripts._shell_common import STATE_MARKERS  # noqa: E402
+
 # 非編碼的多步驟任務（agent_core/ops_job.py）：在 _run_tool_once 裡攔下、交給 OpsMixin
 OPS_PSEUDO_SCRIPTS = ("ops_plan_cmd.py", "ops_run_cmd.py")
 # 數據分析（agent_core/analysis_job.py，全部由程式做）：同上，交給 AnalysisMixin
@@ -90,11 +93,25 @@ class DispatchMixin:
         return [a for a in parts if a != ""]
 
     
+    @staticmethod
+    def _trailing_markers(output_text):
+        """輸出最後連續的狀態標記行（[CWD_CHANGED]、[TARGET_CONTAINER]、[ANALYSIS_DATA]、[ROS2_WORKSPACE]、[CONTAINER_CWD] 與它下一行的路徑）。
+        只認最後這一段：原文（容器的 log、指令的輸出）裡剛好出現同樣的字，不會被當成標記改掉 harness 的狀態。"""
+        lines = output_text.rstrip().splitlines()
+        j = len(lines) - 1
+        while j >= 0:
+            ln = lines[j].strip()
+            if ln.startswith(STATE_MARKERS) or (j >= 1 and lines[j - 1].strip().startswith("[CONTAINER_CWD]") and ln.startswith("/")):
+                j -= 1
+                continue
+            break
+        return lines[j + 1:]
+
     def _sync_state_from_tool_output(self, output_text):
-        """解析工具輸出的狀態標記，同步工作目錄、容器目錄與 ROS 2 Workspace。"""
+        """解析工具輸出最後的狀態標記（_trailing_markers），同步工作目錄、容器目錄、目前的數據、目標容器與 ROS 2 Workspace。"""
         import json
 
-        lines = output_text.splitlines()
+        lines = self._trailing_markers(output_text)
 
         for i, line in enumerate(lines):
             if line.startswith("[CWD_CHANGED]"):
@@ -261,14 +278,26 @@ class DispatchMixin:
             self._record_trajectory(script_name, clean_args, output_text, cwd_before, container_before, target_before)
             return output_text
 
-        except Exception as e:
-            return f"解析指令失敗: {e}"
+        except Exception as e:   # noqa: BLE001  偽技能（ops／analysis）或 harness 自己的錯：照實回報，[ERROR] 開頭才會被當成失敗
+            return (f"[ERROR] 執行時發生未預期的錯誤（{type(e).__name__}: {e}）。下一步：確認參數（引號要成對）後重試一次；"
+                    f"同樣的錯誤再出現就把這段訊息告訴使用者，不要一直重試。")
+
+    def _usable_cwd(self):
+        """目前的工作目錄還能用（存在、可以讀與進入）就回 None；不能用（被刪掉、切到沒有權限的目錄）就換回專案目錄，回傳說明。
+        以前切到 /root 之後每一支腳本都因為 cwd 失敗、連 change_dir 都跑不了，只能重開程式。"""
+        cwd = self.current_cwd
+        if cwd and os.path.isdir(cwd) and os.access(cwd, os.R_OK | os.X_OK):
+            return None
+        self.current_cwd = self.script_dir
+        return (f"[ERROR] 目前的工作目錄 {cwd} 已經不存在或沒有權限，系統已把工作目錄換回 {self.script_dir}，這一次沒有執行。"
+                f"下一步：用 change_dir 切到要的目錄（要有讀取權限），再執行一次。")
 
     def _exec_script(self, script_name, script_path, clean_args, extra_env=None):
-        """執行一支腳本、回傳 output_text；不記軌跡、不同步狀態（呼叫端負責）——run_tool() 的正常派發，
-        與 summarize_tool_result() 的自動追問（直接跑 result_grep_cmd.py，跳過整個 run_tool，不印
-        「Agent 啟動工具」這種暗示模型主動執行的訊息）共用同一個執行原語。analysis worker 平行呼叫時用 extra_env
-        帶自己的數據、Topic 與時間窗（這裡只讀 agent 的狀態、不改，平行呼叫是安全的）。"""
+        """執行一支腳本、回傳 output_text；不記軌跡、不同步狀態（呼叫端負責）。不讀標準輸入（腳本若等人輸入會直接讀到結尾，不會卡住）；
+        extra_env 是額外的環境變數。工作目錄不能用時不執行、回 [ERROR]（_usable_cwd）。"""
+        bad_cwd = self._usable_cwd()
+        if bad_cwd:
+            return bad_cwd
         env = os.environ.copy()
         env["CONTAINER_CWD"] = self.container_cwd
         env["TARGET_CONTAINER"] = self.target_container  # 容器技能省略容器名稱時的預設（比照 cwd）
@@ -286,6 +315,9 @@ class DispatchMixin:
                 [sys.executable, script_path] + clean_args,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
+                stdin=subprocess.DEVNULL,
                 cwd=self.current_cwd,
                 env=env,
                 timeout=TOOL_EXEC_TIMEOUT,
@@ -295,6 +327,8 @@ class DispatchMixin:
                 f"[ERROR] 工具 {script_name} 執行逾時（超過 {TOOL_EXEC_TIMEOUT} 秒），已被系統強制終止。"
                 f"這是 harness 的最後防線，各腳本自身應有更短的逾時；若經常觸發請檢查該腳本。"
             )
+        except OSError as e:
+            return f"[ERROR] 無法執行腳本 {script_name}（{type(e).__name__}: {e}）。下一步：把這段訊息告訴使用者（多半是權限或檔案系統的問題）。"
         if res.returncode == 0:
             return res.stdout.strip()
         # 腳本異常結束：優先用 stderr，沒有就用 stdout；兩者皆空也要給 AI 一個

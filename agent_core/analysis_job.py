@@ -35,6 +35,7 @@ from .config import (
     ANALYSIS_SAME_TIME_SEC,
     ANALYSIS_SETTINGS_NAME,
 )
+from .jobstore import JobStore
 
 DEFAULT_QUESTION = "這段錄製期間發生了哪些狀態變化？"
 _LEVEL_RANK = {"DEBUG": 0, "INFO": 1, "UNKNOWN": 1, "WARN": 2, "ERROR": 3, "FATAL": 4}
@@ -175,40 +176,28 @@ class AnalysisMixin:
                          f"報告 logs/{ANALYSIS_JOBS_DIRNAME}/{last['id']}/report.md）")
         return "\n".join(parts)
 
-    # ---------------------------------------------------------------- job 的檔案與進度
+    # ---------------------------------------------------------------- job 的檔案與進度（JobStore，跟工具回傳的提煉同一套）
     def analysis_jobs_dir(self):
         return os.path.join(self.script_dir, "logs", ANALYSIS_JOBS_DIRNAME)
 
+    def _analysis_store(self):
+        return JobStore(self.analysis_jobs_dir())
+
     def _job_dir(self, job):
-        return os.path.join(self.analysis_jobs_dir(), job["id"])
+        return self._analysis_store().path(job["id"])
 
     def _job_save(self, job):
-        d = self._job_dir(job)
-        os.makedirs(d, exist_ok=True)
         keep = {k: v for k, v in job.items() if k not in ("index", "scan", "events") and not k.startswith("_")}
-        tmp = os.path.join(d, "job.json.tmp")
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(keep, f, ensure_ascii=False, indent=1, default=str)
-        os.replace(tmp, os.path.join(d, "job.json"))
+        self._analysis_store().save(keep)
 
     def _job_write(self, job, rel, text):
-        path = os.path.join(self._job_dir(job), rel)
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(text)
-        return path
+        return self._analysis_store().write(job["id"], rel, text)
 
     def _analysis_note(self, job, text, kind="phase", **extra):
         """進度：印出、記進 events.jsonl、交給畫面（Web 在執行工具時設 progress_callback，推到右欄）。"""
         print(text)
-        rec = {"ts": time.strftime("%H:%M:%S"), "kind": kind, "text": text, **extra}
         with self._analysis_lock:
-            try:
-                os.makedirs(self._job_dir(job), exist_ok=True)
-                with open(os.path.join(self._job_dir(job), "events.jsonl"), "a", encoding="utf-8") as f:
-                    f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-            except OSError:
-                pass
+            self._analysis_store().append(job["id"], "events.jsonl", {"ts": time.strftime("%H:%M:%S"), "kind": kind, "text": text, **extra})
             cb = getattr(self, "progress_callback", None)
             if cb:
                 try:
@@ -224,71 +213,30 @@ class AnalysisMixin:
     def analysis_mark_interrupted(self, stale_minutes=30):
         """啟動時：還標著進行中、但進度（events.jsonl）超過 stale_minutes 沒有更新的 job，是上一次程式在做完之前結束了
         （重新啟動、被停止）——標成 failed，面板才不會一直顯示「分析中」。analysis_run 是同步的，不會有別的程序接著做。"""
-        d = self.analysis_jobs_dir()
-        if not os.path.isdir(d):
-            return 0
-        n, now = 0, time.time()
-        for name in os.listdir(d):
-            path = os.path.join(d, name, "job.json")
-            try:
-                with open(path, encoding="utf-8") as f:
-                    job = json.load(f)
-            except (OSError, ValueError):
-                continue
-            if job.get("status") not in _ACTIVE:
-                continue
-            ev = os.path.join(d, name, "events.jsonl")
-            last = os.path.getmtime(ev) if os.path.exists(ev) else os.path.getmtime(path)
-            if now - last < stale_minutes * 60:
-                continue
-            job["error"] = f"中斷：程式在這個 job 做完之前結束（停在「{_STATUS_TEXT.get(job['status'], job['status'])}」）"
-            job["status"], job["updated"] = "failed", time.strftime("%Y-%m-%d %H:%M:%S")
-            try:
-                with open(path, "w", encoding="utf-8") as f:
-                    json.dump(job, f, ensure_ascii=False, indent=1)
-                n += 1
-            except OSError:
-                pass
-        return n
+        return self._analysis_store().mark_interrupted(
+            _ACTIVE, stale_minutes, status="failed",
+            explain=lambda job: f"中斷：程式在這個 job 做完之前結束（停在「{_STATUS_TEXT.get(job['status'], job['status'])}」）")
 
     def analysis_list_jobs(self, n=20):
-        out = []
-        d = self.analysis_jobs_dir()
-        if not os.path.isdir(d):
-            return out
-        for name in sorted(os.listdir(d), reverse=True)[:n]:
-            try:
-                with open(os.path.join(d, name, "job.json"), encoding="utf-8") as f:
-                    j = json.load(f)
-            except (OSError, ValueError):
-                continue
-            out.append({"id": j.get("id", name), "status": j.get("status"), "question": j.get("question", ""),
-                        "data_label": j.get("data_label", ""), "created": j.get("created"), "seconds": j.get("seconds"),
-                        "highlights": len((j.get("report") or {}).get("highlights") or [])})
-        return out
+        return [{"id": j.get("id"), "status": j.get("status"), "question": j.get("question", ""), "data_label": j.get("data_label", ""),
+                 "created": j.get("created"), "seconds": j.get("seconds"), "highlights": len((j.get("report") or {}).get("highlights") or [])}
+                for j in self._analysis_store().recent(n)]
 
     def analysis_job_detail(self, jid):
         """Web 面板用：job.json、事件、報告全文（以前的 job 另有各 worker 的說明）。"""
-        d = os.path.join(self.analysis_jobs_dir(), os.path.basename(str(jid or "")))
-        try:
-            with open(os.path.join(d, "job.json"), encoding="utf-8") as f:
-                job = json.load(f)
-        except (OSError, ValueError):
+        store = self._analysis_store()
+        jid = os.path.basename(str(jid or ""))
+        job = store.load(jid) if jid else None
+        if job is None:
             return None
-        events = []
-        try:
-            with open(os.path.join(d, "events.jsonl"), encoding="utf-8") as f:
-                events = [json.loads(ln) for ln in f if ln.strip()]
-        except (OSError, ValueError):
-            pass
         texts = {}
         for rel in ["log_digest.md", "topic_metadata.md", "report.md"] + [w.get("file") for w in job.get("workers") or [] if w.get("file")]:
             try:
-                with open(os.path.join(d, rel), encoding="utf-8") as f:
+                with open(store.path(jid, rel), encoding="utf-8") as f:
                     texts[rel] = f.read()
             except (OSError, TypeError):
                 pass
-        return {"job": job, "events": events[-300:], "files": texts}
+        return {"job": job, "events": store.read_jsonl(jid, "events.jsonl")[-300:], "files": texts}
 
     # ---------------------------------------------------------------- 主流程（全部由程式做）
     def analysis_run(self, remainder):

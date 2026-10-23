@@ -111,7 +111,7 @@ def main():
                   r.stdout + r.stderr)
     out = run("mcap_slicer_cmd.py", a.data, "--at", "+999999", "--out", "/tmp/agent_live_slices", env=env)
     check("時間點不在數據範圍內：不切、回錯誤", out.startswith("[ERROR]") and "不在數據範圍內" in out, out)
-    # analysis_run 的動態時間切片：明確的時間窗、只切指定的 Topic、帶時間窗之前的最後一則；讀切片量到的要跟讀原本的數據一樣
+    # 時間切片：明確的時間窗、只切指定的 Topic、帶時間窗之前的最後一則；切片本身也是數據
     # 有狀態 Key、訊息最多的 Topic（訊息很少的 Topic 在時間窗之前可能一則都沒有，切出 0 則才是對的）
     st = max((t for t in workers if any(k["category"] == "state" for k in t["keys"])), key=lambda t: t.get("message_count") or 0, default=None)
     if st:
@@ -126,12 +126,25 @@ def main():
         check(f"mcap_slicer --window --topics --with-state：只切 {st['topic']}、帶時間窗之前的最後一則",
               bool(sj) and set(sj["topics"]) == {st["topic"]} and sj["trigger"]["id"] == "W1", out)
         if sj:
-            win = {"id": "W1", "start_ns": int(round(sj["start_sec"] * 1e9)), "end_ns": int(round(sj["end_sec"] * 1e9)), "anchor_ns": None}
-            outs = [run("mcap_feature_measure_cmd.py", a.data, "--topic", st["topic"], "--key", skey, "--window", "W1",
-                        env=dict(env, ANALYSIS_WINDOWS=json.dumps([w]))) for w in (dict(win, slice=sj["dir"]), win)]
-            body = [[ln for ln in o.splitlines()[2:] if not ln.startswith("[")] for o in outs]
-            check(f"讀切片量到的＝讀原本的數據（{skey}：筆數、跳轉、沿用的狀態都一樣，只多「讀切片」）",
-                  "讀切片" in outs[0] and outs[0].startswith("[PASS]") and body[0] == body[1], outs[0] + "\n----\n" + outs[1])
+            out = run("mcap_feature_measure_cmd.py", sj["dir"], "--topic", st["topic"], "--key", skey, env=env)
+            check(f"切片本身也是數據：mcap_feature_measure 直接量切片資料夾（{skey}）", out.startswith("[PASS] 特徵量測"), out)
+    # --where：門檻條件（同 ROS2_topic_echo）——找一個數值 Key，條件用它的平均，應該有符合也有不符合
+    num = next(((t, k) for t in workers for k in t.get("keys", []) if k["category"] == "numeric" and k.get("range")
+                and k["range"][0] < k["range"][1]), None)
+    if num:
+        t, k = num
+        mid = (k["range"][0] + k["range"][1]) / 2
+        out = run("mcap_feature_measure_cmd.py", a.data, "--topic", t["topic"], "--where", f"{k['key']}>{mid:.6g}", env=env)
+        check(f"--where（{k['key']}>{mid:.6g}，不寫 --key 也自動量）：幾筆符合、第一筆符合的時間", out.startswith("[PASS]") and "▸ 條件" in out
+              and "筆符合" in out, out)
+        out = run("mcap_feature_measure_cmd.py", a.data, "--topic", t["topic"], "--where", "no_such_key>1", env=env)
+        check("--where 的欄位不存在：[ERROR] 列出可以量測的 Key", out.startswith("[ERROR]") and "可以量測的 Key" in out, out)
+    # 字串裡的 JSON：欄位展開成 Key（這份數據有 JSON 字串的 Topic 才測）
+    js = next(((t, k) for t in idx["topics"] for k in t.get("keys", []) if k.get("json") and k["category"] in ("state", "numeric")), None)
+    if js:
+        t, k = js
+        out = run("mcap_feature_measure_cmd.py", a.data, "--topic", t["topic"], "--key", k["key"], env=env)
+        check(f"JSON 字串的欄位當成 Key 量（{t['topic']} {k['key']}）", out.startswith("[PASS] 特徵量測") and f"▸ {k['key']}（" in out, out)
     if a.record and workers:
         out = run("mcap_recorder_cmd.py", "--topics", workers[0]["topic"], "--duration", "6", "--out-root", "/tmp/agent_live_rec",
                   "--name", "exp_live", env=env)

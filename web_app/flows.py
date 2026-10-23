@@ -111,13 +111,17 @@ def _current_tool_action():
     return (agent._last_assistant_step() or {}).get("action")
 
 
-def _emit_context_event(content, events, tool_tokens=None):
+def _emit_context_event(content, events, tool_tokens=None, result=None):
     """每次工具結果決定好要餵給主對話什麼之後，都推一個「AI 實際收到的內容」事件到右欄，緊接在完整原文卡片之後：
-    summary（任務導向摘要）與 reduced（只有成功／失敗）整段顯示；raw／doc（完整原文、規格文件）只給一行提示，
-    因為上一張卡片就是同一份內容。使用者永遠同時看得到完整原文與 AI 收到的版本。"""
+    summary（任務導向提煉）與 reduced（只有成功／失敗）整段顯示；raw／doc（完整原文、規格文件）只給一行提示，
+    因為上一張卡片就是同一份內容；result_recall 的回傳本身就是提煉（跟上一張卡片一字不差），也只給一行提示。
+    使用者永遠同時看得到完整原文與 AI 收到的版本。"""
     kind = context_kind(content, tool_tokens)
     n = agent.count_tokens(content)
-    if kind in ("summary", "reduced"):
+    if kind == "summary" and result is not None and content == result:
+        events.append({"channel": "summary", "kind": kind, "tokens": n,
+                       "text": f"result_recall 的回傳本身就是獨立 session 提煉的重點（≈{n} tokens），與上方卡片相同。"})
+    elif kind in ("summary", "reduced"):
         events.append({"channel": "summary", "kind": kind, "text": content, "tokens": n})
     elif kind == "truncated":
         events.append({"channel": "summary", "kind": kind, "tokens": n, "text": (
@@ -293,7 +297,7 @@ def _handle_tool_result(result, events):
         content = _content_for_context(
             result, tool_tokens, agent=agent, use_summary=state["tool_summary_mode"]
         )
-        _emit_context_event(content, events, tool_tokens)
+        _emit_context_event(content, events, tool_tokens, result)
         agent.messages.append({'role': 'user', 'content': tool_result_message(content, _current_tool_action())})
         events.append({"channel": "system", "text": "♻️ Auto Continue 中..."})
         return "continue"
@@ -417,7 +421,7 @@ def apply_decision(action, events):
             content = _content_for_context(
                 result, tool_tokens, agent=agent, use_summary=state["tool_summary_mode"]
             )
-            _emit_context_event(content, events, tool_tokens)
+            _emit_context_event(content, events, tool_tokens, result)
             agent.messages.append({'role': 'user', 'content': tool_result_message(content, _current_tool_action())})
         else:
             _append_discarded_tool_result(agent)
@@ -428,7 +432,7 @@ def apply_decision(action, events):
         content = _content_for_context(
             result, tool_tokens, agent=agent, use_summary=state["tool_summary_mode"]
         )
-        _emit_context_event(content, events, tool_tokens)
+        _emit_context_event(content, events, tool_tokens, result)
         agent.messages.append({'role': 'user', 'content': tool_result_message(content, _current_tool_action())})
         return "continue"
     if action == "stop":

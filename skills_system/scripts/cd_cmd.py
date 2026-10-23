@@ -1,56 +1,50 @@
-import sys
+"""change_dir：切換 harness 的工作目錄（之後的本機技能都在這裡執行、相對路徑相對於這裡）。
+
+成功時輸出末行 `[CWD_CHANGED] <絕對路徑>`，harness 據此更新 current_cwd（只認輸出最後的標記行）。
+切換前檢查：存在、是目錄、目前使用者能讀取並進入（`cd /root` 以前回 [PASS]，之後每個腳本都在一個進不去的目錄執行而失敗）。
+"""
 import os
-import shlex
+import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import _path_common
+import _path_common as pc  # noqa: E402
 
-def execute(args_str):
-    """args_str 可以是參數清單（harness 已拆好）或整串字串（舊介面）。"""
-    if isinstance(args_str, list):
-        args_list = [a.strip("\"'") for a in args_str if a.strip("\"'")]
-        args_str = " ".join(args_list)
-    else:
-        args_list = None
-    if not args_str or args_str.strip() == "":
-        target_path = os.path.expanduser("~")
-    else:
-        # --- AI Generated Code / CLI Executor ---
-        try:
-            parsed_args = args_list if args_list is not None else shlex.split(args_str)
-            
-            # 過濾掉 "cd" 指令本身（有些 Agent 會輸出成 "cd path" 傳進來）
-            clean_args = [arg for arg in parsed_args if arg.lower() != 'cd']
-            
-            if not clean_args:
-                target_path = "."
-            else:
-                # 拿最後一個參數作為目標路徑（應對多個參數的容錯）
-                target_path = clean_args[-1]
-                
-        except Exception:
-            target_path = args_str.strip()
+USAGE = ("用法: scripts/cd_cmd.py <目錄>\n"
+         "  目錄：絕對路徑、相對於目前工作目錄的路徑、或 ~ 開頭；不給就切到家目錄。")
 
+
+def execute(argv):
+    args = [a for a in argv if a != ""]
+    if args and args[0].lower() == "cd" and len(args) > 1:     # 模型把指令名稱也寫進參數：cd /opt
+        args = args[1:]
+    options = [a for a in args if a.startswith("-") and a != "-"]
+    if options:
+        return f"[ERROR] change_dir 沒有選項（收到 {'、'.join(options)}）。下一步：只給目錄路徑。\n{USAGE}"
+    if len(args) > 1:
+        joined = pc.join_if_exists(args)
+        if joined is None:
+            return (f"[ERROR] 一次只能切換到一個目錄（收到 {len(args)} 個參數：{'、'.join(args)}）。"
+                    f"下一步：只給一個路徑；路徑含空白請用引號包住。\n{USAGE}")
+        args = [joined]
+    target = args[0] if args else "~"
+    if target == "-":
+        return "[ERROR] change_dir 不支援 cd -（不記得上一個目錄）。下一步：直接給要切換到的目錄路徑。"
+    abs_path, err = pc.resolve(target, "dir", file_hint=f"要切換到它所在的目錄請用 {pc.display(os.path.dirname(os.path.abspath(pc.expand(target))))}")
+    if err:
+        if err.startswith("[ERROR] 沒有權限"):
+            err = err.replace("[ERROR] 沒有權限讀取目錄", "[ERROR] 沒有權限進入目錄", 1) + "；工作目錄沒有改變"
+        return err
     try:
-        # 展開路徑
-        abs_path = os.path.abspath(os.path.expanduser(target_path))
-        
-        if os.path.exists(abs_path) and os.path.isdir(abs_path):
-            return f"[PASS] 已切換工作目錄: {abs_path}\n[CWD_CHANGED] {abs_path}"
-        else:
-            if os.path.isfile(abs_path):
-                return f"[ERROR] {target_path} 是檔案不是目錄：要切換到它所在的目錄請用 {os.path.dirname(abs_path) or '.'}"
-            hint = _path_common.suggest(target_path, "dir")
-            return (f"[ERROR] 找不到目錄（路徑不存在或不是目錄）: {target_path}（目前工作目錄 {os.getcwd()}）"
-                    + (f"\n{hint}" if hint else ""))
-            
-    except Exception as e:
-        return f"[ERROR] 路徑評估異常: {str(e)}"
-    # -------------------------
+        n = len(os.listdir(abs_path))
+    except OSError:
+        n = None
+    what = f"（裡面有 {n} 項）" if n is not None else ""
+    return f"[PASS] 已切換工作目錄: {abs_path}{what}\n[CWD_CHANGED] {abs_path}"
+
 
 if __name__ == "__main__":
     try:
         print(execute(sys.argv[1:]))
-    except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
+    except Exception as e:      # noqa: BLE001
+        print(f"[ERROR] change_dir 未預期的例外：{type(e).__name__}: {e}", file=sys.stderr)
         sys.exit(1)

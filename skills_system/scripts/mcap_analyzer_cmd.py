@@ -62,7 +62,7 @@ def _overview_text(data, idx):
     lines = [f"[PASS] Topic Metadata：{idx['label']}（{len(data['mcap_files'])} 個 mcap，"
              f"{sum(os.path.getsize(f) for f in data['mcap_files']) / 1e6:.1f} MB）",
              f"時間範圍：{rd.fmt_t(idx['start_ns'])} ～ {rd.fmt_t(idx['end_ns'])}（{idx['duration_sec']} 秒），"
-             f"共 {idx['message_count']} 則訊息、{len(topics)} 個 Topic（worker 可分析 {len(workers)} 個）",
+             f"共 {idx['message_count']} 則訊息、{len(topics)} 個 Topic（可以量測的 {len(workers)} 個）",
              f"索引：{idx.get('index_file') or '（沒有寫入權限，沒有快取）'}" + ("（讀快取）" if idx.get("cached") else "（剛建立）")]
     if data.get("rosout_log"):
         lines.append(f"rosout.log：{data['rosout_log']}")
@@ -88,12 +88,12 @@ def _topic_text(idx, entry):
     lines = [f"[PASS] {entry['topic']}（{entry['type']}）：{entry['message_count']} 則，"
              f"{entry.get('avg_frequency_hz', '-')} Hz，角色：{ROLE_TEXT.get(entry['role'], entry['role'])}"]
     if entry["role"] == "log":
-        lines.append("這是 Log Topic：用 rosout_parser 看去重後的唯一訊號（Log 只交給 Orchestrator，worker 不量測）。")
+        lines.append("這是 Log Topic：用 rosout_parser 看去重後的唯一訊號（不做特徵量測）。")
         return "\n".join(lines)
     if entry["role"] == "undecodable":
         lines.append(f"無法解碼：{entry.get('error')}。自訂訊息型別要先用 ROS2_workspace_env 確認 Workspace，再加 --refresh 重建索引。")
         return "\n".join(lines)
-    lines.append("Key｜ROS 型別｜維度｜類別｜抽樣看到的值（worker 只量測 數值／向量／狀態／鍵值／矩陣／陣列；文字與時間不量測）")
+    lines.append("Key｜ROS 型別｜維度｜類別｜抽樣看到的值（量測只做 數值／向量／狀態／鍵值／矩陣／陣列；文字與時間不量測；JSON 字串的欄位另外展開成 Key）")
     for k in entry.get("keys", []):
         cat = rd.CATEGORY_LABELS.get(k["category"], k["category"])
         info = []
@@ -223,6 +223,10 @@ def host_main(argv):
     if err:
         print(err)
         return 2
+    err = rd.not_recording(args.data or args.data_opt, "mcap_analyzer")   # 主機上的一般檔案：先指到對的技能，不要先叫人開容器
+    if err:
+        print(err)
+        return 2
     container, err = resolve_container(args.container)
     if err:
         print(err)
@@ -234,12 +238,12 @@ def host_main(argv):
     if args.key:
         wargs += ["--key", args.key, "--preview", str(args.preview)]
     if args.window:
-        wargs += ["--window", rd.resolve_window_ids(args.window)]
+        wargs += ["--window", args.window]
     wargs += [f for f, on in (("--facts", args.facts), ("--refresh", args.refresh), ("--json", args.json)) if on]
     rc, out = rd.run_in_container(os.path.abspath(__file__), wargs, container=container, timeout=timeout,
                                   what="mcap_analyzer（Topic Metadata）",
                                   timeout_hint="第一次建立大型 bag 的索引要讀完整份資料；可以加大 --timeout，建好之後會讀快取。")
-    print(rd.finalize_output(out) + cli.ignored_note())
+    print(rd.finalize_output(out, cli.ignored_note()))
     return rc
 
 

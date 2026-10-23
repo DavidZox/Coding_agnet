@@ -1,24 +1,28 @@
 ---
 type: Tool
 title: 查 work package 執行狀態（一幀或一段時間）
-description: 讀 web_console 快照看 work package、distribute 佇列、機器人與事件；--watch 觀察一段時間並整理變化。
-version: 1.1.0
+description: 讀 web_console 快照看 work package、distribute 佇列、機器人與事件；--watch 觀察一段時間，整理每個工作包／工作項／機器人的狀態變遷；--until-done 等指定的工作包跑完（看到完成就結束）。
+version: 1.3.0
 dependencies: ["fih_rmf_system web_console (port 8020)"]
 ---
 
 # 用途
-WebSocket `/api/ws` 快照：每個 work package 一行（狀態、第幾站含語意名稱、工作項、機器人或 ⏳ 等待、循環進度）、distribute 佇列（raw／processing／OverPending）、機器人、最近事件。**一幀只是瞬間**：使用者提到「觀察一段時間／持續／變化／過程」時用 `--watch 秒`，會整理站點推進、OverPending 進出、機器人狀態變化與新增事件，結尾一行摘要。
+WebSocket `/api/ws` 一幀快照：`## work package`（每個一行：狀態、第幾站、目前工作項在 distribute 的哪裡、機器人或 ⏳；RUNNING 全列，已完成的太多時寫「另有 N 個」）、`## distribute 佇列`、`## 機器人`、`## 最近事件`。task_id 可以是工作包或工作項（含 `::`）。**一幀只是瞬間**：問「一段時間／持續／有沒有在動／變化」用 `--watch 秒`：每個工作包（站點／輪次／機器人）、工作項（raw／OverPending／processing→機器人／離開 distribute）、機器人（ONLINE／顯示／自報狀態）的每次變遷（從什麼到什麼、+秒）、次數與時間占比，結束時的狀態在前，太多次只列頭尾。**等它跑完**（派完工作包、補發完成訊號之後要確認完成）用 `<工作包> --until-done`：看到 COMPLETED 或從清單消失就結束，不用猜要看幾秒；`--watch 秒` 是觀察一段時間的變化，會看滿秒數。
 
 # 語法
-`EXECUTE: scripts/workpackage_status_cmd.py [task_id] [--watch 秒]`
-* 不帶 `task_id`：全部；帶：只看它與相關工作項。`--watch` 1～300 秒。
+`EXECUTE: scripts/workpackage_status_cmd.py [task_id] [--watch 秒] [--until-done] [--url 位址]`
+* `--watch` 1～300 秒（不加＝一幀）。帶 task_id：只看它、它的工作項與相關機器人。
+* `--until-done`：要帶工作包編號（不是工作項）；最多等 `--watch` 的秒數，沒給就 300 秒。
+* `--url`：web_console（預設環境變數 `RMF_WEB_CONSOLE_URL` 或 http://localhost:8020）；連線＋第一幀 6 秒內沒來算失敗。
 
 # 範例
-`EXECUTE: scripts/workpackage_status_cmd.py`　`EXECUTE: scripts/workpackage_status_cmd.py WP001`　`EXECUTE: scripts/workpackage_status_cmd.py --watch 20`
+`EXECUTE: scripts/workpackage_status_cmd.py`　`EXECUTE: scripts/workpackage_status_cmd.py WP001`　`EXECUTE: scripts/workpackage_status_cmd.py WP001 --watch 30`　`EXECUTE: scripts/workpackage_status_cmd.py WP001 --until-done`
 
 # 回傳
-一幀：`[PASS] 目前狀態…`。`--watch`：`[PASS] 觀察 N 秒…` + 變化清單 + 結束時摘要。失敗 `[ERROR] 原因`。
+一幀：`[PASS] 目前狀態：work package N 個（RUNNING a、COMPLETED b）…` + 各節。`--watch`：`[PASS] 觀察 N 秒（收到 M 幀…）` + `## 結束時` + 各類變化（`--- #n` 一個對象）+ 期間新增的事件；中途斷線時第一行是 `⚠️ 只觀察到 N 秒就中斷`。`--until-done`：第一行 `[PASS] WP001 已完成：COMPLETED（共 1 輪），在 +8.0s 看到完成就結束觀察…`；時間到還沒完成是 `…WP001 還沒完成：結束時 <狀態>`，第二行是下一步；被刪除是 `…從 orchestrtor 的清單消失（被刪除），沒有跑完`。其餘各節同 `--watch`。
 
 # 異常
-* 找不到 id：未送達、已刪除或 orchestrtor 沒在跑；`⏳ 等待機器人` 不是錯誤。
-* OverPending 佇列裡的任務要刪用 `overpending_cancel`；取消整個 work package 用 `workpackage_cancel`。無法連線：web_console 未啟動，回報使用者。
+* 找不到 id（`[ERROR]`，附相近的 id）：確認 id；取消過的工作包會從清單消失。`⏳ 等待機器人` 不是錯誤。
+* `--until-done` 沒帶工作包、帶了工作項、第一幀就沒有這個工作包、無限循環的工作包（不會完成）：立刻回 `[ERROR]`，照下一步做。
+* 連不上 web_console、握手或快照逾時：回報使用者（或用 `--url` 指到正確位址）。觀察中斷：照第二行再跑一次。
+* 下一步的技能：刪 OverPending 的工作項 `overpending_cancel`；取消工作包 `workpackage_cancel`；卡住的原因 `rmf_handshake status`。

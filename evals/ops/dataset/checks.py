@@ -93,6 +93,12 @@ def check(item, ctx):
         return all(re.search(p, text, re.I) for p in args)
     if kind == "reply_re_any":
         return any(re.search(p, text, re.I) for p in args)
+    if kind == "reply_num_any":                  # 數字＋單位在容許範圍內就算：[(單位的正規表示式, 值, 容許差)]——腳本量得比較精確時
+        for unit, want, tol in args[0]:          # （1.997 Hz、週期 0.5008 秒）也是對的，只認「2 Hz」這種寫法會誤判
+            for m in re.finditer(rf"(?<![\d.])(\d+(?:\.\d+)?)\s*(?:{unit})", text, re.I):
+                if abs(float(m.group(1)) - want) <= tol:
+                    return True
+        return False
     if kind == "cwd_endswith":
         return (ctx.get("cwd") or "").rstrip("/").endswith(args[0])
     if kind == "fs_exists":

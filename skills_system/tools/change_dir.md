@@ -1,25 +1,29 @@
 ---
 type: Tool
 title: 切換工作目錄
-description: 切換當前環境的工作目錄（CWD）。
-version: 1.0.0
+description: 切換本機的工作目錄（之後的本機技能都在這裡執行、相對路徑相對於這裡）。
+version: 2.0.0
 dependencies: []
 ---
 
-# 背景 / 運作原理
-當後續多項操作皆依賴於特定專案目錄，需要變更 CWD（Current Working Directory）狀態時調用。
+# 用途
+接下來好幾個操作都在同一個目錄（專案、Workspace）時先切過去，之後的路徑就能寫相對路徑。只改 harness 的狀態，不需要確認。
+host_runcmd 指令裡的 `cd` 只在那一次有效，要切換一律用這個。容器裡的目錄不能用它（用 docker_runcmd）。
 
-# 語法 / 參數規範
-* `path` (string, required): 欲切換到的目標工作目錄路徑（例如："/home/robot/workspace"）
+# 語法
+`EXECUTE: scripts/cd_cmd.py <目錄>`
+* `目錄`：絕對路徑、相對於目前工作目錄的路徑、或 `~` 開頭；不給就切到家目錄。一次一個，含空白的加引號。
+* 切換前檢查：存在、是目錄、目前使用者能讀取並進入。
 
-# 執行步驟 (Steps)
-1. 接收目標路徑。
-2. 調用後端 `scripts/cd_cmd.py` 更新工作目錄。
-3. 後端狀態管理持久化維護此 CWD 狀態。
+# 範例
+`EXECUTE: scripts/cd_cmd.py ~/fih_humanoid_amr/amr_base`　`EXECUTE: scripts/cd_cmd.py ../logs`
 
-# 範例 (Examples)
-* 切換至機器人工作區：
-  `EXECUTE: scripts/cd_cmd.py "/home/robot/workspace"`
+# 回傳
+`[PASS] 已切換工作目錄: <絕對路徑>（裡面有 N 項）`，最後一行 `[CWD_CHANGED] <絕對路徑>`（系統據此更新工作目錄）。
+失敗時工作目錄不變。
 
-# 異常處理 (Edge Cases)
-* 若路徑不存在或無切換權限，狀態將保持不變，AI 應建立目錄或修正路徑。
+# 異常
+* `[ERROR] 找不到目錄`：照「相近的路徑」修正，或先用 list_dir 看上一層；需要新目錄時用 file_ops mkdir（會請使用者確認）。
+* `[ERROR] … 是檔案，不是目錄`：改切到訊息寫的所在目錄。
+* `[ERROR] 沒有權限進入目錄`（例如 /root）：換有權限的目錄；那裡的內容請使用者自己查看（不會用 sudo）。
+* `[ERROR] 一次只能切換到一個目錄`／`沒有選項`／`不支援 cd -`：只給一個路徑。

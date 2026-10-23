@@ -146,7 +146,7 @@ SCENARIOS = [
       world={"sim": sim(robots_=[ROBOTS3[0], dict(ROBOTS3[1], behavior="silent"), ROBOTS3[2]],
                         packages=[pkg("WP_Y2", "tb2", "a3")], authorize_timeout_sec=60.0), "wait": 3},
       forbid=(("sim_log_any", "manual_trigger_call", {"robot": "tb1"}), ("sim_log_any", "handshake", {"robot": "tb3", "source": "external"}))),
-    S("ros_hz", "ros2", "/tb1/robot_state 大約多久發一次（頻率）？", [("reply_re_any", r"(?<![\d.])2(\.0+)?\s*hz", r"(?<![\d.])0\.5\s*(秒|s\b)", r"每\s*0\.5")],
+    S("ros_hz", "ros2", "/tb1/robot_state 大約多久發一次（頻率）？", [("reply_num_any", [(r"hz", 2.0, 0.05), (r"秒|s\b", 0.5, 0.02)])],
       world={"sim": sim()}, forbid=("sim_changed",)),
 
     # ================================================================ 調度交握（rmf_sim）

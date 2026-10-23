@@ -113,20 +113,21 @@ SUMMARY_SCHEMA = {
 
 # 任務導向摘要的結構（Ollama format=）：answer 一句話回答這一步的目的、facts 照抄的相關事實、errors 錯誤原文、
 # not_covered 原始輸出沒有／被省略而無法確認的部分——讓主模型知道「摘要裡沒有」不等於「輸出裡沒有」。
+_CITED = {"type": "object", "properties": {"text": {"type": "string"}, "lines": {"type": "string"}, "record": {"type": "string"}},
+          "required": ["text", "lines"]}
+
+# 工具回傳的提煉（agent_core/extract.py）：整合（或輸出不長時一次寫完）的結果。facts／errors 每一條附原文的行號（lines：「120」或「120-125」；
+# 好幾份存檔一起讀時 record＝存檔編號），程式核對寫的名稱與數值真的在那幾行。
 TOOL_SUMMARY_SCHEMA = {
     "type": "object",
     "properties": {
         "answer": {"type": "string"},
-        "facts": {"type": "array", "items": {"type": "string"}},
-        "errors": {"type": "array", "items": {"type": "string"}},
+        "facts": {"type": "array", "items": _CITED},
+        "errors": {"type": "array", "items": _CITED},
         "not_covered": {"type": "string"},
         "suggested_questions": {
             "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {"question": {"type": "string"}, "keywords": {"type": "string"}},
-                "required": ["question", "keywords"],
-            },
+            "items": {"type": "object", "properties": {"question": {"type": "string"}}, "required": ["question"]},
         },
         "index_hint": {"type": "string"},
         "related_records": {
@@ -139,6 +140,19 @@ TOOL_SUMMARY_SCHEMA = {
         },
     },
     "required": ["answer", "facts", "errors", "not_covered", "suggested_questions", "index_hint", "related_records"],
+}
+
+# 提煉的 worker：只讀一段原文，摘出跟問題有關的事實（附行號）
+_LINED = {"type": "object", "properties": {"text": {"type": "string"}, "lines": {"type": "string"}}, "required": ["text", "lines"]}
+EXTRACT_WORKER_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "relevant": {"type": "boolean"},
+        "facts": {"type": "array", "items": _LINED},
+        "errors": {"type": "array", "items": _LINED},
+        "summary": {"type": "string"},
+    },
+    "required": ["relevant", "facts", "errors", "summary"],
 }
 
 

@@ -1,8 +1,9 @@
+"""docker_images：列出本機的映像檔（docker images），第一行算好總數與 <none> 懸空映像數。"""
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _docker_common import run_docker
+from _docker_common import format_table, run_docker  # noqa: E402
 
 TIMEOUT_SECONDS = 15   # docker images 通常一秒內完成；超過代表 daemon 無回應
 USAGE = (
@@ -18,31 +19,17 @@ def parse_args(argv):
     keyword = ""
     for arg in argv:
         if arg.startswith("-"):
-            return None, f"[ERROR] 不支援的選項: {arg}\n{USAGE}"
+            return None, f"[ERROR] 不支援的選項: {arg}（這個技能沒有選項，只有一個關鍵字）\n{USAGE}"
         if keyword:
             return None, f"[ERROR] 關鍵字只能有一個，收到: {keyword!r} 與 {arg!r}\n{USAGE}"
         keyword = arg
     return keyword, None
 
 
-def format_table(rows, headers):
-    widths = [max(len(h), *(len(r[i]) for r in rows)) for i, h in enumerate(headers)]
-
-    def line(cols):
-        return "  ".join(c.ljust(widths[i]) for i, c in enumerate(cols)).rstrip()
-
-    return "\n".join([line(headers)] + [line(r) for r in rows])
-
-
 def execute(keyword=""):
-    ok, out, err = run_docker(
-        ["docker", "images", "--format", FORMAT],
-        TIMEOUT_SECONDS,
-        what="查詢映像檔清單 (docker images)",
-    )
+    ok, out, err = run_docker(["docker", "images", "--format", FORMAT], TIMEOUT_SECONDS, what="查詢映像檔清單 (docker images)")
     if not ok:
         return err
-
     rows = []
     for ln in out.splitlines():
         if not ln.strip():
@@ -50,19 +37,17 @@ def execute(keyword=""):
         cols = ln.split("\t")
         cols += [""] * (len(HEADERS) - len(cols))
         rows.append(tuple(cols[:len(HEADERS)]))
-
     if keyword:
         rows = [r for r in rows if keyword.lower() in f"{r[0]}:{r[1]}".lower()]
-
     filt = f"（名稱或 tag 含 '{keyword}'）" if keyword else ""
     if not rows:
-        return f"[PASS] 本機目前沒有任何映像檔{filt}。"
-
+        return f"[PASS] 本機目前沒有任何映像檔{filt}。" + ("（不加關鍵字可列出全部）" if keyword else "")
     dangling = sum(1 for r in rows if r[0] == "<none>")
     summary = f"[PASS] 本機映像檔{filt}：共 {len(rows)} 個"
     if dangling:
         summary += f"，其中 {dangling} 個為 <none> 懸空映像（通常是重建後殘留的舊版本，無法用名稱啟動）"
-    return f"{summary}\n{format_table(rows, HEADERS)}"
+    return (f"{summary}（建立容器用「REPOSITORY:TAG」，例如 docker_est {rows[0][0]}:{rows[0][1]} --name <名稱>）\n"
+            f"{format_table(rows, HEADERS)}") if rows[0][0] != "<none>" else f"{summary}\n{format_table(rows, HEADERS)}"
 
 
 if __name__ == "__main__":
@@ -72,6 +57,6 @@ if __name__ == "__main__":
             print(err)
             sys.exit(0)
         print(execute(keyword))
-    except Exception as e:
-        print(f"[ERROR] docker_images 未預期的例外: {e}", file=sys.stderr)
+    except Exception as e:      # noqa: BLE001
+        print(f"[ERROR] docker_images 未預期的例外：{type(e).__name__}: {e}", file=sys.stderr)
         sys.exit(1)

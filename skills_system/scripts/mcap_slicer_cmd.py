@@ -251,7 +251,7 @@ def worker_main(argv):
             return 2
     for text in args.window:   # 明確的時間窗（analysis_run 用：合併過的、前後不對稱的時間窗）
         try:
-            w = rd.parse_window(rd.resolve_window_ids(text), base)
+            w = rd.parse_window(text, base)
         except ValueError as e:
             print(f"[ERROR] {e}")
             return 2
@@ -306,6 +306,10 @@ def host_main(argv):
     if err:
         print(err)
         return 2
+    err = rd.not_recording(args.data or args.data_opt, "mcap_slicer")   # 主機上的一般檔案：先指到對的技能，不要先叫人開容器
+    if err:
+        print(err)
+        return 2
     container, err = resolve_container(args.container)
     if err:
         print(err)
@@ -317,7 +321,7 @@ def host_main(argv):
     for a in args.at:
         wargs += ["--at", a]
     for w in args.window:
-        wargs += ["--window", rd.resolve_window_ids(w)]
+        wargs += ["--window", w]
     if args.topics:
         wargs += ["--topics", *args.topics]
     wargs += ["--before", str(args.before), "--after", str(args.after), "--source", args.source]
@@ -341,7 +345,7 @@ def host_main(argv):
             out = "\n".join([json.dumps(js, ensure_ascii=False, indent=1)] + tail)
         except (ValueError, KeyError):
             pass
-    print(rd.finalize_output(out) + cli.ignored_note())
+    print(rd.finalize_output(out, cli.ignored_note()))
     return rc
 
 

@@ -29,6 +29,8 @@ def install_fake_model():
         elif "index_hint" in props:
             data = {"answer": "（假）", "facts": [], "errors": [], "not_covered": "無", "suggested_questions": [],
                     "index_hint": "（假）", "related_records": []}
+        elif "relevant" in props:   # 工具回傳提煉的分段 worker
+            data = {"relevant": False, "facts": [], "errors": [], "summary": ""}
         else:
             data = {"overview": "（假）", "key_progress": [], "results_and_errors": [], "user_preferences": [], "open_items": []}
         return {"message": {"content": json.dumps(data, ensure_ascii=False)}, "prompt_eval_count": 100, "eval_count": 10}

@@ -20,6 +20,7 @@ mcap_analyzer.py 的欄位維度、mcap_feature_measure.py 的特徵量測），
 中途開始／停止發布。
 """
 import base64
+import functools
 import glob
 import io
 import json
@@ -36,7 +37,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 WORKER_ENV = "ROS2_TOOL_WORKER"
 ANALYSIS_DATA_MARKER = "[ANALYSIS_DATA]"   # 末行狀態標記：harness 據此同步「目前分析的數據」（比照 [TARGET_CONTAINER]）
 INDEX_NAME = "topic_metadata"             # 全域 Topic Metadata 索引的檔名（.json 給程式、.yaml 給人看），放在 bag 資料夾
-INDEX_VERSION = 4                         # Key 分類規則改了就加一（舊的快取自動重建）；4：加 msg 定義（MCAP 的 schema，含註解與常數）
+INDEX_VERSION = 5                         # Key 分類規則改了就加一（舊的快取自動重建）；4：加 msg 定義（MCAP 的 schema，含註解與常數）；
+                                          # 5：字串裡的 JSON 物件展開成 Key（std_msgs/String 裝的狀態）
 MSG_DEFINITION_MAX = 2400                 # 每個型別的 msg 定義最多存幾個字（只存最上層，不含巢狀型別的 MSG: 段落）
 LOG_TOPICS = ("/rosout", "/rosout_agg")
 SAMPLES_PER_TOPIC = 120                   # 建索引時每個 Topic 反序列化幾筆來判斷 Key 的類別（平均分散在整段錄製裡）
@@ -102,23 +104,13 @@ def to_host_path(path, mounts):
     return None
 
 
-def _workspace_source(container):
-    """harness 記錄的 ROS 2 Workspace（ROS2_workspace_env 確認過、而且屬於這個容器）→ 載入它的 setup.bash（自訂訊息型別才讀得到）。"""
-    ws = (os.environ.get("ROS2_WORKSPACE") or "").strip()
-    ws_container = (os.environ.get("ROS2_WORKSPACE_CONTAINER") or "").strip()
-    if not ws or ws_container != container:
-        return ""
-    setup = ws.rstrip("/") + ("/setup.bash" if ws.rstrip("/").endswith("/install") else "/install/setup.bash")
-    return f"[ -f {shlex.quote(setup)} ] && source {shlex.quote(setup)} >/dev/null 2>&1; "
-
-
 def run_in_container(script_file, worker_args, *, container=None, timeout=120, what="ROS 2 數據工具",
                      timeout_hint=None, extra_files=()):
     """在目標容器內執行 script_file 的 worker_main（ROS2_TOOL_WORKER=1），回傳 (rc, 輸出文字)。
     腳本、本模組與 extra_files 打包成 tar.gz、base64 後經 stdin 送進容器的暫存目錄（不寫主機暫存檔、沒有參數長度限制），
     執行完一律刪掉暫存目錄。成功時輸出末行附目標容器標記（with_target_marker）。"""
     sys.path.insert(0, HERE)
-    from _docker_common import ROS2_ENV_FALLBACK, docker_exec, resolve_container, with_target_marker
+    from _docker_common import docker_exec, resolve_container, ros2_env_prefix, with_target_marker
     container, err = resolve_container(container)
     if err:
         return 2, err
@@ -128,7 +120,9 @@ def run_in_container(script_file, worker_args, *, container=None, timeout=120, w
             tar.add(f, arcname=os.path.basename(f))
     payload = base64.b64encode(buf.getvalue()).decode("ascii")
     name = os.path.basename(script_file)
-    command = (ROS2_ENV_FALLBACK + _workspace_source(container)
+    # 環境跟其他 ROS 2 技能同一套（_docker_common.ros2_env_prefix）：/opt/ros → ROS2_workspace_env 確認過的 Workspace（沒有才找常見位置）
+    # → 執行中節點的 ROS_DOMAIN_ID；自訂訊息型別才讀得到、domain 才對得上
+    command = (ros2_env_prefix(container)
                + 'd=$(mktemp -d /tmp/agent_tool.XXXXXX) && base64 -d | tar -xz -C "$d" && '
                + f'{WORKER_ENV}=1 PYTHONDONTWRITEBYTECODE=1 python3 "$d/{name}" {shlex.join(worker_args)}'
                + '; rc=$?; rm -rf "$d"; exit $rc')
@@ -145,42 +139,73 @@ def run_in_container(script_file, worker_args, *, container=None, timeout=120, w
     return 0, with_target_marker((stdout or "").strip() or "[PASS] 完成（沒有輸出）。", container)
 
 
-def analysis_windows():
-    """analysis worker 的時間窗：analysis_job 以環境變數 ANALYSIS_WINDOWS 傳入（JSON：[{id, start_ns, end_ns, anchor_ns, slice}]；
-    slice＝這個時間窗的切片（容器內路徑），沒有切片時省略）。"""
-    raw = (os.environ.get("ANALYSIS_WINDOWS") or "").strip()
+_TEXT_EXT = (".log", ".txt", ".csv", ".md", ".yaml", ".yml", ".json", ".out", ".err")
+_MCAP_SCAN_ENTRIES = 3000      # 主機端找 .mcap 最多看幾個項目；看完還沒找到就不判斷（大資料夾交給容器端），不是行為門檻
+
+
+def _has_mcap(d, depth=3, budget=None):
+    """d 底下 depth 層以內有沒有 .mcap（實驗資料夾的 bag 在第二層、數據根目錄的實驗在第三層）：True／False；
+    看了 _MCAP_SCAN_ENTRIES 個項目還沒有結論就回 None。"""
+    budget = [_MCAP_SCAN_ENTRIES] if budget is None else budget
     try:
-        data = json.loads(raw) if raw else []
-    except ValueError:
-        return []
-    return [w for w in data if isinstance(w, dict) and w.get("id")]
+        entries = list(os.scandir(d))
+    except OSError:
+        return None
+    subdirs = []
+    for e in entries:
+        budget[0] -= 1
+        if budget[0] < 0:
+            return None
+        try:
+            if e.name.endswith(".mcap") and e.is_file():
+                return True
+            if e.is_dir(follow_symlinks=False):
+                subdirs.append(e.path)
+        except OSError:
+            continue
+    if depth > 1:
+        for sd in subdirs:
+            r = _has_mcap(sd, depth - 1, budget)
+            if r is not False:
+                return r
+    return False
 
 
-def resolve_window_ids(text):
-    """--window 的值是 W1 這種編號時換成「開始,結束,錨點,W1[,切片]」（奈秒精度，模型不必抄 19 位數的時間）；其他原樣傳回。"""
-    t = str(text).strip()
-    for w in analysis_windows():
-        if t.upper() == str(w["id"]).upper():
-            return f"{w['start_ns']},{w['end_ns']},{w.get('anchor_ns') or ''},{w['id']}" + (f",{w['slice']}" if w.get("slice") else "")
-    return t
-
-
-def slice_for_window(w, tol_ns=100_000_000):
-    """沒有指定切片的時間窗（worker 自己寫的 +3.37,+31.79）：落在某個有切片的 analysis 時間窗裡（容許 0.1 秒的四捨五入），
-    就用那個切片；超出切片的範圍要讀原本的數據（切片裡沒有那一段）。"""
-    for aw in analysis_windows():
-        if aw.get("slice") and int(aw["start_ns"]) - tol_ns <= w["start_ns"] and w["end_ns"] <= int(aw["end_ns"]) + tol_ns:
-            return aw["slice"]
-    return ""
-
-
-def matching_analysis_window(w, tol_ns=500_000_000):
-    """worker 自己抄的時間窗跟某個 analysis 時間窗兩端都差不到 0.5 秒＝就是那個時間窗（模型抄的數字有四捨五入；
-    實測 e4b 寫 +140.82s,+175.31s、140.82s_175.31s）。"""
-    for aw in analysis_windows():
-        if abs(int(aw["start_ns"]) - w["start_ns"]) <= tol_ns and abs(int(aw["end_ns"]) - w["end_ns"]) <= tol_ns:
-            return aw
-    return None
+def not_recording(data, skill):
+    """主機端、找容器之前：給的數據路徑在主機上存在、卻不是錄製數據（不是 .mcap、底下三層內也沒有 .mcap）就回 [ERROR]，
+    下一步指到對的技能（主機上的文字檔用 search_text／view_file，不需要容器）——不然先回的是「沒有指定容器」，agent 照著去開容器、
+    走錯路（2026-10-23 維運評測 cx_incident_timeline：rosout_parser logs/2026-10-10/ 用掉整步的 10 輪）。主機上不存在的路徑
+    （容器內的路徑、數據根目錄底下的實驗名稱）不判斷，交給容器端的 resolve_data。回傳 [ERROR] 文字或 None。"""
+    p = (data or "").strip()
+    if not p or p in ("latest", "最新", "newest"):
+        return None
+    root = (os.environ.get("ANALYSIS_DATA_ROOT") or "").strip()
+    cands = [os.path.join(os.path.expanduser(root), p)] if root and not os.path.isabs(p) else []
+    cands.append(os.path.abspath(os.path.expanduser(p)))
+    hp = next((c for c in cands if os.path.exists(c)), None)
+    if hp is None:
+        return None
+    if os.path.isfile(hp):
+        if hp.endswith(".mcap"):
+            return None
+        files, what = [hp], f"{p} 是一個檔案，不是 .mcap"
+    else:
+        if _has_mcap(hp) is not False:
+            return None
+        try:
+            files = sorted(e.path for e in os.scandir(hp) if e.is_file())
+        except OSError:
+            files = []
+        names = [os.path.basename(f) for f in files]
+        what = f"{p} 是一個資料夾，底下三層內沒有 .mcap" + (
+            f"（裡面有 {len(names)} 個檔案：{'、'.join(names[:6])}{'…' if len(names) > 6 else ''}）" if names else "（裡面沒有檔案）")
+    texts = [f for f in files if f.lower().endswith(_TEXT_EXT)]
+    nxt = []
+    if texts:
+        nxt.append(f"主機上的文字檔用 search_text \"ERROR|WARN\" {p} 找（換成要找的關鍵字、錯誤碼都可以，不需要容器），"
+                   f"view_file <檔案> 看整份" + ("，CSV 用 csv_query" if any(f.lower().endswith(".csv") for f in texts) else ""))
+    nxt.append("要分析錄製數據就給有 .mcap 的實驗資料夾、bag 資料夾或 .mcap 檔（latest＝數據根目錄裡最新的實驗）")
+    return f"[ERROR] {skill} 讀的是 ROS 2 錄製數據（MCAP／rosbag2）；{what}，不是錄製數據。下一步：{'；'.join(nxt)}。"
 
 
 def host_common_args(argv_container, data_path, mounts, data_root=None):
@@ -548,9 +573,80 @@ def _seq_value(seq, rest):
     return leaf_value(seq)
 
 
+# ---- 字串裡的 JSON（std_msgs/String 常裝 JSON 的狀態：{"status": "OK", "code": ""}）--------------------------------------------
+# 欄位展開成 Key（data.status、data.robots.battery 依 name 展開成對照表），跟 ROS 訊息的欄位一樣量測。ROS2_topic_echo 一直這樣做；
+# 以前數據技能把整個字串當成「文字」，只量訊息流，狀態在 JSON 裡變了也看不到。
+class _Absent(KeyError):
+    """這一則訊息沒有這個 Key（JSON 字串是空的、不是 JSON、或少了這個欄位）：跳過這一則，不算取值錯誤。"""
+
+
+@functools.lru_cache(maxsize=1024)
+def json_value(text):
+    """字串 → JSON 物件或清單（快取：同一則訊息的每個 Key 都要讀一次）；不是 JSON 物件／清單回 None。"""
+    t = (text or "").strip()
+    if not t or t[0] not in "{[":
+        return None
+    try:
+        v = json.loads(t)
+    except ValueError:
+        return None
+    return v if isinstance(v, (dict, list)) else None
+
+
+def _plain_map_field(items):
+    """JSON 清單裡每個元素都是物件、而且有名稱欄位（name、id…，值是字串或整數）→ 那個欄位（依它展開成對照表）；否則 None。"""
+    if not items or not all(isinstance(e, dict) for e in items):
+        return None
+    for n in NAME_FIELDS:
+        if all(isinstance(e.get(n), (str, int)) and not isinstance(e.get(n), bool) for e in items):
+            return n
+    return None
+
+
+def _is_kv_list(items):
+    return bool(items) and all(isinstance(e, dict) and set(e) == {"key", "value"} for e in items)
+
+
+def _plain_leaf(v):
+    if isinstance(v, list):
+        if all(isinstance(x, (int, float, str, bool)) or x is None for x in v):
+            return tuple(v)
+        return ArrayPoint((len(v), None))
+    return v
+
+
+def _extract_plain(v, parts):
+    """JSON 的值沿著 parts 往下取；經過「依名稱展開」的清單時回 MapDict（同 ROS 訊息的序列）。"""
+    if isinstance(v, list):
+        if _is_kv_list(v) and not parts:
+            return MapDict((str(e["key"]), e["value"]) for e in v)
+        mf = _plain_map_field(v)
+        if mf and parts:
+            out = MapDict()
+            for e in v:
+                try:
+                    out[str(e[mf])] = _extract_plain(e, parts)
+                except KeyError:
+                    continue
+            return out
+        if parts:
+            raise _Absent(".".join(parts))
+        return _plain_leaf(v)
+    if not parts:
+        return _plain_leaf(v)
+    if not isinstance(v, dict) or parts[0] not in v:
+        raise _Absent(parts[0])
+    return _extract_plain(v[parts[0]], parts[1:])
+
+
 def _extract(obj, parts):
     if not parts:
         return leaf_value(obj)
+    if isinstance(obj, str):   # 字串裡的 JSON 的欄位
+        v = json_value(obj)
+        if v is None:
+            raise _Absent(".".join(parts))
+        return _extract_plain(v, parts)
     head, rest = parts[0], parts[1:]
     m = re.fullmatch(r"([A-Za-z_]\w*)\[(\d+)\]", head)
     if m:
@@ -681,9 +777,79 @@ def to_number(v):
     return None
 
 
-def describe_keys(cls, samples):
-    """訊息類別＋抽樣的訊息 → Key 目錄（每個 Key：型別、維度、類別、抽樣看到的值）。"""
+JSON_MIN_SHARE = 0.8   # 抽樣的字串（不算空字串）八成以上是 JSON 物件／清單 → 欄位展開成 Key
+
+
+def _json_walk(v, key, depth, out, map_by=()):
+    """一個 JSON 值（一則樣本）→ out[Key] = {"vals", "map_by", "kind"}：巢狀的物件展開成 key.欄位；物件的清單有名稱欄位（name、id…）
+    就依它展開成對照表（同 DiagnosticArray 的 status），key-value 的清單是鍵值；其他清單量長度。"""
+    if depth > MAX_DEPTH + 2:
+        return
+    if isinstance(v, dict):
+        for k, sub in v.items():
+            if isinstance(k, str) and k and not any(c in k for c in ".[»"):
+                _json_walk(sub, f"{key}.{k}", depth + 1, out, map_by)
+        return
+    if isinstance(v, list) and v and all(isinstance(e, dict) for e in v):
+        if _is_kv_list(v):
+            out.setdefault(key, {"vals": [], "map_by": map_by, "kind": "kv"})["vals"] += [e["value"] for e in v]
+            return
+        mf = _plain_map_field(v)
+        if mf:
+            for e in v:
+                for k, sub in e.items():
+                    if k != mf and isinstance(k, str) and k and not any(c in k for c in ".[»"):
+                        _json_walk(sub, f"{key}.{k}", depth + 1, out, tuple(map_by) + (f"{key}.{mf}",))
+            return
+        out.setdefault(key, {"vals": [], "map_by": map_by, "kind": "list"})["vals"].append(ArrayPoint((len(v), None)))
+        return
+    out.setdefault(key, {"vals": [], "map_by": map_by, "kind": "value"})["vals"].append(_plain_leaf(v))
+
+
+def _json_leaves(key, objs):
+    """字串 Key 的 JSON 樣本 → 欄位的 Key 目錄（型別寫 json；類別依值：數字＝數值（整數而且相異值少＝狀態跳轉）、布林與短的字串＝狀態、
+    長的自由文字＝文字、數字的清單＝陣列、短的字串或整數清單＝集合狀態）。"""
+    paths = {}
+    for o in objs:
+        _json_walk(o, key, 0, paths)
     leaves = []
+    for k, info in paths.items():
+        vals = [v for v in info["vals"] if v is not None]
+        if not vals:
+            continue
+        mb = list(info["map_by"])
+        if info["kind"] == "kv":
+            leaves.append(_leaf(k, "json", "kv", "map", map_by=mb, json=True))
+        elif all(isinstance(v, ArrayPoint) for v in vals):
+            leaves.append(_leaf(k, "json", "array", "sequence", map_by=mb, json=True, note="物件的清單（量測長度）"))
+        elif all(isinstance(v, bool) for v in vals):
+            leaves.append(_leaf(k, "json", "state", map_by=mb, json=True, values=[str(x) for x in _top_values(vals, 6)]))
+        elif all(_is_num(v) for v in vals):
+            if all(isinstance(v, int) for v in vals) and len(set(vals)) <= INT_STATE_MAX_DISTINCT:
+                leaves.append(_leaf(k, "json", "numeric", map_by=mb, json=True, note="整數、相異值少：量測時當狀態跳轉",
+                                    values=[str(x) for x in _top_values(vals, 6)]))
+            else:
+                leaves.append(_leaf(k, "json", "numeric", map_by=mb, json=True, range=[round(min(vals), 6), round(max(vals), 6)]))
+        elif all(isinstance(v, tuple) for v in vals):
+            if any(vals) and all(_is_num(x) for v in vals for x in v):
+                leaves.append(_leaf(k, "json", "array", "vector [dynamic]", map_by=mb, json=True))
+            else:
+                items = [x for v in vals for x in v]
+                leaves.append(_leaf(k, "json", "state", "set", map_by=mb, json=True, values=[short(str(x), 40) for x in _top_values(items, 6)]))
+        else:
+            texts = [str(v) for v in vals]
+            distinct, maxlen = len(set(texts)), max(len(t) for t in texts)
+            if distinct <= STATE_FEW_DISTINCT or (distinct <= STATE_MAX_DISTINCT and maxlen <= STATE_MAX_LEN):
+                leaves.append(_leaf(k, "json", "state", map_by=mb, json=True, values=[short(t, 40) for t in _top_values(texts, 6)]))
+            else:
+                leaves.append(_leaf(k, "json", "text", map_by=mb, json=True, distinct=distinct))
+    return leaves
+
+
+def describe_keys(cls, samples):
+    """訊息類別＋抽樣的訊息 → Key 目錄（每個 Key：型別、維度、類別、抽樣看到的值）。字串欄位裝的是 JSON 時，它的欄位另外展開成 Key
+    （_json_leaves；字串本身記成文字、標 json）。"""
+    leaves, extra = [], []
     _walk(cls, "", 0, leaves)
     for leaf in leaves:
         cat = leaf["category"]
@@ -704,6 +870,12 @@ def describe_keys(cls, samples):
                 leaf["examples"] = [short(n, 60) for n in names[:3]]
         if cat == "string?":
             vals = [v for vs in entries.values() for v in vs if isinstance(v, str)]
+            filled = [v for v in vals if v.strip()]
+            objs = [o for o in (json_value(v) for v in filled) if o is not None]
+            if not leaf.get("map_by") and filled and len(objs) >= JSON_MIN_SHARE * len(filled):
+                leaf.update(category="text", json=True, note=f"JSON 字串：欄位展開成 {leaf['key']}.<欄位>")
+                extra += _json_leaves(leaf["key"], objs)
+                continue
             per_entry = max((len(set(vs)) for vs in entries.values()), default=0)
             maxlen = max((len(v) for v in vals), default=0)
             enum_like = per_entry <= STATE_FEW_DISTINCT or (per_entry <= STATE_MAX_DISTINCT and maxlen <= STATE_MAX_LEN)
@@ -740,7 +912,7 @@ def describe_keys(cls, samples):
             nums = [v for vs in entries.values() for v in vs if _is_num(v)]
             if nums:
                 leaf["range"] = [round(min(nums), 6), round(max(nums), 6)]
-    return [lf for lf in leaves if lf["category"] != "unknown"]
+    return [lf for lf in leaves + extra if lf["category"] != "unknown"]
 
 
 def _top_values(vals, n):
@@ -984,6 +1156,77 @@ def parse_rosout_file(path):
     return events, unparsed
 
 
+_ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+_DOCKER_TS_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:?\d{2})\s")
+_PROC_PREFIX_RE = re.compile(r"^\[([A-Za-z0-9_./\-]+-\d+)\]\s")          # ros2 launch 的程序名稱：[talker-1]
+_EXC_LINE_RE = re.compile(r"^([A-Za-z_][\w.]*(Error|Exception|Exit|Interrupt|Warning)|KeyboardInterrupt)\b")
+_LEVEL_GUESS = ((re.compile(r"\b(FATAL|CRITICAL)\b"), "FATAL"), (re.compile(r"\bERROR\b|\bError:|Exception\b|Traceback"), "ERROR"),
+                (re.compile(r"\bWARN(ING)?\b", re.I), "WARN"))
+OTHER_NODE = "(非 ROS 格式)"
+
+
+def _docker_ts_ns(m):
+    """docker logs -t 的時間（RFC 3339，2026-10-23T04:15:30.123456789Z）→ epoch 奈秒。"""
+    import calendar
+    base = calendar.timegm(time.strptime(m.group(1), "%Y-%m-%dT%H:%M:%S"))
+    tz = m.group(3)
+    off = 0 if tz == "Z" else (1 if tz[0] == "+" else -1) * (int(tz[1:3]) * 3600 + int(tz[-2:]) * 60)
+    return (base - off) * 1_000_000_000 + int((m.group(2) or "")[:9].ljust(9, "0"))
+
+
+def parse_log_lines(lines, glue_unmatched=False):
+    """一行一行的 Log 文字（容器的 log、終端機的輸出）→ 事件 [{t_ns, level, node, msg, line}]（line＝第幾行，1-based），給 dedup_events 去重。
+    認得：ROS 2 的格式 [LEVEL] [秒.奈秒] [node]: 訊息；前面多了 docker logs -t 的時間、ros2 launch 的程序名稱（[talker-1]，記在 proc）、
+    終端機的顏色碼；Python 的 traceback（Traceback 到最後例外的那一行合成一則 ERROR，訊息是例外那一行，detail 是整段）。
+    其他的行：glue_unmatched＝True 時接在前一則後面（多行訊息的續行）；False 時自己一則，層級依關鍵字（FATAL／ERROR、Traceback、Exception／
+    WARN，其他 INFO），node 是程序名稱或 OTHER_NODE。時間：ROS 的時間戳優先，沒有就用 docker 的時間，都沒有就沿用前一則的（第一則是 0）。"""
+    events, last_t, tb = [], 0, None
+    for no, raw in enumerate(lines, 1):
+        line = _ANSI_RE.sub("", str(raw).rstrip("\r\n"))
+        dts = None
+        m = _DOCKER_TS_RE.match(line)
+        if m:
+            dts, line = _docker_ts_ns(m), line[m.end():]
+        proc = None
+        m = _PROC_PREFIX_RE.match(line)
+        if m:
+            proc, line = m.group(1), line[m.end():]
+        s = line.strip()
+        if tb is not None:
+            if not s or line[:1].isspace() or s.startswith(("Traceback", "During handling", "The above exception")):
+                if s:
+                    tb["detail"].append(s)
+                continue
+            tb = None
+            if _EXC_LINE_RE.match(s):   # 例外的那一行：這一則 traceback 的訊息
+                events[-1]["msg"] = s
+                events[-1]["detail"].append(s)
+                continue
+        if not s:
+            continue
+        rm = _LINE_RE.match(s)
+        if rm:
+            t = int(rm.group("sec")) * 1_000_000_000 + int((rm.group("frac") or "")[:9].ljust(9, "0"))
+            level = rm.group("level").upper()
+            ev = {"t_ns": t, "level": "WARN" if level == "WARNING" else level, "node": rm.group("node"), "msg": rm.group("msg").strip(), "line": no}
+            last_t = t
+        elif s.startswith("Traceback (most recent call last)"):
+            ev = tb = {"t_ns": dts if dts is not None else last_t, "level": "ERROR", "node": proc or OTHER_NODE, "msg": s, "line": no,
+                       "detail": [s]}
+        elif glue_unmatched and events:
+            events[-1]["msg"] = (events[-1]["msg"] + " " + s).strip()
+            continue
+        else:
+            level = "ERROR" if _EXC_LINE_RE.match(s) else next((lv for rx, lv in _LEVEL_GUESS if rx.search(s)), "INFO")
+            ev = {"t_ns": dts if dts is not None else last_t, "level": level, "node": proc or OTHER_NODE, "msg": s, "line": no}
+        if rm is None and dts is not None:
+            last_t = dts
+        if proc:
+            ev["proc"] = proc
+        events.append(ev)
+    return events
+
+
 def rosout_from_bag(mcap_files):
     """bag 裡的 /rosout（沒有就用 /rosout_agg）→ 事件；時間用 MCAP log_time（跟其他 Topic 同一個時鐘）。"""
     cls, err = msg_class("rcl_interfaces/msg/Log")
@@ -1085,8 +1328,7 @@ def source_text(g):
 # 容器端：時間窗
 # =====================================================================================================================
 def parse_window(text, base_ns=None):
-    """--window S,E[,錨點[,標籤[,切片]]] → {start_ns, end_ns, anchor_ns, label, data}；S／E 可以是 epoch 秒或 +相對秒；
-    切片＝這個時間窗要讀的切片資料夾（analysis_run 切好的），省略時讀原本的數據。"""
+    """--window S,E[,錨點[,標籤]] → {start_ns, end_ns, anchor_ns, label}；S／E 可以是 epoch 秒或 +相對秒（標籤是 mcap_slicer 切片的名稱）。"""
     raw = str(text).strip()
     if "," in raw:
         parts = [p.strip() for p in raw.split(",")]
@@ -1099,7 +1341,7 @@ def parse_window(text, base_ns=None):
         start, end = end, start
     anchor = parse_time(parts[2], base_ns) if len(parts) > 2 and parts[2] else None
     label = parts[3] if len(parts) > 3 else ""
-    return {"start_ns": start, "end_ns": end, "anchor_ns": anchor, "label": label, "data": parts[4] if len(parts) > 4 else ""}
+    return {"start_ns": start, "end_ns": end, "anchor_ns": anchor, "label": label}
 
 
 def window_text(w, base_ns=None):
@@ -1157,7 +1399,7 @@ def array_point(msg, desc):
 
 
 def _fast_array(desc):
-    return desc.get("category") == "array" and not desc.get("map_by")
+    return desc.get("category") == "array" and not desc.get("map_by") and not desc.get("json")
 
 
 def collect_series(mcap_files, topic, type_name, keys, window, descs=None):
@@ -1184,6 +1426,8 @@ def _collect(msg, t, keys, descs, series, errors):
         try:
             d = descs.get(k)
             flat = {"value": array_point(msg, d)} if d and _fast_array(d) else flatten(extract(msg, k))
+        except _Absent:   # 這一則沒有這個 JSON 欄位（空字串、不是 JSON）：跳過這一則
+            continue
         except Exception as e:   # noqa: BLE001
             errors.setdefault(k, f"{type(e).__name__}: {e}")
             continue
@@ -1567,7 +1811,139 @@ def pattern_text(rate):
     return PATTERN_TEXT.get(p, p or "")
 
 
-def feature_lines(label, f, base_ns, indent="     "):
+# ---- 門檻條件（--where）：「電壓有沒有低於 24、第一次是什麼時候、低於多久」由程式判斷，模型照抄 ----------------------------------------
+_WHERE_OPS = {"<=": lambda a, b: a <= b, ">=": lambda a, b: a >= b, "==": lambda a, b: a == b,
+              "!=": lambda a, b: a != b, "<": lambda a, b: a < b, ">": lambda a, b: a > b}
+_WHERE_RE = re.compile(r"^\s*([^\s<>=!]+)\s*(<=|>=|==|!=|<|>|=)\s*(.+?)\s*$")
+_BOOL_WORDS = {"true": True, "false": False}
+
+
+def parse_where(expr):
+    """「voltage<24」「status.level[motor_left]>=2」「data.mode==RUNNING」→ ({field, op, value, text}, None)；看不懂回 (None, 錯誤說明)。
+    大小比較的值要是數字；== 與 != 的值可以是數字、true／false 或文字（單一個 = 當成 ==）。"""
+    m = _WHERE_RE.match(str(expr or ""))
+    if not m:
+        return None, (f"條件要寫成 欄位<值、欄位>=值、欄位==值（例如 voltage<24、data.mode==RUNNING），收到 {expr!r}；"
+                      f"只是想看欄位有沒有變化不需要 --where，量測結果本來就列出每個欄位的變化")
+    field, op, raw = m.groups()
+    op = "==" if op == "=" else op
+    raw = raw.strip().strip('"').strip("'")
+    num = to_number(raw)
+    if op in ("<", "<=", ">", ">=") and num is None:
+        return None, f"條件 {expr!r}：大小比較要數字，收到 {raw!r}"
+    value = num if num is not None else _BOOL_WORDS.get(raw.lower(), raw)
+    return {"field": field, "op": op, "value": value, "text": f"{field}{op}{raw}"}, None
+
+
+def _where_match(v, cond):
+    """一筆的值符不符合條件：True／False；比不了（文字跟數字比大小、沒有值）回 None。陣列（ranges 這種）任一個元素符合就算符合。"""
+    op, want = cond["op"], cond["value"]
+    if isinstance(v, ArrayPoint):
+        return None
+    if isinstance(v, tuple):
+        if op in ("==", "!=") and not isinstance(want, (int, float)):
+            hit = _WHERE_OPS["=="](state_text(v), str(want))
+            return hit if op == "==" else not hit
+        res = [r for r in (_where_match(x, cond) for x in v) if r is not None]
+        return any(res) if res else None
+    if isinstance(want, bool):
+        if not isinstance(v, bool):
+            low = str(v).strip().lower()
+            if low not in _BOOL_WORDS:
+                return None
+            v = _BOOL_WORDS[low]
+        return _WHERE_OPS[op](v, want)
+    if isinstance(want, (int, float)):
+        x = None if isinstance(v, bool) else to_number(v)
+        return None if x is None else _WHERE_OPS[op](x, float(want))
+    return _WHERE_OPS[op](state_text(v), str(want))
+
+
+def condition_features(points, cond, window_end_ns=None):
+    """一個項目的值序列 [(t, v)] 跟一個條件 → 幾筆符合、第一筆符合（時間、值、第幾筆）與它的前一筆、符合的時段（連續符合的幾筆算一段：
+    從第一筆到最後一筆）、符合的時間共幾秒（每一筆的值維持到下一筆，最後一筆到 window_end_ns）、第一筆符合之後是不是一直符合。"""
+    total, matched, unknown, intervals, first, prev = len(points), 0, 0, [], None, None
+    held_ns, cur = 0, None
+    for i, (t, v) in enumerate(points):
+        ok = _where_match(v, cond)
+        nxt = points[i + 1][0] if i + 1 < total else (window_end_ns if window_end_ns is not None else t)
+        if ok is None:
+            unknown += 1
+            cur = None
+            continue
+        if ok:
+            matched += 1
+            held_ns += max(0, nxt - t)
+            if first is None:
+                first = {"t_ns": t, "value": v, "index": i + 1}
+                if i > 0:
+                    prev = {"t_ns": points[i - 1][0], "value": points[i - 1][1], "index": i}
+            if cur is None:
+                cur = [t, t]
+                intervals.append(cur)
+            cur[1] = t
+        else:
+            cur = None
+    after = first is not None and all(_where_match(v, cond) for _, v in points[first["index"] - 1:])
+    return {"kind": "where", "cond": cond["text"], "total": total, "matched": matched, "uncomparable": unknown, "first": first,
+            "prev": prev, "intervals": [tuple(x) for x in intervals], "held_sec": round(held_ns / 1e9, 3), "stays_after_first": after}
+
+
+def where_on_series(cond, keys, descs, series, end_ns, base_ns, index_of=None):
+    """一個 --where 條件 → condition_features 的結果＋line（給人看的一行）。條件的欄位對到量到的項目：Key 本身、Key[名稱]（依名稱展開的）、
+    向量分量（linear.x），大小寫不同也認；對不到時 line 列出可以用的名稱。index_of＝{時間: 第幾則}（ROS2_topic_echo 的 #序號）。"""
+    names = {}
+    for k, d in zip(keys, descs):
+        for lab, pts in series.get(k, {}).items():
+            names[entry_name(k, lab, d)] = pts
+            if lab == "value":
+                names[k] = pts
+    pts = names.get(cond["field"])
+    if pts is None:
+        pts = {n.lower(): p for n, p in names.items()}.get(cond["field"].lower())
+    if pts is None:
+        avail = sorted(names)
+        return {"kind": "where", "cond": cond["text"], "found": False,
+                "line": f"條件 {cond['text']}：找不到欄位「{cond['field']}」（可以用的名稱：{'、'.join(avail[:20])}"
+                        + (f"…共 {len(avail)} 個" if len(avail) > 20 else "") + "）"}
+    res = condition_features(pts, cond, end_ns)
+    if index_of:
+        for r in (res["first"], res["prev"]):
+            if r:
+                r["index"] = index_of.get(r["t_ns"], r["index"])
+    res["line"] = condition_line(cond["field"], res, base_ns, with_index=bool(index_of))
+    return res
+
+
+def _value_text(v):
+    """條件結論裡一筆的值：陣列照原本的順序列（前 6 個），其他同 state_text。"""
+    if isinstance(v, tuple):
+        return "[" + ", ".join(fmt_num(x) if _is_num(x) else str(x) for x in v[:6]) + (", …" if len(v) > 6 else "") + "]"
+    return state_text(v)
+
+
+def condition_line(name, res, base_ns, with_index=False):
+    """condition_features → 一行結論（[+秒]＝距離 base_ns；with_index：附第幾筆，ROS2_topic_echo 的原始訊息以 #序號 標記）。"""
+    head = f"條件 {res['cond']}（{name}）：{res['total']} 筆中 {res['matched']} 筆符合"
+    if res["uncomparable"]:
+        head += f"（{res['uncomparable']} 筆比不了：值不是數字、或沒有這個欄位）"
+    if not res["first"]:
+        return head
+    f, p = res["first"], res["prev"]
+    idx = (lambda r: f" #{r['index']}") if with_index else (lambda r: "")
+    parts = [head, f"第一筆符合{idx(f)} {fmt_rel(f['t_ns'], base_ns)}（值 {short(_value_text(f['value']), 60)}）"]
+    if p:
+        parts.append(f"前一筆{idx(p)} {fmt_rel(p['t_ns'], base_ns)} 不符合（值 {short(_value_text(p['value']), 60)}）")
+    if res["stays_after_first"]:
+        parts.append("之後一直符合到最後一筆")
+    else:
+        iv = "、".join(f"{fmt_rel(a, base_ns)}～{fmt_rel(b, base_ns)}" if a != b else fmt_rel(a, base_ns) for a, b in res["intervals"][:8])
+        parts.append(f"符合的時段 {len(res['intervals'])} 段：{iv}" + ("…" if len(res["intervals"]) > 8 else ""))
+    parts.append(f"符合的時間共 {res['held_sec']} 秒")
+    return "；".join(parts)
+
+
+def feature_lines(label, f, base_ns, indent="     ", more="見 --json"):
     """一個項目的特徵 → 給人或模型看的一兩行（數字由程式算好）。"""
     if f["kind"] == "numeric":
         if f["constant"]:
@@ -1585,7 +1961,7 @@ def feature_lines(label, f, base_ns, indent="     "):
             st = "、".join(f"{fmt_t(s['t_ns'])}[{fmt_rel(s['t_ns'], base_ns)}] {fmt_num(s['from'])}→{fmt_num(s['to'])}"
                           for s in f["steps"][:6])
             lines.append(f"{indent}  數值切換 {f['step_count']} 次（只有 {f['levels']} 種值）：{st}"
-                         + (f"…其餘 {f['step_count'] - 6} 次見 --json" if f["step_count"] > 6 else ""))
+                         + (f"…其餘 {f['step_count'] - 6} 次{more}" if f["step_count"] > 6 else ""))
         elif j and abs(j["delta"]) > 0:
             lines.append(f"{indent}  最大跳變 {fmt_num(j['from'])}→{fmt_num(j['to'])} @ {fmt_t(j['t_ns'])}[{fmt_rel(j['t_ns'], base_ns)}]")
         return lines
@@ -1615,7 +1991,7 @@ def feature_lines(label, f, base_ns, indent="     "):
                                                  f"-{', '.join(tr['removed'])}" if tr["removed"] else "") if x) + "）"
         lines.append(f"{indent}  {fmt_t(tr['t_ns'])}[{fmt_rel(tr['t_ns'], base_ns)}] {short(tr['from'], 50)} → {short(tr['to'], 50)}{extra}")
     if f["transition_count"] > 6:
-        lines.append(f"{indent}  …其餘 {f['transition_count'] - 6} 次見 --json")
+        lines.append(f"{indent}  …其餘 {f['transition_count'] - 6} 次{more}")
     return lines
 
 
@@ -1623,8 +1999,9 @@ def feature_lines(label, f, base_ns, indent="     "):
 # 容器端：全部 Topic 的事實（一次讀完整份數據，程式量測，快取成 topic_facts.json）
 # =====================================================================================================================
 SCAN_NAME = "topic_facts"
-SCAN_VERSION = 4                # 量測或輸出的規則改了就加一（舊的快取自動重建）；2：尖峰要回到原來的水準；3：尖峰要夠陡；
-                                # 4：每個項目第一次出現的時間 first_t（核對「回到初始」用：中途才出現的項目沒有錄製開始時的值）
+SCAN_VERSION = 5                # 量測或輸出的規則改了就加一（舊的快取自動重建）；2：尖峰要回到原來的水準；3：尖峰要夠陡；
+                                # 4：每個項目第一次出現的時間 first_t（核對「回到初始」用：中途才出現的項目沒有錄製開始時的值）；
+                                # 5：字串裡的 JSON 欄位也量（索引 5）
 SCAN_CATEGORIES = ("numeric", "vector", "state", "kv", "array")   # 矩陣（共變異數）不量：多半是常數或濾波器內部的值
 LISTED_SPIKES = 10
 
@@ -1819,8 +2196,9 @@ class CliParser:
         return f"\n（已忽略不認識的參數：{' '.join(extra)}；用法：{self.usage}）" if extra else ""
 
 
-def finalize_output(text):
-    """主機端：容器輸出末行的 [ANALYSIS_DATA] 跟 harness 傳入的目前分析數據相同就拿掉（不同才讓 harness 同步）。"""
+def finalize_output(text, note=""):
+    """主機端：容器輸出末行的 [ANALYSIS_DATA] 跟 harness 傳入的目前分析數據相同就拿掉（不同才讓 harness 同步）；note（略過的參數…）
+    放在最後的狀態標記之前——harness 只認輸出最後連續的標記行。"""
     current = (os.environ.get("ANALYSIS_DATA") or "").strip()
     lines = text.rstrip().splitlines()
     out = []
@@ -1830,4 +2208,10 @@ def finalize_output(text):
             if not path or path == current:
                 continue
         out.append(ln)
-    return "\n".join(out)
+    k = len(out)
+    while k > 0 and out[k - 1].startswith(("[ANALYSIS_DATA]", "[TARGET_CONTAINER]")):
+        k -= 1
+    body, markers = out[:k], out[k:]
+    if note.strip():
+        body.append(note.strip())
+    return "\n".join(body + markers)

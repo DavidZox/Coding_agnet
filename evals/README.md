@@ -1,20 +1,22 @@
 # 評測（evals）
 
-評測依對象分成四組。每組都有一支**不用模型**的自我測試（假的 `ollama.chat` 照劇本回答，幾秒到一分鐘，改程式之後先跑）與**真模型**的評測。
+評測依對象分成五組。每組都有**不用模型**的自我測試（假的 `ollama.chat` 照劇本回答，或直接執行腳本，幾秒到一分鐘，改程式之後先跑）與**真模型**的評測。
 每一次都在臨時目錄複製一份專案來跑，不碰正式的 `logs/` 與 `prompts/Memory.md`；結果寫到 `evals/results/`（已在 `.gitignore`）。
 
 | 組 | 不用模型 | 真模型 | 測什麼 |
 |---|---|---|---|
-| `chat/` 主對話 | `selftest.py` | `run.py`（情境在 `scenarios.py`，`worker.py` 跑一個情境）、`perf_report.py`（KV cache 分析） | 選技能、兩階段揭露、大量回傳與回存檔查、執行前確認、記憶、程式把關、對數據技能的路由；兩種上下文模式比較 |
+| `chat/` 主對話 | `selftest.py`、`extract_selftest.py`（工具回傳的提煉與存檔回查） | `run.py`（情境在 `scenarios.py`，`worker.py` 跑一個情境）、`perf_report.py`（KV cache 分析） | 選技能、兩階段揭露、大量回傳與回存檔查、執行前確認、記憶、程式把關、對數據技能的路由；提煉的切段、核對、存檔、行號；兩種上下文模式比較 |
+| `skills/` 技能腳本 | `selftest.py`（每一組 `<組>_test.py`） | —（主對話真的用技能看 `chat/`、`ops/`） | 每個技能直接執行：[PASS] 與每一種 [ERROR] 的寫法（原因與下一步）、截斷的說明、不讀標準輸入、逾時；需要容器的在沙盒裡跑，沒有就略過（規範：`doc/技能撰寫規範.md`） |
 | `analysis/` 數據解析 | `selftest.py`（數據技能用錄下的真實輸出 `fixtures/`） | `regression.py`（評分標準 `regression_cases.json`；數據分析全部由程式做，不需要 Ollama）、`tools_live.py`（在真的容器裡跑數據技能） | 事實的整理、重點、報告、主對話回答的核對；回歸評分只評事實 |
 | `datagen/` 隨機情境的錄製產生器 | `check_facts.py`（只驗程式那一層，需要容器） | 產生的錄製交給 `analysis/regression.py` | 六個開發中套件的模擬，評分標準由注入的事件自動產生（見 [`datagen/README.md`](datagen/README.md)） |
 | `ops/` 多步驟維運 | `selftest.py` | `run.py`（情境在 `dataset/`，在 Docker-in-Docker 沙盒裡真的執行；`worker.py` 跑一個情境） | ops_plan／ops_run、file_ops、維運技能的確認關卡 |
 
-改程式之後先跑三支不用模型的自我測試：
+改程式之後先跑不用模型的自我測試：
 
 ```bash
 PY=~/aiagent_venv_env/.venv/bin/python     # 有 ollama 套件的 Python
-$PY evals/chat/selftest.py && $PY evals/analysis/selftest.py && $PY evals/ops/selftest.py
+$PY evals/chat/selftest.py && $PY evals/chat/extract_selftest.py && $PY evals/analysis/selftest.py && $PY evals/ops/selftest.py
+$PY evals/skills/selftest.py               # 技能腳本（需要容器的情境沒有沙盒就略過）；只跑某幾組：selftest.py fs containers rmf
 ```
 
 ## 主對話（`chat/`）
@@ -158,4 +160,7 @@ python3 evals/ops/run.py --only hs_lost_fin_fix --tag try1      # 只跑一個�
 - 每個情境：沙盒重建（Docker-in-Docker 容器 `cah_ops_dind`，`127.0.0.1:23750`；裡面跑 `rmf_sim` 的機器人行為與預設工作包、新的檔案沙盒）
   → 記下開始時的狀態 → 在臨時的 harness 副本裡跑主對話（工具都真的執行；`DOCKER_HOST` 指到沙盒，碰不到主機上真的容器）→ 讀回最後的狀態
   → `checks.py` 計分（狀態＋回覆＋禁止動作）。第一次跑會建沙盒的映像檔；跑完沙盒容器留著，不用時 `docker stop cah_ops_dind`。
-- 結果在 `evals/results/<時間>_ops_<模型>[_<tag>]/`：`runs.jsonl`、`report.md`。2026-10-10 建立這組評測時的報告與統計在 `~/Coding_agent_harness/benchmark_study_3/`。
+- 回覆裡的量測值用 `reply_num_any` 計分：數字加單位、在容許範圍內就算對（例如 2 Hz ±0.05、0.5 秒 ±0.02），技能量得比較精確
+  （1.997 Hz）不會被當錯；2026-10-23 起 `ros_hz` 用這個，其他情境照舊。沙盒的 `rmf_sim` 同一天改得跟真系統一樣（訊息型別、
+  distribute 的快照沒有電量、電量在 `/<機器人>/robot_state`），`sandbox.py` 依整個 `rmf_sim/` 目錄的內容判斷要不要重建映像檔。
+- 結果在 `evals/results/<時間>_ops_<模型>[_<tag>]/`：`runs.jsonl`、`report.md`，以及每個情境 harness 副本的 `logs/<情境>/`（ops_run 的計畫與每一步、提煉的切段與模型呼叫、工具的完整原文、`perf.jsonl`；2026-10-23 起，事後查得到 ops_run 裡每一步做了什麼）。2026-10-10 建立這組評測時的報告與統計在 `~/Coding_agent_harness/benchmark_study_3/`。

@@ -1,367 +1,373 @@
-"""ROS2_topic_echo：讀取 topic 的一筆訊息（--once），或以 --duration 秒 擷取一段時間。
+"""ROS2_topic_echo：讀取 topic 的一筆訊息，或用 --duration 觀察一段時間、量測每個欄位——跟錄好的數據（mcap_feature_measure、analysis_run）
+用同一套 Key 目錄與量測（_ros2_data_common）。
 
-一筆訊息只是瞬間；使用者想知道「一段時間內有沒有變化、頻率多少、數值範圍」時，用 --duration：
-容器內以 `timeout --preserve-status -s INT <秒> ros2 topic echo <topic>` 收集這段時間的所有訊息（輸出上限
-MAX_CAPTURE_BYTES 避免高頻 topic 灌爆），宿主機端把 YAML 文件（以 --- 分隔）逐則解析、攤平成 a.b.c 欄位，
-回報則數、頻率、每個欄位的變化（數值 min→max、字串有幾種不同值、固定不變的欄位），再附上全部原始訊息
-（超過 MAX_RAW_OUTPUT_CHARS 時保留頭尾並註明省略幾則；統計仍涵蓋全部）。腳本回傳的是完整資訊，
-「哪些重要」不在這裡決定：輸出超過工具回傳門檻時，harness 會交給知道使用者目標與這一步目的的獨立 session
-做任務導向擷取（舊版只回固定格式的 [PASS][digest] 摘要，使用者問到摘要沒涵蓋的欄位或某一則就答不出來）。
-"""
+在目標容器內執行（_ros2_data_common.run_in_container：載入 /opt/ros、Workspace overlay 與執行中節點的 ROS_DOMAIN_ID），用 rclpy 直接訂閱：
+- 型別：從 ROS 圖查（不用使用者給）；自訂訊息讀不到時回 [ERROR] 並指向 ROS2_workspace_env。
+- QoS：照目前的 publisher 配（有 BEST_EFFORT 的就用 BEST_EFFORT；全部是 TRANSIENT_LOCAL 才用 TRANSIENT_LOCAL，拿得到最後一則）；
+  QoS 不相容、沒有 publisher 都會寫在結果裡。
+- 一筆（預設）：等第一則訊息（timeout_seconds），印完整的 YAML（字串不截斷，JSON 狀態看得到全部）。
+- 一段時間（--duration）：每一則的到達時間＋每個 Key 的值 → 發布方式（固定頻率／狀態改變時才發布／不定期）與中斷、狀態跳轉（時間、
+  前後的值、占比）、數值的極值（與時間）／均值／標準差／斜率／尖峰／切換、字串裡的 JSON 欄位、依名稱展開的項目（DiagnosticArray）；
+  --where 條件由程式判斷（幾則符合、第一則符合 #k 與它的前一則、符合的時段）；最後附前後幾則原始訊息（--- #序號 +秒）。
+主機不需要 ROS 2 與 PyYAML（以前在主機解析 ros2 topic echo 的 YAML，主機沒有 PyYAML 時欄位統計整個不見、還回 [PASS]）。"""
+import json
 import os
-import re
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _docker_common import ros2_exec, pass_or_empty, parse_timeout, resolve_container, with_target_marker
-
-try:
-    import yaml
-except ImportError:  # 宿主機沒有 PyYAML 時退回只做粗略統計
-    yaml = None
+import _ros2_data_common as rd  # noqa: E402
 
 DEFAULT_TIMEOUT_SECONDS = 15
-MAX_TIMEOUT_SECONDS = 570        # 低於 Agent_Runner.TOOL_EXEC_TIMEOUT (600)
+MAX_TIMEOUT_SECONDS = 570        # 低於 harness 的 TOOL_EXEC_TIMEOUT（600）
 MIN_DURATION_SECONDS = 2
 MAX_DURATION_SECONDS = 300
-CAPTURE_GRACE_SECONDS = 20       # ros2 CLI 啟動／discovery 的餘裕，加在 duration 上當作外層逾時
-MAX_CAPTURE_BYTES = 400000
-MAX_RAW_OUTPUT_CHARS = 12000     # 原始訊息區的篇幅上限：超過就保留最前面與最後面的訊息、註明中間省略幾則（統計仍涵蓋全部）
-MAX_CHANGED_FIELDS = 30          # 欄位變化清單最多列幾個欄位
-MAX_CONSTANT_FIELDS = 15         # 固定不變欄位最多列幾個
-# 容器內：把 ros2 topic echo 每則訊息後面的 --- 換成「--- @到達時間（epoch 秒）」
-STAMP_LOOP = ('while IFS= read -r line; do if [ "$line" = "---" ]; then echo "--- @${EPOCHREALTIME:-$(date +%s.%N)}"; '
-              "else printf '%s\\n' \"$line\"; fi; done")
-USAGE = (
-    "用法: scripts/ROS2_topic_echo_cmd.py [container_name] <topic_name> [timeout_seconds] [--duration 秒] [--where 欄位<值]...\n"
-    "  container_name 可省略＝目前的目標容器（docker_open 選定、或最近一次成功操作的容器）；topic 以 / 開頭。\n"
-    f"  不加 --duration：讀一筆就結束；timeout_seconds 預設 {DEFAULT_TIMEOUT_SECONDS} 秒（低頻 topic 請加大），上限 {MAX_TIMEOUT_SECONDS}。\n"
-    f"  --duration 秒（{MIN_DURATION_SECONDS}～{MAX_DURATION_SECONDS}）：持續擷取這段時間的所有訊息，回傳欄位統計與全部原始訊息，適合「觀察一段時間／頻率／有沒有變化」。\n"
-    "  --where 欄位<值（可重複，只能與 --duration 一起用）：由腳本判斷幾則符合、第一則符合的序號與值；運算子 < <= > >= == !=，"
-    "欄位用攤平後的名稱（如 voltage、data.step_counter）。"
-)
-
-# ---------------------------------------------------------------- --where 門檻判斷（數值交給腳本算，模型照抄）
-_OPS = {"<=": lambda a, b: a <= b, ">=": lambda a, b: a >= b, "==": lambda a, b: a == b,
-        "!=": lambda a, b: a != b, "<": lambda a, b: a < b, ">": lambda a, b: a > b}
-_WHERE_RE = re.compile(r"^\s*([^\s<>=!]+)\s*(<=|>=|==|!=|<|>)\s*(.+?)\s*$")
+DISCOVERY_SECONDS = 4.0          # 找 topic 與 publisher（DDS discovery）最多等幾秒
+GRACE_SECONDS = 40               # 容器內啟動 Python、載入 ROS 2 的餘裕（加在 duration／timeout 上當作外層逾時）
+SAMPLE_MESSAGES = 60             # 前幾則訊息用來判斷每個 Key 的類別（同 mcap_analyzer 的抽樣）
+DEFAULT_RAW, MAX_RAW = 10, 100   # --duration 附幾則原始訊息（前一半、後一半）
+MAX_RAW_CHARS = 12000            # 原始訊息區的篇幅上限
+USAGE = ("用法: scripts/ROS2_topic_echo_cmd.py [container_name] <topic_name> [timeout_seconds] [--duration 秒] [--where 欄位<值]... [--raw N]\n"
+         "  container_name 可省略＝目前的目標容器；topic 以 / 開頭。\n"
+         f"  不加 --duration：等第一則訊息（timeout_seconds 預設 {DEFAULT_TIMEOUT_SECONDS}，上限 {MAX_TIMEOUT_SECONDS}；低頻 topic 加大），印完整的 YAML。\n"
+         f"  --duration 秒（{MIN_DURATION_SECONDS}～{MAX_DURATION_SECONDS}）：觀察這段時間，量測發布方式與每個欄位的變化。"
+         "--where 欄位<值（可重複，要搭配 --duration）：幾則符合、第一則符合 #k；運算子 < <= > >= == !=，欄位名稱同量測結果"
+         f"（voltage、pose.pose.position.x、status.level[motor_left]、data.mode）。--raw N：附幾則原始訊息（預設 {DEFAULT_RAW}，上限 {MAX_RAW}）。")
 
 
-def parse_where(expr):
-    """'voltage<24' → {"field","op","value","text"}；大小比較的值必須是數值。回傳 (cond, error)。"""
-    m = _WHERE_RE.match(expr or "")
-    if not m:
-        return None, (f"[ERROR] --where 條件格式應為 欄位<值、欄位>=值、欄位==值（例如 voltage<24、data.status==RUNNING），收到 {expr!r}；"
-                      f"只是想看某個欄位有沒有變化不需要 --where，--duration 的「欄位變化」統計本來就會列出每個欄位的變化")
-    field, op, val = m.groups()
-    val = val.strip().strip('"').strip("'")
-    try:
-        num = float(val)
-    except ValueError:
-        num = None
-    if op in ("<", "<=", ">", ">=") and num is None:
-        return None, f"[ERROR] --where {expr!r}：大小比較需要數值，收到 {val!r}"
-    return {"field": field, "op": op, "value": num if num is not None else val, "text": f"{field}{op}{val}"}, None
-
-
-def _fmt_val(v):
-    return _num(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else _fmt(v)
-
-
-def _ranges(indices):
-    """[17,18,19,20,25] → '17～20、25'。"""
-    out, start, prev = [], None, None
-    for i in indices + [None]:
-        if start is None:
-            start = prev = i
-            continue
-        if i is not None and i == prev + 1:
-            prev = i
-            continue
-        out.append(f"{start}～{prev}" if prev != start else f"{start}")
-        start = prev = i
-    return "、".join(out)
-
-
-def render_where(cond, flats):
-    """一行結論：N 則中幾則符合、第一則符合 #k（值）、前一則不符合的值、序號分佈。序號與原始訊息的 #序號一致。"""
-    n = len(flats)
-    if not any(cond["field"] in f for f in flats):
-        keys = sorted({k for f in flats for k in f})
-        return f"條件 {cond['text']}：找不到欄位「{cond['field']}」（可用欄位：{', '.join(keys[:25])}{'…' if len(keys) > 25 else ''}）"
-    matched = []
-    for i, f in enumerate(flats, 1):
-        if cond["field"] not in f:
-            continue
-        v = f[cond["field"]]
-        if isinstance(cond["value"], float):
-            if isinstance(v, bool) or not isinstance(v, (int, float)):
-                continue
-            ok = _OPS[cond["op"]](float(v), cond["value"])
-        else:
-            ok = _OPS[cond["op"]](str(v), str(cond["value"]))
-        if ok:
-            matched.append(i)
-    if not matched:
-        return f"條件 {cond['text']}：{n} 則中 0 則符合"
-    first = matched[0]
-    parts = [f"條件 {cond['text']}：{n} 則中 {len(matched)} 則符合",
-             f"第一則符合 #{first}（{cond['field']}={_fmt_val(flats[first - 1].get(cond['field']))}）"]
-    if first > 1:
-        parts.append(f"前一則 #{first - 1} 不符合（{cond['field']}={_fmt_val(flats[first - 2].get(cond['field']))}）")
-    parts.append("之後連續符合到最後一則" if matched == list(range(first, n + 1)) else f"符合的序號：{_ranges(matched)}")
-    return "；".join(parts)
-
-
-def run_topic_echo(container, topic, timeout=DEFAULT_TIMEOUT_SECONDS):
-    """讀取一筆訊息即結束（--once）。"""
-    container = (container or "").strip()
-    topic = (topic or "").strip()
-    if not container or not topic:
-        return f"[ERROR] 參數不足，需要容器名稱與 topic 名稱。\n{USAGE}"
-    ok, out, err = ros2_exec(
-        container, f"ros2 topic echo {topic} --once", timeout,
-        timeout_hint=(f"在 {timeout} 秒內沒有收到 '{topic}' 的任何訊息：可能目前沒有 publisher 在發布、"
-                      f"topic 名稱錯誤（請用 ROS2_topic_list 確認）、或 QoS 不相容；低頻 topic 可加大第三個參數的秒數。"),
-    )
-    if not ok:
-        return err
-    body = pass_or_empty(out, f"'{topic}' 回傳了空訊息")
-    return body if body.startswith("[PASS]") else f"[PASS] '{topic}' 的一筆訊息:\n{body.strip()}"
-
-
-# ---------------------------------------------------------------- 一段時間的擷取與摘要
-def split_yaml_docs(text):
-    """ros2 topic echo 的輸出以單獨一行 --- 分隔每則訊息；最後一則可能因輸出上限被截斷，解析失敗就丟掉。"""
-    docs, raw_docs = [], []
-    # ros2 CLI 的提示行（例如 "WARNING: topic [...] does not appear to be published yet"）不是訊息
-    text = "\n".join(ln for ln in (text or "").splitlines() if not ln.startswith(("WARNING:", "[WARN", "[INFO", "[ERROR")))
-    for chunk in re.split(r"^---\s*$", text, flags=re.M):
-        chunk = chunk.strip()
-        if not chunk:
-            continue
-        if yaml is None:
-            raw_docs.append(chunk)
-            continue
-        try:
-            parsed = yaml.safe_load(chunk)
-        except yaml.YAMLError:
-            continue
-        if isinstance(parsed, dict):
-            docs.append(parsed)
-            raw_docs.append(chunk)   # 只保留解析成功的原文，被截斷的最後一則不算
-    return docs, raw_docs
-
-
-def flatten(obj, prefix=""):
-    """巢狀 dict → {"a.b": value}；數值陣列原樣保留（可比對變動），其他 list 只記長度。"""
-    out = {}
-    if isinstance(obj, dict):
-        for k, v in obj.items():
-            out.update(flatten(v, f"{prefix}{k}."))
-        return out
-    key = prefix[:-1] if prefix.endswith(".") else prefix
-    if isinstance(obj, str) and obj[:1] in ("{", "[") and len(obj) < 200000:
-        # std_msgs/String 常裝 JSON（例如 *_ui_state），解開來逐欄位比對才有意義
-        try:
-            import json
-            inner = json.loads(obj)
-        except ValueError:
-            inner = None
-        if isinstance(inner, dict):
-            return flatten(inner, key + ".")
-    if isinstance(obj, list):
-        if obj and all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in obj):
-            out[key] = obj
-        else:
-            out[key] = f"<list len={len(obj)}>"
-    else:
-        out[key] = obj
-    return out
-
-
-def _fmt(v):
-    s = str(v)
-    return s if len(s) <= 80 else s[:80] + "…"
-
-
-def _num(v):
-    """數值顯示：整數原樣（step_counter 130890 不能變 1.309e+05）；小數最多 4 位、去掉尾巴 0；極大／極小才用科學記號。"""
-    if isinstance(v, bool):
-        return str(v)
-    if isinstance(v, int):
-        return str(v)
-    if v == 0 or 1e-4 <= abs(v) < 1e7:
-        return f"{v:.4f}".rstrip("0").rstrip(".")
-    return f"{v:.4g}"
-
-
-def render_raw_messages(raw_docs, max_chars=MAX_RAW_OUTPUT_CHARS):
-    """全部原始訊息依接收順序列出（--- #序號）。總篇幅超過 max_chars 時保留最前面與最後面各約一半篇幅的訊息，
-    中間以一行註明省略了第幾到第幾則；單則就超過篇幅時截斷該則並註明。回傳 (lines, omitted_count)。"""
-    n = len(raw_docs)
-    items = [f"--- #{k + 1}\n{d}" for k, d in enumerate(raw_docs)]
-    if sum(len(x) + 1 for x in items) <= max_chars:
-        return [f"原始訊息（共 {n} 則，依接收順序）："] + items, 0
-    half = max_chars // 2
-    head, used = [], 0
-    while len(head) < n and used + len(items[len(head)]) + 1 <= half:
-        used += len(items[len(head)]) + 1
-        head.append(items[len(head)])
-    tail, used = [], 0
-    while len(head) + len(tail) < n and used + len(items[n - 1 - len(tail)]) + 1 <= half:
-        used += len(items[n - 1 - len(tail)]) + 1
-        tail.insert(0, items[n - 1 - len(tail)])
-    if not head:  # 第一則就超過一半篇幅：截斷後仍要給（第一則通常最能說明訊息結構）
-        head = [items[0][:half] + "\n…（單則訊息過長，已截斷）"]
-    omitted = n - len(head) - len(tail)
-    if omitted <= 0:
-        return [f"原始訊息（共 {n} 則，依接收順序）："] + head + tail, 0
-    lines = [f"原始訊息（共 {n} 則，依接收順序；篇幅限制只列出前 {len(head)} 則與最後 {len(tail)} 則、"
-             f"中間省略 {omitted} 則，上方欄位統計仍涵蓋全部訊息）："]
-    return lines + head + [f"…（省略第 {len(head) + 1}～{n - len(tail)} 則，共 {omitted} 則）…"] + tail, omitted
-
-
-def rate_text(n, duration, stamps=None):
-    """頻率：有每則訊息的到達時間就用 (則數-1)／(最後一則-第一則)；沒有就退回則數／觀察秒數（含啟動時間，會偏低）。"""
-    stamps = [t for t in (stamps or []) if t > 0]
-    if len(stamps) >= 3 and stamps[-1] > stamps[0]:
-        rate = (len(stamps) - 1) / (stamps[-1] - stamps[0])
-        gaps = [b - a for a, b in zip(stamps, stamps[1:])]
-        return (f"頻率約 {rate:.2f} Hz（平均每 {1 / rate:.3f} 秒一則；依 {len(stamps)} 則訊息的到達時間計算，"
-                f"間隔最短 {min(gaps):.3f}、最長 {max(gaps):.3f} 秒）")
-    return f"約 {n / duration:.2f} Hz（則數／觀察秒數的粗估，含 ros2 啟動時間、會偏低）"
-
-
-def summarize_docs(topic, duration, docs, raw_docs, wheres=None, stamps=None):
-    """狀態列 + 欄位統計（涵蓋全部訊息）+ --where 門檻判斷 + 全部原始訊息。"""
-    n = len(docs) if docs else len(raw_docs)
-    lines = [f"[PASS] 觀察 '{topic}' {duration} 秒：收到 {n} 則訊息，{rate_text(n, duration, stamps)}"]
-    if docs:
-        flats = [flatten(d) for d in docs]
-        keys = []
-        for f in flats:
-            for k in f:
-                if k not in keys:
-                    keys.append(k)
-        changed, constant = [], []
-        for k in keys[:80]:
-            values = [f.get(k) for f in flats if k in f]
-            if not values:
-                continue
-            distinct = []
-            for v in values:
-                if v not in distinct:
-                    distinct.append(v)
-            if len(distinct) <= 1:
-                constant.append(f"{k}={_fmt(values[0])}")
-                continue
-            if all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in values):
-                changed.append(f"{k}：數值 {_num(values[0])} → {_num(values[-1])}（最小 {_num(min(values))}、最大 {_num(max(values))}、{len(distinct)} 種值）")
-            elif all(isinstance(v, list) for v in values):
-                changed.append(f"{k}：數值陣列變動 {len(distinct)} 次（長度 {len(values[-1])}）")
-            else:
-                changed.append(f"{k}：{len(distinct)} 種不同值，最後 = {_fmt(values[-1])}" + (f"（例：{'、'.join(_fmt(v) for v in distinct[:3])}）" if len(distinct) <= 6 else ""))
-        lines.append(f"欄位變化（{len(docs)} 則、{len(keys)} 個欄位）：")
-        lines += [f"- {c}" for c in changed[:MAX_CHANGED_FIELDS]] if changed else ["- 所有欄位在觀察期間都沒有變化"]
-        if len(changed) > MAX_CHANGED_FIELDS:
-            lines.append(f"- …另有 {len(changed) - MAX_CHANGED_FIELDS} 個欄位有變化")
-        if constant:
-            lines.append(f"固定不變：{'；'.join(constant[:MAX_CONSTANT_FIELDS])}{'；…' if len(constant) > MAX_CONSTANT_FIELDS else ''}")
-        for cond in (wheres or []):
-            lines.append(render_where(cond, flats))
-    elif yaml is None:
-        lines.append("（宿主機沒有 PyYAML，無法逐欄位統計；以下為原始訊息）")
-        if wheres:
-            lines.append("（沒有 PyYAML 無法評估 --where 條件）")
-    raw_lines, _ = render_raw_messages(raw_docs)
-    return "\n".join(lines + raw_lines)
-
-
-def run_topic_capture(container, topic, duration, wheres=None):
-    """擷取 duration 秒的所有訊息：狀態列 + 欄位統計 + --where 判斷 + 全部原始訊息。"""
-    container = (container or "").strip()
-    topic = (topic or "").strip()
-    if not container or not topic:
-        return f"[ERROR] 參數不足，需要容器名稱與 topic 名稱。\n{USAGE}"
-    import shlex
-    # --preserve-status + `; true`：時間到被 INT 終止是預期行為，不能讓 docker_exec 當成錯誤；head -c 限制輸出量
-    # --full-length：ros2 預設把字串截到 128 字元，String 型 JSON 狀態 topic 會被切掉；輸出量由 head -c 與 SAMPLE_CHARS 控制
-    # 每則訊息的分隔線 --- 換成「--- @到達時間」：頻率用第一則到最後一則的時間差算（舊版用「則數／觀察秒數」，
-    # 觀察時間含 ros2 CLI 啟動與 discovery 的一兩秒，實測 2 Hz 的 topic 算成 1.6 Hz）。PYTHONUNBUFFERED：ros2 CLI 輸出到 pipe 時
-    # 預設整塊緩衝，時間戳會擠在一起；bash 5 的 EPOCHREALTIME 不用每則訊息開一個 date 行程
-    cmd = (f"timeout --preserve-status -s INT {duration} env PYTHONUNBUFFERED=1 ros2 topic echo --full-length {shlex.quote(topic)} "
-           f"| {STAMP_LOOP} | head -c {MAX_CAPTURE_BYTES}; true")
-    ok, out, err = ros2_exec(
-        container, cmd, duration + CAPTURE_GRACE_SECONDS,
-        timeout_hint=f"擷取 {duration} 秒外加 {CAPTURE_GRACE_SECONDS} 秒餘裕仍未結束，容器內的 ros2 CLI 可能卡住。",
-    )
-    if not ok:
-        return err
-    stamps = [float(t) for t in re.findall(r"^--- @(\d+(?:\.\d+)?)\s*$", out, flags=re.M)]
-    out = re.sub(r"^--- @\S*\s*$", "---", out, flags=re.M)
-    docs, raw_docs = split_yaml_docs(out)
-    if not raw_docs:
-        return (f"[PASS] 觀察 '{topic}' {duration} 秒：沒有收到任何訊息。可能目前沒有 publisher 在發布、topic 名稱錯誤"
-                f"（請用 ROS2_topic_list 確認）、QoS 不相容，或發布間隔比 {duration} 秒還長。")
-    result = summarize_docs(topic, duration, docs, raw_docs, wheres, stamps=stamps)
-    if len(out) >= MAX_CAPTURE_BYTES - 1:
-        result += f"\n（輸出達上限 {MAX_CAPTURE_BYTES} 位元組，實際訊息數可能更多；高頻 topic 請縮短 --duration）"
-    return result
+# =====================================================================================================================
+# 主機端：參數 → 送進容器
+# =====================================================================================================================
+def _seconds(v):
+    """「5s」「5秒」「5 sec」→「5」（模型常照抄畫面上的寫法）；不是「數字＋單位」的（topic 名稱 /status）原樣傳回。"""
+    import re
+    m = re.fullmatch(r"(\d+(?:\.\d+)?)\s*(?:s|sec|secs|seconds|秒)", str(v).strip(), flags=re.I)
+    return m.group(1) if m else str(v).strip()
 
 
 def parse_cli(argv):
-    """回傳 (container, topic, timeout, duration, error, wheres)。wheres 是 parse_where 解析後的條件清單。"""
-    args = list(argv)
-    duration = None
-    wheres = []
-    while "--where" in args:
-        i = args.index("--where")
-        if i + 1 >= len(args):
-            return None, None, None, None, f"[ERROR] --where 後面需要條件（例如 voltage<24）。\n{USAGE}", []
-        cond, err = parse_where(args[i + 1])
-        if err:
-            return None, None, None, None, f"{err}\n{USAGE}", []
-        wheres.append(cond)
-        del args[i:i + 2]
-    if "--duration" in args:
-        i = args.index("--duration")
-        if i + 1 >= len(args):
-            return None, None, None, None, f"[ERROR] --duration 後面需要秒數。\n{USAGE}", []
-        value, err = parse_timeout(args[i + 1], None, MAX_DURATION_SECONDS, name="--duration")
-        if err or value is None or value < MIN_DURATION_SECONDS:
-            return None, None, None, None, f"[ERROR] --duration 需介於 {MIN_DURATION_SECONDS}～{MAX_DURATION_SECONDS} 秒，收到: {args[i + 1]!r}\n{USAGE}", []
-        duration = value
-        del args[i:i + 2]
+    """→ (opts, error)。opts：container、topic、timeout、duration、wheres、raw。第一個位置參數是現有的容器名稱才當容器，
+    否則是 topic（沒有 / 開頭時補上）。"""
+    sys.path.insert(0, rd.HERE)
+    from _docker_common import lookup_container, parse_timeout, split_container_arg
+    args, wheres, duration, raw = list(argv), [], None, DEFAULT_RAW
+    i, pos, named = 0, [], {}
+    while i < len(args):
+        a = args[i]
+        if a in ("--where", "--duration", "--raw", "--timeout", "--topic", "--container"):
+            if i + 1 >= len(args):
+                return None, f"[ERROR] {a} 後面要接值。\n{USAGE}"
+            val = _seconds(args[i + 1]) if a in ("--duration", "--timeout") else args[i + 1]
+            if a in ("--topic", "--container"):   # 跟 mcap_* 一樣的寫法（--topic /odom）也接受
+                named[a] = val
+            elif a == "--where":
+                c, err = rd.parse_where(val)
+                if err:
+                    return None, f"[ERROR] --where {err}。\n{USAGE}"
+                wheres.append(val)
+            elif a == "--duration":
+                v, err = parse_timeout(val, None, MAX_DURATION_SECONDS, name="--duration")
+                if err or v is None or v < MIN_DURATION_SECONDS:
+                    return None, f"[ERROR] --duration 要介於 {MIN_DURATION_SECONDS}～{MAX_DURATION_SECONDS} 秒，收到 {val!r}。\n{USAGE}"
+                duration = v
+            elif a == "--raw":
+                if not val.isdigit():
+                    return None, f"[ERROR] --raw 要是整數（附幾則原始訊息），收到 {val!r}。\n{USAGE}"
+                raw = max(0, min(MAX_RAW, int(val)))
+            else:
+                named["--timeout"] = val
+            i += 2
+            continue
+        if a.startswith("--"):
+            return None, (f"[ERROR] 不認識的選項 {a!r}：位置參數依序是 [container_name] <topic_name> [timeout_seconds]，"
+                          f"選項只有 --duration、--where、--raw（--topic、--container 也可以）。\n{USAGE}")
+        pos.append(a)
+        i += 1
     if wheres and not duration:
-        return None, None, None, None, f"[ERROR] --where 只能與 --duration 一起用（要有一段時間的訊息才有得判斷）。\n{USAGE}", []
-    bad = [a for a in args if a.startswith("-")]
-    if bad:
-        return None, None, None, None, f"[ERROR] 不認識的選項 {bad[0]!r}：位置參數依序是 [container_name] <topic_name> [timeout_seconds]，選項只有 --duration 與 --where。\n{USAGE}", []
-    if not args:
-        return None, None, None, None, f"[ERROR] 參數不足，需要 topic 名稱。\n{USAGE}", []
-    # 判斷第一個參數是容器還是 topic：只有一個參數、第一個以 / 開頭（topic 名稱）、或形如「<topic> <秒數>」時，容器省略＝目標容器
-    if len(args) == 1 or args[0].startswith("/") or (len(args) == 2 and args[1].isdigit()):
-        container, rest = "", args
+        return None, f"[ERROR] --where 要搭配 --duration（要有一段時間的訊息才判斷得了）。\n{USAGE}"
+    pos = [_seconds(p) for p in pos]
+    if "--topic" in named:
+        pos = ([named["--container"]] if "--container" in named else []) + [named["--topic"]] + pos
+    elif "--container" in named:
+        pos = [named["--container"]] + pos
+    if "--timeout" in named and len([p for p in pos if not p.isdigit()]) == len(pos):
+        pos.append(named["--timeout"])
+    if not pos:
+        return None, f"[ERROR] 需要 topic 名稱（例如 /odom；不知道名稱先用 ROS2_topic_list）。\n{USAGE}"
+    # 第一個參數是不是容器：跟其他 ROS 2 技能同一個判斷（_docker_common.split_container_arg）——完全相同（不分大小寫）的容器名稱才算，
+    # 否則是 topic；--container 一定是容器（允許唯一的部分名稱）。沒給容器＝目前的目標容器
+    if "--container" in named:
+        container, pos, err = split_container_arg(pos, USAGE, must=True)
     else:
-        container, rest = args[0], args[1:]
-    container, err = resolve_container(container, USAGE)
+        container, pos, err = split_container_arg(pos, USAGE, maybe=True)
     if err:
-        return None, None, None, None, err, []
-    timeout, err = parse_timeout(rest[1] if len(rest) > 1 else None, DEFAULT_TIMEOUT_SECONDS, MAX_TIMEOUT_SECONDS, name="timeout_seconds")
+        return None, err
+    if len(pos) >= 2 and not pos[1].isdigit():   # 「X /topic」：X 不是容器名稱（多半打錯了）
+        _, err = lookup_container(pos[0])
+        return None, (err or f"[ERROR] 多了參數 {pos[1:]}：位置參數依序是 [container_name] <topic_name> [timeout_seconds]") + f"\n{USAGE}"
+    topic = pos[0] if pos[0].startswith("/") else "/" + pos[0]
+    timeout, err = parse_timeout(pos[1] if len(pos) > 1 else None, DEFAULT_TIMEOUT_SECONDS, MAX_TIMEOUT_SECONDS, name="timeout_seconds")
     if err:
-        return None, None, None, None, f"{err}\n{USAGE}", []
-    return container, rest[0], timeout, duration, None, wheres
+        return None, f"{err}\n{USAGE}"
+    if len(pos) > 2:
+        return None, f"[ERROR] 多了參數 {pos[2:]}。\n{USAGE}"
+    return {"container": container, "topic": topic, "timeout": timeout, "duration": duration, "wheres": wheres, "raw": raw}, None
+
+
+def host_main(argv):
+    opts, err = parse_cli(argv)
+    if err:
+        print(err)
+        return 0
+    wargs = ["--topic", opts["topic"], "--timeout", str(opts["timeout"]), "--raw", str(opts["raw"])]
+    if opts["duration"]:
+        wargs += ["--duration", str(opts["duration"])]
+    for w in opts["wheres"]:
+        wargs += ["--where", w]
+    limit = (opts["duration"] or opts["timeout"]) + DISCOVERY_SECONDS + GRACE_SECONDS
+    rc, out = rd.run_in_container(os.path.abspath(__file__), wargs, container=opts["container"], timeout=limit,
+                                  what="ROS2_topic_echo",
+                                  timeout_hint="容器內的 Python／ROS 2 沒有在時間內結束：縮短 --duration，或先用 ROS2_topic_list 確認 ROS 2 正常。")
+    print(rd.finalize_output(out))
+    return 0 if out.lstrip().startswith(("[PASS]", "[ERROR]")) else rc
+
+
+# =====================================================================================================================
+# 容器端：rclpy 訂閱
+# =====================================================================================================================
+def _worker_args(argv):
+    a = {"wheres": []}
+    i = 0
+    while i < len(argv):
+        k, v = argv[i], argv[i + 1]
+        if k == "--where":
+            a["wheres"].append(v)
+        else:
+            a[k.lstrip("-")] = v
+        i += 2
+    return a
+
+
+def _close_names(topic, names, n=6):
+    import difflib
+    return difflib.get_close_matches(topic, names, n=n, cutoff=0.4) or [x for x in names if topic.strip("/").split("/")[-1] in x][:n]
+
+
+def _qos_for(infos):
+    """依目前的 publisher 配 QoS：有 BEST_EFFORT 的就用 BEST_EFFORT（兩種 publisher 都收得到）；全部是 TRANSIENT_LOCAL 才用 TRANSIENT_LOCAL
+    （訂閱時拿得到最後一則）。回傳 (QoSProfile, 說明)。"""
+    from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
+    rel = ReliabilityPolicy.BEST_EFFORT if any(i.qos_profile.reliability == ReliabilityPolicy.BEST_EFFORT for i in infos) \
+        else ReliabilityPolicy.RELIABLE
+    dur = DurabilityPolicy.TRANSIENT_LOCAL if infos and all(i.qos_profile.durability == DurabilityPolicy.TRANSIENT_LOCAL for i in infos) \
+        else DurabilityPolicy.VOLATILE
+    text = f"{'BEST_EFFORT' if rel == ReliabilityPolicy.BEST_EFFORT else 'RELIABLE'}／{'TRANSIENT_LOCAL' if dur == DurabilityPolicy.TRANSIENT_LOCAL else 'VOLATILE'}"
+    return QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=100, reliability=rel, durability=dur), text
+
+
+class _Capture:
+    """訂閱的 callback：記每一則的到達時間；前 SAMPLE_MESSAGES 則留著判斷 Key 的類別，之後每一則直接取值（不留整則訊息，高頻、大的
+    訊息也不會吃光記憶體）；前後幾則原始訊息另外轉成 YAML 留著。"""
+
+    def __init__(self, cls, raw_keep):
+        from collections import deque
+        self.cls, self.times, self.samples, self.descs, self.series, self.errors = cls, [], [], None, {}, {}
+        self.head, self.tail = [], deque(maxlen=max(0, raw_keep - raw_keep // 2))
+        self.head_n = raw_keep // 2 if raw_keep > 1 else raw_keep
+
+    def _yaml(self, msg):
+        from rosidl_runtime_py import message_to_yaml
+        try:
+            return message_to_yaml(msg).rstrip()
+        except Exception as e:   # noqa: BLE001
+            return f"（轉成 YAML 失敗：{type(e).__name__}: {e}）"
+
+    def keys(self):
+        return [d["key"] for d in self.descs or []]
+
+    def ready(self):
+        self.descs = [d for d in rd.describe_keys(self.cls, self.samples)
+                      if d["category"] in rd.SCAN_CATEGORIES and not d["key"].startswith("header.")]
+        self.series = {d["key"]: {} for d in self.descs}
+        dmap = {d["key"]: d for d in self.descs}
+        for t, msg in zip(self.times, self.samples):
+            rd._collect(msg, t, self.keys(), dmap, self.series, self.errors)
+        self.samples = []
+
+    def __call__(self, msg):
+        t = time.time_ns()
+        self.times.append(t)
+        n = len(self.times)
+        if len(self.head) < self.head_n:
+            self.head.append((n, t, self._yaml(msg)))
+        elif self.tail.maxlen:
+            self.tail.append((n, t, msg))
+        if self.descs is None:
+            self.samples.append(msg)
+            if len(self.samples) >= SAMPLE_MESSAGES:
+                self.ready()
+        else:
+            rd._collect(msg, t, self.keys(), {d["key"]: d for d in self.descs}, self.series, self.errors)
+
+
+def worker_main(argv):
+    a = _worker_args(argv)
+    topic, timeout, raw_keep = a["topic"], float(a["timeout"]), int(a["raw"])
+    duration = float(a["duration"]) if a.get("duration") else None
+    try:
+        import rclpy
+        from rclpy.node import Node
+    except ImportError as e:
+        print(f"[ERROR] 容器裡載入不到 rclpy（{e}）：這個容器沒有 ROS 2 的 Python 環境。下一步：用 docker_containers 換一個有 ROS 2 的容器"
+              f"（docker_open <名稱>），或用 ROS2_workspace_env 確認環境。")
+        return 0
+    rclpy.init()
+    node = Node(f"agent_topic_echo_{os.getpid()}")
+    try:
+        return _observe(node, rclpy, topic, timeout, duration, a["wheres"], raw_keep)
+    finally:
+        node.destroy_node()
+        rclpy.try_shutdown() if hasattr(rclpy, "try_shutdown") else rclpy.shutdown()
+
+
+def _observe(node, rclpy, topic, timeout, duration, wheres, raw_keep):
+    domain = os.environ.get("ROS_DOMAIN_ID") or "0（預設）"
+    deadline = time.time() + DISCOVERY_SECONDS
+    types = {}
+    while time.time() < deadline:
+        rclpy.spin_once(node, timeout_sec=0.2)
+        types = dict(node.get_topic_names_and_types())
+        if topic in types:
+            break
+    if topic not in types:
+        names = sorted(types)
+        near = _close_names(topic, names)
+        print(f"[ERROR] ROS 圖上沒有 topic {topic}（ROS_DOMAIN_ID={domain}，{DISCOVERY_SECONDS:g} 秒內看到 {len(names)} 個 topic）"
+              + (f"；名稱相近的：{'、'.join(near)}" if near else "")
+              + "。下一步：用 ROS2_topic_list 確認名稱；只看得到 /rosout、/parameter_events 時用 ROS2_domain_id 確認 domain。")
+        return 0
+    type_name = types[topic][0]
+    cls, err = rd.msg_class(type_name)
+    if cls is None:
+        print(f"[ERROR] 載入不到 {topic} 的訊息型別 {type_name}（{err}）：自訂訊息要先載入它的 Workspace。下一步：用 ROS2_workspace_env "
+              f"確認這個容器的 Workspace（--discover 找候選），之後再觀察。")
+        return 0
+    infos = node.get_publishers_info_by_topic(topic)
+    qos, qos_text = _qos_for(infos)
+    cap = _Capture(cls, raw_keep if duration else 1)
+    incompatible = []
+    try:
+        from rclpy.qos_event import SubscriptionEventCallbacks
+        events = SubscriptionEventCallbacks(incompatible_qos=lambda e: incompatible.append(e.total_count))
+        sub = node.create_subscription(cls, topic, cap, qos, event_callbacks=events)
+    except (ImportError, TypeError):
+        sub = node.create_subscription(cls, topic, cap, qos)
+    start = time.time_ns()
+    end_at = time.time() + (duration if duration else timeout)
+    while time.time() < end_at:
+        rclpy.spin_once(node, timeout_sec=0.1)
+        if not duration and cap.times:
+            break
+    end = time.time_ns()
+    node.destroy_subscription(sub)
+    pubs = f"publisher {len(infos)} 個，QoS {qos_text}"
+    if not cap.times:
+        why = ["目前沒有 publisher" if not infos else f"有 {len(infos)} 個 publisher 但沒有送出訊息（低頻或只在狀態改變時才發布）"]
+        if incompatible:
+            why.append("QoS 不相容（publisher 跟訂閱的設定對不上）")
+        wait = duration or timeout
+        print(f"[PASS] {topic}（{type_name}）在 {wait:g} 秒內沒有收到任何訊息：{'；'.join(why)}（{pubs}）。"
+              + ("下一步：低頻的 topic 加大秒數再試一次；確定應該要有訊息時用 ROS2_node_list／ROS2_node_info 看發布它的 node。"))
+        return 0
+    if not duration:
+        n, t, text = cap.head[0]
+        print(f"[PASS] {topic}（{type_name}）的一筆訊息（等了 {(t - start) / 1e9:.2f} 秒；{pubs}）：\n{text}")
+        return 0
+    if cap.descs is None:
+        cap.ready()
+    _report(topic, type_name, cap, start, end, duration, wheres, pubs, incompatible)
+    return 0
+
+
+def _report(topic, type_name, cap, start, end, duration, wheres, pubs, incompatible):
+    window = {"start_ns": start, "end_ns": end}
+    dmap = {d["key"]: d for d in cap.descs}
+    feats_by_key, flags, all_feats = {}, [], []
+    for k in cap.keys():
+        feats, fl = rd.measure_key(cap.series.get(k, {}), dmap[k], window, k)
+        feats_by_key[k] = feats
+        flags += fl
+        all_feats += list(feats.values())
+    rate = rd.rate_features(cap.times, window, data_start_ns=start, change_times=rd.change_times(all_feats))
+    changed, constant = [], []
+    for k, feats in feats_by_key.items():
+        for lab, f in feats.items():
+            name = rd.entry_name(k, lab, dmap[k])
+            (changed if rd.changed(f) else constant).append((name, f))
+    n = rate["messages"]
+    head = (f"[PASS] 觀察 '{topic}'（{type_name}）{duration:g} 秒：收到 {n} 則，{rd.pattern_text(rate)}"
+            + (f"，平均 {rate['avg_hz']} Hz" if rate.get("avg_hz") else "")
+            + f"；有變化的欄位 {len(changed)} 個、固定不變 {len(constant)} 個")
+    lines = [head, f"觀察：{rd.fmt_t(start)} ～ {rd.fmt_t(end)}（{(end - start) / 1e9:.1f} 秒）；[+秒] 是距離開始觀察的時間；{pubs}"
+             + ("；⚠️ QoS 不相容的事件 " + str(incompatible[-1]) + " 次" if incompatible else "")]
+    r = f"訊息 {n} 則（第一則 {rd.fmt_rel(cap.times[0], start)}、最後一則 {rd.fmt_rel(cap.times[-1], start)}）；發布方式：{rd.pattern_text(rate)}"
+    if rate.get("max_gap_sec") is not None:
+        r += f"，最大間隔 {rate['max_gap_sec']} 秒"
+    if rate.get("gaps"):
+        r += "；中斷 " + "、".join(f"{rd.fmt_rel(int(g['start_sec'] * 1e9), start)} 起 {g['duration_sec']} 秒" for g in rate["gaps"][:6]) \
+             + (f"…共 {rate['gap_count']} 次" if rate["gap_count"] > 6 else "")
+    if rate.get("warmup_start") or (rate.get("starts_after_window_sec", 0) > 1.0 and not rate.get("started_late")):
+        r += f"；開始觀察後 {rate['starts_after_window_sec']} 秒才收到第一則（訂閱與 discovery 的時間，或低頻）"
+    elif rate.get("started_late"):
+        r += f"；{rd.fmt_rel(cap.times[0], start)} 才開始發布（觀察開始後 {rate['starts_after_window_sec']} 秒）"
+    if rate.get("stopped_early"):
+        r += f"；{rd.fmt_rel(cap.times[-1], start)} 之後停止發布（到觀察結束 {rate['ends_before_window_sec']} 秒沒有訊息）"
+    if rate.get("pattern") != "periodic" and rate.get("times_sec"):
+        r += "；每一則：" + "、".join(rd.fmt_rel(int(x * 1e9), start) for x in rate["times_sec"])
+    lines += ["## 訊息流", r]
+    lines.append(f"## 有變化的欄位（{len(changed)} 個）")
+    for name, f in changed[:60]:
+        lines += rd.feature_lines(name, f, start, indent="  ", more="（--where 或縮短 --duration 看細節）")
+    if len(changed) > 60:
+        lines.append(f"…還有 {len(changed) - 60} 個有變化的欄位沒有列（用 --where 指定要看的欄位）")
+    if not changed:
+        lines.append("（觀察期間所有欄位都沒有變化）")
+    if constant:
+        lines.append(f"## 固定不變（{len(constant)} 個）")
+        lines += [f"- {name} = {rd.short(rd.fmt_num(f['first']) if f['kind'] == 'numeric' else (rd.state_text(f.get('first')) if f['kind'] == 'state' else f['kind']), 80)}"
+                  for name, f in constant[:40]]
+        if len(constant) > 40:
+            lines.append(f"…還有 {len(constant) - 40} 個固定不變的欄位")
+    if cap.errors:
+        lines.append("取值失敗：" + "；".join(f"{k}：{v}" for k, v in list(cap.errors.items())[:5]))
+    if wheres:
+        index_of = {t: i + 1 for i, t in enumerate(cap.times)}
+        lines.append(f"## 條件（{len(wheres)} 個）")
+        for expr in wheres:
+            c, _ = rd.parse_where(expr)
+            lines.append(rd.where_on_series(c, cap.keys(), cap.descs, cap.series, end, start, index_of)["line"])
+    raw = [(i, t, txt) for i, t, txt in cap.head] + [(i, t, cap._yaml(m)) for i, t, m in cap.tail if i > len(cap.head)]
+    if raw:
+        lines.append(f"## 原始訊息（共 {n} 則；列出 {len(raw)} 則：" + ("全部" if len(raw) == n else f"前 {len(cap.head)} 則與最後 {len(raw) - len(cap.head)} 則；"
+                                                                        f"其他的 --raw 加大或縮短 --duration") + "）")
+        used = 0
+        for i, t, txt in raw:
+            block = f"--- #{i} {rd.fmt_rel(t, start)}\n{txt}"
+            if used + len(block) > MAX_RAW_CHARS:
+                lines.append(f"…（原始訊息的篇幅上限 {MAX_RAW_CHARS} 字，其餘沒有列；上面的欄位統計涵蓋全部 {n} 則）")
+                break
+            lines.append(block)
+            used += len(block)
+    print("\n".join(lines))
 
 
 if __name__ == "__main__":
     try:
-        container, topic, timeout, duration, err, wheres = parse_cli(sys.argv[1:])
-        if err:
-            print(err)
-            sys.exit(0)
-        out = run_topic_capture(container, topic, duration, wheres) if duration else run_topic_echo(container, topic, timeout)
-        print(out if out.lstrip().startswith("[ERROR]") else with_target_marker(out, container))
-    except Exception as e:
-        print(f"[ERROR] ROS2_topic_echo 未預期的例外: {e}", file=sys.stderr)
+        if rd.in_worker():
+            raise SystemExit(worker_main(sys.argv[1:]))
+        raise SystemExit(host_main(sys.argv[1:]))
+    except SystemExit:
+        raise
+    except Exception as e:   # noqa: BLE001
+        print(f"[ERROR] ROS2_topic_echo 未預期的例外：{type(e).__name__}: {e}", file=sys.stderr)
         sys.exit(1)

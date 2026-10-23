@@ -6,7 +6,7 @@ import re
 # 專案根目錄（prompts/、skills_system/、logs/ 所在）：agent_core/ 的上一層
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # 給模型的文字都在 prompts/（可以直接改）：AGENT.md（主對話的 system prompt）、Memory.md（長期記憶）、
-# context_modes/（兩種上下文模式的規則）、analysis/（數據解析各角色）、ops/（多步驟維運的規劃與 worker）
+# context_modes/（兩種上下文模式的規則）、extract/（工具回傳的提煉：分段 worker 與整合）、ops/（多步驟維運的規劃與 worker）
 PROMPTS_DIR = os.path.join(PROJECT_ROOT, "prompts")
 
 
@@ -121,7 +121,6 @@ TOOL_RESULTS_DIRNAME = "tool_results"
 TOOL_RESULTS_INDEX = "index.md"
 TOOL_RESULTS_KEEP = int(os.environ.get("AGENT_TOOL_RESULTS_KEEP", "200"))
 TOOL_RESULTS_MAX_MB = float(os.environ.get("AGENT_TOOL_RESULTS_MAX_MB", "50"))
-TOOL_RESULT_FILE_RE = re.compile(r"^\d{8}_\d{6}_\d{3,}_.+\.md$")
 
 # 🔎 工具使用檢索清單（logs/tool_results/tools_use_index.md）：跟 index.md 不同檔、不同用途——index.md 是
 # 「每次執行都記一筆」的稽核清單，會隨 _prune_tool_results 一起被裁；這份只有真的觸發過任務導向擷取
@@ -143,7 +142,7 @@ SKILL_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{1,40}$")
 # 會改變狀態（建容器、送工單、寫記憶、切換目錄／容器）的技能：流程技能的步驟用到它們時，草稿預覽與規格會提醒（執行時照常確認）
 NON_READONLY_SKILLS = {"docker_est", "workpackage_send", "workpackage_cancel", "overpending_cancel", "modify_memory", "change_dir", "docker_open",
                        "docker_ctl", "file_ops", "ROS2_param", "ROS2_topic_pub", "rmf_handshake", "host_runcmd", "ops_run",
-                       "mcap_recorder", "mcap_slicer"}
+                       "mcap_recorder", "mcap_slicer", "ROS2_domain_id", "ROS2_workspace_env"}
 
 # 使用者角色但實為工具回傳的訊息前綴（見 _split_for_compression 的配對規則）
 TOOL_RESULT_PREFIXES = ("[tool result]",)
@@ -176,17 +175,24 @@ ANALYSIS_REPORT_HEAD = "[PASS] 📊 數據事實報告"
 ANALYSIS_ANSWER_NOTE = "（依這份報告回答使用者"
 # _content_for_context 退回「只給成功／失敗判定」時的固定開頭（/summarize off 或摘要 session 失敗）；UI 據此標示 AI 實際收到的是哪一種。
 TOOL_REDUCED_TAG = "[tool result - 已精簡]"
-# 獨立 session 一次最多讀多少原始輸出（字元）：超過就保留頭尾、明確告知中間省略了多少（見 _clip_tool_output）。
-# 16000 字 ≈ 8500 tokens，加上 system prompt 與錨點仍遠低於 NUM_CTX；小記憶體設備可用環境變數調低。
-TOOL_SUMMARY_INPUT_MAX_CHARS = int(os.environ.get("AGENT_TOOL_SUMMARY_INPUT_CHARS", "16000"))
-TOOL_SUMMARY_MAX_CHARS = 400      # 摘要長度目標（字，寫進 prompt）；門檻 500 tokens ≈ 950 字，摘要要明顯小於它才有意義
-TOOL_SUMMARY_MAX_PREDICT = 1200   # 摘要輸出的 num_predict 硬上限；被截斷時 JSON 解析失敗會退回原文
-# summarize_tool_result 的自動追問：not_covered 有缺口且摘要自己給出 suggested_questions 時，最多對同一份
-# 存檔自動再 result_grep 幾次（見該方法內的迴圈）。停止條件是機械的（跳數上限／grep 落空／沒有關鍵字），
-# 不要求任何模型判斷「問題本身夠不夠明確」——跳滿仍未涵蓋就誠實回報，不偽裝成已解決。
-TOOL_SUMMARY_MAX_FOLLOWUP_HOPS = int(os.environ.get("AGENT_TOOL_SUMMARY_MAX_HOPS", "2"))
-GREP_NO_HIT_RE = re.compile(r"共 0 行命中")   # result_grep_cmd.py 的標頭；自動追問遇到就停，不拿空結果去擷取
-RECALL_MAX_RECORDS = 3   # result_recall 一次最多讀幾份存檔（交給同一個獨立 session；輸入上限平均分給每一份）
+# 🧩 工具回傳的提煉（agent_core/extract.py；summarize_tool_result 與 result_recall 共用）：程式依原文的結構切段 → 每段一個 worker
+# 摘出跟問題有關的事實（附原文的行號，程式核對名稱與數值）→ 整合成交給主對話的重點。只有一段時一次呼叫直接寫結果。
+# 全文都會讀（以前超過 16000 字只讀頭尾，中間的內容主對話永遠看不到）；每一次的切段、各段的結果、核對、整合都存在 logs/extract_jobs/<編號>/。
+EXTRACT_CHUNK_CHARS = int(os.environ.get("AGENT_EXTRACT_CHUNK_CHARS", "8000"))   # 每段最多幾個字（≈4200 tokens；worker 的輸入）
+# 一次提煉最多讀幾段（≈ 8 × 8000 字）：更長的依跟問題的關係（問題裡的名稱、數字出現在哪幾段）挑，沒讀的行號範圍由程式寫進「未涵蓋」，
+# 主對話可以用更具體的問題 result_recall（再挑一次）或 result_view 看那一段。模型呼叫是一個一個排隊的（Ollama 同一個模型一個 slot），段數就是等待時間。
+EXTRACT_MAX_CHUNKS = int(os.environ.get("AGENT_EXTRACT_MAX_CHUNKS", "8"))
+EXTRACT_PARALLEL = int(os.environ.get("AGENT_EXTRACT_PARALLEL", "2"))   # 同時送出幾個 worker（同一個模型時只是重疊網路與排隊）
+EXTRACT_WORKER_FACTS = 12           # 每個 worker 最多摘幾條事實（寫進 prompt）
+EXTRACT_EVIDENCE_CHARS = 12000      # 交給整合的「事實引用的原文」最多幾個字（超過的事實只給行號、不附原文）
+# 交給主對話的重點的長度目標（字，寫進 prompt）：原文的四分之一，介於 400～1500 字。以前固定 400 字，長的輸出（12 台車、幾十個錯誤）主對話
+# 只拿得到幾條，使用者一問細節就要回存檔；工具回傳門檻 500 tokens ≈ 950 字，摘要不比原文短時主對話直接收到原文（turn._content_for_context）。
+EXTRACT_SUMMARY_MIN_CHARS, EXTRACT_SUMMARY_MAX_CHARS = 400, 1500
+EXTRACT_WORKER_PREDICT = 1500       # worker 輸出的 num_predict 上限（被截斷時 JSON 解析失敗，那一段記成提煉失敗、寫進未涵蓋）
+EXTRACT_SYNTH_PREDICT = 2500        # 整合（與一次寫完）的 num_predict 上限
+EXTRACT_JOBS_DIRNAME = "extract_jobs"
+EXTRACT_JOBS_KEEP = int(os.environ.get("AGENT_EXTRACT_JOBS_KEEP", "500"))   # 提煉的存檔只留最近幾次（每次幾十 KB：prompt 含那一段的原文）
+RECALL_MAX_RECORDS = 3   # result_recall 一次最多讀幾份存檔（幾份的段落交給 worker，同一個整合看全部）
 
 # run_tool 載入技能規格文件時回傳字串的固定開頭。規格文件是「按需載入」機制的核心，
 # 內容（尤其是實際腳本路徑與參數格式）必須完整進入上下文，因此 _content_for_context
@@ -227,7 +233,7 @@ TOOL_CLEARED_TAG = "[tool result - 已清除]"       # 被清成佔位的舊回�
 # AGENT_GUARDED_SKILLS 可覆寫清單（逗號分隔，none＝全部不擋）；/guard off 只對目前 session 關閉。
 # =========================================================
 _GUARDED_DEFAULT = ("workpackage_send,workpackage_cancel,overpending_cancel,docker_est,docker_runcmd,"
-                    "host_runcmd,docker_ctl,file_ops,ROS2_param,ROS2_topic_pub,rmf_handshake,ops_run")
+                    "host_runcmd,docker_ctl,file_ops,ROS2_param,ROS2_topic_pub,ROS2_domain_id,ROS2_workspace_env,rmf_handshake,ops_run")
 _guarded_env = os.environ.get("AGENT_GUARDED_SKILLS", _GUARDED_DEFAULT).strip()
 GUARDED_SKILLS = set() if _guarded_env.lower() in ("", "none", "off") else {s.strip() for s in _guarded_env.split(",") if s.strip()}
 GUARD_DEFAULT = os.environ.get("AGENT_GUARD", "1").strip().lower() not in ("0", "off", "false", "no")

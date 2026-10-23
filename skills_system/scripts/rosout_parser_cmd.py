@@ -149,6 +149,10 @@ def host_main(argv):
     if err:
         print(err)
         return 2
+    err = rd.not_recording(args.data or args.data_opt, "rosout_parser")   # 主機上的一般檔案：先指到對的技能，不要先叫人開容器
+    if err:
+        print(err)
+        return 2
     container, err = resolve_container(args.container)
     if err:
         print(err)
@@ -167,7 +171,7 @@ def host_main(argv):
     rc, out = rd.run_in_container(os.path.abspath(__file__), wargs, container=container, timeout=timeout,
                                   what="rosout_parser（Log 智慧過濾）",
                                   timeout_hint="Log 很多時可以先用 --level WARN、--node 縮小範圍。")
-    print(rd.finalize_output(out) + cli.ignored_note())
+    print(rd.finalize_output(out, cli.ignored_note()))
     return rc
 
 

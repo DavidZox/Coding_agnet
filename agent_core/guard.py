@@ -2,8 +2,8 @@
 
 跟 Plan 模式的核准關卡同一個原則：確認由程式路徑保證，不靠模型記得要先問。判斷在這裡（guard_check），
 執行在 DispatchMixin.run_tool：沒有 approved=True 就不執行被擋的技能（CLI／Web 以外的呼叫端也一樣擋得住）。
-哪些技能要擋見 config.GUARDED_SKILLS；docker_runcmd 的指令若是唯讀（is_readonly_shell）就放行，
-workpackage_send 加 --dry-run 只顯示不送，也放行。流程技能（make_skill）沒有自己的腳本，它的每一步都是一般的
+哪些技能要擋見 config.GUARDED_SKILLS；各技能的查詢用法放行（docker_runcmd／host_runcmd 的唯讀指令、workpackage_send --dry-run、
+docker_ctl status、ROS2_param get、rmf_handshake status…），參數一律照腳本自己的解析（_guard_parse）判斷，不另外解析。流程技能（make_skill）沒有自己的腳本，它的每一步都是一般的
 run_tool，被擋的技能照樣在那一步確認。"""
 import os
 import re
@@ -23,6 +23,8 @@ _GUARD_REASONS = {
     "file_ops": "修改本機的檔案或目錄（原檔會先備份）",
     "ROS2_param": "修改執行中 node 的參數",
     "ROS2_topic_pub": "對 ROS 2 topic 發布訊息：正在跑的系統會收到",
+    "ROS2_domain_id": "改 ROS_DOMAIN_ID：寫進容器的 ~/.bashrc，之後開的 shell（含其他 ROS 2 技能）都會用新的 domain",
+    "ROS2_workspace_env": "在容器內載入 Workspace 後執行指令：這個指令不在唯讀清單裡，可能會改變容器內的狀態",
     "rmf_handshake": "手動回交握或補發完成訊號：調度系統會照這個訊號派工或前進到下一站",
 }
 
@@ -60,9 +62,11 @@ _ROS2_READONLY = {
     "wtf": None,
 }
 _DOCKER_READONLY = {"ps", "logs", "inspect", "images", "image", "version", "info", "port", "top", "stats", "history", "diff"}
-_FIND_WRITES = {"-delete", "-exec", "-execdir", "-ok", "-okdir", "-fprint", "-fprintf", "-fls"}
+_GIT_READONLY = {"status", "log", "diff", "show", "branch", "rev-parse", "ls-files", "blame", "describe", "remote", "tag"}
+_FIND_WRITES = {"-delete", "-exec", "-execdir", "-ok", "-okdir", "-fprint", "-fprint0", "-fprintf", "-fls"}
 _HARMLESS_REDIRECT = re.compile(r"\d?>\s*/dev/null|\d?>&\d")
-_SEGMENT_SPLIT = re.compile(r"&&|\|\||;|\||\n")
+# 一段一段檢查：&&、||、;、|、|&、換行，以及單一個 &（背景執行：`sleep 1 & rm -rf build` 的後半段也要檢查，以前整串被當成 sleep 放行）
+_SEGMENT_SPLIT = re.compile(r"&&|\|\||\|&|;|\||\n|&")
 
 
 def _segment_readonly(segment):
@@ -96,6 +100,11 @@ def _segment_readonly(segment):
         return sub[0] in _DOCKER_READONLY and not (sub[0] == "stats" and "--no-stream" not in toks)
     if cmd == "find":
         return not any(t in _FIND_WRITES for t in toks)
+    if cmd == "git":            # 查詢類（status、log、diff…）；branch／tag／remote 帶參數會改狀態，只放行列出的寫法
+        sub = [t for t in toks[1:] if not t.startswith("-")]
+        if not sub or sub[0] not in _GIT_READONLY:
+            return False
+        return not (sub[0] in ("branch", "tag", "remote") and len(sub) > 1 and sub[1] not in ("-v", "--list", "show", "get-url"))
     if cmd == "top":
         return "-b" in toks
     if cmd in ("source", "."):
@@ -111,7 +120,7 @@ def _segment_readonly(segment):
 
 def is_readonly_shell(command):
     """容器內的 shell 指令是否只讀不寫。有 >／>> 轉向（/dev/null 除外）、反引號、$( ) 就不算；
-    其餘每一段的第一個字要在白名單裡（ros2 看群組與動作，find 不能帶 -delete／-exec）。"""
+    其餘每一段（&&、||、;、|、&、換行分開）的第一個字要在白名單裡（ros2 看群組與動作，find 不能帶 -delete／-exec／-fprint）。"""
     text = str(command or "").strip()
     if not text:
         return False
@@ -122,44 +131,78 @@ def is_readonly_shell(command):
     return bool(segments) and all(_segment_readonly(s) for s in segments)
 
 
-def _docker_runcmd_command(args):
-    """docker_runcmd 的參數 → 真正要在容器內執行的指令（--timeout 與它的值略過）。比照腳本：只有一個位置參數時
-    整串是指令；有好幾個時，第一個若像容器名稱（不是白名單裡的指令字）就是容器、其餘接起來是指令，否則全部接起來
-    都是指令（模型常忘記引號：docker_runcmd ls -l /opt/ros）。只看最後一個參數會把 ls -l /opt/ros 誤判成 /opt/ros。"""
-    positional, i = [], 0
-    while i < len(args):
-        if args[i] == "--timeout":
-            i += 2
-            continue
-        positional.append(args[i])
-        i += 1
-    if len(positional) <= 1:
-        return positional[0] if positional else ""
-    first = positional[0]
-    looks_like_container = (re.match(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$", first) is not None
-                            and first not in _READONLY_CMDS and first not in ("ros2", "find", "top", "source"))
-    return " ".join(positional[1:] if looks_like_container else positional)
-
-
 class GuardMixin:
 
     def _guard_exempt(self, skill, args):
-        """被擋的技能在這些參數下其實不會改變狀態：workpackage_send --dry-run、docker_runcmd 的唯讀指令。"""
-        if skill == "workpackage_send":
-            return "--dry-run" in args
-        if skill == "docker_runcmd":
-            command = _docker_runcmd_command(args)
+        """被擋的技能在這些參數下其實不會改變狀態：workpackage_send --dry-run、docker_runcmd／host_runcmd 的唯讀指令、各技能的查詢用法。
+        參數一律照腳本自己的解析（parse_args）判斷——以前關卡自己再解析一次，跟腳本不一致時會被繞過（`WP1 a3 --desc --dry-run` 真的送出）。"""
+        if skill == "workpackage_send":                # 真的 --dry-run 才不送（照腳本的解析：`--desc --dry-run` 這種被當成值的不算）
+            from skills_system.scripts.workpackage_send_cmd import parse_args as send_args
+            p = send_args(args)
+            return not p.get("error") and bool(p.get("dry_run"))
+        if skill == "docker_runcmd":                   # 指令照腳本的解析取（以前關卡自己解析：沒加引號的 `mkdir test` 被當成「容器 mkdir、指令 test」放行）
+            p = self._guard_parse(skill, args)
+            if p.get("error"):                         # 參數錯、不會自己結束的指令：腳本不執行，不必問
+                return p.get("error_kind") in ("usage", "refused")
+            command = p.get("command") or ""
             return "{" not in command and is_readonly_shell(command)   # 含 {…}（例如流程技能沒代入的佔位符）看不出實際指令，不放行
-        if skill == "host_runcmd":                     # 主機上的唯讀指令（ls、cat、docker ps／logs…）不用問
-            command = " ".join(a for a in args if a != "--timeout" and not a.isdigit())
-            return "{" not in command and is_readonly_shell(command)
+        if skill == "host_runcmd":                     # 主機上的唯讀指令（ls、cat、docker ps／logs、git status…）不用問；指令照腳本的解析取
+            from skills_system.scripts.host_runcmd_cmd import parse_args as host_args
+            _, command, err = host_args(args)
+            return not err and "{" not in command and is_readonly_shell(command)
         if skill == "docker_ctl":                      # status／logs／inspect／env 是唯讀的
-            return bool(args) and args[0] in ("status", "logs", "inspect", "env")
+            p = self._guard_parse(skill, args)
+            return bool(p.get("readonly")) or (bool(p.get("error")) and p.get("error_kind") == "usage")
         if skill == "ROS2_param":                      # list／get 是唯讀的（容器名稱可以在最前面）
-            return any(a in ("list", "get") for a in args[:2]) and "set" not in args[:2]
-        if skill == "rmf_handshake":                   # status 是唯讀的
-            return bool(args) and args[0] == "status"
+            p = self._guard_parse(skill, args)
+            return bool(p.get("readonly")) or bool(p.get("error"))
+        if skill == "ROS2_topic_pub":                  # 參數錯的不會發布
+            return bool(self._guard_parse(skill, args).get("error"))
+        if skill == "ROS2_domain_id":                  # 查詢不用問；set 才會改 ~/.bashrc
+            p = self._guard_parse(skill, args)
+            return bool(p.get("error")) or p.get("action") != "set"
+        if skill == "ROS2_workspace_env":              # 只確認、--discover、或唯讀的 --command 不用問
+            p = self._guard_parse(skill, args)
+            command = p.get("command") or ""
+            return bool(p.get("error")) or not command or ("{" not in command and is_readonly_shell(command))
+        if skill == "docker_est":                      # 參數錯的不會建容器
+            return bool(self._guard_parse(skill, args).get("error"))
+        if skill == "rmf_handshake":                   # status 是唯讀的（照腳本的解析：選項的值不會被當成動作）
+            from skills_system.scripts.rmf_handshake_cmd import parse_args as hs_args
+            p = hs_args(args)
+            return not p.get("error") and bool(p.get("readonly"))
         return False
+
+    def _guard_parse(self, skill, args):
+        """照腳本自己的參數解析（各腳本的 parse_args／parse_cli，純函式、不執行任何動作）→ dict（至少有 error）。目標容器用 harness
+        的狀態（腳本是從環境變數讀）；docker_runcmd／docker_ctl 要判斷第一個參數是不是容器時會查一次容器清單。"""
+        target = getattr(self, "target_container", "") or ""
+        try:
+            if skill == "docker_runcmd":
+                from skills_system.scripts.docker_runcmd_cmd import parse_args
+                return parse_args(args, target=target)
+            if skill == "docker_ctl":
+                from skills_system.scripts.docker_ctl_cmd import parse_args
+                return parse_args(args, target=target)
+            if skill == "ROS2_param":
+                from skills_system.scripts.ROS2_param_cmd import parse_cli
+                return parse_cli(args, resolve=False)
+            if skill == "ROS2_topic_pub":
+                from skills_system.scripts.ROS2_topic_pub_cmd import parse_cli
+                return parse_cli(args, resolve=False)
+            if skill == "ROS2_domain_id":
+                from skills_system.scripts.ROS2_domain_id_cmd import parse_cli
+                return parse_cli(args)
+            if skill == "ROS2_workspace_env":
+                from skills_system.scripts.ROS2_workspace_env_cmd import parse_args
+                return parse_args(args)
+            if skill == "docker_est":
+                from skills_system.scripts.docker_est_cmd import parse
+                opts, err = parse(args)
+                return dict(opts or {}, error=err)
+        except Exception as e:   # noqa: BLE001  解析不了就當成要確認（寧可多問一次）
+            return {"error": None, "parse_failed": f"{type(e).__name__}: {e}"}
+        return {"error": None}
 
     def guard_check(self, parsed):
         """這一輪的 action 執行前需不需要使用者確認。回傳 None（不需要），或
@@ -203,6 +246,10 @@ class GuardMixin:
                 return None
         else:
             reason = _GUARD_REASONS.get(skill, "這個技能會改變系統狀態")
+            if skill in ("docker_runcmd", "docker_ctl"):   # 實際會操作的容器（省略名稱、部分名稱時使用者看得到是哪一個）
+                container = self._guard_parse(skill, args).get("container")
+                if container:
+                    reason += f"；容器：{container}"
         return {"skill": skill or script_name, "script": script_name,
                 "command": f"scripts/{script_name} {remainder}".strip(), "reason": reason}
 

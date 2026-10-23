@@ -1,27 +1,30 @@
 ---
 type: Tool
 title: 容器狀態與控制
-description: 看容器本身的狀態、log、設定（環境變數、掛載、網路），以及啟動／停止／重新啟動容器（會先請使用者確認）。
-version: 1.0.0
+description: 看容器本身的狀態、log（stdout＋stderr，可接著看新的）、設定（環境變數、掛載、網路），以及啟動／停止／重新啟動容器（會先請使用者確認）。
+version: 2.0.1
 dependencies: ["docker"]
 ---
 
 # 用途
-操作的是容器本身（等同主機上的 `docker start／stop／restart／logs／inspect`），不是在容器裡面執行指令（那是 docker_runcmd）。
-容器停了要找原因：先 `status` 看結束碼、再 `logs` 看最後的輸出；確認原因後、使用者要求時才 `start`／`restart`。
-`start`／`stop`／`restart` 會改變狀態，執行前系統會請使用者確認；`status`／`logs`／`inspect`／`env` 是唯讀的。
+操作容器本身（主機上的 `docker start／stop／restart／logs／inspect`），不是在容器裡執行指令（那是 docker_runcmd）。使用者要啟動／重啟：直接 `start`／`restart`（會先請使用者確認），回報附這次啟動的 log、又停了會寫原因；只問容器為什麼停了：先 `status`
+看結束碼的意思、再 `logs` 看最後的輸出，不要自己啟動。時間是主機本地時間（標時區）。
+容器名稱省略＝目前的目標容器（只認完全相同的名稱）；有寫名稱時可以是唯一的部分名稱。
 
 # 語法
-`EXECUTE: scripts/docker_ctl_cmd.py <status|logs|inspect|env|start|stop|restart> [容器名稱] [--tail N] [--grep 關鍵字]`
-* 容器名稱可省略＝目前的目標容器；只寫部分名稱時，剛好對到一個容器才會用它（對到好幾個會列出來請你確認）。
-* `logs`：預設最後 40 行；`--grep ERROR` 只看含關鍵字的行（會說有幾行、最後一行是什麼）。`env --grep ROS` 只看相關的環境變數。
+`EXECUTE: scripts/docker_ctl_cmd.py <status|logs|inspect|env|start|stop|restart> [容器名稱] [選項]`
+* `logs`：stdout 與 stderr 依時間合併（`2>` 標 stderr）。`--tail N` 預設 40、上限 2000；`--since`／`--until`：`10m`、`2h`、`14:05`、
+  `2026-10-23T14:05:00` 或上次輸出最後的游標。超過 80 行或 `--dedup` 時整理成唯一訊號＋最後 30 行原文（`--raw` 不整理）；`--grep`（可重複）掃最後 5000 行。
+* `env --grep ROS` 篩選；`inspect` 的環境變數只列前 40 個。`stop`／`restart` 等 10 秒後強制結束；`start`／`restart` 後等 2 秒回報。
 
 # 範例
 `EXECUTE: scripts/docker_ctl_cmd.py status nav2_test`　`EXECUTE: scripts/docker_ctl_cmd.py logs log_writer --grep ERROR`
-`EXECUTE: scripts/docker_ctl_cmd.py env web_cache --grep CACHE`　`EXECUTE: scripts/docker_ctl_cmd.py restart db_backup`
+`EXECUTE: scripts/docker_ctl_cmd.py logs --since 10m --dedup`　`EXECUTE: scripts/docker_ctl_cmd.py restart db_backup`
 
 # 回傳
-`[PASS] <容器>：Up（執行中…）` 或 `Exited（結束碼 N，… 結束）`；start／stop／restart 回報「之前 → 之後」的狀態與最後幾行 log（一啟動就結束時看得到原因）。
+`[PASS] <容器>：Up（執行中…）` 或 `Exited（結束碼 N：意思；… 結束）`＋映像、指令、重新啟動政策、OOMKilled、健康檢查。logs 第一行有行數、
+stdout／stderr 各幾行、狀態，最後一行「下次接著看新的：--since …」。start／restart 回報「之前 → 之後」與這次的 log；又停了會明說，不要直接再啟動。
 
 # 異常
-容器不存在、名稱對到好幾個、docker 沒有回應：`[ERROR]` 說明原因。使用者沒有同意（確認被拒）就不會執行，不要原樣重送。
+* 名稱對不到或好幾個、目標容器已不存在 → 列出現有的容器，改用完整名稱或 docker_open。log driver 讀不回、docker 沒回應 → `[ERROR]` 說原因。
+* 不認得的選項 → `[ERROR]`＋用法。使用者拒絕確認就不會執行，不要原樣重送。

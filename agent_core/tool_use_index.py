@@ -13,6 +13,7 @@ from .config import (
 
 
 _TRAILING_ELLIPSIS_RE = re.compile(r"(\s*(…|\.{3,}))+$")
+INDEX_TAIL_BYTES = 256 * 1024   # 檢索清單只讀最後這麼多（顯示最近幾十筆用不到更前面的；整份留在檔案裡當歷史）
 
 
 def tidy_hint(text):
@@ -112,15 +113,22 @@ class ToolUseIndexMixin:
 
     def _index_entries(self, exclude=(), kinds=("tool", "vision"), limit=None):
         """tools_use_index.md 最近 limit 筆（預設 TOOL_USE_INDEX_SHOW；新→舊）→ [{"id", "ts", "hint", "kind"}]，同一編號只留
-        最新一筆；kinds 決定要哪幾種（result_kind），各自計名額。exclude 排除特定編號（例如正在被摘要或被 recall 的那一筆自己）。"""
+        最新一筆；kinds 決定要哪幾種（result_kind），各自計名額。exclude 排除特定編號（例如正在被提煉或被 recall 的那一筆自己）。
+        原始檔已經被清掉的那幾筆不列（清單永遠只 append、留著當歷史，但顯示出來只會讓主對話 recall 一份不在的存檔）；檔案只讀最後
+        INDEX_TAIL_BYTES（清單一直長大，每次組 system prompt 都要讀）。"""
         limit = TOOL_USE_INDEX_SHOW if limit is None else limit
         if limit <= 0:
             return []
+        d = self.results_dir()
         try:
-            with open(os.path.join(self.results_dir(), TOOL_USE_INDEX_NAME), encoding="utf-8") as f:
-                lines = [ln for ln in f.read().splitlines() if ln.strip()]
+            with open(os.path.join(d, TOOL_USE_INDEX_NAME), "rb") as f:
+                f.seek(0, os.SEEK_END)
+                size = f.tell()
+                f.seek(max(0, size - INDEX_TAIL_BYTES))
+                raw = f.read().decode("utf-8", errors="replace")
         except OSError:
             return []
+        lines = [ln for ln in raw.splitlines()[(1 if size > INDEX_TAIL_BYTES else 0):] if ln.strip()]
         excluded = {str(x).lstrip("#") for x in exclude if x}
         entries, seen = [], set()
         for ln in reversed(lines):
@@ -130,7 +138,7 @@ class ToolUseIndexMixin:
                 continue
             seen.add(rid)
             kind = result_kind(parts[3])
-            if kind not in kinds:
+            if kind not in kinds or not os.path.exists(os.path.join(d, os.path.basename(parts[3].strip()))):
                 continue
             entries.append({"id": int(rid), "ts": parts[1].strip(), "hint": parts[4].strip(), "kind": kind})
             if len(entries) >= limit:
@@ -182,11 +190,12 @@ class ToolUseIndexMixin:
         hint = tidy_hint(index_hint)
         if not result_id or not filename or not hint:
             return
+        from .archive import ARCHIVE_LOCK
         try:
             d = self.results_dir()
             os.makedirs(d, exist_ok=True)
             line = f"#{result_id} | {time.strftime('%Y-%m-%d %H:%M')} | {self.session_id} | {filename} | {hint}"
-            with open(os.path.join(d, TOOL_USE_INDEX_NAME), "a", encoding="utf-8") as f:
+            with ARCHIVE_LOCK, open(os.path.join(d, TOOL_USE_INDEX_NAME), "a", encoding="utf-8") as f:
                 f.write(line + "\n")
         except OSError:
             pass

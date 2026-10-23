@@ -70,12 +70,13 @@ def up():
         if img not in have:
             sd("pull", img, timeout=1800, check=True)
     sim_dir = os.path.join(HERE, "rmf_sim")
-    digest = hashlib.sha1()
-    for fn in sorted(os.listdir(sim_dir)):
-        p = os.path.join(sim_dir, fn)
-        if os.path.isfile(p):
+    digest = hashlib.sha1()   # 整個 rmf_sim/（含 fih_rmf_msgs/ 子目錄）：只改 msg 也要重建映像
+    for root, dirs, files in os.walk(sim_dir):
+        dirs.sort()
+        for fn in sorted(files):
+            p = os.path.join(root, fn)
             with open(p, "rb") as f:
-                digest.update(fn.encode() + f.read())
+                digest.update(os.path.relpath(p, sim_dir).encode() + f.read())
     want = digest.hexdigest()[:12]
     got = sd("image", "inspect", SIM_IMAGE, "--format", "{{index .Config.Labels \"src\"}}").stdout.strip()
     if got != want:

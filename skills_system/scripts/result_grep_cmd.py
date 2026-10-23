@@ -8,8 +8,8 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _results_common import (clip, compile_pattern, current_session, describe, list_result_files, read_header, read_lines,
-                             resolve_result, results_dir, search_lines)
+from _results_common import (clip, compile_pattern, current_session, describe, list_result_files, numbered, read_body, resolve_result,
+                             results_dir, search_lines)
 
 DEFAULT_CONTEXT, MAX_CONTEXT = 3, 10
 DEFAULT_MAX_HITS, MAX_MAX_HITS = 40, 200
@@ -69,10 +69,10 @@ def target_files(ref):
     return ([path] if path else []), err
 
 
-def block_bounds(lines, i, body_start):
+def block_bounds(lines, i):
     """--block：找包住第 i 行（0-based）的 --- #k 區塊；沒有分隔行就回 None。"""
     start = None
-    for j in range(i, body_start - 2, -1):
+    for j in range(i, -1, -1):
         if BLOCK_RE.match(lines[j]):
             start = j
             break
@@ -87,31 +87,28 @@ def block_bounds(lines, i, body_start):
 
 
 def render_file(path, regex, ctx, budget_hits, block):
-    """回傳 (lines_out, n_hits, timed_out, shown)。行號是存檔裡的實際行號（含檔頭），result_view --from 可直接用。"""
-    meta, body_start = read_header(path)
-    lines = read_lines(path)
-    body_idx = list(range(body_start - 1, len(lines)))
-    hits, timed_out = search_lines([lines[i] for i in body_idx], regex)
-    hits = [body_start - 1 + h for h in hits]
+    """回傳 (lines_out, n_hits, timed_out, shown)。行號是原文的行號（不含存檔的檔頭），result_view --from 可直接用。"""
+    meta, lines = read_body(path)
+    hits, timed_out = search_lines(lines, regex)
     fn = os.path.basename(path)
     if not hits:
-        return [f"{describe(meta, fn)}：0 行命中（原文共 {len(lines) - body_start + 1} 行）"], 0, timed_out, 0
-    out = [f"{describe(meta, fn)}：命中 {len(hits)} 行（原文共 {len(lines) - body_start + 1} 行）"
+        return [f"{describe(meta, fn)}：0 行命中（原文共 {len(lines)} 行）"], 0, timed_out, 0
+    out = [f"{describe(meta, fn)}：命中 {len(hits)} 行（原文共 {len(lines)} 行）"
            + (f"，列出前 {min(len(hits), budget_hits)} 個" if len(hits) > budget_hits else "")]
     shown = 0
     last_end = -1
     for h in hits[:budget_hits]:
         if block:
-            b = block_bounds(lines, h, body_start)
-            s, e = b if b else (max(body_start - 1, h - ctx), min(len(lines), h + ctx + 1))
+            b = block_bounds(lines, h)
+            s, e = b if b else (max(0, h - ctx), min(len(lines), h + ctx + 1))
         else:
-            s, e = max(body_start - 1, h - ctx), min(len(lines), h + ctx + 1)
+            s, e = max(0, h - ctx), min(len(lines), h + ctx + 1)
         if s <= last_end:          # 與前一段重疊：接著印，不重複
             s = last_end + 1
         if s < e and last_end >= 0 and s > last_end + 1:
             out.append("--")
         for j in range(s, e):
-            out.append(f"{'>' if j == h else ' '} L{j + 1}: {clip(lines[j])}")
+            out.append(numbered(j + 1, clip(lines[j]), ">" if j == h else " "))
         last_end = max(last_end, e - 1)
         shown += 1
     return out, len(hits), timed_out, shown
@@ -139,7 +136,8 @@ def main(argv):
             sections.append(f"（命中數達上限 {opts['max_hits']}，縮小關鍵字或加 --max）")
             break
     head = (f"[PASS] 在 {len(paths)} 個結果檔中搜「{opts['pattern']}」：共 {total_hits} 行命中"
-            f"（每個命中附前後 {opts['ctx']} 行{'／整則訊息' if opts['block'] else ''}；行號可用 result_view <編號> --from 行號 看更多）")
+            f"（每個命中附前後 {opts['ctx']} 行{'／整則訊息' if opts['block'] else ''}；> 是命中的行，行號是原文的行號，"
+            f"result_view <編號> --from <行號> 看更多）")
     if total_hits == 0:
         head += "；可換同義詞（error|fail|warn）、用 result_view 看原文的欄位名稱，或確認編號是否正確"
     if timed:
@@ -154,5 +152,5 @@ if __name__ == "__main__":
     try:
         print(main(sys.argv[1:]))
     except Exception as e:
-        print(f"[ERROR] result_grep 未預期的例外: {e}", file=sys.stderr)
+        print(f"[ERROR] result_grep 未預期的例外: {type(e).__name__}: {e}", file=sys.stderr)
         sys.exit(1)

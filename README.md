@@ -89,8 +89,9 @@ Topic 頻率中途改變不會列成事件。完整的在〈設計筆記〉第 6
 
 1. 主 session 每輪回一個 JSON `{thought, reply, action}`，harness **只看 `action`**，`reply` 裡的文字不會被執行。
 2. `action` 填技能名稱 → 回傳該技能的規格文件（這一輪不執行）；填規格標明的腳本路徑 → 才真的執行。
-3. 每次執行的完整原文都存成 `#編號`。回傳怎麼進主對話看上下文模式：**harness**（預設）超過 500 tokens 時交給一次性的獨立 session 依問題
-   擷取重點；**claude_code** 原文直接進上下文，太大保留頭尾並標明存檔編號。使用者之後追問舊資料時，模型用 `result_recall <編號>` 回到原文重新提煉。
+3. 每次執行的完整原文都存成 `#編號`。回傳怎麼進主對話看上下文模式：**harness**（預設）超過 500 tokens 時交給獨立 session 依問題提煉——
+   長的輸出由程式依結構切段、每段一個 worker、再整合，每條事實附原文的行號、由程式核對，全部的中間產物存在 `logs/extract_jobs/`；
+   **claude_code** 原文直接進上下文，太大保留頭尾並標明存檔編號與中間有哪幾節。使用者之後追問舊資料時，模型用 `result_recall <編號>` 回到原文重新提煉。
 4. system prompt 只放不常變的內容（KV cache 才能重用）；工作目錄、目標容器、核准的計畫這些常變的小東西，每次接在送出內容的最後面。
 5. 上下文超過水位時，舊對話融合成一份滾動摘要；使用者的原話由程式逐字保留，被壓掉的對話也存成 `#編號`。
 6. 主對話的程式把關：同樣的動作一直得到同樣的結果時提醒、第四次停下；沒有執行卻宣稱做完時提醒；路徑找不到時列出相近的路徑。
@@ -142,7 +143,7 @@ Coding_agnet/            （資料夾名稱沿用）
 ├── evals/               評測：chat/、analysis/、datagen/、ops/；results/（.gitignore）
 ├── doc/                 文件；diagrams/（.puml 與產生器）、images/（圖）、archive/（第一～九輪的根因版本，只供閱讀）
 ├── test_data/           實機錄製、正確答案、回歸工具（只在本機，.gitignore）
-└── logs/                執行時產生：工具回傳存檔、檢索清單、軌跡、摘要、analysis_jobs/、ops_jobs/（.gitignore）
+└── logs/                執行時產生：工具回傳存檔、檢索清單、軌跡、摘要、extract_jobs/、analysis_jobs/、ops_jobs/（.gitignore）
 ```
 
 ## 文件

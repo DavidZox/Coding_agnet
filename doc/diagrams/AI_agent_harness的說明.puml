@@ -46,7 +46,8 @@ rectangle NodeAgent #D1E5F0 [
   * 執行腳本 → 記軌跡 → 原文存檔 #編號；
     每則訊息另留一份對話紀錄（/make_skill 用，壓縮與 /clear 都不影響）
   * 依上下文模式決定工具回傳怎麼進主對話：
-    harness＝獨立 session 擷取重點；claude_code＝原文（太大保留頭尾）
+    harness＝獨立 session 提煉重點（長的切段、每段一個 worker、再整合）；
+    claude_code＝原文（太大保留頭尾，註明中間有哪幾節）
   * 替模型維護狀態：工作目錄、目標容器、任務線、計畫
   * 上下文超過水位就壓成滾動摘要（使用者原話逐字保留、
     被壓掉的對話存檔）
@@ -65,11 +66,12 @@ rectangle NodeLLM #FFE6CC [
 rectangle NodeSub #FCE5CD [
   **一次性獨立 session（不碰主對話、做完即丟）**
   ----
-  * 工具摘要 summarize_tool_result：>500 tokens 的回傳
+  * 工具回傳的提煉 summarize_tool_result：>500 tokens 的回傳
     （只在 harness 模式）
   * 回原文提煉 result_recall：main session 主動選
-    （兩者共用 _extract_task_oriented：回答／事實／未涵蓋／
-     延伸方向／index_hint／related_records ＋下一步建議）
+    （兩者共用 extract.py：程式依結構切段 → 每段一個 worker（附行號）
+     → 整合（回答／事實附行號／未涵蓋／index_hint／related_records）；
+     每一步寫的名稱與數值由程式核對；全部存在 extract_jobs/）
   * 滾動壓縮 summarize_messages：舊對話 → 融合摘要
   * 視覺 sub-session：在 vision/（附圖 → 結構化提取），同樣做完即丟
   * /make_skill 草擬：整段對話＋工具回傳＋操作軌跡 → 流程技能的規格
@@ -85,8 +87,9 @@ rectangle NodeSkills #D5E8D4 [
   * scripts/<name>_cmd.py：真正執行的腳本
   * 檔案系統／容器與 ROS2／調度系統／多模態／存檔回查／記憶
   * image_inspect：對影像檔路徑呼叫 vision.analyze()，
-    結果跟一般工具回傳一樣存檔、摘要
-  * 慣例：stdout 以 [PASS]／[ERROR] 開頭；計數、排序、門檻由腳本算
+    結果跟一般工具回傳一樣存檔、提煉
+  * 慣例（doc/技能撰寫規範.md）：第一行 [PASS]／[ERROR]（[ERROR] 附下一步）；
+    長的輸出分 ## 章節；計數、排序、門檻由腳本算；不讀標準輸入、有逾時
 ]
 
 rectangle NodeWorld #FFF2CC [
@@ -107,6 +110,8 @@ rectangle NodeStore #E1D5E7 [
     system prompt 另列「過去的對話片段」，保留上限另計（100 份）
   * 附圖的視覺分析也存成 #編號（vision_extract），檢索清單標〔附圖分析〕，
     可以 result_recall；原圖不保存，保留上限另計（100 份）
+  * extract_jobs/<編號>/：每一次提煉的切段、每段的結果與核對、整合、
+    每次模型呼叫的 prompt 與回覆（留最近 500 次）
   * trajectory.jsonl（操作軌跡）、summary_*.md／.json（滾動摘要＋
     使用者原話）、perf.jsonl（每次模型呼叫的耗時）
   * prompts/Memory.md（長期記憶，整份常駐；記憶只寫這裡）

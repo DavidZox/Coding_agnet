@@ -20,12 +20,13 @@ def _ms(ns):
 
 class PerfMixin:
 
-    def _timed_chat(self, kind, **kwargs):
-        """獨立 session（tool_summary、recall、compress、skill_draft）呼叫模型都走這裡：照常呼叫 ollama.chat，
-        再把 Ollama 回報的計量記進 perf.jsonl。主對話在 _chat_once 另外記（要多記 system prompt 有沒有變）。"""
+    def _timed_chat(self, kind, perf=None, **kwargs):
+        """獨立 session（tool_summary、recall 與它們的 worker／整合、compress、skill_draft…）呼叫模型都走這裡：照常呼叫 ollama.chat，
+        再把 Ollama 回報的計量記進 perf.jsonl（perf＝另外要記的欄位，例如提煉的 job、第幾段）。主對話在 _chat_once 另外記
+        （要多記 system prompt 有沒有變）。"""
         t0 = time.time()
         res = ollama.chat(**kwargs)
-        self._perf_record(kind, res, kwargs.get("model"), wall_ms=round((time.time() - t0) * 1000, 1))
+        self._perf_record(kind, res, kwargs.get("model"), wall_ms=round((time.time() - t0) * 1000, 1), **(perf or {}))
         self._side_calls_since_main += 1
         return res
 

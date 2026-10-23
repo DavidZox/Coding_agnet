@@ -1,11 +1,11 @@
 """ArchiveMixin：工具回傳的原文存檔（logs/tool_results/<session>_<編號>_<腳本>.md）與 index.md。"""
 import os
 import re
+import threading
 import time
 from skills_system.scripts import _results_common
 from .config import (
     CONVERSATION_SEGMENTS_KEEP,
-    TOOL_RESULT_FILE_RE,
     TOOL_RESULTS_DIRNAME,
     TOOL_RESULTS_INDEX,
     TOOL_RESULTS_KEEP,
@@ -14,6 +14,14 @@ from .config import (
     VISION_RESULTS_KEEP,
 )
 from .tool_use_index import result_kind
+
+# index.md、tools_use_index.md 的寫入鎖：主對話與背景壓縮的執行緒（對話片段存檔）都會寫，同時改寫 index.md 會掉行
+ARCHIVE_LOCK = threading.RLock()
+
+
+def _archived_names(d):
+    """存檔目錄裡的存檔檔名，依（session, 編號）由舊到新排（檔名的文字排序在同一個 session 裡 #1000 會排在 #999 前面）。"""
+    return [f[3] for f in _results_common.list_result_files(d)]
 
 
 class ArchiveMixin:
@@ -30,33 +38,38 @@ class ArchiveMixin:
         """把一次腳本執行的完整原始輸出寫成 logs/tool_results/<session>_<id>_<腳本>.md，並在 index.md 追加一行。
         檔頭是簡單的 key: value（宿主機不一定有 PyYAML）。寫不進去不影響主流程（回傳 None）。"""
         try:
-            d = self.results_dir()
-            os.makedirs(d, exist_ok=True)
-            stem = re.sub(r"[^A-Za-z0-9_-]", "_", re.sub(r"(_cmd)?\.py$", "", record["script"]))
-            filename = f"{self.session_id}_{record['id']:03d}_{stem}.md"
-            task = " ".join((record.get("task") or "").split())
-            header = [
-                "---", f"id: {record['id']}", f"session: {self.session_id}", f"ts: {time.strftime('%Y-%m-%d %H:%M:%S')}",
-                f"script: {record['script']}", f"skill: {record.get('skill') or ''}", f"command: {record['command']}",
-                f"cwd: {record['cwd']}", f"container: {record.get('target_container') or ''}", f"status: {record['status']}",
-                f"chars: {len(output_text)}", f"task: {task}", "---",
-            ]
-            with open(os.path.join(d, filename), "w", encoding="utf-8") as f:
-                f.write("\n".join(header) + "\n" + output_text + ("\n" if not output_text.endswith("\n") else ""))
-            line = (f"#{record['id']} | {time.strftime('%Y-%m-%d %H:%M')} | {record['script']} | {record['status']} | "
-                    f"{len(output_text)} 字 | {filename} | 任務：{task} | 回答：")   # 任務與回答整句照存、不截斷（result_list 直接列這一行）
-            with open(os.path.join(d, TOOL_RESULTS_INDEX), "a", encoding="utf-8") as f:
-                f.write(line + "\n")
-            self._prune_tool_results(d)
-            return filename
+            with ARCHIVE_LOCK:
+                return self._write_archive(record, output_text)
         except OSError:
             return None
+
+    def _write_archive(self, record, output_text):
+        """_archive_tool_result 的本體（呼叫端上鎖）。"""
+        d = self.results_dir()
+        os.makedirs(d, exist_ok=True)
+        stem = re.sub(r"[^A-Za-z0-9_-]", "_", re.sub(r"(_cmd)?\.py$", "", record["script"]))
+        filename = f"{self.session_id}_{record['id']:03d}_{stem}.md"
+        task = " ".join((record.get("task") or "").split())
+        header = [
+            "---", f"id: {record['id']}", f"session: {self.session_id}", f"ts: {time.strftime('%Y-%m-%d %H:%M:%S')}",
+            f"script: {record['script']}", f"skill: {record.get('skill') or ''}", f"command: {record['command']}",
+            f"cwd: {record['cwd']}", f"container: {record.get('target_container') or ''}", f"status: {record['status']}",
+            f"chars: {len(output_text)}", f"task: {task}", "---",
+        ]
+        with open(os.path.join(d, filename), "w", encoding="utf-8") as f:
+            f.write("\n".join(header) + "\n" + output_text + ("\n" if not output_text.endswith("\n") else ""))
+        line = (f"#{record['id']} | {time.strftime('%Y-%m-%d %H:%M')} | {record['script']} | {record['status']} | "
+                f"{len(output_text)} 字 | {filename} | 任務：{task} | 回答：")   # 任務與回答整句照存、不截斷（result_list 直接列這一行）
+        with open(os.path.join(d, TOOL_RESULTS_INDEX), "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+        self._prune_tool_results(d)
+        return filename
 
     def _prune_tool_results(self, d):
         """工具回傳只留最近 TOOL_RESULTS_KEEP 個檔、總大小不超過 TOOL_RESULTS_MAX_MB；被壓縮的對話片段另外只看
         CONVERSATION_SEGMENTS_KEEP、附圖分析只看 VISION_RESULTS_KEEP——三種分開算，工具跑得再多也不會把對話原文或附圖分析
         擠掉（這兩種沒辦法重跑一次拿回來：對話已經過去、原圖沒有保存）。刪最舊的並把 index.md 裡對應的行拿掉。"""
-        names = sorted(fn for fn in os.listdir(d) if TOOL_RESULT_FILE_RE.match(fn))   # 檔名＝session_id + 三位數編號，排序即時間順序
+        names = _archived_names(d)
         convs = [fn for fn in names if result_kind(fn) == "conversation"]
         visions = [fn for fn in names if result_kind(fn) == "vision"]
         tools = [fn for fn in names if result_kind(fn) == "tool"]
@@ -106,21 +119,26 @@ class ArchiveMixin:
         if not result_id or not answer:
             return False
         try:
-            index = os.path.join(self.results_dir(), TOOL_RESULTS_INDEX)
-            with open(index, encoding="utf-8") as f:
-                lines = f.read().splitlines()
-            key = f"#{result_id} | "
-            for i, ln in enumerate(lines):
-                if ln.startswith(key) and f"| {self.session_id}_" in ln:
-                    lines[i] = ln.rsplit("| 回答：", 1)[0] + "| 回答：" + " ".join(answer.split())
-                    break
-            else:
-                return False
-            with open(index, "w", encoding="utf-8") as f:
-                f.write("\n".join(lines) + "\n")
-            return True
+            with ARCHIVE_LOCK:
+                return self._set_index_answer(result_id, answer)
         except OSError:
             return False
+
+    def _set_index_answer(self, result_id, answer):
+        """update_result_answer 的本體（呼叫端上鎖；只改目前 session 的那一行）。"""
+        index = os.path.join(self.results_dir(), TOOL_RESULTS_INDEX)
+        with open(index, encoding="utf-8") as f:
+            lines = f.read().splitlines()
+        key = f"#{result_id} | "
+        for i, ln in enumerate(lines):
+            if ln.startswith(key) and f"| {self.session_id}_" in ln:
+                lines[i] = ln.rsplit("| 回答：", 1)[0] + "| 回答：" + " ".join(answer.split())
+                break
+        else:
+            return False
+        with open(index, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
+        return True
 
     def result_file_path(self, ref):
         """'16'／'#16'（優先目前 session）、'latest'、'index' 或檔名 → 完整路徑；找不到回 None。Web 的 /api/results/<ref> 用。"""
@@ -131,7 +149,7 @@ class ArchiveMixin:
         if ref == "index":
             p = os.path.join(d, TOOL_RESULTS_INDEX)
             return p if os.path.exists(p) else None
-        names = sorted(fn for fn in os.listdir(d) if TOOL_RESULT_FILE_RE.match(fn))
+        names = _archived_names(d)
         if ref.lstrip("#").isdigit():
             rid = int(ref.lstrip("#"))
             cands = [fn for fn in names if fn.split("_")[2] == f"{rid:03d}"]

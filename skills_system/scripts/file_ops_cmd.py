@@ -1,176 +1,386 @@
 """file_ops：在本機做文件與目錄操作——建目錄、複製、移動、寫入／附加文字檔、取代檔案裡的一段文字。
 
-會改變檔案，所以執行前一律由 harness 請使用者確認（config.GUARDED_SKILLS）。為了可以還原：覆寫、附加、取代、移動之前，
-原本的檔案先備份到 harness 的 logs/file_backups/<時間>/（不在使用者的目錄留下 .bak）。不提供刪除：要刪檔請使用者自己決定。
+會改變檔案，所以執行前一律由 harness 請使用者確認（config.GUARDED_SKILLS）。為了可以還原：覆寫、附加、取代之前，原本的檔案先備份到
+harness 的 logs/file_backups/<時間>/（不在使用者的目錄留下 .bak）；移動不會毀掉任何東西（目的已存在就不做），不備份（以前會先把
+整個來源複製一份，bag 資料夾要多佔一倍空間、可能超過 600 秒）。不提供刪除：要刪檔請使用者自己決定。
 
 路徑相對於目前的工作目錄（change_dir 切換的）；不能寫到系統目錄（/etc、/usr、/bin…）。
-write／append 的內容用 --text 給（\\n 代表換行）；內容裡有引號也沒關係——腳本讀的是 action.args 的原文（HARNESS_RAW_ARGS）。
+
+內容的參數（--text、--old、--new）從 action.args 的原文（環境變數 HARNESS_RAW_ARGS）解析，順序不拘、內容裡有引號也沒關係：
+值用引號包住時，取到「後面接著另一個選項、檔案路徑或結尾」的那個引號為止；沒有引號時取到下一個選項為止。
+以前的解析 --new 一律取到字串結尾：`--new "a" --old "b"` 會把 `a" --old "b` 寫進檔案（2026-10 稽核：資料毀損）；
+`write --text "hello" notes.md` 建出名為 --text 的檔案。跳脫：\\n 換行、\\t tab、\\" 引號、\\\\ 反斜線（字面的 \\n 寫成 \\\\n）；
+內容裡已經有真正的換行時，只把 \\" 換成 "，其他照原樣寫入（那是程式碼裡的 \\n）。
 """
 import datetime
 import os
 import re
+import shlex
 import shutil
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _path_common as pc  # noqa: E402
 
 USAGE = ("用法: scripts/file_ops_cmd.py <動作> …\n"
          "  mkdir <目錄>                         建立目錄（含上層）\n"
          "  copy <來源> <目的>                   複製檔案或整個目錄（目的已存在的檔案不覆蓋）\n"
-         "  move <來源> <目的>                   移動或改名（目的是既有目錄時放進去）\n"
-         "  write <檔案> --text \"內容\"           建立或覆寫文字檔（\\n 代表換行）\n"
+         "  move <來源> <目的>                   移動或改名（目的是既有目錄時放進去；目的已存在不覆蓋）\n"
+         "  write <檔案> --text \"內容\"           建立或覆寫文字檔（\\n 換行、\\t tab、\\\" 引號、\\\\ 反斜線）\n"
          "  append <檔案> --text \"內容\"          在文字檔最後加上內容\n"
          "  replace <檔案> --old \"原文\" --new \"新的內容\"   取代檔案裡的一段文字（原文要剛好出現一次）")
 _FORBIDDEN_PREFIXES = ("/etc", "/usr", "/bin", "/sbin", "/lib", "/lib64", "/boot", "/dev", "/proc", "/sys", "/var/lib", "/opt/ros")
 _ACTIONS = ("mkdir", "copy", "move", "write", "append", "replace")
-HERE = os.path.dirname(os.path.abspath(__file__))
-BACKUP_ROOT = os.path.join(os.path.dirname(os.path.dirname(HERE)), "logs", "file_backups")
+_OPTIONS = ("--text", "--old", "--new")
+_IGNORED_FLAGS = {"mkdir": {"-p", "--parents"}, "copy": {"-r", "-R", "-a", "--recursive"}, "move": set(), "write": set(),
+                  "append": set(), "replace": set()}
+MAX_EDIT_BYTES = 20 * 1024 * 1024
+_OPT_RE = re.compile(r"(?:(?<=\s)|^)(--text|--old|--new)(?==|\s|$)")
+_AFTER_VALUE_RE = re.compile(r"^(\s*$|\s+(--text|--old|--new)(=|\s|$)|\s+[^\s\"']+(\s+[^\s\"']+)*\s*$"
+                             r"|\s+[^\s\"']+(\s+[^\s\"']+)*\s+(--text|--old|--new)(=|\s|$))")
+_NUMBERED_RE = re.compile(r"^\s*\d+→")
 
 
-def _decode(text):
-    """模型常把換行寫成 \\n、tab 寫成 \\t（JSON 字串裡多跳脫了一層）。"""
-    return text.replace("\\r\\n", "\n").replace("\\n", "\n").replace("\\t", "\t").replace('\\"', '"')
+def backup_root():
+    return pc.harness_logs_dir("file_backups")
 
 
-def _raw_option(raw, name, stop=()):
-    """從原文取出 --name 後面的內容：去掉外層一對引號；遇到 stop 裡的下一個選項就結束。"""
-    m = re.search(rf"(?:^|\s){re.escape(name)}(?:\s+|=)", raw)
-    if not m:
-        return None
-    rest = raw[m.end():]
-    end = len(rest)
-    for opt in stop:
-        k = re.search(rf"\s{re.escape(opt)}(?:\s+|=)", rest)
-        if k:
-            end = min(end, k.start())
-    val = rest[:end].strip()
-    if len(val) >= 2 and val[0] == val[-1] and val[0] in "\"'":
-        val = val[1:-1]
-    return val
+def decode_escapes(text, quote='"'):
+    """\\n → 換行、\\t → tab、\\" → "、\\\\ → \\（一次掃過，\\\\n 是字面的 \\n）。內容裡已經有真正的換行時只換 \\"（其他是程式碼裡的跳脫）。"""
+    if "\n" in text:
+        return text.replace("\\" + quote, quote) if quote else text
+    out, i = [], 0
+    while i < len(text):
+        c = text[i]
+        if c == "\\" and i + 1 < len(text):
+            nxt = text[i + 1]
+            if nxt == "n":
+                out.append("\n")
+            elif nxt == "t":
+                out.append("\t")
+            elif nxt == "r" and text[i + 2:i + 4] == "\\n":
+                out.append("\n")
+                i += 4
+                continue
+            elif nxt in "\\\"'":
+                out.append(nxt)
+            else:
+                out.append(c + nxt)
+            i += 2
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
+def _escaped(raw, j):
+    k, n = j - 1, 0
+    while k >= 0 and raw[k] == "\\":
+        n += 1
+        k -= 1
+    return n % 2 == 1
+
+
+def _value_at(raw, i):
+    """raw[i:] 是一個選項的值 → (值（已處理跳脫）, 值結束的位置)。"""
+    if i < len(raw) and raw[i] == "=":
+        i += 1
+    while i < len(raw) and raw[i] in " \t":
+        i += 1
+    if i < len(raw) and raw[i] in "\"'":
+        q = raw[i]
+        j = i + 1
+        while True:
+            j = raw.find(q, j)
+            if j < 0:
+                break
+            if not _escaped(raw, j) and _AFTER_VALUE_RE.match(raw[j + 1:]):
+                return decode_escapes(raw[i + 1:j], q), j + 1
+            j += 1
+        # 引號不成對：取到下一個選項為止，去掉開頭的引號
+        m = _OPT_RE.search(raw, i + 1)
+        end = m.start() if m else len(raw)
+        return decode_escapes(raw[i + 1:end].rstrip().rstrip(q), q), end
+    m = _OPT_RE.search(raw, i)
+    end = m.start() if m else len(raw)
+    return decode_escapes(raw[i:end].strip(), None), end
+
+
+def parse_raw(raw):
+    """原文 → (位置參數, {選項: 值}, 錯誤)。"""
+    opts, rest, pos = {}, [], 0
+    while True:
+        m = _OPT_RE.search(raw, pos)
+        if not m:
+            rest.append(raw[pos:])
+            break
+        rest.append(raw[pos:m.start()])
+        name = m.group(1)
+        if name in opts:
+            return None, None, f"[ERROR] {name} 出現了兩次。下一步：每個選項只給一次（內容裡要寫 {name} 這幾個字時，整段內容用引號包住）。"
+        opts[name], pos = _value_at(raw, m.end())
+    text = " ".join(rest)
+    try:
+        positional = shlex.split(text)
+    except ValueError:
+        positional = [t.strip("\"'") for t in text.split()]
+    return positional, opts, None
+
+
+def parse_argv(argv):
+    """沒有原文時（直接執行腳本）：選項的值是下一個參數。"""
+    positional, opts, i = [], {}, 0
+    while i < len(argv):
+        a = argv[i]
+        name, eq, val = a.partition("=")
+        if name in _OPTIONS:
+            if eq:
+                opts[name] = decode_escapes(val)
+                i += 1
+            else:
+                opts[name] = decode_escapes(argv[i + 1]) if i + 1 < len(argv) else ""
+                i += 2
+            continue
+        positional.append(a)
+        i += 1
+    return positional, opts, None
+
+
+def _first_word(raw):
+    s = raw.strip()
+    return s.split(None, 1)[0].strip("\"'") if s else ""
 
 
 def _resolve(path):
-    p = os.path.abspath(os.path.expanduser(path))
+    if path.startswith("-"):
+        return None, (f"[ERROR] 「{path}」不是路徑（不認識的選項）。下一步：照用法寫，內容用 --text／--old／--new 給，"
+                      f"路徑不要以 - 開頭。\n{USAGE}")
+    p = os.path.abspath(pc.expand(path))
     if any(p == f or p.startswith(f + "/") for f in _FORBIDDEN_PREFIXES):
-        return None, f"[ERROR] 不能在系統目錄操作：{p}"
+        return None, f"[ERROR] 不能在系統目錄操作：{p}。下一步：改寫到工作目錄底下或使用者的家目錄；系統設定請使用者自己改。"
     return p, None
 
 
 def _backup(path):
-    if not os.path.exists(path):
+    if not os.path.isfile(path):
         return None
     stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-    dst = os.path.join(BACKUP_ROOT, stamp, path.lstrip("/"))
+    dst = os.path.join(backup_root(), stamp, path.lstrip("/"))
     os.makedirs(os.path.dirname(dst), exist_ok=True)
-    if os.path.isdir(path):
-        shutil.copytree(path, dst)
-    else:
-        shutil.copy2(path, dst)
+    shutil.copy2(path, dst)
     return dst
 
 
 def _rel(p):
     try:
-        return os.path.relpath(p, os.getcwd())
+        rel = os.path.relpath(p, os.getcwd())
     except ValueError:
         return p
+    return rel if not rel.startswith("..") else p
+
+
+def _perm_error(e, what):
+    return (f"[ERROR] 沒有權限{what}：{e.filename or ''}（{e.strerror}）。下一步：改用有權限的路徑（例如工作目錄底下）；"
+            f"一定要改這裡就請使用者自己處理權限（技能不會用 sudo）。")
+
+
+def _read_text(path, what):
+    """讀 UTF-8 文字檔（保留 \\r\\n）→ (內容, 錯誤)。"""
+    size = os.path.getsize(path)
+    if size > MAX_EDIT_BYTES:
+        return None, f"[ERROR] {_rel(path)} 太大（{size} bytes，上限 {MAX_EDIT_BYTES}），file_ops 不{what}這麼大的檔案。下一步：請使用者自己處理。"
+    with open(path, "rb") as f:
+        data = f.read()
+    if b"\0" in data[:8192]:
+        return None, f"[ERROR] {_rel(path)} 是二進位檔，file_ops 只{what}文字檔。下一步：確認路徑；二進位檔請使用者自己處理。"
+    try:
+        return data.decode("utf-8"), None
+    except UnicodeDecodeError as e:
+        line = data[:e.start].count(b"\n") + 1
+        return None, (f"[ERROR] {_rel(path)} 不是 UTF-8 文字檔（第 {line} 行附近有無法解碼的位元組），"
+                      f"file_ops 只{what} UTF-8 的文字檔。下一步：請使用者確認檔案的編碼，或另存成 UTF-8 再改。")
+
+
+def _numbered_check(name, text):
+    lines = text.splitlines()
+    if lines and sum(1 for ln in lines if _NUMBERED_RE.match(ln)) >= max(1, len(lines) // 2):
+        return (f"[ERROR] {name} 的內容含有 view_file 顯示用的行號（像「  12→」），那不是檔案的內容。"
+                f"下一步：去掉每一行開頭的「行號→」，只寫檔案裡實際的文字再執行。")
+    return None
+
+
+def _need_paths(action, positional, n):
+    ignored = _IGNORED_FLAGS.get(action, set())
+    paths = [p for p in positional[1:] if p not in ignored]
+    flags = [p for p in paths if p.startswith("-") and len(p) > 1]
+    if flags:
+        return None, (f"[ERROR] {action} 不認識的選項 {'、'.join(flags)}（路徑不能以 - 開頭）。下一步：照下面的用法改；"
+                      f"內容只用 --text／--old／--new 給。\n{USAGE}")
+    if len(paths) < n:
+        what = {"mkdir": "目錄路徑", "copy": "來源與目的", "move": "來源與目的"}.get(action, "檔案路徑")
+        quote = ("（--text／--old／--new 的內容要用引號包住，沒有引號時會一直取到下一個選項，後面的路徑也被當成內容）"
+                 if action in ("write", "append", "replace") else "")
+        return None, f"[ERROR] {action} 需要{what}{quote}。下一步：照下面的用法補上。\n{USAGE}"
+    if len(paths) > n:
+        joined = pc.join_if_exists(paths) if n == 1 else None
+        if joined:
+            return [joined], None
+        return None, (f"[ERROR] {action} 的路徑太多（收到 {'、'.join(paths)}）。下一步：路徑含空白請用引號包住；"
+                      f"內容要用 --text／--old／--new 給。\n{USAGE}")
+    return paths, None
 
 
 def main(argv):
     raw = os.environ.get("HARNESS_RAW_ARGS") or ""
-    if not argv or argv[0] not in _ACTIONS:
-        return f"[ERROR] 第一個參數要是動作（{'／'.join(_ACTIONS)}）。\n{USAGE}"
-    action = argv[0]
-    if action == "mkdir":
-        if len(argv) < 2:
-            return f"[ERROR] mkdir 需要目錄路徑。\n{USAGE}"
-        p, err = _resolve(argv[1])
-        if err:
-            return err
-        existed = os.path.isdir(p)
-        os.makedirs(p, exist_ok=True)
-        return f"[PASS] {'目錄已經存在' if existed else '已建立目錄'}：{_rel(p)}"
-    if action in ("copy", "move"):
-        if len(argv) < 3:
-            return f"[ERROR] {action} 需要來源與目的。\n{USAGE}"
-        src, err = _resolve(argv[1])
-        if err:
-            return err
-        dst, err = _resolve(argv[2])
-        if err:
-            return err
-        if not os.path.exists(src):
-            near = [f for f in os.listdir(os.path.dirname(src) or ".")
-                    if os.path.basename(src).lower()[:4] in f.lower()][:5] if os.path.isdir(os.path.dirname(src) or ".") else []
-            return f"[ERROR] 找不到來源：{_rel(src)}" + (f"（同一個目錄裡相近的：{'、'.join(near)}）" if near else "")
-        if os.path.isdir(dst):
-            dst = os.path.join(dst, os.path.basename(src.rstrip("/")))
-        if os.path.exists(dst) and action == "copy":
-            return f"[ERROR] 目的已經存在：{_rel(dst)}（不覆蓋；要覆蓋請先跟使用者確認、改用別的名稱）"
-        os.makedirs(os.path.dirname(dst) or ".", exist_ok=True)
-        if action == "copy":
-            if os.path.isdir(src):
-                shutil.copytree(src, dst)
-            else:
-                shutil.copy2(src, dst)
-            n = sum(len(fs) for _, _, fs in os.walk(dst)) if os.path.isdir(dst) else 1
-            return f"[PASS] 已複製 {_rel(src)} → {_rel(dst)}（{n} 個檔案）"
-        if os.path.exists(dst):
-            return f"[ERROR] 目的已經存在：{_rel(dst)}（不覆蓋）"
-        bk = _backup(src)
-        shutil.move(src, dst)
-        return f"[PASS] 已移動 {_rel(src)} → {_rel(dst)}" + (f"（原本的位置備份在 {bk}）" if bk else "")
-    if len(argv) < 2:
-        return f"[ERROR] {action} 需要檔案路徑。\n{USAGE}"
-    path, err = _resolve(argv[1])
+    if raw.strip() and argv and _first_word(raw) == argv[0]:
+        positional, opts, err = parse_raw(raw)
+    else:
+        positional, opts, err = parse_argv(argv)
     if err:
         return err
+    if not positional or positional[0] not in _ACTIONS:
+        got = positional[0] if positional else "（沒有）"
+        extra = "；file_ops 不提供刪除，要刪檔請使用者自己決定" if got in ("delete", "rm", "remove", "del") else ""
+        return f"[ERROR] 第一個參數要是動作（{'／'.join(_ACTIONS)}），收到「{got}」{extra}。\n{USAGE}"
+    action = positional[0]
+    allowed = {"write": {"--text"}, "append": {"--text"}, "replace": {"--old", "--new"}}.get(action, set())
+    stray = [o for o in opts if o not in allowed]
+    if stray:
+        return f"[ERROR] {action} 不用 {'、'.join(stray)}。下一步：照下面的用法改。\n{USAGE}"
+    try:
+        if action == "mkdir":
+            return _mkdir(positional)
+        if action in ("copy", "move"):
+            return _copy_move(action, positional)
+        return _edit(action, positional, opts)
+    except PermissionError as e:
+        return _perm_error(e, {"mkdir": "建立目錄", "copy": "複製", "move": "移動"}.get(action, "寫入檔案"))
+    except OSError as e:
+        return f"[ERROR] {action} 失敗：{e}。下一步：確認路徑與磁碟空間；看不出原因就把錯誤告訴使用者。"
+
+
+def _mkdir(positional):
+    paths, err = _need_paths("mkdir", positional, 1)
+    if err:
+        return err
+    p, err = _resolve(paths[0])
+    if err:
+        return err
+    if os.path.isfile(p):
+        return f"[ERROR] {_rel(p)} 已經是一個檔案，不能建成目錄。下一步：換一個名稱，或用 list_dir {_rel(os.path.dirname(p)) or '.'} 確認。"
+    existed = os.path.isdir(p)
+    os.makedirs(p, exist_ok=True)
+    return f"[PASS] {'目錄已經存在' if existed else '已建立目錄'}：{_rel(p)}"
+
+
+def _copy_move(action, positional):
+    paths, err = _need_paths(action, positional, 2)
+    if err:
+        return err
+    src, err = _resolve(paths[0])
+    if err:
+        return err
+    dst, err = _resolve(paths[1])
+    if err:
+        return err
+    if not os.path.lexists(src):
+        return pc.not_found(paths[0], "any", "來源")
+    if os.path.isdir(dst):
+        dst = os.path.join(dst, os.path.basename(src.rstrip("/")))
+    if os.path.lexists(dst):
+        return f"[ERROR] 目的已經存在：{_rel(dst)}（不覆蓋）。下一步：換一個目的名稱；要覆蓋請先跟使用者確認、由使用者處理。"
+    if os.path.isdir(src) and (dst + "/").startswith(src.rstrip("/") + "/"):
+        return f"[ERROR] 不能把目錄 {_rel(src)} {('複製' if action == 'copy' else '移動')}到它自己裡面（{_rel(dst)}）。下一步：換一個目的。"
+    os.makedirs(os.path.dirname(dst) or ".", exist_ok=True)
+    if action == "copy":
+        if os.path.isdir(src):
+            shutil.copytree(src, dst, symlinks=True)
+            n = sum(len(fs) for _, _, fs in os.walk(dst))
+        else:
+            shutil.copy2(src, dst)
+            n = 1
+        return f"[PASS] 已複製 {_rel(src)} → {_rel(dst)}（{n} 個檔案）"
+    shutil.move(src, dst)
+    return f"[PASS] 已移動 {_rel(src)} → {_rel(dst)}（移動不會覆蓋任何東西，沒有另外備份）"
+
+
+def _edit(action, positional, opts):
+    paths, err = _need_paths(action, positional, 1)
+    if err:
+        return err
+    path, err = _resolve(paths[0])
+    if err:
+        return err
+    if os.path.isdir(path):
+        return f"[ERROR] {_rel(path)} 是目錄，不是檔案。下一步：給目錄裡的檔案路徑。"
     if action in ("write", "append"):
-        text = _raw_option(raw, "--text") if raw else None
-        if text is None:
-            if "--text" not in argv:
-                return f"[ERROR] {action} 需要 --text \"內容\"。\n{USAGE}"
-            text = argv[argv.index("--text") + 1] if argv.index("--text") + 1 < len(argv) else ""
-        text = _decode(text)
-        if action == "write" and os.path.isdir(path):
-            return f"[ERROR] {_rel(path)} 是目錄，不是檔案。"
+        if "--text" not in opts:
+            return f"[ERROR] {action} 需要 --text \"內容\"。下一步：照下面的用法補上。\n{USAGE}"
+        text = opts["--text"]
+        err = _numbered_check("--text", text)
+        if err:
+            return err
+        old = ""
+        if action == "append" and os.path.exists(path):
+            old, err = _read_text(path, "附加")
+            if err:
+                return err
         bk = _backup(path)
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-        with open(path, "a" if action == "append" else "w", encoding="utf-8") as f:
-            if action == "append" and os.path.getsize(path) > 0 and not open(path, encoding="utf-8", errors="replace").read().endswith("\n"):
+        body = text if text.endswith("\n") else text + "\n"
+        with open(path, "a" if action == "append" else "w", encoding="utf-8", newline="") as f:
+            if action == "append" and old and not old.endswith("\n"):
                 f.write("\n")
-            f.write(text if text.endswith("\n") else text + "\n")
-        n = text.count("\n") + 1
+            f.write(body)
+        n = body.count("\n")
         verb = "附加" if action == "append" else ("覆寫" if bk else "建立")
         return f"[PASS] 已{verb} {_rel(path)}（{n} 行）" + (f"；原本的檔案備份在 {bk}" if bk else "")
-    if action == "replace":
-        if not os.path.isfile(path):
-            return f"[ERROR] 找不到檔案：{_rel(path)}"
-        old = _raw_option(raw, "--old", stop=("--new",)) if raw else None
-        new = _raw_option(raw, "--new") if raw else None
-        if old is None or new is None:
-            if "--old" not in argv or "--new" not in argv:
-                return f"[ERROR] replace 需要 --old \"原文\" 與 --new \"新的內容\"。\n{USAGE}"
-            old, new = argv[argv.index("--old") + 1], argv[argv.index("--new") + 1]
-        old, new = _decode(old), _decode(new)
-        with open(path, encoding="utf-8") as f:
-            content = f.read()
-        n = content.count(old)
-        if n != 1:
-            hint = ""
-            if n == 0:
-                key = old.strip().split(":")[0].strip() if ":" in old else old.strip()[:20]
-                lines = [f"{i + 1}: {ln}" for i, ln in enumerate(content.splitlines()) if key and key in ln][:5]
-                hint = ("\n檔案裡相關的行：\n" + "\n".join(lines)) if lines else ""
-            return f"[ERROR] {_rel(path)} 裡「{old[:80]}」出現 {n} 次（要剛好 1 次才取代；請照檔案的實際內容、加上前後文讓它唯一）{hint}"
-        bk = _backup(path)
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(content.replace(old, new, 1))
-        line = content[:content.index(old)].count("\n") + 1
-        return f"[PASS] 已修改 {_rel(path)} 第 {line} 行附近：「{old.strip()[:80]}」→「{new.strip()[:80]}」；原本的檔案備份在 {bk}"
-    return f"[ERROR] 不認識的動作：{action}\n{USAGE}"
+    # replace
+    if "--old" not in opts or "--new" not in opts:
+        return f"[ERROR] replace 需要 --old \"原文\" 與 --new \"新的內容\"。下一步：兩個都要給（--new \"\" 代表刪掉原文）。\n{USAGE}"
+    old, new = opts["--old"], opts["--new"]
+    if not old:
+        return f"[ERROR] --old 是空的。下一步：照檔案的實際內容寫要被取代的那一段（先用 view_file 看）。\n{USAGE}"
+    for name, val in (("--old", old), ("--new", new)):
+        err = _numbered_check(name, val)
+        if err:
+            return err
+    if not os.path.isfile(path):
+        return pc.not_found(paths[0], "file", "檔案")
+    content, err = _read_text(path, "修改")
+    if err:
+        return err
+    if "\r\n" in content and "\n" in old and "\r\n" not in old:      # Windows 換行的檔案
+        old, new = old.replace("\n", "\r\n"), new.replace("\n", "\r\n")
+    if old == new:
+        return f"[PASS] 沒有修改 {_rel(path)}：--old 與 --new 一樣。"
+    n = content.count(old)
+    if n != 1:
+        if n == 0:
+            key = old.strip().split(":")[0].strip() if ":" in old else old.strip()[:20]
+            lines = [f"{i + 1}: {ln}" for i, ln in enumerate(content.splitlines()) if key and key in ln][:5]
+            hint = ("\n檔案裡相關的行：\n" + "\n".join(lines)) if lines else ""
+            return (f"[ERROR] {_rel(path)} 裡「{old[:80]}」出現 0 次（要剛好 1 次才取代）。下一步：用 view_file {_rel(path)} 看實際的內容，"
+                    f"--old 照檔案裡的寫法（空白、引號、縮排都要一樣）{hint}")
+        where, idx = [], -1
+        while True:
+            idx = content.find(old, idx + 1)
+            if idx < 0:
+                break
+            where.append(content[:idx].count("\n") + 1)
+        shown = "、".join(str(x) for x in where[:20]) + ("…" if len(where) > 20 else "")
+        return (f"[ERROR] {_rel(path)} 裡「{old[:80]}」出現 {n} 次（第 {shown} 行），要剛好 1 次才取代。"
+                f"下一步：--old 多帶前後文（例如連同上一行一起寫）讓它只對到要改的那一處。")
+    bk = _backup(path)
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        f.write(content.replace(old, new, 1))
+    line = content[:content.index(old)].count("\n") + 1
+    return f"[PASS] 已修改 {_rel(path)} 第 {line} 行附近：「{old.strip()[:80]}」→「{new.strip()[:80]}」；原本的檔案備份在 {bk}"
 
 
 if __name__ == "__main__":
     try:
         print(main(sys.argv[1:]))
     except Exception as e:      # noqa: BLE001
-        print(f"[ERROR] file_ops 未預期的例外：{e}")
+        print(f"[ERROR] file_ops 未預期的例外：{type(e).__name__}: {e}", file=sys.stderr)
+        sys.exit(1)

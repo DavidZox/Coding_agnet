@@ -46,9 +46,10 @@ class TrajectoryMixin:
 
     def _next_id(self):
         """配一個新的全域編號（軌跡、工具結果存檔、被壓縮的對話片段存檔共用同一個序列，跨 session 不重複）。
-        背景壓縮執行緒也會配編號（對話片段存檔），所以要上鎖。"""
+        背景壓縮執行緒也會配編號（對話片段存檔），所以要上鎖；CLI 與 Web 同時開著時兩個 process 都在配，所以每次也看一下存檔目錄裡
+        最大的編號（另一個 process 剛存的），不會配到同一個編號。"""
         with self._id_lock:
-            self.trajectory_seq += 1
+            self.trajectory_seq = max(self.trajectory_seq, self._max_archived_id()) + 1
             return self.trajectory_seq
 
     def _record_trajectory(self, script_name, args, output_text, cwd, container_cwd, target_container=""):

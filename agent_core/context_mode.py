@@ -7,6 +7,7 @@
 各模式給模型的規則文字在 prompts/context_modes/<模式>.md（get_system_prompt 依目前模式載入）。"""
 import os
 import re
+from skills_system.scripts import _results_common
 from .config import (
     CLEAR_KEEP_RECENT_RESULTS,
     CLEAR_MIN_TOKENS,
@@ -74,7 +75,7 @@ class ContextModeMixin:
         if tool_tokens <= RAW_RESULT_MAX_TOKENS:
             return f"{header}\n{result}"
         max_chars = int(RAW_RESULT_MAX_TOKENS * self.chars_per_token)
-        # 在行邊界切（存檔的行號＝原文的行號，result_view 可以直接用）：頭留到第 head_last 行，尾從第 tail_first 行開始
+        # 在行邊界切（行號是原文的行號，跟 result_view／result_grep 同一套）：頭留到第 head_last 行，尾從第 tail_first 行開始
         lines = result.split("\n")
         head, used = [], 0
         while len(head) < len(lines) and used + len(lines[len(head)]) + 1 <= max_chars * 0.6:
@@ -91,9 +92,13 @@ class ContextModeMixin:
             head, tail = [result[:int(max_chars * 0.6)]], [result[-int(max_chars * 0.4):]]
             where, view_from = "中間（單行過長）", 1
         omitted = max(0, tool_tokens - self.count_tokens("\n".join(head + tail)))
+        # 中間有哪幾節（程式依原文的結構列出章節標題與行號）：模型知道省略的那一段有什麼，才判斷得了要不要回存檔查
+        inner = [(n, t) for n, t, _ in _results_common.outline(lines) if len(head) < n <= len(lines) - len(tail)] if head and len(lines) > 1 else []
+        contents = ("；中間的章節：" + "、".join(f"行 {n} {t}" for n, t in inner[:12])
+                    + (f"…共 {len(inner)} 節" if len(inner) > 12 else "")) if inner else ""
         # 實測（評測 fleet_battery）：只寫「中間省略、原文在存檔」時，4B 模型看到頭尾沒有 tb6 就回答「資料裡沒有 tb6」，
         # 不會回存檔查。所以明講省略的行號範圍、看不到不代表不存在、以及問題要的東西不在頭尾時先查再答。
-        gap = (f"\n…（{where}省略，約 {omitted} tokens。上面看不到的內容不代表不存在：使用者問的東西不在頭尾時，"
+        gap = (f"\n…（{where}省略，約 {omitted} tokens{contents}。上面看不到的內容不代表不存在：使用者問的東西不在頭尾時，"
                f"先查存檔 #{rid} 再回答——找字串用 result_grep {rid} \"<關鍵字>\"、看這一段用 result_view {rid} --from {view_from} --lines 80、"
                f"要依問題整理這一大份內容用 result_recall {rid} \"<問題>\"）…\n")
         return f"{TOOL_TRUNCATED_TAG}\n{header}\n" + "\n".join(head) + gap + "\n".join(tail)

@@ -1,31 +1,31 @@
 ---
 type: Tool
 title: AST 程式碼結構化閱讀
-description: 利用 AST (Abstract Syntax Tree) 解析 Python 檔案，提取 Class、Function/Method 簽名、Docstring 與繼承關係，免去讀取全文的 Token 消耗。
-version: 1.0.0
-dependencies: ["python3"]
+description: 用 AST 讀一個 Python 檔的結構（常數、類別、函式的完整簽名、第一行 docstring、每個 def／class 的行號範圍），不必讀全文。
+version: 2.0.0
+dependencies: []
 ---
 
 # 用途
-在不讀取整個 Python 檔全文的情況下，快速分析目標 `.py` 檔案的結構。透過 AST 解析輸出模組層級的 Docstring、類別定義、繼承關係、函式/方法簽名（含參數與型別標註）以及常數變數，幫助 Agent 快速掌握程式碼藍圖。逾時 15 秒。
+先看一個 `.py` 檔有哪些類別、函式與常數，再用 view_file `--from 行號 --lines 行數` 只讀需要的那一段。簽名含預設值、`/`、`*`、
+關鍵字參數與型別標註。其他語言或設定檔用 view_file；找某個名稱在哪些檔案用 search_text。逾時 15 秒。
 
 # 語法
-`EXECUTE: scripts/code_ast_reader_cmd.py <file_path> [--no-docstrings] [--private]`
-* `<file_path>`：目標 Python 檔案路徑（相對或絕對路徑）。
-* `--no-docstrings`：可選。隱藏 Docstring 說明說明，僅印出結構與簽名。
-* `--private`：可選。包含底線開頭的私有函式與私有方法（預設會隱藏私有成員以保持精簡）。
+`EXECUTE: scripts/code_ast_reader_cmd.py <檔案.py> [--no-docstrings] [--private]`
+* `<檔案.py>`：一個 Python 檔（或第一行是 python 的 `#!` 的腳本），可用 `~`。
+* `--no-docstrings`：不印 docstring。`--private`：也列 `_` 開頭的函式、方法與常數（預設不列，標頭寫有幾個沒列）。
+* 最多列 400 個 def／class；常數的值超過 80 字截斷。
 
 # 範例
-* 讀取檔名為 `scripts/ROS2_node_info_cmd.py` 的結構：
-  `EXECUTE: scripts/code_ast_reader_cmd.py scripts/ROS2_node_info_cmd.py`
-* 讀取結構但不顯示 Docstring：
-  `EXECUTE: scripts/code_ast_reader_cmd.py scripts/ROS2_node_info_cmd.py --no-docstrings`
-* 讀取結構並包含私有函式/方法：
-  `EXECUTE: scripts/code_ast_reader_cmd.py scripts/ROS2_node_info_cmd.py --private`
+`EXECUTE: scripts/code_ast_reader_cmd.py agent_core/dispatch.py`
+`EXECUTE: scripts/code_ast_reader_cmd.py scripts/ls_cmd.py --private --no-docstrings`
 
 # 回傳
-成功：`[PASS] 成功解析 <file_path> 的 AST 結構` + 結構樹狀圖。失敗：`[ERROR] 原因`。
+`[PASS] <檔案> 的結構：共 N 行；C 個類別、F 個函式／方法[；K 個 _ 開頭的私有項目沒有列]`，`模組說明：…`，
+`## 常數（N 項）`（`- NAME = 值（行 12）`），`## 類別與函式（N 項）`：`class Foo(Base):  行 10-80`、縮排的
+`def bar(self, a, b=2, *, c=None) -> int  行 20-35`、下一行 `"""docstring 第一行"""`。
 
 # 異常
-* 檔案不存在或副檔名不是 `.py`：回傳錯誤提示。
-* 檔案存在語法錯誤（SyntaxError）：AST 解析失敗並回傳語法錯誤行號與原因。
+* `[ERROR] 找不到檔案`：照相近的路徑修正；`沒有權限`、`無法讀取`：請使用者處理。`[ERROR] … 是目錄`：先用 find_file `"*.py"` 找檔案，再對單一檔案執行。
+* `[ERROR] … 不是 Python 檔`：用 view_file。`[ERROR] … 有語法錯誤`：照提示用 view_file 看那幾行。
+* `[ERROR] 一次只能解析一個檔案`／`不支援的選項`：照語法改。`[ERROR] 解析…逾時`：用 search_text `"def |class "` 或 view_file --from。

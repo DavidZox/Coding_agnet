@@ -7,12 +7,13 @@
 - 狀態（uint8／bool／列舉字串／代碼集合）：狀態跳轉（Edge Detection：時間、從哪個值到哪個值、集合的增減）、各狀態的時間占比；
   整數而且相異值 ≤10 也當狀態（同 toolkit）；
 - 依名稱展開的項目（DiagnosticArray 的 status.level、status.values…）：每個名稱各自量，只列有變化的；
+- 字串裡的 JSON（std_msgs/String 裝的狀態）：欄位展開成 Key（data.status、data.robots.battery），跟一般的欄位一樣量；
 - 每個時間窗另外量訊息流：發布方式（固定頻率／狀態改變時才發布／不定期，由內容與時間判斷，同 analysis_run 的全部 Topic 量測）；
-  固定頻率的才判斷中斷（間隔超過週期 3 倍、且 ≥0.5 秒）與中途開始／停止發布。
+  固定頻率的才判斷中斷（間隔超過週期 3 倍、且 ≥0.5 秒）與中途開始／停止發布；
+- 門檻條件（--where 欄位<值）：幾筆符合、第一筆符合的時間與值、它的前一筆、符合的時段與時間長度（同 ROS2_topic_echo 的 --where）。
 文字（自由文字）與時間欄位不量測：Log 用 rosout_parser 看（去重後的唯一訊號）。
 
-移植自 diagnostics_package/toolkit 的 mcap_feature_measure.py（compute_features）。analysis_run 的 worker 呼叫時，數據、Topic 與
-時間窗由系統帶入（環境變數 ANALYSIS_DATA／ANALYSIS_TOPIC／ANALYSIS_WINDOWS），worker 只要選 Key。"""
+移植自 diagnostics_package/toolkit 的 mcap_feature_measure.py（compute_features）。"""
 import json
 import os
 import sys
@@ -23,7 +24,7 @@ import _ros2_data_common as rd  # noqa: E402
 DEFAULT_TIMEOUT = 180
 MAX_TIMEOUT = 570
 USAGE = ("scripts/mcap_feature_measure_cmd.py [數據] --topic TOPIC --key KEY [--key KEY]... "
-         "[--window 開始,結束|W1]... [--around 時間 --before 秒 --after 秒] [--filter 名稱關鍵字] [--all-entries] [--json] "
+         "[--window 開始,結束]... [--around 時間 --before 秒 --after 秒] [--where 欄位<值]... [--filter 名稱關鍵字] [--all-entries] [--json] "
          "[--container 名稱] [--timeout 秒]")
 
 
@@ -38,6 +39,7 @@ def build_parser():
             .add("--around", default="")
             .add("--before", type=float, default=5.0)
             .add("--after", type=float, default=5.0)
+            .add("--where", action="append", default=[])
             .add("--filter", default="")
             .add("--all-entries", action="store_true")
             .add("--json", action="store_true")
@@ -56,8 +58,15 @@ def _unchanged_summary(feats):
 
 def worker_main(argv):
     args = build_parser().parse(argv)
-    if not args.topic or not args.key:
-        print(f"[ERROR] 要指定 --topic 與至少一個 --key（Key 名稱用 mcap_analyzer --topic <名稱> 查）。\n用法：{USAGE}")
+    conds = []
+    for expr in args.where:
+        c, err = rd.parse_where(expr)
+        if err:
+            print(f"[ERROR] --where {err}。\n用法：{USAGE}")
+            return 2
+        conds.append(c)
+    if not args.topic or not (args.key or conds):
+        print(f"[ERROR] 要指定 --topic 與至少一個 --key 或 --where（Key 名稱用 mcap_analyzer --topic <名稱> 查）。\n用法：{USAGE}")
         return 2
     data, err = rd.resolve_data(args.data or args.data_opt, args.data_root or None)
     if err:
@@ -90,11 +99,25 @@ def worker_main(argv):
         if k in keys:
             continue
         if d["category"] in ("text", "time"):
-            skipped.append(f"{k}（{rd.CATEGORY_LABELS[d['category']]}：不量測"
-                           + ("，自由文字不量測" if d["category"] == "text" else "") + "）")
+            subs = [x["key"] for x in entry.get("keys", []) if x["key"].startswith(k + ".")]
+            skipped.append(f"{k}（JSON 字串：量它的欄位，例如 {'、'.join(subs[:4])}）" if d.get("json") and subs else
+                           f"{k}（{rd.CATEGORY_LABELS[d['category']]}：不量測" + ("，自由文字不量測" if d["category"] == "text" else "") + "）")
             continue
         keys.append(k)
         descs.append(d)
+    for c in conds:   # 條件用到、--key 沒列的 Key 自動加進來量（「status.level[motor]」「linear.x」用前面的 Key）
+        field = c["field"].split("[")[0]
+        d = next((x for x in (rd.find_key(entry, f) for f in dict.fromkeys((field, field.rsplit(".", 1)[0]))) if x), None)
+        if d is None or d["category"] in ("text", "time"):
+            import difflib
+            names = [x["key"] for x in entry.get("keys", []) if x["category"] in rd.WORKER_CATEGORIES]
+            near = difflib.get_close_matches(field, names, n=6, cutoff=0.3)
+            print(f"[ERROR] --where {c['text']}：{entry['topic']} 沒有可以量測的 Key「{field}」"
+                  + (f"（相近的：{'、'.join(near)}）" if near else "") + f"。可以量測的 Key：{'、'.join(names[:30])}")
+            return 2
+        if d["key"] not in keys:
+            keys.append(d["key"])
+            descs.append(d)
     if not keys:
         if unknown:   # 實測 26b 把 Key 目錄的類別欄當成 Key（--key state）：點名類別，列出可以量測的 Key
             print(f"[ERROR] {entry['topic']} 沒有 Key「{'」「'.join(unknown)}」"
@@ -107,11 +130,6 @@ def worker_main(argv):
     try:
         if args.window:
             windows = [rd.parse_window(w, base) for w in args.window]
-            for i, w in enumerate(windows):   # 自己抄的時間窗跟指派的幾乎一樣：換成指派的（精確的邊界、標籤、切片）
-                aw = None if w.get("data") else rd.matching_analysis_window(w)
-                if aw:
-                    windows[i] = dict(w, start_ns=int(aw["start_ns"]), end_ns=int(aw["end_ns"]), anchor_ns=aw.get("anchor_ns"),
-                                      label=w.get("label") or aw["id"], data=aw.get("slice") or "")
         elif args.around:
             t = rd.parse_time(args.around, base)
             windows = [{"start_ns": t - int(args.before * 1e9), "end_ns": t + int(args.after * 1e9), "anchor_ns": t, "label": ""}]
@@ -132,16 +150,7 @@ def worker_main(argv):
                  f"（{rd.fmt_t(idx['start_ns'])} ～ {rd.fmt_t(idx['end_ns'])}）")
     for w in windows:
         rel_base = base   # [+秒] 一律是距離數據開頭（跟 rosout_parser、mcap_analyzer、analysis_run 同一個基準）；錨點另外標
-        # 讀哪裡：analysis_run 切好的切片（只有指派的 Topic、時間窗加上之前的最後一則），沒有切片才讀原本的數據。
-        # Key 的目錄、[+秒] 的基準仍用原本數據的全域索引（切片的時間窗跟原本的一樣，數字可以直接對照）
-        src, via = data, ""
-        sl = w.get("data") or rd.slice_for_window(w)
-        if sl:
-            sdata, serr = rd.resolve_data(sl)
-            if sdata:
-                src, via = sdata, f"（讀切片 {os.path.basename(sl.rstrip('/'))}）"
-            else:
-                via = f"（切片 {sl} 讀不到：{serr}；改讀原本的數據）"
+        src = data
         # 發布方式要看這個 Topic 全部的狀態與數值（每一則是不是都帶著改變），跟 analysis_run 的全部 Topic 量測同一個判斷
         extra = [k["key"] for k in entry.get("keys", []) if k["category"] in rd.SCAN_CATEGORIES and not k["key"].startswith("header.")
                  and k["key"] not in keys]
@@ -154,7 +163,7 @@ def worker_main(argv):
         rate = rd.rate_features(times, w, data_start_ns=idx["start_ns"], change_times=rd.change_times(pattern_feats))
         wname = w.get("label") or "時間窗"
         lines.append(f"{wname}：{rd.window_text(w, base)}" + ("（已限制在數據範圍內）" if w.get("clamped") else "")
-                     + "；[+秒] 是距離數據開頭的時間" + via)
+                     + "；[+秒] 是距離數據開頭的時間")
         if not times:
             carry = (rd.carry_in_values(src["mcap_files"], entry["topic"], entry["type"], keys, w["start_ns"])
                      if w["start_ns"] > idx["start_ns"] else {})
@@ -230,7 +239,13 @@ def worker_main(argv):
                 lines.append(f"     其餘 {len(quiet)} 項在時間窗內沒有變化（{_unchanged_summary([f for _, f in quiet])}）")
             wkeys[k] = {"category": d["category"], "dim": dim, "type": d["type"], "data_type": rd.data_type_of(d),
                         "map_by": d.get("map_by"), "entries": {lab: rd.trim_changes(f) for lab, f in feats.items()}, "flags": flags}
-        results.append({"window": w, "rate": rate, "keys": wkeys, "errors": errors, "source": src["bag_dir"]})
+        wconds = []
+        for c in conds:
+            res = rd.where_on_series(c, keys, descs, series, w["end_ns"], rel_base)
+            lines.append("  ▸ " + res["line"])
+            wconds.append(res)
+        results.append({"window": w, "rate": rate, "keys": wkeys, "errors": errors, "source": src["bag_dir"],
+                        **({"where": wconds} if wconds else {})})
     if skipped:
         lines.append("沒有量測：" + "；".join(skipped) + (f"（可以量測的 Key：{avail}）" if unknown else ""))
     # 異常與變化分開寫：開始／停止發布、一段完整的發布、狀態跳轉、尖峰都是量到的變化，不代表異常。舊版全部列在「異常指標」底下，
@@ -257,22 +272,24 @@ def host_main(argv):
     if err:
         print(err)
         return 2
+    err = rd.not_recording(args.data or args.data_opt, "mcap_feature_measure")   # 主機上的一般檔案：先指到對的技能，不要先叫人開容器
+    if err:
+        print(err)
+        return 2
     container, err = resolve_container(args.container)
     if err:
         print(err)
         return 2
     mounts = rd.container_mounts(container)
     wargs = rd.host_common_args(container, args.data or args.data_opt, mounts)
-    topic = args.topic or (os.environ.get("ANALYSIS_TOPIC") or "").strip()   # analysis worker：系統帶入指派的 Topic
-    if topic:
-        wargs += ["--topic", topic]
+    if args.topic:
+        wargs += ["--topic", args.topic]
     for k in args.key:
         wargs += ["--key", k]
-    windows = [rd.resolve_window_ids(w) for w in args.window]
-    if not windows and not args.around:   # 沒指定時間窗：環境變數給的時間窗（第九輪以前 analysis_run 的 worker 用；沒有就是整段）
-        windows = [rd.resolve_window_ids(w["id"]) for w in rd.analysis_windows()]
-    for w in windows:
+    for w in args.window:
         wargs += ["--window", w]
+    for c in args.where:
+        wargs += ["--where", c]
     if args.around:
         wargs += ["--around", args.around, "--before", str(args.before), "--after", str(args.after)]
     if args.filter:
@@ -281,7 +298,7 @@ def host_main(argv):
     rc, out = rd.run_in_container(os.path.abspath(__file__), wargs, container=container, timeout=timeout,
                                   what="mcap_feature_measure（特徵量測）",
                                   timeout_hint="時間窗很長、訊息很多時，縮短時間窗或少量測幾個 Key。")
-    print(rd.finalize_output(out) + cli.ignored_note())
+    print(rd.finalize_output(out, cli.ignored_note()))
     return rc
 
 

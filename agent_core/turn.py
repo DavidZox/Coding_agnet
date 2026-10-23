@@ -30,9 +30,9 @@ def _content_for_context(result, tool_tokens, agent=None, use_summary=True):
     存檔編號），超過 RAW_RESULT_MAX_TOKENS 保留頭尾；不呼叫任何模型，要查細節由模型自己決定。
 
     harness 模式：門檻內原封不動。超過 TOOL_RESULT_TOKEN_THRESHOLD 時：
-    - use_summary=True（預設）且提供 agent：交給 agent.summarize_tool_result()——一個獨立、乾淨的一次性
-      session，拿完整原始輸出 + 使用者目標 + 這一步的目的做任務導向擷取，主對話收到的是跟任務有關的重點。
-      所有工具回傳同一套規則，沒有腳本自帶的豁免。
+    - use_summary=True（預設）且提供 agent：交給 agent.summarize_tool_result()——獨立、乾淨的 session 拿完整原始輸出
+      + 使用者目標 + 這一步的目的做任務導向提煉（長的依結構切段、每段一個 worker 再整合，見 agent_core/extract.py），
+      主對話收到的是跟任務有關的重點（每條附原文的行號）。所有工具回傳同一套規則，沒有腳本自帶的豁免。
     - use_summary=False（/summarize off）、沒有 agent、或摘要 session 失敗：退回只給成功／失敗判定——零延遲，
       但模型拿不到內容，只能換更精確的參數重查。
     """
@@ -57,8 +57,9 @@ def _content_for_context(result, tool_tokens, agent=None, use_summary=True):
 
     status = "失敗" if result.lstrip().startswith("[ERROR]") else "成功"
     rid = getattr(agent, "last_result_id", None) if agent is not None else None
-    recall = (f"完整原始輸出已存成結果檔 #{rid}：需要內容時由你自己執行 result_grep {rid} <關鍵字> 搜、或 result_view {rid} 看片段"
-              f"（不要叫使用者去搜），不要重新執行同一個工具" if rid else "需要內容時請換更精確的參數重新執行工具")
+    recall = (f"完整原始輸出已存成結果檔 #{rid}：需要內容時由你自己執行 result_recall {rid} \"<使用者的問題>\"（交給獨立 session 依問題提煉）、"
+              f"或 result_view {rid} --outline 看有哪幾節再 --from <行號> 看那一段（不要叫使用者去看），不要重新執行同一個工具"
+              if rid else "需要內容時請換更精確的參數重新執行工具")
     return (
         f"{TOOL_REDUCED_TAG}\n"
         f"指令已{status}執行（原始輸出約 {tool_tokens} tokens，超過門檻 {TOOL_RESULT_TOKEN_THRESHOLD}，"

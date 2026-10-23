@@ -3,16 +3,22 @@
 每台機器人的 TaskAgent、web_console（port 8020）與 manual_trigger（port 8002）。交握走真的 ROS 2 topic 與
 fih_rmf_msgs 的型別，agent 可以用 ROS2_* 技能觀察，也可以用 ros2 topic pub 或 manual_trigger 介入。
 
-行為照 amr_base/src/fih_rmf_system 的程式與 amr_base_sw/RMF_Integration_Report.md 1.3 節：
-- web_console 收到 work package（POST /api/send_tasks）→ orchestrtor 對目前這一站產生 work item
-  （item_id＝{package}::{輪次}::{站序}::{序號}）交給 distribute（incoming_tasks）。工作項只有 DISPATCHED／CONFIRMED 兩種狀態：
-  收到機器人的 /{rid}/task_exec_fin（task_id 逐字等於 item_id）才 CONFIRMED、派下一站；工作包 RUNNING／COMPLETED。
-  刪除工作包只讓 orchestrtor 停止派下一站（已經送到 distribute 或機器人正在做的那一站照樣會做完）。
+行為照 amr_base/src/fih_rmf_system 的程式（orchestrator.py、resource_allocator.py、msg_codec.py、web_console/*）：
+- web_console 收到 work package（POST /api/send_tasks）→ 以 WorkPackage 發到 /incoming_work_packages（外部直接發布的
+  WorkPackage 也收）→ orchestrtor 對目前這一站產生 work item（item_id＝{package}::{輪次}::{站序}::{run_id}-{序號}）以
+  StationTask 交給 distribute（/incoming_tasks）。工作項只有 DISPATCHED／CONFIRMED：收到 /{rid}/task_exec_fin（task_id 逐字
+  等於 item_id）才 CONFIRMED、派下一站；工作包 RUNNING／COMPLETED（完成的一直留在清單）。重複的 package_id 忽略（記一則事件），
+  刪除過的 id 可以再送。刪除工作包只讓 orchestrtor 停止派下一站（已經送到 distribute 或機器人正在做的那一站照樣會做完）。
 - distribute 每 0.5 秒對配到的機器人發 /{rid}/allocator_status（AllocatorCommand authorize）；機器人回 /{rid}/handshake_states
   （HandshakeState is_authored "yes"/"no"，沒有 task_id，distribute 只看最後一則）；看到 yes 就發 confirm、任務移出 distribute。
   授權逾時（authorize_timeout_sec，預設 10 秒）→ OverPending；待滿 threshold_recovery_sec（預設 10 秒）回 raw 重新配對。
-  指定的機器人離線（沒有 /{rid}/robot_state 心跳）就一直等。刪除 OverPending 任務只把它移出 distribute——orchestrtor 不知道，
-  那一站永遠等不到完成訊號（跟真系統一樣）。
+  指定的機器人離線（沒有 /{rid}/robot_state 心跳）就一直等。刪除 OverPending 任務（CancelOverpendingTask）只刪「此刻在
+  OverPending」的，而且只把它移出 distribute——orchestrtor 不知道，那一站永遠等不到完成訊號（跟真系統一樣）。
+- 站點：拓譜圖節點的 name 可以是空字串（真的 fih_humanoid_amrScene_v2、BadaMap02 都是）；站點值先當名稱查、查不到再當整數 id
+  （同 TaskAgent._resolve_station_id）。
+- /api/ws 的快照欄位同 msg_codec.distribute_ui_state_to_dict／orchestrator_ui_state_to_dict（沒有模擬器專用的欄位；params 是 {}，
+  同真的 web_console）；伺服器每 --ws-ping-interval 秒（預設 20，同 uvicorn）ping 一次，--ws-ping-timeout 秒內沒有 pong 就以
+  close 1011 斷線。
 - manual_trigger：POST /batch_handshake [{robot_name, is_authored}]、POST /batch_task_exec_fin [{robot_name, task_id}]。
 
 機器人的行為（config 的 behavior）：
@@ -25,25 +31,32 @@ fih_rmf_msgs 的型別，agent 可以用 ROS2_* 技能觀察，也可以用 ros2
   slow           照常，但移動非常慢（做不完）。
   offline        沒有心跳、不回應。
 
-評測用的額外端點（真的 web_console 沒有）：GET /api/sim_state（完整狀態、每一則 topic 訊息的紀錄與來源）。
+設定（--config 的 JSON）：robots、packages（預先放的工作包，可帶 _preset_items）、nodes／edges（拓譜圖）、params（含
+cancel_latency_sec：DELETE 之後過多久才生效，預設 0；測 OverPending 刪除的時序用）、done_ids。
+評測用的額外端點（真的 web_console 沒有）：GET /api/sim_state（完整狀態、每一則 topic 訊息的紀錄與來源；packages 的 stations
+換成站點名稱，同一個 id 刪除後再送的寫成 id#2）、GET /api/received。
 
     python3 rmf_sim.py --config config.json            # 容器裡（ROS 2 Jazzy＋fih_rmf_msgs）
     python3 rmf_sim.py --config config.json --no-ros   # 主機上測狀態機與 HTTP（不發 ROS topic）
 """
 import argparse
 import base64
+import copy
 import hashlib
 import json
 import math
+import os
 import socket
 import struct
-import sys
 import threading
 import time
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote, urlparse
 
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+WS_PUSH_SECONDS = 0.5
+WS_PING = {"interval": 20.0, "timeout": 20.0}       # uvicorn（websockets）的預設
 
 DEFAULT_NODES = [
     {"id": 0, "name": "home", "label": "充電待命區", "description": "【拓譜代號 home】機器人待命與充電位置。", "x": 0.0, "y": 0.0},
@@ -64,6 +77,7 @@ DEFAULT_ROBOTS = [
     {"id": "tb3", "station": "a8", "battery": 64.0, "behavior": "normal"},
 ]
 BEHAVIORS = {"normal", "busy", "silent", "lost_fin", "lost_fin_once", "lost_yes_once", "slow", "offline"}
+UI_EVENTS = {"distribute": 10, "orchestrtor": 20}   # 真的 dashboard 只留最近 10／20 則
 
 
 def now():
@@ -76,20 +90,20 @@ def hhmmss(ts=None):
 
 # ================================================================ 狀態機（純 Python，不依賴 ROS）
 class Robot:
-    def __init__(self, spec, stations):
+    def __init__(self, spec, sim):
         self.id = spec["id"]
         self.behavior = spec.get("behavior", "normal")
         if self.behavior not in BEHAVIORS:
             raise ValueError(f"未知的 behavior：{self.behavior}")
-        st = stations.get(spec.get("station", "home")) or next(iter(stations.values()))
-        self.station = st["name"]
+        st = sim.resolve_station(spec.get("station", "home")) or sim.nodes[0]
+        self.station = st["_ref"]
         self.x, self.y, self.theta = float(spec.get("x", st["x"])), float(spec.get("y", st["y"])), 0.0
         self.battery = float(spec.get("battery", 80.0))
         self.speed = float(spec.get("speed", 0.02 if self.behavior == "slow" else 0.8))
         self.priority = int(spec.get("priority", 0))
         self.state = "IDLE"                 # TaskAgent 自己的狀態：IDLE／RUNNING
         self.task_id = None                 # 正在做的 task（item_id）
-        self.target = None                  # 目標站名
+        self.target = None                  # 目標站（節點的 ref）
         self.done_ids = list(spec.get("done_ids", []))   # 最近做完的 task_id（R3）
         self.seen_auth = set()              # lost_yes_once：已經看過一次授權的 task
         self.fin_lost = 0                   # lost_fin_once：已經遺失過幾次
@@ -98,6 +112,11 @@ class Robot:
     @property
     def online(self):
         return self.behavior != "offline"
+
+    @property
+    def seq_state(self):
+        """RobotState.sequence.state（真的機器人：running／standby／fail）。"""
+        return "running" if self.state == "RUNNING" else "standby"
 
 
 class Item:
@@ -113,13 +132,13 @@ class Item:
 class Package:
     def __init__(self, req):
         self.package_id = req["task_id"]
-        self.task_type = req.get("task_type", "regular")
-        self.level = req.get("level", "normal")
+        self.task_type = req.get("task_type", "regular") or "regular"
+        self.level = req.get("level", "normal") or "normal"
         self.weight = req.get("weight", 0) or 0
         self.assign_amr = req.get("assign_amr") or ""
         self.loop = bool(req.get("loop", False))
         self.loop_count = req.get("loop_count")
-        self.stations = [(s.get("station", "home"), s.get("description") or "") for s in req.get("stops", [])]
+        self.stations = [(s.get("station", "home"), s.get("description") or "") for s in req.get("stops", []) if s.get("station")]
         self.status = "RUNNING"
         self.iteration, self.station_index = 0, 0
         self.items = []
@@ -142,6 +161,8 @@ class DTask:
         self.last_auth = 0.0
         self.ovp_start = None
         self.auth_count = 0
+        self.blocked = None                 # 指定的機器人不能接的原因（offline／busy）
+        self.blocked_at = 0.0               # 上一次記「攔截」事件的時間
 
 
 class Sim:
@@ -150,31 +171,58 @@ class Sim:
         self.cfg = cfg
         self.bus = bus
         self.t0 = now()
-        self.nodes = cfg.get("nodes") or DEFAULT_NODES
-        self.edges = cfg.get("edges") or DEFAULT_EDGES
-        self.stations = {n["name"]: n for n in self.nodes}
+        self.run_id = uuid.uuid4().hex[:8]      # 同 orchestrator._run_id：item_id 的代號
+        self.nodes = [dict(n) for n in (cfg.get("nodes") or DEFAULT_NODES)]
+        for n in self.nodes:
+            n["name"] = (n.get("name") or "").strip()
+            n["_ref"] = n["name"] or str(n.get("id"))
+        self.edges = cfg.get("edges") if cfg.get("edges") is not None else DEFAULT_EDGES
+        self.stations = {n["_ref"]: n for n in self.nodes}          # ref（名稱，沒有名稱用 id）→ 節點
+        self.by_name = {n["name"]: n for n in self.nodes if n["name"]}
+        self.by_id = {str(n.get("id")): n for n in self.nodes}
         self.params = {"authorize_period_sec": 0.5, "authorize_timeout_sec": 10.0, "threshold_ovp_sec": 10.0,
-                       "threshold_recovery_sec": 10.0, "heartbeat_timeout_sec": 3.0}
+                       "threshold_recovery_sec": 10.0, "heartbeat_timeout_sec": 3.0, "cancel_latency_sec": 0.0}
         self.params.update(cfg.get("params") or {})
-        self.robots = {r["id"]: Robot(r, self.stations) for r in (cfg.get("robots") or DEFAULT_ROBOTS)}
-        self.packages = {}                  # 進行中與完成的（取消的移到 cancelled）
-        self.cancelled = {}
+        self.robots = {r["id"]: Robot(r, self) for r in (cfg.get("robots") or DEFAULT_ROBOTS)}
+        self.packages = {}                  # orchestrtor 的清單（RUNNING 與 COMPLETED；刪除的移出）
+        self.history = []                   # 每一個收過的工作包（含刪除的），/api/sim_state 用
         self.raw, self.processing, self.overpending = [], {}, []   # processing: rid → DTask
         self.flags = {rid: "" for rid in self.robots}             # distribute 每台一個 is_authored 旗標
         self.last_heartbeat = {rid: 0.0 for rid in self.robots}
-        self.duty = {rid: None for rid in self.robots}             # distribute 眼中的 duty（確認過的 task）
+        self.duty = {rid: None for rid in self.robots}             # distribute 眼中的 duty（確認過、還沒做完的 task）
+        self.display = {rid: {"state": "standby", "last": "None"} for rid in self.robots}   # 網頁的虛擬顯示狀態（confirm 後鎖成 duty）
         self.seq = 0
         self.step = 0
         self.events, self.orch_events = [], []
         self.log = []                       # 評測用：每一則訊息／HTTP 呼叫（含來源）
         self.expect_own = {}                # (topic) → 自己（機器人／manual_trigger）發出、還沒收到的則數
+        self.own_msgs = {}                  # topic → 自己發的內容（web_console 轉發的 WorkPackage／Cancel*）：收到時略過
+        self.pending = []                   # 還沒生效的刪除：(生效時間, 種類, id, 來源)
         self.last_tick = {"auth": 0.0, "hb": 0.0, "ui": 0.0}
-        self.received = []                  # send_tasks 收到的原始請求
+        self.received = []                  # send_tasks／incoming_work_packages 收到的原始請求
         for req in cfg.get("packages") or []:   # 預先放進來的工作包（例如已經卡住的）
             self._new_package(req, source="preset")
         for rid, ids in (cfg.get("done_ids") or {}).items():
             if rid in self.robots:
                 self.robots[rid].done_ids.extend(ids)
+
+    # ------------------------------------------------ 站點
+    def resolve_station(self, ref):
+        """同 TaskAgent._resolve_station_id：先當名稱查，查不到再當整數 id。"""
+        s = str(ref if ref is not None else "").strip()
+        if not s or s.lower() == "none":
+            return None
+        if s in self.by_name:
+            return self.by_name[s]
+        try:
+            return self.by_id.get(str(int(s)))
+        except ValueError:
+            return None
+
+    def station_label(self, ref):
+        """同 distribute 的 _station_label：id 換成名稱，對不到就原樣。"""
+        n = self.by_id.get(str(ref).strip())
+        return n["name"] if n is not None and n["name"] else ref
 
     # ------------------------------------------------ 紀錄
     def event(self, text, orch=False):
@@ -195,16 +243,33 @@ class Sim:
         else:   # 沒有 ROS：直接送回自己的訂閱（模擬 DDS 迴圈）
             self.on_message(topic, mtype, fields)
 
+    def _bridge_publish(self, topic, mtype, fields, key):
+        """web_console 轉發的訊息：自己的訂閱收到時依內容認出來略過（外部發的同一種訊息照常處理）。"""
+        self.own_msgs.setdefault(topic, []).append(key)
+        self._publish(topic, mtype, fields, own=False, via="fastapi_resource_bridge")
+
+    def _is_own(self, topic, key):
+        keys = self.own_msgs.get(topic) or []
+        if key in keys:
+            keys.remove(key)
+            return True
+        return False
+
     # ------------------------------------------------ orchestrtor
     def _new_package(self, req, source="web_console"):
         pid = req["task_id"]
-        if pid in self.packages or pid in self.cancelled:
-            return False                    # orchestrtor 忽略重複 id
+        if not pid or not [s for s in req.get("stops") or [] if s.get("station")]:
+            return False                    # 同 orchestrator.add_package：沒有 id 或沒有站點就略過
+        if pid in self.packages:
+            self.event(f"⚠️ 忽略重複 package_id: {pid}", orch=True)
+            self.record("package_duplicate", package_id=pid, source=source)
+            return False                    # 同 orchestrator.add_package：清單裡已有（含 COMPLETED）就忽略
         pkg = Package(req)
         self.packages[pid] = pkg
-        self.received.append(req)
+        self.history.append(pkg)
+        self.received.append({k: v for k, v in req.items() if k != "_preset_items"})
         stops = " → ".join(s for s, _ in pkg.stations)
-        self.event(f"📦 收到 work package {pid}（{len(pkg.stations)} 站：{stops}，loop={pkg.loop}）", orch=True)
+        self.event(f"📦 收到 work package {pid}（{len(pkg.stations)} 站{'，循環' if pkg.loop else ''}：{stops}）", orch=True)
         self.record("package_received", package_id=pid, source=source, stops=[s for s, _ in pkg.stations], assign=pkg.assign_amr)
         if req.get("_preset_items"):        # 預設情境：直接放到某一站、某個狀態
             self._apply_preset(pkg, req["_preset_items"])
@@ -221,17 +286,19 @@ class Sim:
             if preset.get("confirmed_by_distribute"):
                 self._remove_from_distribute(item.item_id)
                 self.duty[preset["robot"]] = item.item_id
+                self.display[preset["robot"]] = {"state": "duty", "last": item.item_id}
 
     def _dispatch(self, pkg, to_distribute=True):
         station, desc = pkg.stations[pkg.station_index]
         self.seq += 1
-        item_id = f"{pkg.package_id}::{pkg.iteration}::{pkg.station_index}::{self.seq}"
+        item_id = f"{pkg.package_id}::{pkg.iteration}::{pkg.station_index}::{self.run_id}-{self.seq}"
         item = Item(item_id, station, desc, pkg)
         pkg.items.append(item)
         pkg.updated_at = now()
         if to_distribute:
-            msg = ",".join([item_id, pkg.task_type, pkg.level, str(pkg.weight or 0), pkg.assign_amr or "", station or ""])
-            self._publish("/incoming_tasks", "String", {"data": msg})
+            self._publish("/incoming_tasks", "StationTask", {"task_id": item_id, "task_type": pkg.task_type, "level": pkg.level,
+                                                              "weight": int(pkg.weight or 0), "assign_amr": pkg.assign_amr or "",
+                                                              "station": station or ""})
             self.event(f"➡️ 派工 {item_id} → distribute（站點 {station}）", orch=True)
 
     def _orch_tick(self):
@@ -243,11 +310,12 @@ class Sim:
                 self._dispatch(pkg)
                 continue
             if item.status == "DISPATCHED":
+                # 同 orchestrator.update_distribute_tasks：processing 裡是哪台就顯示哪台；raw／OverPending 顯示「等待機器人」
                 rid = next((r for r, t in self.processing.items() if t.id == item.item_id), None)
                 if rid:
                     item.robot_id, item.waiting_for_robot = rid, False
                 elif any(t.id == item.item_id for t in self.raw + self.overpending):
-                    item.waiting_for_robot = True
+                    item.robot_id, item.waiting_for_robot = None, True
                 continue
             pkg.station_index += 1
             if pkg.station_index >= len(pkg.stations):
@@ -263,13 +331,13 @@ class Sim:
             self._dispatch(pkg)
 
     def cancel_package(self, pid, source="web_console"):
-        pkg = self.packages.pop(pid, None)
+        pkg = self.packages.pop((pid or "").strip(), None)
         if not pkg:
+            self.record("package_cancel_miss", package_id=pid, source=source)
             return False
         pkg.cancelled = True
-        self.cancelled[pid] = pkg
-        self.event(f"🗑️ work package {pid} 已被使用者刪除", orch=True)
-        self.record("package_cancelled", package_id=pid, source=source)
+        self.event(f"🗑️ work package {pkg.package_id} 已被使用者刪除", orch=True)
+        self.record("package_cancelled", package_id=pkg.package_id, source=source)
         return True
 
     def _on_task_exec_fin(self, rid, task_id, source):
@@ -284,13 +352,17 @@ class Sim:
         self.event(f"ℹ️ 收到 {rid} 的 task_exec_fin {task_id}，但沒有對應的進行中工作項", orch=True)
 
     # ------------------------------------------------ distribute
-    def _on_incoming_task(self, data):
-        parts = (data.split(",") + [""] * 6)[:6]
-        task_id, task_type, level, weight, assign, station = parts
-        if any(t.id == task_id for t in self.raw + self.overpending + list(self.processing.values())):
+    def _on_incoming_task(self, fields):
+        task_id = str(fields.get("task_id") or "")
+        if not task_id or any(t.id == task_id for t in self.raw + self.overpending + list(self.processing.values())):
             return
-        self.raw.append(DTask(task_id, task_type or "regular", level or "normal", weight or "0", assign, station))
-        self.event(f"📥 收到任務 {task_id}（站點 {station}，指定 {assign or '不指定'}）")
+        assign = str(fields.get("assign_amr") or "").strip()
+        station = str(fields.get("station") or "").strip() or "none"
+        self.raw.append(DTask(task_id, fields.get("task_type") or "regular", fields.get("level") or "normal",
+                              int(fields.get("weight") or 0), assign, station))
+        if assign in self.display:          # 同 resource_allocator.submit_task：指定的機器人顯示狀態重置成 standby
+            self.display[assign]["state"] = "standby"
+        self.event(f"📥 收到任務 {task_id}（站點 {self.station_label(station)}，指定 {assign or '不指定'}）")
 
     def robot_online(self, rid):
         return now() - self.last_heartbeat.get(rid, 0.0) <= self.params["heartbeat_timeout_sec"]
@@ -311,24 +383,41 @@ class Sim:
         for rid, task in list(self.duty.items()):
             if task and self.robots[rid].state == "IDLE" and self.robots[rid].task_id is None:
                 self.duty[rid] = None
-        # OverPending 冷卻完回 raw
+        # OverPending 冷卻完回 raw（同 resource_allocator：等待時間從回流時重新算）
         for task in list(self.overpending):
             if t - task.ovp_start >= self.params["threshold_recovery_sec"]:
                 self.overpending.remove(task)
-                task.ovp_start, task.robot, task.auth_start = None, None, None
+                task.ovp_start, task.robot, task.auth_start, task.created = None, None, None, t
                 self.raw.append(task)
                 self.event(f"♻️ {task.id} 冷卻結束，回到待派")
+        # raw 等太久（threshold_ovp_sec）→ OverPending（同 resource_allocator 的 REPORT）
+        expired = [x for x in self.raw if t - x.created > self.params["threshold_ovp_sec"]]
+        if expired:
+            for task in expired:
+                self.raw.remove(task)
+                task.ovp_start = t
+                self.overpending.append(task)
+            self.event(f"!! {len(expired)} 件任務等待過久進入 OverPending（{'、'.join(x.id for x in expired)}）")
         # raw → 配對機器人
         for task in list(self.raw):
             if task.assign:
-                cands = [task.assign] if task.assign in self.robots and self._robot_free(task.assign) else []
+                if task.assign in self.robots and self._robot_free(task.assign):
+                    cands = [task.assign]
+                else:
+                    reason = "offline" if task.assign not in self.robots or not self.robot_online(task.assign) else "busy"
+                    # 同 resource_allocator：每一輪配對（EVALUATION）都在網頁的事件列表記一次「攔截」；這裡限成每 2 秒一次
+                    if task.blocked != reason or t - task.blocked_at >= 2.0:
+                        task.blocked, task.blocked_at = reason, t
+                        what = "已離線，等待恢復" if reason == "offline" else "忙碌中"
+                        self.event(f"攔截: 指定機器人 {task.assign} {what} ({task.id})")
+                    cands = []
             else:
                 cands = sorted(r for r in self.robots if self._robot_free(r))
             if not cands:
                 continue
             rid = cands[0]
             self.raw.remove(task)
-            task.robot, task.auth_start, task.last_auth, task.auth_count = rid, t, 0.0, 0
+            task.robot, task.auth_start, task.last_auth, task.auth_count, task.blocked = rid, t, 0.0, 0, None
             self.processing[rid] = task
             self.flags[rid] = ""
             self.event(f"🎯 {task.id} 配對 {rid}，開始授權")
@@ -338,6 +427,7 @@ class Sim:
                 del self.processing[rid]
                 self.flags[rid] = ""
                 self.duty[rid] = task.id
+                self.display[rid] = {"state": "duty", "last": task.id}
                 self._publish(f"/{rid}/allocator_status", "AllocatorCommand", {"command": "confirm", "task_id": task.id,
                               "type": "", "action": "", "station": ""})
                 self.event(f"🤝 {rid} 回 yes → confirm {task.id}")
@@ -357,14 +447,34 @@ class Sim:
                               "type": task.type, "action": "move", "station": task.station})
 
     def cancel_overpending(self, task_id, source="web_console"):
+        task_id = (task_id or "").strip()
         hit = next((t for t in self.overpending if t.id == task_id), None)
         if not hit:
-            self.record("overpending_cancel_miss", task_id=task_id, source=source)
+            where = ("raw" if any(t.id == task_id for t in self.raw) else
+                     "processing" if any(t.id == task_id for t in self.processing.values()) else None)
+            self.record("overpending_cancel_miss", task_id=task_id, source=source, where=where)
             return False
         self.overpending.remove(hit)
         self.event(f"🗑️ OverPending 任務 {task_id} 已刪除")
         self.record("overpending_cancelled", task_id=task_id, source=source)
         return True
+
+    # ------------------------------------------------ 刪除的請求（web_console 轉發成 topic；可設定延遲，模擬 DELETE 晚到）
+    def request_cancel(self, kind, ident, source="web_console"):
+        topic, mtype, field = (("/cancel_work_package", "CancelWorkPackage", "package_id") if kind == "package"
+                               else ("/cancel_overpending_task", "CancelOverpendingTask", "task_id"))
+        self._bridge_publish(topic, mtype, {field: ident}, ident)
+        latency = float(self.params.get("cancel_latency_sec") or 0.0)
+        if latency <= 0:
+            self._apply_cancel(kind, ident, source)
+        else:
+            self.pending.append((now() + latency, kind, ident, source))
+
+    def _apply_cancel(self, kind, ident, source):
+        if kind == "package":
+            self.cancel_package(ident, source)
+        else:
+            self.cancel_overpending(ident, source)
 
     # ------------------------------------------------ 機器人（TaskAgent）
     def _robot_on_command(self, rid, cmd):
@@ -383,10 +493,13 @@ class Sim:
             if task_id in r.done_ids and r.behavior not in ("lost_fin", "lost_fin_once"):
                 self._publish(f"/{rid}/task_exec_fin", "TaskExecutionFinished", {"task_id": task_id})
             return self._handshake(rid, "yes")
-        if r.state == "IDLE" and station in self.stations:     # R4
-            r.state, r.task_id, r.target = "RUNNING", task_id, station
-            self.event(f"🚚 {rid} 接下 {task_id}，前往 {station}")
+        node = self.resolve_station(station)
+        if r.state == "IDLE" and node is not None:             # R4（站點解析不出來：不受理、不回 yes，同 TaskAgent）
+            r.state, r.task_id, r.target = "RUNNING", task_id, node["_ref"]
+            self.event(f"🚚 {rid} 接下 {task_id}，前往 {node['_ref']}")
             return self._handshake(rid, "yes")
+        if node is None:
+            return
         return self._handshake(rid, "no")
 
     def _handshake(self, rid, value):
@@ -434,7 +547,7 @@ class Sim:
                                   "distance_to_target": round(dist, 3), "has_distance_to_target": bool(r.target),
                                   "battery_level": round(r.battery, 1), "is_charging": r.station == "home" and r.state == "IDLE"},
                 "sequence": {"robot_name": rid, "workstations": [r.target] if r.target else [], "priority": r.priority,
-                             "state": "running" if r.state == "RUNNING" else "idle", "timestamp": int(now())}})
+                             "state": r.seq_state, "timestamp": int(now())}})
 
     # ------------------------------------------------ 收到 topic（ROS 訂閱或 no-ros 的迴圈）
     def on_message(self, topic, mtype, fields):
@@ -442,10 +555,19 @@ class Sim:
             own = self.expect_own.get(topic, 0) > 0
             if own:
                 self.expect_own[topic] -= 1
+            if topic == "/incoming_tasks":
+                return self._on_incoming_task(fields)
+            if topic == "/incoming_work_packages":
+                return self._on_work_package(fields)
+            if topic in ("/cancel_work_package", "/cancel_overpending_task"):
+                kind, key = ("package", "package_id") if topic == "/cancel_work_package" else ("overpending", "task_id")
+                ident = str(fields.get(key) or "")
+                if not self._is_own(topic, ident):
+                    self.record("ros_cancel", topic=topic, id=ident)
+                    self._apply_cancel(kind, ident, "ros2")
+                return
             parts = topic.strip("/").split("/")
             rid = parts[0] if len(parts) == 2 else None
-            if topic == "/incoming_tasks":
-                return self._on_incoming_task(fields.get("data", ""))
             if rid not in self.robots:
                 return
             leaf = parts[1]
@@ -463,6 +585,17 @@ class Sim:
             elif leaf == "task_exec_fin":
                 self._on_task_exec_fin(rid, str(fields.get("task_id", "")), self._source(topic, own))
 
+    def _on_work_package(self, fields):
+        """/incoming_work_packages（WorkPackage）：web_console 自己轉發的略過（已經處理過），外部直接發布的當成新的工作包。"""
+        pid = str(fields.get("task_id") or "")
+        if self._is_own("/incoming_work_packages", pid):
+            return
+        req = {"task_id": pid, "task_type": fields.get("task_type"), "level": fields.get("level"), "weight": fields.get("weight"),
+               "assign_amr": fields.get("assign_amr"), "loop": bool(fields.get("loop")),
+               "loop_count": fields.get("loop_count") if fields.get("has_loop_count") else None,
+               "stops": [{"station": s.get("station"), "description": s.get("description") or ""} for s in fields.get("stops") or []]}
+        self._new_package(req, source="ros2")
+
     def _source(self, topic, own):
         if not own:
             return "external"               # agent 自己 ros2 topic pub 的
@@ -471,6 +604,27 @@ class Sim:
             self.expect_own["bridge:" + topic] = bridge - 1
             return "manual_trigger"
         return "robot"
+
+    # ------------------------------------------------ web_console（HTTP 進來的）
+    def web_send(self, tasks):
+        """POST /api/send_tasks：每個工作包以 WorkPackage 發到 /incoming_work_packages（同 FastAPIBridgeNode.publish_work_package），
+        回傳 details（每個工作包的 JSON 文字）。"""
+        details = []
+        with self.lock:
+            self.record("http", method="POST", path="/api/send_tasks", body=tasks)
+            for t in tasks:
+                data = {"task_id": t.get("task_id"), "task_type": t.get("task_type", "regular"), "level": t.get("level", "normal"),
+                        "weight": t.get("weight", 0), "assign_amr": t.get("assign_amr", "tb1"), "loop": bool(t.get("loop", False)),
+                        "loop_count": t.get("loop_count"),
+                        "stops": [{"station": s.get("station", "home"), "description": s.get("description") or ""}
+                                  for s in t.get("stops", [])]}
+                self._new_package(dict(data, _preset_items=t.get("_preset_items")) if t.get("_preset_items") else data)
+                msg = {k: v for k, v in data.items() if k not in ("loop_count", "stops")}
+                msg.update({"weight": int(data["weight"] or 0), "loop_count": int(data["loop_count"] or 0),
+                            "has_loop_count": data["loop_count"] is not None, "stops": [dict(x) for x in data["stops"]]})
+                self._bridge_publish("/incoming_work_packages", "WorkPackage", msg, str(data["task_id"]))
+                details.append(json.dumps(data, ensure_ascii=False))
+        return details
 
     # ------------------------------------------------ manual_trigger
     def manual_handshake(self, rid, value):
@@ -489,6 +643,11 @@ class Sim:
     def tick(self):
         with self.lock:
             t = now()
+            due = [p for p in self.pending if p[0] <= t]
+            if due:
+                self.pending = [p for p in self.pending if p[0] > t]
+                for _, kind, ident, source in due:
+                    self._apply_cancel(kind, ident, source)
             dt = min(0.5, t - self.last_tick.get("robot", t)) if self.last_tick.get("robot") else 0.0
             self.last_tick["robot"] = t
             self._robots_tick(dt)
@@ -509,51 +668,60 @@ class Sim:
             self.tick()
             time.sleep(0.05)
 
-    # ------------------------------------------------ 快照（格式同真的 web_console 的 /api/ws）
+    # ------------------------------------------------ 快照（欄位同 msg_codec 轉出來的 dict，也就是真的 web_console 的 /api/ws）
+    def _robot_view(self, rid, r, t):
+        online = self.robot_online(rid)
+        seen = self.last_heartbeat.get(rid, 0.0) > 0
+        disp = self.display[rid]
+        view = {"state": disp["state"], "real_state": "OFFLINE", "last_known_state": r.seq_state if seen else None,
+                "last_task_id": disp["last"], "status": "OFFLINE",
+                "delay": round(t - self.last_heartbeat[rid], 1) if seen else None,
+                "x": None, "y": None, "theta": None, "current_edge": None, "target_id": None}
+        if online:
+            view.update({"real_state": r.seq_state, "status": "ONLINE", "x": round(r.x, 2), "y": round(r.y, 2), "theta": round(r.theta, 2),
+                         "current_edge": f"{r.station}->{r.target}" if r.target else "", "target_id": r.target or ""})
+        return view
+
     def _dist_snapshot(self):
         t = now()
         return {
-            "step_counter": self.step, "state": "BUSY" if self.processing else "IDLE", "events": self.events[-30:],
+            "step_counter": self.step, "state": "AUTHORIZATION" if self.processing else "REPORT",
+            "events": self.events[-UI_EVENTS["distribute"]:],
             "buffer_tasks": [],
-            "raw_tasks": [{"id": x.id, "age": round(t - x.created, 1), "assign": x.assign or None, "station": x.station} for x in self.raw],
+            "raw_tasks": [{"id": x.id, "age": round(t - x.created, 1)} for x in self.raw],
             "overpending_tasks": [{"id": x.id, "wait": round(t - x.ovp_start, 1)} for x in self.overpending],
-            "processing_tasks": [{"id": x.id, "type": x.type, "robot": rid, "station": x.station,
-                                  "authorize_sent": x.auth_count, "elapsed": round(t - x.auth_start, 1)} for rid, x in self.processing.items()],
-            "robots": {rid: {"state": "duty" if self.duty.get(rid) else ("authorizing" if rid in self.processing else "standby"),
-                             "real_state": r.state, "last_task_id": self.duty.get(rid) or r.task_id or "None",
-                             "status": "ONLINE" if self.robot_online(rid) else "OFFLINE", "delay": 0.3,
-                             "x": round(r.x, 2) if r.online else None, "y": round(r.y, 2) if r.online else None,
-                             "theta": round(r.theta, 2), "battery": round(r.battery, 1),
-                             "current_edge": f"{r.station}->{r.target}" if r.target else None, "target_id": r.target,
-                             "handshake_flag": self.flags.get(rid) or None}
-                       for rid, r in self.robots.items()},
-            "params": dict(self.params),
+            "processing_tasks": [{"id": x.id, "type": x.type, "robot": rid, "station": self.station_label(x.station)}
+                                 for rid, x in self.processing.items()],
+            "robots": {rid: self._robot_view(rid, r, t) for rid, r in self.robots.items()},
+            "params": {},
         }
 
     def snapshot(self):
         with self.lock:
             snap = self._dist_snapshot()
-            snap["orchestrtor"] = {"step_counter": self.step, "events": self.orch_events[-30:], "packages": [
-                self._pkg_view(p) for p in self.packages.values()]}
+            snap["orchestrtor"] = {"step_counter": self.step, "events": self.orch_events[-UI_EVENTS["orchestrtor"]:],
+                                   "packages": [self._pkg_view(p) for p in self.packages.values()]}
             return snap
 
     def _pkg_view(self, p):
         item = p.current_item
-        total = len(p.stations) * (int(p.loop_count) if p.loop and p.loop_count else 1)
         return {"package_id": p.package_id, "status": p.status, "loop": p.loop, "loop_count": p.loop_count,
                 "iteration": p.iteration, "station_index": p.station_index, "station_count": len(p.stations),
-                "stations": [s for s, _ in p.stations], "assign_amr": p.assign_amr or None,
+                "stations": [s for s, _ in p.stations],
                 "current_item": None if not item else {"item_id": item.item_id, "station": item.station, "status": item.status,
-                                                       "robot_id": item.robot_id, "waiting_for_robot": item.waiting_for_robot,
-                                                       "dispatched_sec_ago": round(now() - item.dispatched_at, 1)},
-                "items_done": sum(1 for it in p.items if it.status == "CONFIRMED"), "items_total": total,
+                                                       "robot_id": item.robot_id, "waiting_for_robot": item.waiting_for_robot},
+                "items_done": sum(1 for it in p.items if it.status == "CONFIRMED"), "items_total": len(p.items),
                 "updated_at": p.updated_at}
 
     def state(self):
         """評測用的完整狀態。"""
         with self.lock:
-            return {"t": round(now() - self.t0, 2), "snapshot": self.snapshot(),
-                    "packages": {pid: self._pkg_full(p) for pid, p in {**self.packages, **self.cancelled}.items()},
+            pk, seen = {}, {}
+            for p in self.history:
+                seen[p.package_id] = seen.get(p.package_id, 0) + 1
+                key = p.package_id if seen[p.package_id] == 1 else f"{p.package_id}#{seen[p.package_id]}"
+                pk[key] = self._pkg_full(p)
+            return {"t": round(now() - self.t0, 2), "snapshot": self.snapshot(), "packages": pk,
                     "robots": {rid: {"behavior": r.behavior, "state": r.state, "task_id": r.task_id, "station": r.station,
                                      "x": round(r.x, 2), "y": round(r.y, 2), "battery": round(r.battery, 1),
                                      "done_ids": r.done_ids[-20:], "online": self.robot_online(rid)} for rid, r in self.robots.items()},
@@ -564,6 +732,9 @@ class Sim:
 
     def _pkg_full(self, p):
         v = self._pkg_view(p)
+        v["stations_raw"] = v["stations"]
+        v["stations"] = [(self.resolve_station(s) or {}).get("_ref", s) for s in v["stations"]]   # 送 id 或名稱都比得到
+        v["assign_amr"] = p.assign_amr or None
         v["cancelled"] = p.cancelled
         v["items"] = [{"item_id": it.item_id, "station": it.station, "status": it.status, "robot_id": it.robot_id} for it in p.items]
         return v
@@ -579,11 +750,13 @@ class RosBus:
         from rclpy.node import Node
         from rclpy.qos import QoSProfile, ReliabilityPolicy
         from std_msgs.msg import String
-        from fih_rmf_msgs.msg import AllocatorCommand, HandshakeState, RobotState, TaskExecutionFinished
+        from fih_rmf_msgs.msg import (AllocatorCommand, CancelOverpendingTask, CancelWorkPackage, HandshakeState, RobotState,
+                                      StationTask, TaskExecutionFinished, WorkPackage)
         self.rclpy = rclpy
         rclpy.init()
         self.types = {"String": String, "AllocatorCommand": AllocatorCommand, "HandshakeState": HandshakeState,
-                      "RobotState": RobotState, "TaskExecutionFinished": TaskExecutionFinished}
+                      "RobotState": RobotState, "TaskExecutionFinished": TaskExecutionFinished, "StationTask": StationTask,
+                      "WorkPackage": WorkPackage, "CancelWorkPackage": CancelWorkPackage, "CancelOverpendingTask": CancelOverpendingTask}
         self.sim_ref = sim_ref
         qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.RELIABLE)
         self.qos = qos
@@ -620,14 +793,18 @@ class RosBus:
                                       lambda m, t=f"/{rid}/allocator_status": self._cb(t, "AllocatorCommand", m), self.qos)
             orch.create_subscription(self.types["TaskExecutionFinished"], f"/{rid}/task_exec_fin",
                                      lambda m, t=f"/{rid}/task_exec_fin": self._cb(t, "TaskExecutionFinished", m), self.qos)
-        alloc.create_subscription(self.types["String"], "/incoming_tasks", lambda m: self._cb("/incoming_tasks", "String", m), self.qos)
+        alloc.create_subscription(self.types["StationTask"], "/incoming_tasks", lambda m: self._cb("/incoming_tasks", "StationTask", m), self.qos)
+        alloc.create_subscription(self.types["CancelOverpendingTask"], "/cancel_overpending_task",
+                                  lambda m: self._cb("/cancel_overpending_task", "CancelOverpendingTask", m), self.qos)
+        orch.create_subscription(self.types["WorkPackage"], "/incoming_work_packages",
+                                 lambda m: self._cb("/incoming_work_packages", "WorkPackage", m), self.qos)
+        orch.create_subscription(self.types["CancelWorkPackage"], "/cancel_work_package",
+                                 lambda m: self._cb("/cancel_work_package", "CancelWorkPackage", m), self.qos)
+        orch.create_subscription(self.types["String"], "/distribute_ui_state", lambda m: None, self.qos)
         self._pub_node["/incoming_tasks"] = orch
         self._pub_node["/distribute_ui_state"] = alloc
-        self._pub_node["/incoming_work_packages"] = self.nodes["fastapi_resource_bridge"]
-        orch.create_subscription(self.types["String"], "/incoming_work_packages", lambda m: None, self.qos)
-        orch.create_subscription(self.types["String"], "/distribute_ui_state", lambda m: None, self.qos)
-        orch.create_subscription(self.types["String"], "/cancel_work_package", lambda m: None, self.qos)
-        alloc.create_subscription(self.types["String"], "/cancel_overpending_task", lambda m: None, self.qos)
+        for topic in ("/incoming_work_packages", "/cancel_work_package", "/cancel_overpending_task"):
+            self._pub_node[topic] = self.nodes["fastapi_resource_bridge"]
 
     _pub_node = {}
 
@@ -648,7 +825,11 @@ class RosBus:
                 pub = node.create_publisher(self.types[mtype], topic, self.qos)
                 self.pubs[(topic, via)] = pub
         msg = self.types[mtype]()
-        _fill(msg, fields)
+        if any(isinstance(v, list) and v and isinstance(v[0], dict) for v in fields.values()):
+            from rosidl_runtime_py import set_message_fields   # 巢狀陣列（WorkPackage.stops）；它會改掉傳進去的 list，給它一份複本
+            set_message_fields(msg, copy.deepcopy(fields))
+        else:
+            _fill(msg, fields)
         pub.publish(msg)
 
     def spin(self):
@@ -665,6 +846,44 @@ def _fill(msg, fields):
 
 # ================================================================ HTTP（web_console 8020、manual_trigger 8002）
 SIM = None
+
+
+def _ws_frame(opcode, payload=b""):
+    n = len(payload)
+    head = bytes([0x80 | opcode])
+    if n < 126:
+        head += bytes([n])
+    elif n < 65536:
+        head += b"\x7e" + struct.pack("!H", n)
+    else:
+        head += b"\x7f" + struct.pack("!Q", n)
+    return head + payload
+
+
+def _ws_parse(buf):
+    """客戶端的幀（有遮罩）：回傳 ((opcode, payload), 用掉的位元組數) 或 None（資料不夠）。"""
+    if len(buf) < 2:
+        return None
+    opcode, masked, n, off = buf[0] & 0x0F, buf[1] & 0x80, buf[1] & 0x7F, 2
+    if n == 126:
+        if len(buf) < 4:
+            return None
+        n, off = struct.unpack("!H", buf[2:4])[0], 4
+    elif n == 127:
+        if len(buf) < 10:
+            return None
+        n, off = struct.unpack("!Q", buf[2:10])[0], 10
+    mask = b""
+    if masked:
+        if len(buf) < off + 4:
+            return None
+        mask, off = buf[off:off + 4], off + 4
+    if len(buf) < off + n:
+        return None
+    payload = buf[off:off + n]
+    if masked:
+        payload = bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
+    return (opcode, payload), off + n
 
 
 class WebConsole(BaseHTTPRequestHandler):
@@ -684,26 +903,54 @@ class WebConsole(BaseHTTPRequestHandler):
         return json.loads(self.rfile.read(length) or b"null")
 
     def _websocket(self):
+        """同 allocator_routes.websocket_endpoint：每 0.5 秒推一幀；另外同 uvicorn 的 keepalive：每 interval 秒 ping，
+        timeout 秒內沒有 pong 就以 close 1011 斷線。客戶端送 close 就結束。"""
         key = self.headers.get("Sec-WebSocket-Key", "")
         accept = base64.b64encode(hashlib.sha1((key + WS_GUID).encode()).digest()).decode()
         self.wfile.write(("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
                           f"Sec-WebSocket-Accept: {accept}\r\n\r\n").encode())
-        self.connection.settimeout(0.05)
-        deadline = time.time() + 330
+        self.wfile.flush()
+        sock = self.connection
+        sock.settimeout(0.05)
+        interval, timeout = WS_PING["interval"], WS_PING["timeout"]
+        buf, next_push, next_ping, waiting = b"", 0.0, time.monotonic() + interval, None
         try:
-            while time.time() < deadline:
-                payload = json.dumps(SIM.snapshot(), ensure_ascii=False).encode("utf-8")
-                n = len(payload)
-                header = b"\x81" + (bytes([n]) if n < 126 else (b"\x7e" + struct.pack("!H", n) if n < 65536 else b"\x7f" + struct.pack("!Q", n)))
-                self.wfile.write(header + payload)
-                self.wfile.flush()
+            while True:
+                t = time.monotonic()
+                if t >= next_push:
+                    payload = json.dumps(SIM.snapshot(), ensure_ascii=False).encode("utf-8")
+                    sock.sendall(_ws_frame(0x1, payload))
+                    next_push = t + WS_PUSH_SECONDS
+                if interval > 0 and waiting is None and t >= next_ping:
+                    waiting = (os.urandom(4), t)
+                    sock.sendall(_ws_frame(0x9, waiting[0]))
+                if waiting is not None and t - waiting[1] > timeout:
+                    sock.sendall(_ws_frame(0x8, struct.pack("!H", 1011) + b"keepalive ping timeout"))
+                    break
                 try:
-                    data = self.connection.recv(64)
-                    if not data or (data and data[0] & 0x0F == 8):
-                        break
+                    data = sock.recv(65536)
                 except socket.timeout:
-                    pass
-                time.sleep(0.5)
+                    continue
+                if not data:
+                    break
+                buf += data
+                closed = False
+                while True:
+                    parsed = _ws_parse(buf)
+                    if parsed is None:
+                        break
+                    (opcode, payload), used = parsed
+                    buf = buf[used:]
+                    if opcode == 0xA and waiting is not None and payload == waiting[0]:
+                        waiting, next_ping = None, time.monotonic() + interval
+                    elif opcode == 0x9:
+                        sock.sendall(_ws_frame(0xA, payload))
+                    elif opcode == 0x8:
+                        sock.sendall(_ws_frame(0x8, payload[:2]))
+                        closed = True
+                        break
+                if closed:
+                    break
         except (BrokenPipeError, ConnectionResetError, OSError):
             pass
         self.close_connection = True
@@ -714,16 +961,19 @@ class WebConsole(BaseHTTPRequestHandler):
             return self._websocket()
         if path == "/api/robots":
             return self._json({"robots": sorted(SIM.robots)})
-        if path == "/api/stations":
-            return self._json({"stations": [{"id": n["name"], "label": n.get("label") or n["name"]} for n in SIM.nodes]})
-        if path == "/api/topology":
-            nodes = [{k: n.get(k) for k in ("id", "name", "label", "description", "x", "y")} | {"has_semantic": bool(n.get("description"))}
-                     for n in SIM.nodes]
-            edges = [e | {"has_semantic": bool(e.get("description"))} for e in SIM.edges]
+        if path == "/api/stations":       # 同 task_routes._load_stations_from_map：id 是節點 id 字串，label 是 name（沒有就 id）
+            return self._json({"stations": [{"id": str(n.get("id")), "label": n["name"] or str(n.get("id"))} for n in SIM.nodes]})
+        if path == "/api/topology":       # 同 map_routes.get_topology：label＝語意名稱，沒設定過就是 name
+            nodes = []
+            for n in SIM.nodes:
+                sem = n.get("label") if n.get("label") and n.get("label") != n["name"] else ""
+                nodes.append({"id": n.get("id"), "name": n["name"], "label": sem or n["name"], "description": n.get("description") or "",
+                              "has_semantic": bool(sem or n.get("description")), "x": n.get("x"), "y": n.get("y")})
+            edges = [dict(e, has_semantic=bool(e.get("label") or e.get("description"))) for e in SIM.edges]
             return self._json({"nodes": nodes, "edges": edges, "image": None})
         if path == "/api/received":
             with SIM.lock:
-                return self._json({"received": SIM.received, "cancelled": sorted(SIM.cancelled),
+                return self._json({"received": SIM.received, "cancelled": sorted({p.package_id for p in SIM.history if p.cancelled}),
                                    "overpending": [{"id": t.id} for t in SIM.overpending]})
         if path == "/api/sim_state":
             return self._json(SIM.state())
@@ -732,15 +982,15 @@ class WebConsole(BaseHTTPRequestHandler):
     def do_DELETE(self):
         path = urlparse(self.path).path
         with SIM.lock:
-            if path.startswith("/api/work_packages/"):
+            if path.startswith("/api/work_packages/") and len(path) > len("/api/work_packages/"):
                 pid = unquote(path[len("/api/work_packages/"):])
                 SIM.record("http", method="DELETE", path=path)
-                SIM.cancel_package(pid)
+                SIM.request_cancel("package", pid)
                 return self._json({"status": "success", "package_id": pid})
-            if path.startswith("/api/overpending_tasks/"):
+            if path.startswith("/api/overpending_tasks/") and len(path) > len("/api/overpending_tasks/"):
                 tid = unquote(path[len("/api/overpending_tasks/"):])
                 SIM.record("http", method="DELETE", path=path)
-                SIM.cancel_overpending(tid)
+                SIM.request_cancel("overpending", tid)
                 return self._json({"status": "success", "task_id": tid})
         self._json({"detail": "Not Found"}, 404)
 
@@ -754,13 +1004,7 @@ class WebConsole(BaseHTTPRequestHandler):
             return self._json({"detail": [{"msg": "body 不是合法 JSON"}]}, 422)
         if not isinstance(tasks, list) or not all(isinstance(t, dict) and t.get("task_id") for t in tasks):
             return self._json({"detail": [{"loc": ["body"], "msg": "expected a list of TaskRequest with task_id"}]}, 422)
-        details = []
-        with SIM.lock:
-            SIM.record("http", method="POST", path=path, body=tasks)
-            for t in tasks:
-                SIM._new_package(t)
-                details.append(json.dumps({"task_id": t.get("task_id"), "assign_amr": t.get("assign_amr", ""),
-                                           "stops": t.get("stops", [])}, ensure_ascii=False))
+        details = SIM.web_send(tasks)
         self._json({"status": "success", "count": len(tasks), "details": details})
 
 
@@ -790,27 +1034,31 @@ class ManualTrigger(WebConsole):
         if not isinstance(reqs, list):
             return self._json({"detail": [{"loc": ["body"], "msg": "value is not a valid list"}]}, 422)
         results = []
-        if path == "/batch_handshake":
-            for r in reqs:
-                rid, val = str(r.get("robot_name", "")), str(r.get("is_authored", "yes"))
-                if not rid:
-                    return self._json({"detail": [{"loc": ["body", "robot_name"], "msg": "field required"}]}, 422)
-                SIM.manual_handshake(rid, val)
-                results.append({"topic": f"/{rid}/handshake_states", "payload": {"is_authored": val}})
-            return self._json({"status": "success", "count": len(reqs), "details": results})
-        if path == "/batch_task_exec_fin":
-            for r in reqs:
-                rid, tid = str(r.get("robot_name", "")), str(r.get("task_id", ""))
-                if not rid or not tid:
-                    return self._json({"detail": [{"loc": ["body"], "msg": "robot_name 與 task_id 都要填"}]}, 422)
-                SIM.manual_fin(rid, tid)
-                results.append({"topic": f"/{rid}/task_exec_fin", "payload": {"task_id": tid}})
-            return self._json({"status": "success", "count": len(reqs), "details": results})
+        try:
+            if path == "/batch_handshake":
+                for r in reqs:
+                    rid, val = str(r.get("robot_name", "")), str(r.get("is_authored", "yes"))
+                    if not rid:
+                        return self._json({"detail": [{"loc": ["body", "robot_name"], "msg": "field required"}]}, 422)
+                    SIM.manual_handshake(rid, val)
+                    results.append({"topic": f"/{rid}/handshake_states", "payload": {"is_authored": val}})
+                return self._json({"status": "success", "count": len(reqs), "details": results})
+            if path == "/batch_task_exec_fin":
+                for r in reqs:
+                    rid, tid = str(r.get("robot_name", "")), str(r.get("task_id", ""))
+                    if not rid or not tid:
+                        return self._json({"detail": [{"loc": ["body"], "msg": "robot_name 與 task_id 都要填"}]}, 422)
+                    SIM.manual_fin(rid, tid)
+                    results.append({"topic": f"/{rid}/task_exec_fin", "payload": {"task_id": tid}})
+                return self._json({"status": "success", "count": len(reqs), "details": results})
+        except Exception as e:      # noqa: BLE001  同真的 manual_trigger：發布失敗（例如不合法的 topic 名稱）回 500
+            what = "手訊發送失敗" if path == "/batch_handshake" else "任務完成訊號發送失敗"
+            return self._json({"detail": f"{what}: {e}"}, 500)
         self._json({"detail": "Not Found"}, 404)
 
 
-def serve(handler, port):
-    server = ThreadingHTTPServer(("0.0.0.0", port), handler)
+def serve(handler, port, host="0.0.0.0"):
+    server = ThreadingHTTPServer((host, port), handler)
     server.daemon_threads = True
     threading.Thread(target=server.serve_forever, daemon=True).start()
     return server
@@ -821,9 +1069,13 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--config", default="")
     ap.add_argument("--no-ros", action="store_true")
+    ap.add_argument("--host", default="0.0.0.0", help="HTTP 綁定的位址（主機上測試用 127.0.0.1）")
     ap.add_argument("--web-port", type=int, default=8020)
     ap.add_argument("--trigger-port", type=int, default=8002)
+    ap.add_argument("--ws-ping-interval", type=float, default=WS_PING["interval"], help="WebSocket ping 間隔秒數（0＝不 ping）")
+    ap.add_argument("--ws-ping-timeout", type=float, default=WS_PING["timeout"], help="ping 之後多久沒有 pong 就斷線")
     args = ap.parse_args()
+    WS_PING.update(interval=args.ws_ping_interval, timeout=args.ws_ping_timeout)
     cfg = {}
     if args.config:
         with open(args.config, encoding="utf-8") as f:
@@ -839,8 +1091,8 @@ def main():
         SIM = Sim(cfg, None)
     stop = threading.Event()
     threading.Thread(target=SIM.run, args=(stop,), daemon=True).start()
-    serve(WebConsole, args.web_port)
-    serve(ManualTrigger, args.trigger_port)
+    serve(WebConsole, args.web_port, args.host)
+    serve(ManualTrigger, args.trigger_port, args.host)
     print(f"🧪 rmf_sim 啟動：web_console :{args.web_port}、manual_trigger :{args.trigger_port}、機器人 "
           f"{', '.join(f'{r.id}({r.behavior})' for r in SIM.robots.values())}{'（no-ros）' if args.no_ros else ''}", flush=True)
     try:
