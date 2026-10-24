@@ -295,18 +295,14 @@ class CompressionMixin:
     # ---------------------------------------------------------------- 🗣️ 使用者原話與對話片段存檔
     @staticmethod
     def _user_text_of(message):
-        """一則訊息裡「使用者自己打的字」：框架插入的訊息（工具回傳、規劃流程的系統訊息）回 None；規劃請求／修改意見
-        取出包在裡面的原話；附圖的影像分析、手動載入的技能規格接在原話後面，切掉。"""
+        """一則訊息裡「使用者自己打的字」：框架插入的訊息（工具回傳、系統的提醒）回 None；附圖的影像分析、手動載入的技能規格
+        接在原話後面，切掉。"""
         if message.get('role') != 'user':
             return None
         content = (message.get('content') or "").strip()
-        if content.startswith("[PLAN_REQUEST]"):
-            return content.rsplit("任務：\n", 1)[-1].strip() or None
-        if content.startswith("[PLAN_REVISION]"):
-            return content.rsplit("修改意見：\n", 1)[-1].strip() or None
         if content.startswith(HARNESS_MARKERS) or content.startswith("[harness"):
             return None
-        for marker in ("\n\n[vision result]", "\n\n" + SKILL_LOADED_MARKER, "\n\n[PLAN_CONFIRMED]"):
+        for marker in ("\n\n[vision result]", "\n\n" + SKILL_LOADED_MARKER):
             content = content.split(marker, 1)[0]
         return content.strip() or None
 
@@ -401,7 +397,7 @@ class CompressionMixin:
             for i in range(len(self.messages) - 1, 0, -1):
                 if id(self.messages[i]) in ids:
                     del self.messages[i]
-            # 只刷新 system prompt 讓新摘要進入上下文；保留 to_keep、current_plan、current_task、
+            # 只刷新 system prompt 讓新摘要進入上下文；保留 to_keep、current_task、
             # sticky_objective（更早的版本這裡誤呼叫 reset_conversation() 把它們全清掉）。
             if self.messages and self.messages[0]['role'] == 'system':
                 self.messages[0] = {'role': 'system', 'content': self.get_system_prompt()}

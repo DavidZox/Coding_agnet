@@ -24,7 +24,8 @@ class ConversationMixin:
         self.begin_turn()
         self._analysis_ctx = None   # /clear：之後的回答不再對照上一份數據分析的報告（turn_guard.analysis_reply_check）
         self.plan_clear()         # /clear 時一併清掉草稿與進行中的計畫，避免舊計畫殘留誤導新任務
-        self.ops_draft = None     # 同上：還沒執行的維運計畫草稿（ops_plan）
+        self.task_job = None      # 同上：還沒開始、停下來等確認的任務（任務引擎）
+        self.task_pending_approval = None
         self.current_task = None  # 同上，避免舊任務敘述殘留誤導下一次的摘要 session
         self.task_history = []
         self.add_trajectory_boundary("clear")  # 軌跡本身保留（/trajectory 仍看得到），只記一個起點
@@ -41,7 +42,7 @@ class ConversationMixin:
                 self.messages[:] = [self.messages[0]] + self.messages[-self.max_history:]
 
     def _with_state_tail(self, snapshot):
-        """送出快照的最後一則訊息後面接上動態區（build_state_tail：目前狀態、Objective、已核准的計畫、檢索清單最新一筆）。
+        """送出快照的最後一則訊息後面接上動態區（build_state_tail：目前狀態、Objective、檢索清單最新一筆）。
         只改這次送出的副本，不寫進 self.messages：下一輪動態區換新的，歷史本身一個字都沒變，Ollama 的 KV cache
         從 system prompt 一路命中到上一則訊息。跟 Claude Code 把 <system-reminder> 接在最新訊息後面同一種做法；
         接在同一則訊息裡（不另開一則 user 訊息），小模型才不會把狀態當成要回應的對象。"""

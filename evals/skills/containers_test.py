@@ -340,6 +340,22 @@ def t_param_value():
     assert "ROS2_param list" in param.set_failure_hint("Invalid access to undeclared parameter(s): []", "1")
 
 
+def t_pub_payload_types():
+    """ROS2_topic_pub 發布前的欄位核對（純函式）：不存在的欄位、字串欄位給了布林（沒加引號的 yes 也是）、數字與布林欄位給了別的；巢狀的不核對"""
+    f = {"state": "string", "level": "uint8", "ok": "boolean", "speed": "float64", "pose": "geometry_msgs/Pose", "name": "string<=16"}
+    assert pub.payload_problems(f, {"state": True}) == ["state 是字串（string），給的是布林 true"]
+    assert pub.payload_problems(f, {"name": 3}) == ["name 是字串（string<=16），給的是int 3"]
+    got = pub.payload_problems(f, {"level": "3", "ok": 1, "speed": True, "nope": 1})
+    assert got == ["level 是數字（uint8），給的是str '3'", "ok 是布林（boolean），給的是int 1", "speed 是數字（float64），給的是布林 true",
+                   "沒有 nope 這個欄位"], got
+    assert pub.payload_problems(f, {"state": "yes", "level": 3, "ok": False, "speed": 0.5, "pose": {"x": 1}}) == []
+    assert pub.payload_problems(None, {"state": True}) == [] and pub.payload_problems(f, "text") == [], "解析不了的交給 ros2 topic pub"
+    # 內容外面多包了一層引號（shell 拆過一層、引號留在字裡）：拿掉那一層；不是字典的不動
+    for raw in ("'{data: hi}'", '"{data: hi}"', "{data: hi}"):
+        assert pub.parse_cli(["/x", "std_msgs/msg/String", raw], resolve=False)["data"] == "{data: hi}", raw
+    assert pub.parse_cli(["/x", "std_msgs/msg/String", "'hi'"], resolve=False)["data"] == "'hi'"
+
+
 def t_spec_files():
     """規格檔：frontmatter 在第一行、有 用途／語法／範例／回傳／異常、腳本路徑跟 USAGE 的大小寫一致"""
     tools = os.path.join(os.path.dirname(SCRIPTS), "tools")
@@ -620,7 +636,7 @@ def t_ros2_param_live():
 
 
 def t_ros2_pub_live():
-    """ROS2_topic_pub：topic 自動補 /、型別錯、訂閱端的型別跟發布的不同（說清楚是型別，不是 QoS）、沒有訂閱者時不會卡到逾時"""
+    """ROS2_topic_pub：topic 自動補 /、型別錯、訂閱端的型別跟發布的不同（說清楚是型別，不是 QoS）、欄位的型別對不上就不發布、沒有訂閱者時不會卡到逾時"""
     rmf = _rmf()
     # rmf_sim 的 orchestrtor 訂閱 /distribute_ui_state（std_msgs/String，收到不做事）——發布不會改變沙盒的狀態
     out = _script("ROS2_topic_pub_cmd.py", "distribute_ui_state", "std_msgs/msg/String", "{data: hi}", target=rmf)
@@ -632,6 +648,10 @@ def t_ros2_pub_live():
     assert_error(out, "--types")
     out = _script("ROS2_topic_pub_cmd.py", "/incoming_tasks", "std_msgs/msg/String", "{dat: hi}", target=rmf)
     assert_error(out, "欄位")
+    # 字串欄位給了布林（沒加引號的 yes 在 YAML 也是布林）：發布前就擋下，說明欄位的型別與要加引號——以前 ros2 照樣發布、回 [PASS]
+    for data in ("{data: true}", "{data: yes}"):
+        out = _script("ROS2_topic_pub_cmd.py", "distribute_ui_state", "std_msgs/msg/String", data, target=rmf)
+        assert_error(out, "data 是字串（string），給的是布林 true", "這次沒有發布", "加引號", "data（string）")
     t0 = time.time()
     out = _script("ROS2_topic_pub_cmd.py", "/cahsk_nobody", "std_msgs/msg/String", "{data: x}", target=rmf)
     assert_error(out, "沒有訂閱者", "這次沒有發布")

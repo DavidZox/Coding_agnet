@@ -13,7 +13,6 @@ from .config import (
     GUARD_DEFAULT,
     MAIN_THINK_DEFAULT,
     MODEL_SETTINGS_NAME,
-    PLAN_EXEC_GUARD_DEFAULT,
     MAX_CHARS_PER_TOKEN,
     MIN_CHARS_PER_TOKEN,
     PROJECT_ROOT,
@@ -26,10 +25,10 @@ from .conversation import ConversationMixin
 from .dispatch import DispatchMixin
 from .guard import GuardMixin
 from .make_skill import MakeSkillMixin
-from .ops_job import OpsMixin
 from .perf import PerfMixin
 from .plan import PlanMixin
 from .prompt import PromptMixin
+from .task_engine import TaskMixin
 from .tool_summary import ToolSummaryMixin
 from .tool_use_index import ToolUseIndexMixin
 from .trajectory import TrajectoryMixin
@@ -39,7 +38,7 @@ from .workflow import WorkflowMixin
 
 class SkillAgent(ConversationMixin, PromptMixin, DispatchMixin, GuardMixin, ContextModeMixin, PlanMixin,
                  ToolSummaryMixin, ToolUseIndexMixin, ArchiveMixin, TrajectoryMixin, CompressionMixin,
-                 MakeSkillMixin, PerfMixin, TurnGuardMixin, OpsMixin, AnalysisMixin, WorkflowMixin):
+                 MakeSkillMixin, PerfMixin, TurnGuardMixin, TaskMixin, AnalysisMixin, WorkflowMixin):
     def __init__(self, model="gemma4:e4b", max_history=None, summary_model=None):
         # max_history：訊息「則數」滑動視窗，預設停用（None）。上下文大小統一以 token 門檻
         # （TOKEN_THRESHOLD）觸發壓縮歸檔；這個參數只保留作為極端情境的保險絲，需要時再開。
@@ -83,11 +82,9 @@ class SkillAgent(ConversationMixin, PromptMixin, DispatchMixin, GuardMixin, Cont
         # 🔀 上下文管理模式（harness／claude_code，見 config.CONTEXT_MODES 與 context_mode.py）與 🛡️ 執行前關卡
         self.context_mode = CONTEXT_MODE_DEFAULT
         self.guard_enabled = GUARD_DEFAULT
-        # 📝 /plan 的草稿與執行進度（plan.py）：None 或 {task, steps:[{skill, goal, status}], status, failures, warning}；
-        # plan_exec_guard：/plan_exec_guard on 時，計畫執行中有執行前檢查與自動推進（預設關＝沒有限制）
+        # 📝 /plan 的草稿（plan.py）：任務引擎的計畫（job，status＝draft），使用者看、改、核准後交給任務引擎照計畫做；沒有草稿時 None
         self.plan = None
-        self.plan_error = None   # 最近一次規劃 session 失敗的原因（連不到 Ollama 等）
-        self.plan_exec_guard = PLAN_EXEC_GUARD_DEFAULT
+        self.plan_error = None   # 最近一次草稿的錯誤（規劃不出步驟、連不到 Ollama 等）
 
         if not os.path.exists(self.index_file):
             raise FileNotFoundError(f"找不到技能索引：{self.index_file}")
@@ -111,9 +108,12 @@ class SkillAgent(ConversationMixin, PromptMixin, DispatchMixin, GuardMixin, Cont
         self.last_tail_chars = 0         # 最近一次送出時動態區（build_state_tail）的字元數，context_tokens 估算用
         self._tokenize_unavailable = False
 
-        # 🧭 非編碼的多步驟任務（ops_job.py）：ops_plan 的計畫草稿（等 ops_run）與最近一次執行完的計畫
-        self.ops_draft = None
-        self.ops_last = None
+        # 🧭 任務引擎（task_engine.py）：目前的任務（規劃好、執行中或停下來等確認）、最近一次結束的任務、等確認的工作編號
+        # （harness 在下一次問模型之前用 take_task_continuation 接著請使用者確認）
+        self.task_job = None
+        self.task_last = None
+        self.task_pending_approval = None
+        self._task_plan_failed = None
 
         # ⏱️ 模型呼叫耗時（perf.py）：主對話呼叫前 system prompt 有沒有變、歷史有沒有被改寫、中間跑了幾次獨立 session
         self.perf_calls = []
@@ -132,18 +132,10 @@ class SkillAgent(ConversationMixin, PromptMixin, DispatchMixin, GuardMixin, Cont
         self.sticky_objective = None
 
         # =========================
-        # 📝 已核准、正在執行中的任務計畫（/plan 模式用）
-        # 跟 sticky_objective 一樣塞進 system prompt，而不是放在 self.messages
-        # 裡的一般訊息，這樣才不會被 _truncate_memory 的滑動視窗或
-        # compress_context_to_file 的壓縮摘要沖掉，整個任務執行期間都在。
-        # =========================
-        self.current_plan = None
-
-        # =========================
         # 📌 使用者最近說的話（任務線）
         # current_task 是最新一句、task_history 是連同它在內最近 3 句原話，每次使用者送出新訊息時由
         # set_current_task 更新，/clear 時清空。給獨立 session（summarize_tool_result、_result_recall）當
-        # 「使用者的目標」的一部分（與 sticky_objective、current_plan 一起，見 _build_task_anchor_text）。
+        # 「使用者的目標」的一部分（與 sticky_objective 一起，見 _build_task_anchor_text）。
         # =========================
         self.current_task = None
         self.task_history = []          # 最近 TASK_HISTORY_KEEP 則使用者任務訊息（舊→新），見 set_current_task／_build_task_anchor_text

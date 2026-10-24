@@ -12,7 +12,8 @@
   不呼叫模型；
 - 句子的意思（agent_core/claims.py）與主對話：依報告回答卻寫成因果、或寫錯事實 → 提醒一次改寫；
 - 一次最多 3 分鐘、拿掉的選項說清楚、設定檔只存改過的值；dispatch、Web 的 /analyze 回合、面板、程式重新啟動時標中斷；
-- CLI 的 /analyze（驅動真的 cli.main() 迴圈）：選項照原樣交給 analysis_run，跟 Web 同一套參數。
+- CLI 的 /analyze（驅動真的 cli.main() 迴圈）：選項照原樣交給 analysis_run，跟 Web 同一套參數；
+- 存檔（logs/analysis_jobs/）只留最近幾次。
 每一個情境都在臨時目錄複製一份專案，不碰正式的 logs/。"""
 import json
 import os
@@ -570,6 +571,26 @@ def main():
             for d in made:
                 shutil.rmtree(d)
 
+        def t_keep_jobs():
+            # 存檔只留最近 ANALYSIS_JOBS_KEEP 次（以前沒有清：2026-10-24 一台機器累積到 1583 個、359 MB）
+            root = agent.analysis_jobs_dir()
+            ids = lambda: sorted(n for n in os.listdir(root) if os.path.exists(os.path.join(root, n, "job.json")))   # noqa: E731
+            before = set(ids()) if os.path.isdir(root) else set()
+            for k in range(5):
+                d = os.path.join(agent.analysis_jobs_dir(), f"20200101_00000{k}")
+                os.makedirs(d, exist_ok=True)
+                with open(os.path.join(d, "job.json"), "w", encoding="utf-8") as f:
+                    json.dump({"id": os.path.basename(d), "status": "done"}, f)
+            aj.ANALYSIS_JOBS_KEEP = 3
+            try:
+                setup()
+                assert agent.analysis_run(f'--data {DATA} "看一下"').startswith(ANALYSIS_REPORT_HEAD)
+            finally:
+                aj.ANALYSIS_JOBS_KEEP = 300
+            left = ids()
+            every = sorted(before | {f"20200101_00000{k}" for k in range(5)} | {agent.analysis_last["id"]})
+            assert left == every[-3:] and agent.analysis_last["id"] in left, (left, every)   # 最舊的先刪，這一次的留著
+
         def t_recorder_target():
             import importlib.util
             spec = importlib.util.spec_from_file_location(
@@ -594,6 +615,7 @@ def main():
                          ("CLI：/analyze 的選項照原樣交給 analysis_run、沒有 --data 時補目前的數據（跟 Web 共用 analyze_command_args）", t_cli_analyze),
                          ("限制與設定：一次最多 3 分鐘（以整秒算）、只有 Log 的錄製、拿掉的選項、設定檔只存改過的值", t_limits_and_settings),
                          ("程式重新啟動：沒做完的 job（進度很久沒更新）標成中斷，剛更新的不動", t_mark_interrupted),
+                         ("存檔只留最近幾次（最舊的先刪，這一次的留著）", t_keep_jobs),
                          ("錄製：資料夾名稱放錯在 --out-root 改當 --name；含 / 的相對路徑、--name 帶路徑擋下", t_recorder_target)]:
             if os.environ.get("SELFTEST_ONLY", "") in name:   # 只跑名稱含這個字的（除錯用）
                 check(name, fn)

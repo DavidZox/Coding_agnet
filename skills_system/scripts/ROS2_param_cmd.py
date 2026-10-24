@@ -20,7 +20,7 @@ from _docker_common import (clip, describe_failure, domain_text, ros2_run, split
 TIMEOUT_SECONDS = 40
 ACTIONS = ("list", "get", "set")
 USAGE = ("用法: scripts/ROS2_param_cmd.py [容器名稱] list <node>｜get <node> <參數>｜set <node> <參數> <值>\n"
-         "  例：ROS2_param list /resource_allocator　ROS2_param rmf_sim get /resource_allocator authorize_timeout_sec\n"
+         "  例：ROS2_param list /camera_node　ROS2_param ros_box get /camera_node exposure\n"
          "  容器名稱省略＝目前的目標容器；set 會先請使用者確認；值照原本的型別寫（小數 10.0、整數 10、true／false、字串）。")
 NODES_TAG, PARAMS_TAG = "@@CAH_NODES@@", "@@CAH_PARAMS@@"
 GROUP_MIN = 20     # 參數超過這麼多、而且有好幾個前綴時，依前綴（第一個 . 之前）分節

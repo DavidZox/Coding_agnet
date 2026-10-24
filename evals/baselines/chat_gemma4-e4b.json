@@ -1,54 +1,53 @@
 {
- "date": "2026-10-23",
+ "date": "2026-10-24",
  "dirs": [
-  "20261023_184134_p2_final",
-  "20261023_193240_p2_final4"
+  "20261024_154318_phase"
  ],
- "label": "第 2 階段（8210509）",
+ "label": "第 4 階段（任務引擎，三次完整跑）",
  "per": {
   "compare_two_archives": {
-   "passed": 6,
-   "runs": 6
+   "passed": 3,
+   "runs": 3
   },
   "containers_basic": {
-   "passed": 6,
-   "runs": 6
+   "passed": 3,
+   "runs": 3
   },
   "count_from_script": {
-   "passed": 6,
-   "runs": 6
+   "passed": 3,
+   "runs": 3
   },
   "cross_session_recall": {
-   "passed": 6,
-   "runs": 6
+   "passed": 3,
+   "runs": 3
   },
   "current_state_rerun": {
-   "passed": 6,
-   "runs": 6
+   "passed": 3,
+   "runs": 3
   },
   "error_recovery": {
-   "passed": 6,
-   "runs": 6
+   "passed": 3,
+   "runs": 3
   },
   "fleet_battery": {
-   "passed": 6,
-   "runs": 6
+   "passed": 3,
+   "runs": 3
   },
   "fleet_followup": {
-   "passed": 6,
-   "runs": 6
+   "passed": 3,
+   "runs": 3
   },
   "followup_in_context": {
-   "passed": 5,
-   "runs": 6
+   "passed": 3,
+   "runs": 3
   },
   "guard_dispatch": {
-   "passed": 6,
-   "runs": 6
+   "passed": 3,
+   "runs": 3
   },
   "memory_stale_state": {
-   "passed": 6,
-   "runs": 6
+   "passed": 3,
+   "runs": 3
   }
  }
 }

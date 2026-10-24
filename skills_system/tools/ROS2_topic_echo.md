@@ -2,13 +2,13 @@
 type: Tool
 title: ROS2 話題內容（單筆或一段時間的量測）
 description: 讀取指定 topic 的一筆訊息，或用 --duration 觀察一段時間：發布方式與中斷、每個欄位的變化（狀態跳轉的時間、數值統計、尖峰）、--where 門檻判斷（容器可省略＝目標容器）。
-version: 2.0.0
+version: 2.0.1
 dependencies: ["docker", "ros2"]
 ---
 
 # 用途
 在容器內直接訂閱 topic（型別自動查、QoS 依 publisher 自動配，只在狀態改變時才發布的 topic 也拿得到最後一則）。
-- **問「現在」的值或狀態**（「tb6 現在電量多少」「讀一下 /odom」）：**不加 `--duration`**，讀一筆就結束，印完整的 YAML（字串不截斷）。直接執行，不要先問使用者要觀察多久。
+- **問「現在」的值或狀態**（「amr_07 電量剩多少」「讀一下 /odom」）：**不加 `--duration`**，讀一筆就結束，印完整的 YAML（字串不截斷）。直接執行，不要先問使用者要觀察多久。
 - **問「一段時間內」的變化**（「觀察 10 秒」「有沒有變化」「頻率多少」「什麼時候變成 RUNNING」）才加 `--duration 秒`：量測方式跟錄好的數據（mcap_feature_measure）一樣——
   發布方式（固定頻率／狀態改變時才發布／不定期）與中斷、每個欄位的變化（狀態跳轉的時間與前後的值、數值的極值與時間、平均、斜率、尖峰）、字串裡的 JSON 欄位
   （`data.mode`）、依名稱展開的項目（DiagnosticArray 的 `status.level[motor_left]`），最後附前後幾則原始訊息。使用者沒說秒數時用 10 秒。
@@ -26,7 +26,7 @@ dependencies: ["docker", "ros2"]
 `EXECUTE: scripts/ROS2_topic_echo_cmd.py /battery_state`（現在的值：讀一筆）
 `EXECUTE: scripts/ROS2_topic_echo_cmd.py /odom --duration 10`（觀察 10 秒的變化）
 `EXECUTE: scripts/ROS2_topic_echo_cmd.py /battery_state --duration 20 --where voltage<24`
-`EXECUTE: scripts/ROS2_topic_echo_cmd.py ros2_humble /diagnostics 60`（讀一筆，低頻：最多等 60 秒）
+`EXECUTE: scripts/ROS2_topic_echo_cmd.py ros_box /diagnostics 60`（讀一筆，低頻：最多等 60 秒）
 
 # 回傳
 單筆：`[PASS] <topic>（型別）的一筆訊息（等了 x 秒；publisher 數、QoS）：` + YAML。

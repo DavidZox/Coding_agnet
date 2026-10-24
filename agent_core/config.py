@@ -59,7 +59,6 @@ SUMMARY_ARCHIVE_KEEP = int(os.environ.get("AGENT_SUMMARY_KEEP", "30"))
 SKILL_LOADED_MARKER = "[skill loaded]"  # 使用者從選單手動載入的技能規格（附在使用者訊息後面）
 HARNESS_MARKERS = (
     "[tool result]", "[vision result]", SKILL_LOADED_MARKER,
-    "[PLAN_REQUEST]", "[PLAN_REVISION]", "[PLAN_CONFIRMED]", "[PLAN_REJECTED]", "[PLAN_CONTINUE]",
 )
 
 
@@ -141,7 +140,7 @@ DEFAULT_SKILL_CATEGORY = "自建技能"   # 模型選的分類不在 SKILLS.md �
 SKILL_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{1,40}$")
 # 會改變狀態（建容器、送工單、寫記憶、切換目錄／容器）的技能：工作流草稿的步驟用到它們時，預覽會提醒（執行時照常確認）
 NON_READONLY_SKILLS = {"docker_est", "workpackage_send", "workpackage_cancel", "overpending_cancel", "modify_memory", "change_dir", "docker_open",
-                       "docker_ctl", "file_ops", "ROS2_param", "ROS2_topic_pub", "rmf_handshake", "host_runcmd", "ops_run",
+                       "docker_ctl", "file_ops", "ROS2_param", "ROS2_topic_pub", "rmf_handshake", "host_runcmd", "task_run",
                        "mcap_recorder", "mcap_slicer", "ROS2_domain_id", "ROS2_workspace_env", "workflow_run"}
 
 # 使用者角色但實為工具回傳的訊息前綴（見 _split_for_compression 的配對規則）
@@ -233,7 +232,7 @@ TOOL_CLEARED_TAG = "[tool result - 已清除]"       # 被清成佔位的舊回�
 # AGENT_GUARDED_SKILLS 可覆寫清單（逗號分隔，none＝全部不擋）；/guard off 只對目前 session 關閉。
 # =========================================================
 _GUARDED_DEFAULT = ("workpackage_send,workpackage_cancel,overpending_cancel,docker_est,docker_runcmd,"
-                    "host_runcmd,docker_ctl,file_ops,ROS2_param,ROS2_topic_pub,ROS2_domain_id,ROS2_workspace_env,rmf_handshake,ops_run,"
+                    "host_runcmd,docker_ctl,file_ops,ROS2_param,ROS2_topic_pub,ROS2_domain_id,ROS2_workspace_env,rmf_handshake,task_run,"
                     "workflow_run")
 _guarded_env = os.environ.get("AGENT_GUARDED_SKILLS", _GUARDED_DEFAULT).strip()
 GUARDED_SKILLS = set() if _guarded_env.lower() in ("", "none", "off") else {s.strip() for s in _guarded_env.split(",") if s.strip()}
@@ -248,14 +247,6 @@ GUARD_DENIED_TAG = "[DENIED]"
 PERF_LOG = "perf.jsonl"
 PERF_LOG_ENABLED = os.environ.get("AGENT_PERF_LOG", "1").strip().lower() not in ("0", "off", "false", "no")
 
-# =========================================================
-# 📝 /plan：計畫是 harness 保存的草稿（agent_core/plan.py）。PLAN_MAX_FAILURES：/plan_exec_guard on 時，連續失敗
-# （被執行前檢查擋下、[ERROR]、模型停下來沒繼續）幾次就退出計畫、交回使用者。
-# =========================================================
-PLAN_MAX_STEPS = 12
-PLAN_MAX_FAILURES = 3
-PLAN_DRAFT_FILE = "plan_draft.md"   # logs/ 下，草稿與進度（給人看）
-PLAN_EXEC_GUARD_DEFAULT = os.environ.get("AGENT_PLAN_EXEC_GUARD", "0").strip().lower() in ("1", "on", "true", "yes")
 
 # 單一工具腳本的總逾時（秒）：harness 的最後防線。各腳本自身應設定更短的逾時
 # （容器類腳本可調的上限 570 秒就是為了低於這個值），這裡只處理腳本本身卡死
@@ -281,9 +272,16 @@ WORKFLOWS_ENABLED = os.environ.get("AGENT_WORKFLOWS", "1").strip() != "0"   # 0�
 # 不再交給提煉 session（is_exempt_result），主對話直接收到完整的報告（2026-10-23 實測：一份 1000 字的報告被提煉了一次，多一次模型呼叫）
 WORKFLOW_REPORT_HEADS = ("[PASS] 工作流 ", "[PASS] ⏸️ 工作流 ", "[ERROR] 工作流 ")
 
-# 🧭 非編碼的多步驟任務（agent_core/ops_job.py）：ops_plan 規劃 → 使用者確認 → ops_run 每一步派一個乾淨的 worker
-OPS_MAX_ITEMS = 6                        # 計畫最多幾步（小模型規劃太多步時後面的步驟品質差，也難確認）
-OPS_WORKER_MAX_STEPS = 10                # 每一步的 worker 最多幾輪（每輪一個動作）
+# 🧭 任務引擎（agent_core/task_engine.py，task_run 偽技能；Plan 模式也用它）：規劃 → 程式檢查 → 先查 → 依事實重排 → 確認 → 每一步一個
+# worker（或一個工作流）→ 程式檢查 → 程式寫報告。類型（profile）在 prompts/orchestra/profiles/；每一次的計畫、每一步、每一次模型呼叫存在
+# logs/task_jobs/<編號>/
+TASK_MAX_ITEMS = 6                       # 計畫最多幾步（小模型規劃太多步時後面的步驟品質差，也難確認）
+TASK_WORKER_MAX_STEPS = 10               # 每一步的 worker 最多幾輪（每輪一個動作）
+TASK_MAX_REPLANS = 2                     # 一個任務最多重排幾次（先查完一次、某一步失敗一次）
+TASK_JOBS_DIRNAME = "task_jobs"
+TASK_JOBS_KEEP = int(os.environ.get("AGENT_TASK_JOBS_KEEP", "300"))
+# task_run 的報告固定以這幾個開頭：程式整理好的（每一步的結果、核對過的事實），不再交給提煉（is_exempt_result）
+TASK_REPORT_HEADS = ("[PASS] 任務", "[PASS] ⏸️ 任務", "[ERROR] 任務")
 
 # =========================================================
 # 📊 數據分析（agent_core/analysis_job.py，analysis_run 技能）：只要有 .mcap 就能用的事實報告——量到什麼、什麼時候、Log 說了什麼，
@@ -293,6 +291,7 @@ OPS_WORKER_MAX_STEPS = 10                # 每一步的 worker 最多幾輪（�
 # 每次的產物在 logs/analysis_jobs/<編號>/。
 # =========================================================
 ANALYSIS_JOBS_DIRNAME = "analysis_jobs"
+ANALYSIS_JOBS_KEEP = int(os.environ.get("AGENT_ANALYSIS_JOBS_KEEP", "300"))   # 只留最近幾次（每次幾百 KB：事實、報告、索引）
 ANALYSIS_SETTINGS_NAME = "analysis_settings.json"   # logs/ 下：數據根目錄、預設容器（Web 的 📊 分析面板 ⚙️ 設定）
 # 數據根目錄（容器內或主機路徑都可以，主機路徑會依 bind mount 換成容器路徑）：mcap_recorder 錄到這裡、實驗名稱與 latest 相對於它；
 # 沒設定時工具在容器的 /workspace 底下找 experiment_logs

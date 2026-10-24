@@ -101,7 +101,7 @@ def parse_cli(argv, values=None, flags=(), optional=None, elsewhere=None, usage=
 # distribute 的快照（web_console）裡沒有電量：電量與充電狀態在每台機器人自己發的 /{rid}/robot_state（fih_rmf_msgs/RobotState 的
 # current_state.battery_level、is_charging；msg_codec.robot_state_to_dict）。列機器人的地方附這一行，問電量時才知道去哪裡讀。
 BATTERY_NOTE = ("（電量與充電狀態不在 web_console 的快照裡：看 /<機器人>/robot_state 的 current_state.battery_level、is_charging，"
-                "例如 ROS2_topic_echo /tb1/robot_state）")
+                "例如 ROS2_topic_echo /amr_07/robot_state）")
 
 def resolve_url(raw=None, service="web_console"):
     """--url／--trigger 的值（沒給就用環境變數、再沒有用預設）→ (url, error)。沒寫 http:// 自動補上；去掉結尾的 / 與 /api。"""
@@ -148,7 +148,7 @@ def robot_id_error(rid, what="機器人"):
     """機器人 id 要是合法的 ROS 2 名稱（英文字母或底線開頭，只有英數字與底線）：會放進 topic 名稱與容器的指令。"""
     if ROBOT_ID_RE.match(rid or ""):
         return None
-    return (f"[ERROR] {what} {rid!r} 不是合法的機器人 id（要像 tb1：英文字母或底線開頭、只有英數字與底線，最多 64 字）。"
+    return (f"[ERROR] {what} {rid!r} 不是合法的機器人 id（要像 amr_07：英文字母或底線開頭、只有英數字與底線，最多 64 字）。"
             f"下一步：用 semantic_map --robots 查名冊上的 id。")
 
 

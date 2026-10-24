@@ -2,7 +2,7 @@
 type: Tool
 title: ROS 2 Domain ID 查詢與設定
 description: 查看容器裡新開的 shell 與正在跑的 ROS 節點各在哪個 ROS_DOMAIN_ID（ROS2_* 看不到節點時用）；set 寫入 ~/.bashrc（會先請使用者確認）。
-version: 2.0.0
+version: 2.0.1
 dependencies: ["docker", "ros2"]
 ---
 
@@ -17,7 +17,7 @@ ROS2_topic_list／ROS2_node_list 只看到 /rosout、/parameter_events 或沒有
   要換得重啟節點或容器（先問使用者）。寫入後開新的 shell 驗證，不對就還原。Linux 上建議 0～101。
 
 # 範例
-`EXECUTE: scripts/ROS2_domain_id_cmd.py`　`EXECUTE: scripts/ROS2_domain_id_cmd.py rmf_sim set 42`
+`EXECUTE: scripts/ROS2_domain_id_cmd.py`　`EXECUTE: scripts/ROS2_domain_id_cmd.py ros_box set 15`
 
 # 回傳
 `[PASS] 容器 '<名稱>' 的 ROS_DOMAIN_ID：新開的 shell＝X；正在跑的 ROS 節點都在 Y（N 個）；ROS2_* 技能會用 Z` + `## shell 的設定`、`## 正在跑的 ROS 程序`（pid、domain、指令）。

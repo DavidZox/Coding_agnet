@@ -13,6 +13,7 @@ harness 的 logs/file_backups/<時間>/（不在使用者的目錄留下 .bak）
 內容裡已經有真正的換行時，只把 \\" 換成 "，其他照原樣寫入（那是程式碼裡的 \\n）。
 """
 import datetime
+import filecmp
 import os
 import re
 import shlex
@@ -30,7 +31,7 @@ USAGE = ("用法: scripts/file_ops_cmd.py <動作> …\n"
          "  append <檔案> --text \"內容\"          在文字檔最後加上內容\n"
          "  replace <檔案> --old \"原文\" --new \"新的內容\"   取代檔案裡的一段文字（原文要剛好出現一次）\n"
          "  set <檔案> <設定名稱> <新的值> [--after \"那一段開頭的字\"]   改設定檔（YAML 的「名稱: 值」）裡一個設定的值，只改那一行、\n"
-         "                                       縮排與註解保留；給 --after 時只在含這幾個字的那一行開始的那一段裡找（例如 --after \"id: tb4\"）")
+         "                                       縮排與註解保留；給 --after 時只在含這幾個字的那一行開始的那一段裡找（例如 --after \"name: amr_07\"）")
 _FORBIDDEN_PREFIXES = ("/etc", "/usr", "/bin", "/sbin", "/lib", "/lib64", "/boot", "/dev", "/proc", "/sys", "/var/lib", "/opt/ros")
 _ACTIONS = ("mkdir", "copy", "move", "write", "append", "replace", "set")
 _OPTIONS = ("--text", "--old", "--new", "--after")
@@ -292,6 +293,9 @@ def _copy_move(action, positional):
     if os.path.isdir(dst):
         dst = os.path.join(dst, os.path.basename(src.rstrip("/")))
     if os.path.lexists(dst):
+        # 複製一個檔案、目的已經有一模一樣的內容（重試時常見：上一次已經備份好了）——已經是要的結果，不算失敗；內容不同才擋
+        if action == "copy" and os.path.isfile(src) and os.path.isfile(dst) and not os.path.islink(dst) and filecmp.cmp(src, dst, shallow=False):
+            return f"[PASS] 沒有再複製：{_rel(dst)} 已經存在，內容跟 {_rel(src)} 一模一樣（之前已經複製過）"
         return f"[ERROR] 目的已經存在：{_rel(dst)}（不覆蓋）。下一步：換一個目的名稱；要覆蓋請先跟使用者確認、由使用者處理。"
     if os.path.isdir(src) and (dst + "/").startswith(src.rstrip("/") + "/"):
         return f"[ERROR] 不能把目錄 {_rel(src)} {('複製' if action == 'copy' else '移動')}到它自己裡面（{_rel(dst)}）。下一步：換一個目的。"
@@ -392,7 +396,7 @@ def _set(positional, opts):
     args = positional[1:]
     if len(args) != 3:
         return (f"[ERROR] set 需要三個參數：檔案、設定名稱、新的值（收到 {len(args)} 個：{'、'.join(args) or '沒有'}）。下一步：值有空白就用引號包住，"
-                f"例如 set configs/robots.yaml battery_low 18 --after \"id: tb4\"。\n{USAGE}")
+                f"例如 set config/amr_params.yaml max_accel 0.45 --after \"name: amr_07\"。\n{USAGE}")
     path_arg, key, value = args
     path, err = _resolve(path_arg)
     if err:

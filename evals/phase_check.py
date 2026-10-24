@@ -1,6 +1,6 @@
 """每個階段結束時的持續驗證：跑一組固定的檢查，跟 evals/baselines/ 的基準逐項比，列出退步、變慢、禁止動作。
 
-    python3 evals/phase_check.py                  # 離線（約 2 分鐘）：技能、主對話、提煉、維運、數據分析、工作流的自我測試
+    python3 evals/phase_check.py                  # 離線（約 2 分鐘）：技能、主對話、提煉、維運、任務引擎、數據分析、工作流的自我測試，評測的完整性
     python3 evals/phase_check.py --live           # 再加上要容器／沙盒、不呼叫模型的（約 10 分鐘）：技能接沙盒、數據技能實機、數據分析回歸
     python3 evals/phase_check.py --model          # 再加上真模型（約 1 小時）：提煉（26b、e4b）、主對話（e4b 11 個情境 ×3）、
                                                   #   工作流沙盒（26b、e4b 各 7 個案例 ×2）、維運（26b 70 個）
@@ -33,8 +33,10 @@ OFFLINE = [("skills", "技能自我測試", ["evals/skills/selftest.py"]),
            ("chat_selftest", "主對話自我測試", ["evals/chat/selftest.py"]),
            ("extract_selftest", "提煉自我測試", ["evals/chat/extract_selftest.py"]),
            ("ops_selftest", "維運自我測試", ["evals/ops/selftest.py"]),
+           ("task_selftest", "任務引擎自我測試（task_run、Plan 模式）", ["evals/task/selftest.py"]),
            ("analysis_selftest", "數據分析自我測試", ["evals/analysis/selftest.py"]),
-           ("workflow_selftest", "工作流自我測試", ["evals/workflow/selftest.py"])]
+           ("workflow_selftest", "工作流自我測試", ["evals/workflow/selftest.py"]),
+           ("integrity", "評測的完整性（模型會讀的文字沒有評測世界的名稱）", ["evals/integrity/selftest.py"])]
 TEST_CONTAINER = "cah_analysis_test"
 LIVE_DATA = ["/workspace/experiment_logs/gen/s1/gen_s1_005", "/workspace/experiment_logs/exp_5090_overheat"]
 CHAT_SCENARIOS = ("fleet_battery,fleet_followup,followup_in_context,cross_session_recall,compare_two_archives,count_from_script,"

@@ -25,7 +25,7 @@ CELL_CHARS = 200
 USAGE = ("用法: scripts/csv_query_cmd.py <檔案> [--where 欄位<運算子>值]... [--group 欄位] "
          "[--min 欄位|--max 欄位|--avg 欄位|--sum 欄位|--count] [--sort 欄位 [--desc]] [--head N] [--cols 欄位1,欄位2] [--markdown]\n"
          "  不帶選項：欄位、型態、筆數、數值欄位的範圍、前 5 筆。\n"
-         "  --where：運算子 = == != < <= > >= ~（包含，不分大小寫）!~（不包含），可以重複（全部都要符合）；例：--where robot=tb3 --where battery<25\n"
+         "  --where：運算子 = == != < <= > >= ~（包含，不分大小寫）!~（不包含），可以重複（全部都要符合）；例：--where station=p5 --where qty<25\n"
          "  --min／--max 欄位：最小／最大的那一筆（整筆資料都列出）；加 --group 欄位：每一組各一筆。\n"
          "  --avg／--sum 欄位、--count：整體或每一組（--group）的平均、總和、筆數；只給 --group 時算每一組的筆數。\n"
          f"  --sort 欄位 [--desc]、--head N：排序後列出前 N 筆（預設 {DEFAULT_HEAD}、上限 {MAX_ROWS_SHOWN}）。--cols：只列這些欄位。"
@@ -194,7 +194,7 @@ def main(argv):
     for w in o["where"]:
         m = _WHERE_RE.match(w)
         if not m:
-            return (f"[ERROR] --where 的格式是 欄位<運算子>值（例如 robot=tb3、battery<25、status~error），收到「{w}」。"
+            return (f"[ERROR] --where 的格式是 欄位<運算子>值（例如 station=p5、qty<25、status~error），收到「{w}」。"
                     f"下一步：照這個格式改；值含空白時整段用引號包住。")
         col, e = _col(header, m.group(1).strip())
         if e:

@@ -2,7 +2,7 @@
 type: Tool
 title: 容器內執行指令
 description: 在指定容器（或目前的目標容器）內執行一行 shell 指令；看容器裡的目錄、檔案、程序都用它。
-version: 2.0.0
+version: 2.0.1
 dependencies: ["docker"]
 ---
 
@@ -18,7 +18,7 @@ dependencies: ["docker"]
 * `command`：一對雙引號包住整串（裡面用單引號）；`;`、`&&`、`&`（背景）都可以。
 
 # 範例
-`EXECUTE: scripts/docker_runcmd_cmd.py "ls -la /opt/ros"`　`EXECUTE: scripts/docker_runcmd_cmd.py --timeout 540 ros2_humble "cd /ws && colcon build"`
+`EXECUTE: scripts/docker_runcmd_cmd.py "ls -la /ws/src"`　`EXECUTE: scripts/docker_runcmd_cmd.py --timeout 540 ros_box "cd /ws && colcon build"`
 `EXECUTE: scripts/docker_runcmd_cmd.py "source /opt/ros/$ROS_DISTRO/setup.bash && timeout -s INT 10 ros2 topic hz /odom"`
 
 # 回傳

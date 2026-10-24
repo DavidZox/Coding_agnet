@@ -2,12 +2,12 @@
 type: Tool
 title: 容器狀態與控制
 description: 看容器本身的狀態、log（stdout＋stderr，可接著看新的）、設定（環境變數、掛載、網路），以及啟動／停止／重新啟動容器（會先請使用者確認）。
-version: 2.0.1
+version: 2.0.2
 dependencies: ["docker"]
 ---
 
 # 用途
-操作容器本身（主機上的 `docker start／stop／restart／logs／inspect`），不是在容器裡執行指令（那是 docker_runcmd）。使用者要啟動／重啟：直接 `start`／`restart`（會先請使用者確認），回報附這次啟動的 log、又停了會寫原因；只問容器為什麼停了：先 `status`
+操作容器本身（主機上的 `docker start／stop／restart／logs／inspect`），不是在容器裡執行指令（那是 docker_runcmd）。使用者要啟動／重啟：直接 `start`／`restart`（會先請使用者確認），回報附這次啟動的 log、又停了會寫原因；只問容器停掉的原因：先 `status`
 看結束碼的意思、再 `logs` 看最後的輸出，不要自己啟動。時間是主機本地時間（標時區）。
 容器名稱省略＝目前的目標容器（只認完全相同的名稱）；有寫名稱時可以是唯一的部分名稱。
 
@@ -18,8 +18,8 @@ dependencies: ["docker"]
 * `env --grep ROS` 篩選；`inspect` 的環境變數只列前 40 個。`stop`／`restart` 等 10 秒後強制結束；`start`／`restart` 後等 2 秒回報。
 
 # 範例
-`EXECUTE: scripts/docker_ctl_cmd.py status nav2_test`　`EXECUTE: scripts/docker_ctl_cmd.py logs log_writer --grep ERROR`
-`EXECUTE: scripts/docker_ctl_cmd.py logs --since 10m --dedup`　`EXECUTE: scripts/docker_ctl_cmd.py restart db_backup`
+`EXECUTE: scripts/docker_ctl_cmd.py status cam_driver`　`EXECUTE: scripts/docker_ctl_cmd.py logs cam_driver --grep ERROR`
+`EXECUTE: scripts/docker_ctl_cmd.py logs --since 10m --dedup`　`EXECUTE: scripts/docker_ctl_cmd.py restart cam_driver`
 
 # 回傳
 `[PASS] <容器>：Up（執行中…）` 或 `Exited（結束碼 N：意思；… 結束）`＋映像、指令、重新啟動政策、OOMKilled、健康檢查。logs 第一行有行數、

@@ -17,11 +17,12 @@ class TrajectoryMixin:
     # 模型讀整段對話推論出規格的內容；使用者在預覽後核准。不產生任何腳本：步驟只呼叫既有技能的腳本。
     # =========================================================
     def _script_skill_map(self):
-        """scripts/<x>.py -> 技能名稱。先以「<技能>.md 提到 scripts/<技能>_cmd.py」為準，
-        其餘出現過的腳本再補上；每次重建（十幾個小檔案，成本可忽略），技能新增後不需重啟。
-        流程技能（type: Procedure）的規格引用的是別的技能的腳本，不算數——不然它的名稱排在前面時，
-        ls_cmd.py 這類腳本會被誤認成屬於它。"""
-        mapping, mentions = {}, {}
+        """scripts/<x>.py -> 技能名稱。依序：「<技能>.md 提到 scripts/<技能>_cmd.py」→ 規格裡 `EXECUTE: scripts/<x>.py` 的
+        指令位置（腳本名稱跟技能不同的：list_dir＝ls_cmd.py、view_file＝cat_cmd.py…）→ 其餘只是提到的。每次重建（十幾個小檔案，
+        成本可忽略），技能新增後不需重啟。只提到、不在指令位置的不算數：code_ast_reader 的範例把 scripts/ls_cmd.py 當成參數，
+        以前 ls_cmd.py 被認成 code_ast_reader（字母排在前面），任務的 worker 用 list_dir 被擋成「這一步不能用 code_ast_reader」、
+        軌跡記錯技能（2026-10-24 發現）。流程技能（type: Procedure）的規格引用的是別的技能的腳本，也不算數。"""
+        mapping, commands, mentions = {}, {}, {}
         if not os.path.isdir(self.tools_dir):
             return mapping
         for fname in sorted(os.listdir(self.tools_dir)):
@@ -38,9 +39,11 @@ class TrajectoryMixin:
             scripts = set(re.findall(r"scripts/([A-Za-z0-9_]+\.py)", text))
             if f"{skill}_cmd.py" in scripts:
                 mapping[f"{skill}_cmd.py"] = skill
+            for s in re.findall(r"EXECUTE:\s*scripts/([A-Za-z0-9_]+\.py)", text):
+                commands.setdefault(s, skill)
             for s in scripts:
                 mentions.setdefault(s, skill)
-        for s, skill in mentions.items():
+        for s, skill in list(commands.items()) + list(mentions.items()):
             mapping.setdefault(s, skill)
         return mapping
 
@@ -71,7 +74,8 @@ class TrajectoryMixin:
             "status": status,
             "output_head": output_text[:TRAJECTORY_OUTPUT_HEAD],
             "task": self.current_task or "",
-            "plan_active": bool(self.current_plan),
+            "task_job": ((getattr(self, "task_job", None) or {}).get("id")
+                         if (getattr(self, "task_job", None) or {}).get("status") == "running" else None),   # 任務引擎的 worker 做的
             "transcript_pos": len(self.transcript),
         }
         record["result_file"] = self._archive_tool_result(record, output_text)
@@ -79,7 +83,6 @@ class TrajectoryMixin:
         self.last_result_file = record["result_file"]
         self.trajectory.append(record)
         self._append_trajectory_log(record)
-        self.plan_on_exec(record)   # /plan 執行中：這一步的技能成功就換下一步
         return record
 
     def add_trajectory_boundary(self, reason, **extra):
@@ -118,7 +121,7 @@ class TrajectoryMixin:
 
     def _mark_transcript_start(self, reason, plan=None):
         """記一個對話紀錄的起點。計畫核准的起點落在剛加入的那則任務訊息（它就是這段工作的開頭），並記下計畫內容
-        （計畫的步驟在動態區、不在 messages 裡，/make_skill 要另外交給草擬 session）；/clear 與 make_skill 落在目前的尾端。"""
+        （計畫的步驟不在 messages 裡，/make_skill 要另外交給草擬 session）；/clear 與 make_skill 落在目前的尾端。"""
         self._sync_transcript()
         pos = len(self.transcript)
         if reason == "plan_confirmed":

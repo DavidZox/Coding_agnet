@@ -283,7 +283,7 @@
     <button class="danger" id="decision-stop" onclick="sendDecision('stop')">⏹️ 停止本回合</button>
   </div>
   <div id="plan-bar">
-    <span>📝 計畫草稿待你核准（下方可打 /plan add、/plan edit N、/plan del N 直接改，或用說的改——AI 只會改你提到的那幾條）：</span>
+    <span>📝 計畫草稿待你核准（核准後任務引擎照計畫做；下方可打 /plan add、/plan edit N、/plan del N 直接改，或用說的改——AI 只會改你提到的那幾條）：</span>
     <button onclick="sendPlanDecision('y')">✅ 核准並執行</button>
     <button class="danger" onclick="sendPlanDecision('n')">🚫 取消任務</button>
   </div>
@@ -415,7 +415,7 @@ function renderEvents(events) {
     } else if (ev.channel === 'system') {
       renderEntry(toolLog, 'system', '系統', ev.text);
     } else if (ev.channel === 'progress') {
-      // ⏳ 偽技能（analysis_run、ops_run）執行中的進度：右欄的卡片；數據分析的進度另外讓面板切到那個 job
+      // ⏳ 偽技能（analysis_run、task_run、workflow_run）執行中的進度：右欄的卡片；數據分析的進度另外讓面板切到那個 job
       renderEntry(toolLog, 'analysis', '⏳ 執行進度', ev.text);
       if (/^[📊🧭🔧💭▶✅❌🧩]/u.test(ev.text) && !ev.text.startsWith('🧭 ops')) noteAnalysisEvent(ev.text);
     }
@@ -441,9 +441,8 @@ function updateStatus(stats) {
     : '切換 Plan 模式：開啟後，下一個新任務會先規劃步驟、你核准才執行';
   const planEl = document.getElementById('stat-plan');
   const p = stats.plan;
-  const planLabels = { draft: '草稿', active: '執行中', done: '完成', aborted: '已退出' };
-  planEl.textContent = p ? `📝 計畫${planLabels[p.status] || p.status} ${p.done}/${p.total}` + (p.exec_guard ? ' · 🔒' : '') : '';
-  planEl.title = p ? '計畫（/plan show 看詳細；🔒＝/plan_exec_guard on）：\n' + p.text : '';
+  planEl.textContent = p ? `📝 計畫草稿 ${p.total} 步` : '';
+  planEl.title = p ? '計畫草稿（/plan show 看詳細；核准後交給任務引擎照計畫做）：\n' + p.text : '';
   document.getElementById('stat-cwd').textContent = 'cwd: ' + stats.current_cwd;
   document.getElementById('stat-container').textContent = 'container: ' + (stats.target_container || '-');
   const workspaceEl = document.getElementById('stat-ros2-workspace');

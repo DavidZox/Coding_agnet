@@ -17,8 +17,8 @@ PROCEDURE_NEXT_STEP = ("這是流程技能，沒有自己的腳本：照規格�
 # 腳本輸出最後幾行的狀態標記（見 _trailing_markers；規範見 doc/技能撰寫規範.md）：跟腳本共用同一份清單（_shell_common.protect_tail 也用它）
 from skills_system.scripts._shell_common import STATE_MARKERS  # noqa: E402
 
-# 非編碼的多步驟任務（agent_core/ops_job.py）：在 _run_tool_once 裡攔下、交給 OpsMixin
-OPS_PSEUDO_SCRIPTS = ("ops_plan_cmd.py", "ops_run_cmd.py")
+# 任務引擎（agent_core/task_engine.py）：在 _run_tool_once 裡攔下、交給 TaskMixin
+TASK_PSEUDO_SCRIPTS = ("task_run_cmd.py",)
 # 數據分析（agent_core/analysis_job.py，全部由程式做）：同上，交給 AnalysisMixin
 ANALYSIS_PSEUDO_SCRIPTS = ("analysis_run_cmd.py",)
 # 工作流（agent_core/workflow.py）：同上，交給 WorkflowMixin
@@ -267,12 +267,6 @@ class DispatchMixin:
                 return (f"[ERROR] 找不到腳本 {script_name}。腳本路徑只能從規格文件取得，不可自行推測："
                         f"請先以 action.command 填入 SKILLS.md 裡的技能名稱載入規格。")
 
-            # 計畫執行前檢查（/plan_exec_guard on 才有）：不是目前這一步、又會改變狀態的技能不執行，也不必問使用者
-            blocked = self.plan_block_reason(parsed)
-            if blocked:
-                print("📝 計畫執行前檢查：不是目前這一步的技能，這次沒有執行。")
-                self._plan_fail("執行了計畫外會改變狀態的技能")
-                return blocked
             if not approved:
                 guard = self.guard_check(parsed)
                 if guard:
@@ -281,17 +275,18 @@ class DispatchMixin:
             clean_args = self._parse_script_args(script_name, remainder)
             # 軌跡記錄用：執行「前」的狀態
             cwd_before, container_before, target_before = self.current_cwd, self.container_cwd, self.target_container
-            if script_name in OPS_PSEUDO_SCRIPTS:
-                # 偽技能（同 result_recall）：規劃與執行要呼叫模型，在本 process 內做（agent_core/ops_job.py）；腳本檔只是讓
-                # 存在性檢查與確認關卡（ops_run）照常運作，所以攔在關卡之後。記一筆軌跡：報告有存檔編號，之後可以 result_recall
-                output_text = self.ops_plan(remainder) if script_name == "ops_plan_cmd.py" else self.ops_run(remainder)
+            if script_name in TASK_PSEUDO_SCRIPTS:
+                # 偽技能（同 result_recall）：規劃與執行要呼叫模型，在本 process 內做（agent_core/task_engine.py）；腳本檔只是讓
+                # 存在性檢查與確認關卡（task_run）照常運作，所以攔在關卡之後。記一筆軌跡：報告有存檔編號，之後可以 result_recall；
+                # 每一步 worker 的工具輸出也各自記軌跡（#編號，報告裡的事實引用它們）
+                output_text = self.task_run(remainder)
                 self._record_trajectory(script_name, clean_args, output_text, cwd_before, container_before, target_before)
                 return output_text
             if script_name in WORKFLOW_PSEUDO_SCRIPTS:
                 # 偽技能：工作流由程式照步驟推進（agent_core/workflow.py），判斷點要呼叫模型；每一步的輸出各自記軌跡（#編號），
                 # 整份報告也記一筆
                 output_text = (self.workflow_run(remainder) if WORKFLOWS_ENABLED else
-                               "[ERROR] 這個環境關閉了工作流（AGENT_WORKFLOWS=0）：用技能一步一步做，或用 ops_run。")
+                               "[ERROR] 這個環境關閉了工作流（AGENT_WORKFLOWS=0）：用技能一步一步做，或用 task_run。")
                 self._record_trajectory(script_name, clean_args, output_text, cwd_before, container_before, target_before)
                 return output_text
             if script_name in ANALYSIS_PSEUDO_SCRIPTS:

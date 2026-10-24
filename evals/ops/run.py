@@ -8,7 +8,7 @@ evals/ops/dataset/（scenarios.py、scenarios_holdout.py、sandbox/、checks.py�
 每個情境：沙盒重建（容器、rmf_sim 的機器人行為與預設工作包、新的檔案沙盒）→ 記下開始時的狀態 → 在臨時的 harness 副本裡
 跑主對話（worker.py：工具都真的在沙盒裡執行；DOCKER_HOST 指到沙盒 daemon，碰不到主機上真的容器）→ 讀回最後的狀態 →
 checks.py 計分（狀態＋回覆＋禁止動作）。結果在 evals/results/<時間>_ops_<模型>[_<tag>]/：runs.jsonl、report.md，
-以及每個情境 harness 副本的 logs/（logs/<情境>/：ops_run 的計畫與每一步、提煉的切段與模型呼叫、工具的完整原文、perf.jsonl），
+以及每個情境 harness 副本的 logs/（logs/<情境>/：task_jobs 的計畫、每一步與每一次模型呼叫、提煉的切段與模型呼叫、工具的完整原文、perf.jsonl），
 副本本身跑完就刪。
 """
 import argparse
@@ -85,7 +85,7 @@ def run_one(sc, args, urls, out_dir):
                 or (e.get("kind") in ("handshake", "task_exec_fin") and e.get("source") in ("external", "manual_trigger"))]
         return r
     finally:
-        if os.path.isdir(os.path.join(tmp, "logs")):     # 中間產物留在結果目錄（事後才查得到 ops_run 裡每一步做了什麼）
+        if os.path.isdir(os.path.join(tmp, "logs")):     # 中間產物留在結果目錄（事後才查得到 task_run 裡每一步做了什麼）
             shutil.copytree(os.path.join(tmp, "logs"), os.path.join(out_dir, "logs", sc["id"]), dirs_exist_ok=True)
         if args.keep:
             print(f"  （保留）harness 副本 {tmp}、檔案沙盒 {fs_root}")

@@ -160,3 +160,15 @@ class ArchiveMixin:
             return os.path.join(d, names[-1]) if names else None
         base = os.path.basename(ref)
         return os.path.join(d, base) if base in names else None
+
+    def result_text(self, ref):
+        """存檔的工具結果 → 原文（不含檔頭；跟執行當下拿到的輸出一樣）；ref 是編號或存檔的路徑，找不到回 None。
+        工作流停在【確認】之後接著做、任務引擎核對引用前面各步輸出的事實時，從這裡讀回原文（記憶體裡沒有了）。"""
+        ref = str(ref or "").strip()
+        path = ref if os.path.isabs(ref) else self.result_file_path(ref) if ref else None
+        if not path or not os.path.exists(path):
+            return None
+        try:
+            return "\n".join(_results_common.read_body(path)[1])
+        except OSError:
+            return None

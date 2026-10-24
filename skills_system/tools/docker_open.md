@@ -2,7 +2,7 @@
 type: Tool
 title: 選定目標容器（進入並驗證連線）
 description: 找出容器真實名稱、確認它在跑並驗證連線，設為之後容器技能預設使用的目標容器。
-version: 1.4.0
+version: 1.4.1
 dependencies: ["docker"]
 ---
 
@@ -15,7 +15,7 @@ dependencies: ["docker"]
 `EXECUTE: scripts/docker_open_cmd.py <container_name>`（可為部分名稱、不分大小寫；只接受一個）
 
 # 範例
-`EXECUTE: scripts/docker_open_cmd.py ros2_humble`
+`EXECUTE: scripts/docker_open_cmd.py ros_box`
 
 # 回傳
 `[PASS] 已成功連線至 '<真實名稱>'，並設為目前的目標容器：執行中，映像…；容器內目錄…，使用者…`，最後幾行是系統狀態標記

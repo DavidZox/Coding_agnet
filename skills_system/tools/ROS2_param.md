@@ -2,7 +2,7 @@
 type: Tool
 title: ROS 2 參數
 description: 查詢 ROS 2 node 的參數（list／get，看執行中的實際值）；set 修改執行中的值（會先請使用者確認）。
-version: 1.1.0
+version: 1.1.1
 dependencies: ["docker", "ros2"]
 ---
 
@@ -16,7 +16,7 @@ set 之後會再讀一次、回報實際的值；只影響執行中的 node，�
 * set 的值照參數原本的型別寫：小數 `10.0`（不是 `10`）、整數 `10`、`true`／`false`、字串。
 
 # 範例
-`EXECUTE: scripts/ROS2_param_cmd.py rmf_sim get /resource_allocator authorize_timeout_sec`　`EXECUTE: scripts/ROS2_param_cmd.py list /resource_allocator`
+`EXECUTE: scripts/ROS2_param_cmd.py ros_box get /camera_node exposure`　`EXECUTE: scripts/ROS2_param_cmd.py list /camera_node`
 
 # 回傳
 get：`[PASS] /node 的 參數（執行中的值；容器…，ROS_DOMAIN_ID N）：10.0（Double）`。list：`[PASS] /node 有 N 個參數` + 每行一個（超過 20 個依前綴分節）。

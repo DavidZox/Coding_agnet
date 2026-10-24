@@ -2,7 +2,7 @@
 type: Tool
 title: 建立容器環境
 description: 以指定映像檔（可帶 tag）建立並在背景啟動容器，可指定名稱、指令、網路與環境變數；會先請使用者確認。
-version: 3.0.0
+version: 3.0.1
 dependencies: ["docker"]
 ---
 
@@ -14,11 +14,11 @@ dependencies: ["docker"]
 `EXECUTE: scripts/docker_est_cmd.py <映像檔[:tag]> [--name 名稱] [--cmd "指令"] [--network 網路] [-e 變數=值]...`
 * 帶 tag 或路徑時一定要給 `--name`（英數字、`_ . -`，至少 2 個字）；沒帶時名稱＝映像檔名稱。先用 `docker_images` 確認映像檔存在。
 * `--cmd` 省略＝一直跑著；含 `&& ; | $ source` 等 shell 語法時自動包成 `bash -lc "…"`（沒有 bash 用 `sh -c`）。
-* 支援 `--network host`、`-e ROS_DOMAIN_ID=42`；`-v`、`-p`、`--gpus`、`--privileged`、`--rm`… 回 `[ERROR]`、不建任何東西；`-d`／`-it` 略過。
+* 支援 `--network host`、`-e ROS_DOMAIN_ID=15`；`-v`、`-p`、`--gpus`、`--privileged`、`--rm`… 回 `[ERROR]`、不建任何東西；`-d`／`-it` 略過。
 
 # 範例
-`EXECUTE: scripts/docker_est_cmd.py ubuntu:24.04 --name scratch_box --cmd "sleep infinity"`
-`EXECUTE: scripts/docker_est_cmd.py ros:jazzy-ros-base --name ros_box --network host -e ROS_DOMAIN_ID=42`
+`EXECUTE: scripts/docker_est_cmd.py debian:12 --name tmp_box --cmd "sleep infinity"`
+`EXECUTE: scripts/docker_est_cmd.py ros:humble-ros-core --name ros_box --network host -e ROS_DOMAIN_ID=15`
 
 # 回傳
 `[PASS] 容器 '<名稱>'（映像檔…，指令…，ID…）已在背景啟動，2 秒後確認還在跑；已設為目前的目標容器`，末行 `[TARGET_CONTAINER]`、`[CONTAINER_CWD]`。

@@ -2,7 +2,7 @@
 type: Tool
 title: 在工具結果存檔裡搜關鍵字
 description: 在指定編號（或 latest／all）的工具結果存檔裡搜關鍵字（a|b 同義詞、正則、不分大小寫），回命中行與前後幾行；要找某個字串出現在哪幾行時用。
-version: 2.0.0
+version: 2.0.1
 dependencies: []
 ---
 
@@ -17,7 +17,7 @@ dependencies: []
 * `--block`：命中時回整則（以 `--- #序號` 分隔的輸出，例如 ROS2_topic_echo 的每則訊息）。`all`：目前 session 最近 20 個存檔。
 
 # 範例
-`EXECUTE: scripts/result_grep_cmd.py 16 "motor_rear_left|temperature"`
+`EXECUTE: scripts/result_grep_cmd.py 16 "motor_rear_left|current"`
 `EXECUTE: scripts/result_grep_cmd.py latest "voltage: 23\." --block`
 `EXECUTE: scripts/result_grep_cmd.py all "error|fail" -C 2`
 

@@ -21,25 +21,23 @@ SLASH_COMMANDS = [
     {"cmd": "/hybrid off", "desc": "關閉 Hybrid", "group": "模式開關"},
     {"cmd": "/summarize on", "desc": "超過門檻的工具回傳由獨立 session 依任務擷取重點（預設）", "group": "模式開關"},
     {"cmd": "/summarize off", "desc": "改為只給成功／失敗判定（不多花一次模型呼叫）", "group": "模式開關"},
-    {"cmd": "/plan on", "desc": "下一個新任務先規劃、經核准後執行（核准後自動退出）", "group": "模式開關"},
+    {"cmd": "/plan on", "desc": "下一個新任務先由任務引擎規劃、你看過改過核准後照計畫做（核准後自動退出）", "group": "模式開關"},
     {"cmd": "/plan off", "desc": "關閉 Plan 模式", "group": "模式開關"},
     {"cmd": "/parallel_cal on", "desc": "軟水位壓縮改在背景執行緒進行", "group": "模式開關"},
     {"cmd": "/parallel_cal off", "desc": "壓縮改回序列處理", "group": "模式開關"},
     {"cmd": "/context_mode harness", "desc": "上下文模式：harness 替模型做決定（大量回傳由獨立 session 擷取重點，預設）", "group": "模式開關"},
     {"cmd": "/context_mode claude_code", "desc": "上下文模式：相信模型（原文進上下文、太大保留頭尾，查不查細節由 AI 決定）", "group": "模式開關"},
-    {"cmd": "/guard on", "desc": "執行前關卡：派工單、取消任務、建容器、容器內非唯讀指令先問你（預設）", "group": "模式開關"},
+    {"cmd": "/guard on", "desc": "執行前關卡：會改變系統狀態的技能（派工單、改檔案、重啟容器、改 ROS 2 參數…）執行前先問你（預設）", "group": "模式開關"},
     {"cmd": "/guard off", "desc": "關閉執行前關卡（只限這次執行，不建議）", "group": "模式開關"},
     {"cmd": "/skill ", "desc": "手動載入某技能的規格，隨下一則訊息送出（直接點下方技能清單更快）", "group": "動作與查詢", "args": True},
     {"cmd": "/skills", "desc": "列出所有可用技能", "group": "動作與查詢"},
     {"cmd": "/menu", "desc": "顯示完整指令說明", "group": "動作與查詢"},
     {"cmd": "/compress", "desc": "手動壓縮並歸檔目前的歷史對話", "group": "動作與查詢"},
-    {"cmd": "/plan done", "desc": "清除目前的計畫與草稿", "group": "動作與查詢"},
+    {"cmd": "/plan done", "desc": "清除目前的計畫草稿", "group": "動作與查詢"},
     {"cmd": "/plan add ", "desc": "計畫加一步（/plan add <技能>：<要做什麼>；沒有草稿時開一份新的）", "group": "動作與查詢", "args": True},
     {"cmd": "/plan edit ", "desc": "改計畫的第 N 步（/plan edit <N> <技能>：<要做什麼>）", "group": "動作與查詢", "args": True},
     {"cmd": "/plan del ", "desc": "刪計畫的第 N 步", "group": "動作與查詢", "args": True},
-    {"cmd": "/plan show", "desc": "顯示目前的計畫與進度", "group": "動作與查詢"},
-    {"cmd": "/plan_exec_guard on", "desc": "計畫執行前檢查：計畫外會改變狀態的技能不執行、自動推進、連續失敗 3 次退出", "group": "模式開關"},
-    {"cmd": "/plan_exec_guard off", "desc": "關閉計畫執行前檢查（預設：沒有限制）", "group": "模式開關"},
+    {"cmd": "/plan show", "desc": "顯示目前的計畫草稿", "group": "動作與查詢"},
     {"cmd": "/context_mode", "desc": "查看目前的上下文模式", "group": "動作與查詢"},
     {"cmd": "/make_skill ", "desc": "把這段做對的對話整理成工作流的規格（後接名稱，可再接軌跡範圍如 3-7）", "group": "動作與查詢", "args": True},
     {"cmd": "/trajectory", "desc": "列出本次 session 記錄到的腳本執行軌跡（步驟編號、成功／失敗）", "group": "動作與查詢"},
@@ -81,10 +79,9 @@ MENU_TEXT = """可用指令：
 /hybrid on / /hybrid off 切換 Hybrid 模式（每次工具結果都詢問是否加入上下文）
 /summarize on / /summarize off 切換工具回傳的任務導向摘要（見下方說明，預設開啟）
 /parallel_cal on / /parallel_cal off 切換平行壓縮（回合結束後的軟水位壓縮改在背景執行緒做，預設關閉）
-/plan on / /plan off    開啟 Plan 模式：下一個新任務會先規劃步驟、經你核准後才執行；核准後自動退出（預設關閉）
-/plan done              清除目前的計畫與草稿（做完或退出的計畫會在你送出下一個新任務時自動清除）
-/plan add|insert|edit|del|move|show  直接改計畫草稿（不經過 AI），例：/plan add ROS2_topic_echo：讀 /fleet_states_json
-/plan_exec_guard on|off 計畫執行前檢查（預設關閉＝沒有限制）
+/plan on / /plan off    開啟 Plan 模式：下一個新任務會先由任務引擎規劃步驟，經你核准後才照計畫做；核准後自動退出（預設關閉）
+/plan done              清除目前的計畫草稿
+/plan add|insert|edit|del|move|show  直接改計畫草稿（不經過 AI），例：/plan add ROS2_topic_echo：讀 /odom 一筆
 /context_mode [模式]    查看或切換上下文模式：harness（預設）／claude_code，見下方說明
 /guard on / /guard off  執行前關卡（預設開啟）：會改變系統狀態的技能執行前先問你
 /objective set <內容>   設定 Sticky Objective（最高優先任務，會持續提醒 AI）
@@ -118,18 +115,15 @@ AI 的每一次回覆都是固定的 JSON（thought／reply／action），由 Ol
 載入規格或執行腳本，reply 裡不論寫了什麼指令文字都不會被執行；回覆不是合法 JSON 時降級為純文字顯示、
 該輪不執行任何東西。
 
-開啟 /plan on 後，輸入新任務時 AI 不會馬上執行，而是由一次性的規劃 session 列出步驟草稿（每步是「技能：要做什麼」），
-草稿由系統保存、不進主對話。改草稿有兩種方式：直接下 /plan add／insert／edit／del／move（不經過 AI，最穩），
+開啟 /plan on 後，輸入新任務時 AI 不會馬上執行，而是由任務引擎列出步驟草稿（每一步的目標、技能或工作流、會不會改變狀態、
+做完怎麼檢查），草稿由系統保存、不進主對話。改草稿有兩種方式：直接下 /plan add／insert／edit／del／move（不經過 AI，最穩），
 或在輸入框用說的（例如「第二步改成先看 topic 清單」）——AI 只提出要改哪幾條，由系統套用，不會重寫整份。
 也可以不開 /plan on，直接 /plan add 一條條自己列。規劃與修改都不會呼叫任何工具。
 
-按「✅ 核准並執行」（或打 y）後，任務與計畫才進主對話，並自動退出 Plan 模式。計畫每一輪都顯示在送給 AI 的內容最後面，
-這一步的技能執行成功就自動換下一步（不需要 AI 自己勾）；你中途插話計畫也會保留，做完或 /plan done 才清除。
-工具結果要不要加入上下文，照你目前的 auto／hybrid／manual 設定。
-
-/plan_exec_guard on（預設關閉）：計畫執行中，不是目前這一步、又會改變系統狀態的技能不執行（唯讀查詢、載入規格、
-回查存檔都放行，保留 AI 修正錯誤的空間）；AI 停下來而計畫還沒做完時，系統自動提醒它繼續；被擋、[ERROR]、停下來
-連續 3 次，就退出計畫、把狀況交回給你。
+按「✅ 核准並執行」（或打 y）後，計畫裡標明會改變狀態的步驟就都核准了，任務引擎照這份計畫一步一步派執行者做、每一步由系統
+檢查（Plan 模式不會自己重排計畫），報告進主對話後 AI 依報告回答；同時自動退出 Plan 模式。
+不開 Plan 模式時，複雜的任務 AI 會用 task_run 交給同一個任務引擎：只查詢的步驟先做，查完照查到的事實排要改的步驟，
+要改的部分系統會直接請你確認。
 
 上下文模式（/context_mode）決定工具回傳怎麼進主對話，兩種都會把完整原文存成 #編號：
 - harness（預設，下一段的說明）：harness 替模型做決定，大量回傳由獨立 session 依問題擷取重點、附下一步建議。
@@ -144,7 +138,7 @@ auto 模式也一樣會停下來問；是由系統不執行保證的，不是提
 
 單一工具回傳若超過 {threshold} tokens（harness 模式），不會直接進主對話：
 預設交給一個獨立、乾淨的 session 做「任務導向摘要」——它拿到完整原始輸出、
-使用者的目標（Objective／這一輪任務的原始敘述／已核准的計畫）與這一步的目的
+使用者的目標（Objective／這一輪任務的原始敘述）與這一步的目的
 （AI 剛才的想法與執行的工具），只擷取跟任務有關的事實，名稱與數值照抄、不推測，
 並明說原始輸出沒有涵蓋什麼；主對話收到的就是這份重點（右欄 🧠 卡片顯示同一份
 內容）。所有工具回傳一律如此，包括 topic 擷取、狀態觀察、語義地圖這類分析型輸出
@@ -279,17 +273,11 @@ def handle_slash_command(message, events):
         events.append({"channel": "system", "text": "📝 已關閉 Plan 模式（恢復直接執行）"})
         return True
     if lower == "/plan done":
-        if agent.plan or agent.current_plan:
+        if agent.plan:
             agent.plan_clear()
-            events.append({"channel": "system", "text": "✅ 已清除目前的計畫與草稿"})
+            events.append({"channel": "system", "text": "✅ 已清除計畫草稿"})
         else:
-            events.append({"channel": "system", "text": "ℹ️ 目前沒有進行中的計畫"})
-        return True
-    if lower in ("/plan_exec_guard on", "/plan_exec_guard off"):
-        agent.plan_exec_guard = lower.endswith("on")
-        events.append({"channel": "system", "text": (
-            "📝 已開啟計畫執行前檢查：計畫執行中，不是目前這一步、又會改變狀態的技能不執行；AI 停下來會自動提醒它繼續；"
-            "連續失敗 3 次退出計畫" if agent.plan_exec_guard else "📝 已關閉計畫執行前檢查：計畫只顯示進度，沒有限制")})
+            events.append({"channel": "system", "text": "ℹ️ 目前沒有計畫草稿"})
         return True
     handled, plan_msg = agent.plan_edit_command(text)   # /plan add|insert|edit|del|move|show：直接改草稿，不經過模型
     if handled:

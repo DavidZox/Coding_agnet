@@ -2,7 +2,7 @@
 type: Tool
 title: 調度交握（診斷與手動觸發）
 description: 看某台機器人（或某個工作包）跟 distribute 的授權交握並判斷原因（離線、沒回應、回 no、完成訊號遺失、在等忙碌的機器人）；必要時手動回 yes／no 或補發完成訊號（會先請使用者確認）。
-version: 1.3.0
+version: 1.3.1
 dependencies: ["fih_rmf_system web_console", "manual_trigger（yes／no／fin）", "ROS 2 容器＋fih_rmf_msgs（status 聽 topic）"]
 ---
 
@@ -20,10 +20,10 @@ dependencies: ["fih_rmf_system web_console", "manual_trigger（yes／no／fin）
 * yes／no／fin 會先核對名冊與工作項、送出後讀快照確認；快照讀不到時要加 `--no-check` 才送（使用者同意才用）。
 
 # 範例
-`EXECUTE: scripts/rmf_handshake_cmd.py status WP_C3`　`EXECUTE: scripts/rmf_handshake_cmd.py status tb3 --container rmf_sim --seconds 15`　`EXECUTE: scripts/rmf_handshake_cmd.py fin tb2`
+`EXECUTE: scripts/rmf_handshake_cmd.py status WP_0815`　`EXECUTE: scripts/rmf_handshake_cmd.py status amr_07 --container ros_box --seconds 15`　`EXECUTE: scripts/rmf_handshake_cmd.py fin amr_12`
 
 # 回傳
-`[PASS] tb3 的交握狀況：<判斷>` + `## 快照`、`## 聽 topic`（兩個 topic 各收到幾則、graph 上的發布者幾個、時間線 `+0.3s authorize、+0.3s 回 no…`、聽完的快照工作項換到哪裡）、`## 判斷`（原因與下一步）。發布者 0 個是證據：handshake_states 沒有發布者＝機器人端的 TaskAgent 多半沒在跑；allocator_status 沒有發布者＝聽的容器看不到 distribute（容器或 ROS_DOMAIN_ID 不對）。聽的期間工作項進了 OverPending 就寫「這幾秒剛好沒有授權」。yes／no／fin：送出的結果＋快照確認的效果。
+`[PASS] amr_07 的交握狀況：<判斷>` + `## 快照`、`## 聽 topic`（兩個 topic 各收到幾則、graph 上的發布者幾個、時間線 `+0.3s authorize、+0.3s 回 no…`、聽完的快照工作項換到哪裡）、`## 判斷`（原因與下一步）。發布者 0 個是證據：handshake_states 沒有發布者＝機器人端的 TaskAgent 多半沒在跑；allocator_status 沒有發布者＝聽的容器看不到 distribute（容器或 ROS_DOMAIN_ID 不對）。聽的期間工作項進了 OverPending 就寫「這幾秒剛好沒有授權」。yes／no／fin：送出的結果＋快照確認的效果。
 
 # 異常
 * 名冊沒有這台、也不是工作包（附相近的）：改用正確的 id，或問使用者。

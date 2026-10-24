@@ -33,11 +33,11 @@ USAGE = (
     "用法: scripts/workpackage_send_cmd.py <task_id|auto> <站點1,站點2,...> [--amr 機器人] [--type regular|charge|park]\n"
     "      [--level normal|middle|emergency] [--weight 整數] [--loop [輪數]] [--desc 描述1,描述2,...] [--dry-run]\n"
     "      [--ros2 [容器]] [--no-check] [--url 位址]\n"
-    "  站點寫名稱（a3）、節點 id（3）或語意名稱（加工線通道-6）。循環：--loop（不接數字）＝無限循環；--loop 3＝3 輪；不加＝一輪。\n"
-    "  範例: scripts/workpackage_send_cmd.py WP001 home,a3,a7 --amr tb1　　scripts/workpackage_send_cmd.py 巡邏 home,a3 --amr tb1 --loop"
+    "  站點寫名稱（p5）、節點 id（3）或語意名稱（包裝區-3）。循環：--loop（不接數字）＝無限循環；--loop 3＝3 輪；不加＝一輪。\n"
+    "  範例: scripts/workpackage_send_cmd.py WP_0815 p0,p2,p5 --amr amr_07　　scripts/workpackage_send_cmd.py 巡邏 p0,p2 --amr amr_07 --loop"
 )
 
-_VALUE_OPTS = {"--amr": "機器人 id（例如 --amr tb1；名冊用 semantic_map --robots 查）", "--type": "任務類型（regular／charge／park）",
+_VALUE_OPTS = {"--amr": "機器人 id（例如 --amr amr_07；名冊用 semantic_map --robots 查）", "--type": "任務類型（regular／charge／park）",
                "--level": "等級（normal／middle／emergency）", "--weight": "權重整數（0＝自動計算）",
                "--desc": "每一站的描述（逗號分隔）", "--url": "web_console 位址（例如 http://localhost:8020）"}
 # 這些是別的技能的選項；小模型記得舊的合併版技能時會帶進來，直接指路
@@ -97,7 +97,7 @@ def parse_args(argv):
             return dict(out, error=f"[ERROR] task_id {task_id!r} {bad}。下一步：換一個只有英數字、- 或 _ 的 id（或寫 auto 自動產生）。")
     stations = [s.strip() for s in _STATION_SPLIT.split(station_arg) if s.strip()]
     if not stations:
-        return dict(out, error=f"[ERROR] 至少要一個站點（逗號分隔，例如 home,a3,a7；站點用 semantic_map --stations 查）。\n{USAGE}")
+        return dict(out, error=f"[ERROR] 至少要一個站點（逗號分隔，例如 p0,p2,p5；站點用 semantic_map --stations 查）。\n{USAGE}")
     amr = (opts.get("--amr") or "").strip()
     if amr:
         amr_err = rc.robot_id_error(amr, "--amr")

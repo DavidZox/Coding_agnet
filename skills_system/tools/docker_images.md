@@ -2,7 +2,7 @@
 type: Tool
 title: 列出映像檔
 description: 列出本機所有 Docker 映像檔（名稱、tag、大小），建立容器前確認映像檔存在。
-version: 1.2.0
+version: 1.2.1
 dependencies: ["docker"]
 ---
 
@@ -21,4 +21,4 @@ dependencies: ["docker"]
 
 # 異常
 * docker 不可用／daemon 沒回應：`[ERROR]` 說明原因 → 回報使用者，不要原樣重試。
-* `<none>` 懸空映像無法用名稱啟動。`docker_est` 用「REPOSITORY:TAG」（例如 `ubuntu:24.04`）；帶 tag 或路徑時要給 `--name`。
+* `<none>` 懸空映像無法用名稱啟動。`docker_est` 用「REPOSITORY:TAG」（例如 `debian:12`）；帶 tag 或路徑時要給 `--name`。

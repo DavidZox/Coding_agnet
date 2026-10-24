@@ -2,7 +2,7 @@
 type: Tool
 title: 全域 Topic Metadata 與 Key 檢視
 description: 數據的全域索引（時間範圍、每個 Topic 的型別、筆數、頻率、角色與 Key）；看某個 Topic 每個 Key 的型別、維度與類別；預覽原始值；全部 Topic 的事實（--facts）。
-version: 4.1.0
+version: 4.1.1
 dependencies: ["docker", "mcap", "rclpy", "rosidl_runtime_py"]
 ---
 
@@ -23,8 +23,8 @@ dependencies: ["docker", "mcap", "rclpy", "rosidl_runtime_py"]
 
 # 範例
 `EXECUTE: scripts/mcap_analyzer_cmd.py latest`
-`EXECUTE: scripts/mcap_analyzer_cmd.py --topic /system/safety_gate_status`
-`EXECUTE: scripts/mcap_analyzer_cmd.py --topic /cmd_vel --key linear.x --preview 20 --window +10,+20`
+`EXECUTE: scripts/mcap_analyzer_cmd.py --topic /battery_state`
+`EXECUTE: scripts/mcap_analyzer_cmd.py --topic /imu/data --key angular_velocity.z --preview 20 --window +10,+20`
 `EXECUTE: scripts/mcap_analyzer_cmd.py latest --facts`
 
 # 回傳

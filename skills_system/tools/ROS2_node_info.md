@@ -2,7 +2,7 @@
 type: Tool
 title: ROS2 節點資訊
 description: 查詢指定 node 的訂閱、發布、服務、Action（標頭算好每一類的數量；容器可省略＝目標容器）。
-version: 1.5.0
+version: 1.5.1
 dependencies: ["docker", "ros2"]
 ---
 
@@ -15,7 +15,7 @@ dependencies: ["docker", "ros2"]
 * `node_name` 含命名空間（`/nav_node`；少了開頭的 / 會自動補）。兩個參數時第一個一定是容器名稱。一次查一個 node。
 
 # 範例
-`EXECUTE: scripts/ROS2_node_info_cmd.py /resource_allocator`（用目標容器）　`EXECUTE: scripts/ROS2_node_info_cmd.py rmf_sim /orchestrtor`
+`EXECUTE: scripts/ROS2_node_info_cmd.py /camera_node`（用目標容器）　`EXECUTE: scripts/ROS2_node_info_cmd.py ros_box /map_server`
 
 # 回傳
 `[PASS] 節點 /x（容器 '<名稱>'，ROS_DOMAIN_ID N）：訂閱 a、發布 b、服務 c、服務客戶端 d、Action 伺服器 e、Action 客戶端 f` + 有項目的各節

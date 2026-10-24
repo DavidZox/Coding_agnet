@@ -2,13 +2,13 @@
 type: Tool
 title: ROS2 話題列表
 description: 列出容器內目前的 topic（--types 附訊息型別），標頭算好總數與實際用的 ROS_DOMAIN_ID；--filter 關鍵字只列符合的並計數。
-version: 1.6.0
+version: 1.6.1
 dependencies: ["docker", "ros2"]
 ---
 
 # 用途
 在容器內執行 `ros2 topic list`（自動載入 ROS 2、已記錄的 Workspace，shell 沒設 domain 時沿用正在跑的節點的 ROS_DOMAIN_ID）。
-兩個以上的命名空間時依命名空間分節（`## /tb1（4 項）`）。要發布訊息（ROS2_topic_pub）前用 `--types` 查完整的型別。逾時 30 秒。
+兩個以上的命名空間時依命名空間分節（`## /amr_07（4 項）`）。要發布訊息（ROS2_topic_pub）前用 `--types` 查完整的型別。逾時 30 秒。
 
 # 語法
 `EXECUTE: scripts/ROS2_topic_list_cmd.py [container_name] [--types] [--filter 關鍵字]...`
@@ -17,7 +17,7 @@ dependencies: ["docker", "ros2"]
 
 # 範例
 `EXECUTE: scripts/ROS2_topic_list_cmd.py`（用目標容器）　`EXECUTE: scripts/ROS2_topic_list_cmd.py --filter costmap`
-`EXECUTE: scripts/ROS2_topic_list_cmd.py rmf_sim --types --filter handshake`
+`EXECUTE: scripts/ROS2_topic_list_cmd.py ros_box --types --filter camera`
 
 # 回傳
 `[PASS] 容器 '<名稱>' 的 topic：共 N 個[，其中含「關鍵字」的 M 個]；ROS_DOMAIN_ID X（來源）` + 清單。

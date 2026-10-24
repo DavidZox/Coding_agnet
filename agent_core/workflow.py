@@ -1,6 +1,6 @@
 """WorkflowMixin：工作流（skills_system/workflows/<名稱>.md）的執行器——文本當錨點，程式照步驟推進，模型只在判斷點出手。
 
-workflow_run 偽技能（同 ops_run：腳本檔只讓存在性檢查與確認關卡照常運作，執行在 harness 的 process 裡）：
+workflow_run 偽技能（同 task_run：腳本檔只讓存在性檢查與確認關卡照常運作，執行在 harness 的 process 裡）：
     workflow_run <名稱> key=value …     開始（確認關卡列出到第一個【確認】之前會改變狀態的步驟，使用者核准一次）
     workflow_run --continue [<job>]     停在【確認】的工作流接著做（確認關卡：那個【確認】的內容＋接下來會改變狀態的步驟）
     workflow_run --cancel [<job>]       不做了
@@ -167,7 +167,7 @@ class WorkflowMixin:
                 values[k] = v
         if bad:
             return None, None, {}, (f"[ERROR] 參數要寫成 名稱=值：{'、'.join(bad)} 看不懂。下一步：照工作流的「需要的資訊」寫，"
-                                    f"例如 workflow_run {toks[0]} wp_id=WP_L2。")
+                                    f"例如 workflow_run {toks[0]} <名稱>=<值>（名稱照它的「需要的資訊」）。")
         return "start", toks[0], values, None
 
     def _wf_check_inputs(self, wf, values):
@@ -337,14 +337,9 @@ class WorkflowRun:
         if n in self.outputs:
             return self.outputs[n]
         st = self.state(n)
-        path = st.get("file")
-        if path and os.path.exists(path):
-            try:
-                from skills_system.scripts._results_common import read_body
-                self.outputs[n] = read_body(path)
-            except Exception:   # noqa: BLE001
-                with open(path, encoding="utf-8", errors="replace") as f:
-                    self.outputs[n] = f.read()
+        text = self.a.result_text(st.get("file") or st.get("rid"))   # 停在【確認】之後接著做：記憶體裡沒有了，讀回存檔的原文
+        if text is not None:
+            self.outputs[n] = text
         return self.outputs.get(n, st.get("head", ""))
 
     def context(self, upto):

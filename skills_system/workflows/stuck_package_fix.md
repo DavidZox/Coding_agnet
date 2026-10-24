@@ -2,7 +2,7 @@
 type: Workflow
 title: 工作包卡住的處理
 description: 工作包卡住、不往下一站：查狀態與交握找原因；完成訊號遺失就補發、等它跑完，有給檔案就寫處理紀錄；其他原因只回報、不修改
-version: 0.1.0
+version: 0.1.1
 dependencies: ["workpackage_status", "rmf_handshake", "file_ops"]
 changes_state: true
 ---
@@ -12,8 +12,8 @@ changes_state: true
 還在等 task_exec_fin）才補發完成訊號、等工作包跑完；其他原因（機器人沒回應、一直回 no、離線）只回報原因與建議，不取消、不重派。
 
 # 需要的資訊
-* `{wp_id}`：卡住的工作包編號（例：`WP_L2`）
-* `{note_file}`：處理紀錄要附加到哪個檔案（選填，例：`ops_notes/2026-10-10.md`；沒給就不寫）
+* `{wp_id}`：卡住的工作包編號（例：`WP_0815`）
+* `{note_file}`：處理紀錄要附加到哪個檔案（選填，例：`notes/maintenance.md`；沒給就不寫）
 
 # 步驟
 1. 【執行】查工作包的狀態：`EXECUTE: scripts/workpackage_status_cmd.py {wp_id}`　檢查：輸出有「[PASS]」

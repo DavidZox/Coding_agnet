@@ -2,18 +2,18 @@
 type: Workflow
 title: 派工作包並確認跑完
 description: 派一個工作包給指定的機器人（站點照順序），等它跑完（看到完成就結束，最多 300 秒），回報每一站的結果
-version: 0.1.1
+version: 0.1.2
 dependencies: ["workpackage_send", "workpackage_status"]
 changes_state: true
 ---
 
 # 用途
-「派 tb1 從 home 到 a3 跑一趟，確認完成」這種：送出工作包、等它跑完再回報。等待用 workpackage_status --until-done，看到完成就結束，
+「派 amr_07 從 p0 到 p2 跑一趟，確認完成」這種：送出工作包、等它跑完再回報。等待用 workpackage_status --until-done，看到完成就結束，
 不用猜要觀察幾秒；最多 300 秒，時間到還沒完成就照實回報現況。
 
 # 需要的資訊
-* `{robot}`：指派的機器人（例：`tb1`）
-* `{stops}`：站點，照順序用逗號隔開；「從 A 到 B」的出發站 A 也要寫（例：「從 home 到 a3、再到 a7」→ `home,a3,a7`；名稱或語意名稱都可以）
+* `{robot}`：指派的機器人（例：`amr_07`）
+* `{stops}`：站點，照順序用逗號隔開；「從 A 到 B」的出發站 A 也要寫（例：「從 p0 到 p2、再到 p5」→ `p0,p2,p5`；名稱或語意名稱都可以）
 * `{wp_id}`：工作包編號（選填，預設 `auto`＝自動產生）
 
 # 步驟

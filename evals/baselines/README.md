@@ -5,12 +5,12 @@
 
 | 檔案 | 內容 | 目前的來源 |
 |---|---|---|
-| `offline.json` | 各組自我測試的通過數（`skills`、`chat_selftest`、`extract_selftest`、`ops_selftest`、`analysis_selftest`、`workflow_selftest`；實機組另有 `skills_sandbox`、`containers_sandbox`、`data_live`、`tools_live:<數據>`） | 第 3 階段 commit 前的完整驗證（`20261023_230115_phase_check`） |
-| `ops_gemma4-26b.json` | 維運評測（沙盒裡真的執行，主要 50＋保留 20）：`current` 每個情境的次數、通過、禁止動作、秒數中位數，`totals` 每一次的總分；`reference_v5` 是 v5 的三次，只當歷史參考 | 第 3 階段（dfa8e10）三次完整跑：主要 46／44／45、保留 18／18／19（第 2 階段四次是 47／43／44／46、18／18／17／18）。比第 2 階段差的 fs_edit_param 是第 3 階段改的說明造成的，之後修了（設計筆記 2.18） |
-| `chat_gemma4-e4b.json` | 主對話評測（假的外部世界、真模型）11 個情境，每個情境的次數與通過 | 第 2 階段的兩次（各 ×3：32/33、33/33，followup_in_context 漏一次） |
-| `extract.json` | 提煉評測（`evals/extract/`）每個模型、每個情境：找到幾個、多列幾個、數量的說法對不對、秒數 | 第 2 階段 commit 之後各跑一次（26b 全對；e4b 的 recall_fleet_120 是 9/11：worker 漏一台、整合時拿掉一台——兩個條件一起篩對小模型難）；robot_heading 2026-10-24 加（26b 4/4；e4b 這一次 1/1，另外三次只過 1 次——小模型常漏掉要去的站，沒過時先看是不是這個） |
-| `workflow.json` | 工作流的沙盒測試（`evals/workflow/sandbox.py`，走不用互動的入口）每個模型、每個案例：次數、通過、禁止動作、判斷點的模型呼叫、秒數中位數 | 第 3 階段 commit 前的完整驗證（26b、e4b 各 7 個案例 ×2，全過；判斷點的模型呼叫各 12 次） |
-| `analysis.json` | 數據分析回歸（不呼叫模型）：產生器 s1／s2／s3、這台的實錄，每份數據每個評分項目過了幾次；實錄另有產物穩定性、沒有根據的時間 | 第 2 階段（`analysis_p2_*`）；第 3 階段的 `--live` 結果跟它一樣（全部項目都過、實錄的產物每次相同 14/14、沒有根據的時間 0/1070） |
+| `offline.json` | 各組自我測試的通過數（`skills`、`chat_selftest`、`extract_selftest`、`ops_selftest`、`task_selftest`、`analysis_selftest`、`workflow_selftest`、`integrity`；實機組另有 `skills_sandbox`、`containers_sandbox`、`data_live`、`tools_live:<數據>`） | 第 4 階段結束的完整驗證（`20261024_152818_phase_check`） |
+| `ops_gemma4-26b.json` | 維運評測（沙盒裡真的執行，主要 50＋保留 20）：`current` 每個情境的次數、通過、禁止動作、秒數中位數，`totals` 每一次的總分；比對只用 `current`，其他的 key 是之前的基準、只當參考：`phase4_start`（第 4 階段開始＝第 3 階段的程式＋範例改成評測世界沒有的名稱）、`phase3`（第 3 階段，dfa8e10）、`reference_v5`（v5 的三次） | 第 4 階段（任務引擎）三次完整跑：主要 46／46／46、保留 19／20／19（`phase4_start` 44／45／42、18／19／17；`phase3` 46／44／45、18／18／19）。每個情境的變化見設計筆記 2.19 |
+| `chat_gemma4-e4b.json` | 主對話評測（假的外部世界、真模型）11 個情境，每個情境的次數與通過 | 第 4 階段結束的一次（×3：33/33；第 4 階段開始也是 33/33，第 2 階段兩次 32/33、33/33） |
+| `extract.json` | 提煉評測（`evals/extract/`）每個模型、每個情境：找到幾個、多列幾個、數量的說法對不對、秒數 | 第 2 階段 commit 之後各跑一次（26b 全對；e4b 的 recall_fleet_120 是 9/11：worker 漏一台、整合時拿掉一台——兩個條件一起篩對小模型難）；robot_heading 2026-10-24 加（26b 4/4；e4b 這一次 1/1，另外三次只過 1 次——小模型常漏掉要去的站，沒過時先看是不是這個）。第 4 階段沒有改提煉，結束時的一次 26b 全對、e4b fleet_40 6/7（一次讀完漏了 amr_24）、recall_fleet_120 10/11，沒有拿來更新 |
+| `workflow.json` | 工作流的沙盒測試（`evals/workflow/sandbox.py`，走不用互動的入口）每個模型、每個案例：次數、通過、禁止動作、判斷點的模型呼叫、秒數中位數 | 第 4 階段結束的完整驗證（26b、e4b 各 7 個案例 ×2，全過；判斷點的模型呼叫各 12 次，跟第 3 階段一樣） |
+| `analysis.json` | 數據分析回歸（不呼叫模型）：產生器 s1／s2／s3、這台的實錄，每份數據每個評分項目過了幾次；實錄另有產物穩定性、沒有根據的時間 | 第 2 階段（`analysis_p2_*`）；第 3、第 4 階段的 `--live` 結果跟它一樣（全部項目都過、實錄的產物每次相同 14/14、沒有根據的時間 0/1070） |
 
 ## 怎麼比
 
@@ -30,9 +30,11 @@
 python3 evals/phase_check.py --save-baseline evals/results/<時間>_phase_check [其他的結果目錄…] --label "第 N 階段（<commit>）"
 ```
 
-維運最好用 3 次以上的結果一起更新（`--save-baseline` 給好幾個 `_ops_` 目錄會合成一份）；`reference_v5` 不會被覆蓋。
+維運最好用 3 次以上的結果一起更新（`--save-baseline` 給好幾個 `_ops_` 目錄會合成一份）。
 
 只更新其中幾項時加 `--only`，其他的基準不動：名稱是 summary.md 第一欄括號裡的 key（`skills`、`workflow_selftest`、`chat`、`ops`…），
 有冒號的取冒號前面（`tools_live`、`analysis`、`extract`、`workflow`；跑的時候數據分析回歸叫 `analysis_regression`，這裡是 `analysis`）。
 
-第 3 階段更新了自我測試、工作流沙盒與維運（三次完整跑）；主對話、提煉、數據分析這一階段只有一次完整的結果（都在第 2 階段基準的範圍內），沿用第 2 階段的。
+`--save-baseline` 只覆蓋維運的 `current`：要留下舊的基準當參考，先在 json 裡把 `current` 複製成另一個 key（`phase4_start` 就是這樣留的）。
+
+第 4 階段更新了自我測試、主對話、工作流沙盒與維運（三次完整跑）；提煉、數據分析沒有改，沿用之前的。

@@ -2,14 +2,14 @@
 type: Tool
 title: Topic 特徵量測（數值統計、向量分量、狀態跳轉、訊息中斷）
 description: 對一個 Topic 的一個或幾個 Key，在時間窗內量測特徵：數值的極值／均值／標準差／斜率／尖峰、向量每個分量、狀態跳轉的時間與前後值、發布方式與訊息中斷；--where 門檻條件（第一次是什麼時候、持續多久）。
-version: 2.1.0
+version: 2.1.1
 dependencies: ["docker", "mcap", "rclpy", "rosidl_runtime_py"]
 ---
 
 # 用途
 按需量測（移植自 toolkit 的 mcap_feature_measure.py）：
 - 數值：筆數、min／max（與時間）、mean、variance／std、趨勢斜率、最大跳變、尖峰（單獨幾筆跳出去又回來：跟前後 9 筆的中位數差超過殘差典型值的 6 倍、又回到原來的水準、而且夠陡——雜訊、斜坡換成定值、平滑的山頂都不算）；只有幾種值的（速度指令 0／0.1）列每次切換；常數直接標出。
-- 向量（vector [n]）：每個分量各自量；也可以只量一個分量（`linear.x`）。
+- 向量（vector [n]）：每個分量各自量；也可以只量一個分量（`angular_velocity.z`）。
 - 狀態（uint8／bool／列舉字串／代碼集合，或相異值 ≤10 的整數）：狀態跳轉（時間、從哪個值到哪個值、集合增減）、各狀態的時間占比。
 - 依名稱展開的 Key（DiagnosticArray 的 status.level、status.values）：每個名稱各自量，只列有變化的。
 - 字串裡的 JSON（std_msgs/String 裝的狀態）：欄位展開成 Key（`data.status`、`data.robots.battery`），跟一般的 Key 一樣量。
@@ -22,11 +22,11 @@ dependencies: ["docker", "mcap", "rclpy", "rosidl_runtime_py"]
 `EXECUTE: scripts/mcap_feature_measure_cmd.py [數據] --topic TOPIC --key KEY [--key KEY]... [--window 開始,結束]... [--around 時間 --before 秒 --after 秒] [--where 欄位<值]... [--filter 名稱關鍵字]`
 * Key 名稱用 `mcap_analyzer --topic <TOPIC>` 查（state、numeric 這些是 Key 的類別，不是 Key）。好幾個 `--key` 裡有不存在的：認得的照量，最後一行說明略過哪些；全部都不存在才回 [ERROR] 並列出可以量測的 Key。時間可以是 epoch 秒或 `+秒`（距離數據開頭）；不給時間窗＝整份數據。
 * `--around <時間>`：以該時間為錨點，前後各取 --before／--after 秒（預設 5）。`--all-entries`：依名稱展開的 Key 連不變的項目也列。`--json`：結構化輸出。
-* `--where 欄位<值`（可重複；可以不寫 --key，條件用到的 Key 自動量）：運算子 `< <= > >= == !=`，欄位寫法同量測結果（`voltage`、`linear.x`、`status.level[motor_left]`、`data.mode`）；`==` 可以比文字與 true／false；陣列任一個元素符合就算。
+* `--where 欄位<值`（可重複；可以不寫 --key，條件用到的 Key 自動量）：運算子 `< <= > >= == !=`，欄位寫法同量測結果（`voltage`、`angular_velocity.z`、`status.level[motor_left]`、`data.mode`）；`==` 可以比文字與 true／false；陣列任一個元素符合就算。
 
 # 範例
-`EXECUTE: scripts/mcap_feature_measure_cmd.py --topic /cmd_vel --key linear --key angular`
-`EXECUTE: scripts/mcap_feature_measure_cmd.py latest --topic /system/safety_gate_status --key mode --key stop_reasons --around +0.75 --before 2 --after 20`
+`EXECUTE: scripts/mcap_feature_measure_cmd.py --topic /imu/data --key angular_velocity --key linear_acceleration`
+`EXECUTE: scripts/mcap_feature_measure_cmd.py latest --topic /battery_state --key power_supply_status --around +3.2 --before 2 --after 20`
 `EXECUTE: scripts/mcap_feature_measure_cmd.py --topic /diagnostics_agg --key status.level --filter Battery --window +10,+40`
 `EXECUTE: scripts/mcap_feature_measure_cmd.py latest --topic /battery_state --where voltage<24`
 

@@ -2,7 +2,7 @@
 type: Tool
 title: ROS 2 實驗數據錄製（MCAP＋rosout.log＋Topic Metadata 索引）
 description: 在目標容器內定時錄製 ROS 2 Topic，產生 toolkit 格式的實驗資料夾，錄完自動建立全域 Topic Metadata 索引。
-version: 3.0.0
+version: 3.0.1
 dependencies: ["docker", "ros2", "rosbag2-storage-mcap", "mcap"]
 ---
 
@@ -26,7 +26,7 @@ dependencies: ["docker", "ros2", "rosbag2-storage-mcap", "mcap"]
 `EXECUTE: scripts/mcap_recorder_cmd.py --all --duration 30`（全部 Topic）
 `EXECUTE: scripts/mcap_recorder_cmd.py --preset core --duration 30`（核心 Topic）
 `EXECUTE: scripts/mcap_recorder_cmd.py --all --duration 40 --name exp_event_test`（全部 Topic，資料夾名稱 exp_event_test）
-`EXECUTE: scripts/mcap_recorder_cmd.py --topics /cmd_vel /odom /battery_state --duration 20 --name exp_battery_test`
+`EXECUTE: scripts/mcap_recorder_cmd.py --topics /imu/data /battery_state --duration 20 --name exp_battery_test`
 
 # 回傳
 `[PASS] 錄製完成`、資料夾、每個 Topic 錄到幾則、沒有錄到訊息的 Topic（錄製期間沒有 publisher）、索引位置。

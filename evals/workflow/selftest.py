@@ -49,6 +49,7 @@ changes_state: true
 6. 【告知】回報
 # 成功判準
 * 第 4 步的輸出有「已取消」
+* 第 1 步的輸出有「RUNNING」
 """
 
 
@@ -240,6 +241,11 @@ def main():
                 assert out.startswith("[PASS] 工作流 confirm_test（測試用的確認）完成") and "3. ✅【確認】" in out, out
                 assert [c[0] for c in model.calls] == ["check"], "沒有分支的【檢查】是關卡：模型判斷繼續"
                 assert "✅ 第 4 步的輸出有「已取消」" in out, out
+                # 接著做的是新的一次執行（記憶體裡沒有停下來之前的輸出）：第 1 步的輸出從存檔讀回原文——成功判準、判斷點看得到
+                # （以前讀回來的是 (檔頭, 每一行) 的 tuple：成功判準一讀就出錯，判斷點看到的是 tuple 的字面）
+                assert "✅ 第 1 步的輸出有「RUNNING」" in out, out
+                gate = model.calls[0][1]
+                assert "[PASS] work package WP9：RUNNING，第 1/2 站" in gate and "'session'" not in gate, gate[:600]
                 tools, model = setup(rules)
                 agent.workflow_run("confirm_test wp_id=WP9")
                 out = agent.workflow_run("--cancel")
@@ -425,7 +431,7 @@ def main():
                          ("其他原因：提早結束、沒有補發、不問模型", t_run_other_cause),
                          ("選填的沒給就略過；模型填不出值就停下來、不執行", t_skip_and_fail),
                          ("技能回 [ERROR]：帶著錯誤請模型改一次值", t_retry_on_error),
-                         ("【確認】停下來、--continue 接著做、--cancel；關卡由模型判斷", t_confirm_pause_continue),
+                         ("【確認】停下來、--continue 接著做（前面步驟的輸出從存檔讀回）、--cancel；關卡由模型判斷", t_confirm_pause_continue),
                          ("比對不出分支、又沒有「其他」：交給模型選", t_model_branch),
                          ("參數錯誤與確認關卡的說明", t_args_and_guard),
                          ("dispatch：名稱當技能載入、沒有核准不執行、可以關閉", t_dispatch),

@@ -156,20 +156,8 @@ EXTRACT_WORKER_SCHEMA = {
 }
 
 
-# /plan 草稿（PlanMixin）：第一版由規劃 session 產生整份步驟；之後的自然語言修改只輸出「要套用的操作」，
-# 不重寫整份——小模型重寫時會把 4 步變 2 步、把沒提到的步驟改掉。操作由 harness 套用在保存的草稿上。
-PLAN_DRAFT_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "steps": {"type": "array", "items": {
-            "type": "object",
-            "properties": {"skill": {"type": "string"}, "goal": {"type": "string"}},
-            "required": ["skill", "goal"],
-        }},
-    },
-    "required": ["steps"],
-}
-
+# /plan 草稿的自然語言修改（PlanMixin）：只輸出「要套用的操作」，不重寫整份——小模型重寫時會把 4 步變 2 步、把沒提到的步驟改掉。
+# 操作由 harness 套用在保存的草稿（任務引擎的計畫）上。
 PLAN_OPS_SCHEMA = {
     "type": "object",
     "properties": {
@@ -189,42 +177,48 @@ PLAN_OPS_SCHEMA = {
 }
 
 
-# 🧭 非編碼的多步驟任務（agent_core/ops_job.py）的規劃 session。欄位順序＝生成順序：先寫對任務的理解（要查什麼、要改什麼、
+# 🧭 任務引擎（agent_core/task_engine.py）的規劃 session。欄位順序＝生成順序：先寫對任務的理解（要查什麼、要改什麼、
 # 使用者有沒有說先確認），再列步驟，最後寫要回報的重點——同 MAKE_SKILL_SCHEMA 的教訓，直接列步驟時小模型會漏掉條件。
-# check：做完那一步用哪個唯讀技能確認（技能、參數、輸出要出現的字樣）；只有查詢的步驟填 null。
-_OPS_CHECK = {
+# 每一步：技能（skills），或整段正好是一個工作流（workflow＋workflow_args，skills 留空）；check：做完那一步用哪個唯讀技能確認
+# （技能、參數、輸出要出現的字樣），只有查詢的步驟填 null。
+_TASK_CHECK = {
     "type": "object",
     "properties": {"skill": _text(40), "args": _text(300), "expect": _text(120)},
     "required": ["skill", "args", "expect"],
 }
 
-_OPS_ITEM = {
+_TASK_ITEM = {
     "type": "object",
     "properties": {
         "title": _text(60),
         "goal": _text(600),
         "skills": {"type": "array", "maxItems": 5, "items": _text(40)},
+        "workflow": _text(60),
+        "workflow_args": _text(400),
         "changes_state": {"type": "boolean"},
-        "check": {"anyOf": [{"type": "null"}, _OPS_CHECK]},
+        "check": {"anyOf": [{"type": "null"}, _TASK_CHECK]},
     },
-    "required": ["title", "goal", "skills", "changes_state", "check"],
+    "required": ["title", "goal", "skills", "workflow", "workflow_args", "changes_state", "check"],
 }
 
-OPS_PLAN_SCHEMA = {
+TASK_PLAN_SCHEMA = {
     "type": "object",
     "properties": {
         "understanding": _text(400),
         "summary": _text(200),
-        "items": {"type": "array", "maxItems": 6, "items": _OPS_ITEM},
+        "items": {"type": "array", "maxItems": 6, "items": _TASK_ITEM},
         "report": _text(300),
     },
     "required": ["understanding", "summary", "items", "report"],
 }
 
+# worker 回報的事實：每條附出處（這一步執行過的工具結果 #編號），程式核對名稱與數值在那份輸出裡找得到
+_TASK_FACT = {"type": "object", "properties": {"text": _text(200), "ref": _text(20)}, "required": ["text", "ref"]}
+_TASK_FACTS = {"type": "array", "maxItems": 8, "items": _TASK_FACT}
 
-# ops worker 的回覆：同 AGENT_REPLY_SCHEMA，但每個字串都有上限——實測（2026-10-10，gemma4:26b）worker 寫檔時偶爾在一個欄位裡
-# 失控、一次輸出三萬多個 token（一百多秒）才被上下文長度截斷；有上限就一定在合理的長度內結束、而且是合法的 JSON。
-OPS_WORKER_REPLY_SCHEMA = {
+# worker 的回覆：同 AGENT_REPLY_SCHEMA 加上 facts（做完那一輪才寫），每個字串都有上限——實測（2026-10-10，gemma4:26b）worker 寫檔時
+# 偶爾在一個欄位裡失控、一次輸出三萬多個 token（一百多秒）才被上下文長度截斷；有上限就一定在合理的長度內結束、而且是合法的 JSON。
+TASK_WORKER_REPLY_SCHEMA = {
     "type": "object",
     "properties": {
         "thought": _text(600),
@@ -237,15 +231,22 @@ OPS_WORKER_REPLY_SCHEMA = {
                 "required": ["command", "args"],
             },
         ]},
+        "facts": _TASK_FACTS,
     },
-    "required": ["thought", "reply", "action"],
+    "required": ["thought", "reply", "action", "facts"],
 }
 
-
-# ops worker 用完步數還沒回報時，最後一次請它總結：這一步到底做完了沒有（實測：worker 改好檔案後一直做額外的檢查，用完 10 輪，
+# worker 用完步數還沒回報時，最後一次請它總結：這一步到底做完了沒有（實測：worker 改好檔案後一直做額外的檢查，用完 10 輪，
 # 做完的工作被當成失敗）
-OPS_WORKER_WRAPUP_SCHEMA = {
+TASK_WORKER_WRAPUP_SCHEMA = {
     "type": "object",
-    "properties": {"done": {"type": "boolean"}, "summary": _text(1500)},
-    "required": ["done", "summary"],
+    "properties": {"done": {"type": "boolean"}, "summary": _text(1500), "facts": _TASK_FACTS},
+    "required": ["done", "summary", "facts"],
+}
+
+# 事實核對不過時交回改一次：只輸出改正後的事實與摘要
+TASK_FACTS_FIX_SCHEMA = {
+    "type": "object",
+    "properties": {"facts": _TASK_FACTS, "summary": _text(1500)},
+    "required": ["facts", "summary"],
 }

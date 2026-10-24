@@ -2,18 +2,18 @@
 type: Workflow
 title: 工作包改派給別台
 description: 工作包派不出去時查原因；是原本那台機器人的問題（一直回 no、沒回應、離線）才取消它、用同樣的站點改派給指定的機器人並等它跑完
-version: 0.1.0
+version: 0.1.1
 dependencies: ["workpackage_status", "rmf_handshake", "workpackage_cancel", "workpackage_send"]
 changes_state: true
 ---
 
 # 用途
-「WP_C3 一直派不出去，如果是 tb3 的問題就取消、改派給 tb1」這種：先查工作包與交握，確定是原本那台機器人的問題才改派；
+「WP_0815 卡在授權，是 amr_07 的問題就取消、改給 amr_12」這種：先查工作包與交握，確定是原本那台機器人的問題才改派；
 不是機器人的問題（例如站點、distribute）就只回報原因，不取消。
 
 # 需要的資訊
-* `{wp_id}`：派不出去的工作包編號（例：`WP_C3`）
-* `{robot}`：改派給哪一台（例：`tb1`）
+* `{wp_id}`：派不出去的工作包編號（例：`WP_0815`）
+* `{robot}`：改派給哪一台（例：`amr_12`）
 
 # 步驟
 1. 【執行】看工作包的路線與指派：`EXECUTE: scripts/workpackage_status_cmd.py {wp_id}`　檢查：輸出有「[PASS]」

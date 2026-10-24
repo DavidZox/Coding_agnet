@@ -2,7 +2,7 @@
 type: Tool
 title: 語義地圖與目前佈局
 description: 站點（名稱、節點 id、語意名稱）、說明、路段，對應目前機器人與 work package 在哪；也可只列站點或機器人。
-version: 1.2.0
+version: 1.2.1
 dependencies: ["fih_rmf_system web_console (port 8020)"]
 ---
 
@@ -16,7 +16,7 @@ web_console `GET /api/topology`（拓譜圖＋semantics.yaml）加一幀快照�
 * `--stations`：只列站點；`--robots`：機器人（名冊＋目前狀態）。`--url`：預設環境變數 `RMF_WEB_CONSOLE_URL` 或 http://localhost:8020。
 
 # 範例
-`EXECUTE: scripts/semantic_map_cmd.py`　`EXECUTE: scripts/semantic_map_cmd.py 加工線通道`　`EXECUTE: scripts/semantic_map_cmd.py a3`　`EXECUTE: scripts/semantic_map_cmd.py --robots`
+`EXECUTE: scripts/semantic_map_cmd.py`　`EXECUTE: scripts/semantic_map_cmd.py 包裝區`　`EXECUTE: scripts/semantic_map_cmd.py p5`　`EXECUTE: scripts/semantic_map_cmd.py --robots`
 
 # 回傳
 `[PASS] 語義地圖：N 站（有名稱 a、只有 id b；有語意名稱 c）、M 路段…` + 各節；快照讀不到時第一行註明，仍回地圖。

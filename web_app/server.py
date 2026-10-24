@@ -246,7 +246,7 @@ class ConsoleHandler(BaseHTTPRequestHandler):
         data = self._read_json()
         with lock:
             stream = self._begin_stream()
-            # ⏳ 偽技能（analysis_run、ops_run）執行中的進度：推到右欄（analysis 的 worker 平行時由 analysis_job 上鎖後才呼叫）
+            # ⏳ 偽技能（analysis_run、task_run、workflow_run）執行中的進度：推到右欄（analysis 的 worker 平行時由 analysis_job 上鎖後才呼叫）
             agent.progress_callback = lambda text: stream.append({"channel": "progress", "text": text})
             try:
                 if self.path == "/api/send":
@@ -388,7 +388,7 @@ class ConsoleHandler(BaseHTTPRequestHandler):
             "skills": [name for name, _ in skill_items],
         })
 
-        # 新任務開始：上一個已核准的計畫到此結束（見 clear_plan_for_new_task）
+        # 新任務開始：任務引擎還沒接著問的確認不再自動接著問（見 clear_plan_for_new_task）
         clear_plan_for_new_task(stream)
 
         # 記下使用者這句話（任務線：最近 3 句），跟 CLI 版（agent_core.cli.main）一致；

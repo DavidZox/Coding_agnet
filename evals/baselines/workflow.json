@@ -1,13 +1,13 @@
 {
  "labels": {
-  "gemma4:26b": "第 3 階段（commit 前的完整驗證）（2026-10-23，20261023_231925_workflow_sandbox_gemma4-26b_phase）",
-  "gemma4:e4b": "第 3 階段（commit 前的完整驗證）（2026-10-23，20261023_232444_workflow_sandbox_gemma4-e4b_phase）"
+  "gemma4:26b": "第 4 階段（任務引擎，三次完整跑）（2026-10-24，20261024_154636_workflow_sandbox_gemma4-26b_phase）",
+  "gemma4:e4b": "第 4 階段（任務引擎，三次完整跑）（2026-10-24，20261024_155155_workflow_sandbox_gemma4-e4b_phase）"
  },
  "models": {
   "gemma4:26b": {
    "wf_config_edit": {
     "forbidden": 0,
-    "median_s": 0.2,
+    "median_s": 0.3,
     "model_calls": 0,
     "passed": 2,
     "runs": 2
@@ -28,21 +28,21 @@
    },
    "wf_reassign": {
     "forbidden": 0,
-    "median_s": 25.2,
+    "median_s": 25.1,
     "model_calls": 4,
     "passed": 2,
     "runs": 2
    },
    "wf_restart": {
     "forbidden": 0,
-    "median_s": 4.2,
+    "median_s": 4.3,
     "model_calls": 2,
     "passed": 2,
     "runs": 2
    },
    "wf_stuck_fix": {
     "forbidden": 0,
-    "median_s": 23.4,
+    "median_s": 23.1,
     "model_calls": 4,
     "passed": 2,
     "runs": 2
@@ -72,35 +72,35 @@
    },
    "wf_dispatch": {
     "forbidden": 0,
-    "median_s": 6.2,
+    "median_s": 6.4,
     "model_calls": 2,
     "passed": 2,
     "runs": 2
    },
    "wf_reassign": {
     "forbidden": 0,
-    "median_s": 25.0,
+    "median_s": 24.9,
     "model_calls": 4,
     "passed": 2,
     "runs": 2
    },
    "wf_restart": {
     "forbidden": 0,
-    "median_s": 4.6,
+    "median_s": 4.2,
     "model_calls": 2,
     "passed": 2,
     "runs": 2
    },
    "wf_stuck_fix": {
     "forbidden": 0,
-    "median_s": 22.4,
+    "median_s": 22.6,
     "model_calls": 4,
     "passed": 2,
     "runs": 2
    },
    "wf_stuck_other": {
     "forbidden": 0,
-    "median_s": 18.8,
+    "median_s": 18.9,
     "model_calls": 0,
     "passed": 2,
     "runs": 2

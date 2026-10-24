@@ -3,7 +3,7 @@
 排列依「多久變一次」決定（Ollama 只重用跟上一次請求相同的開頭，從第一個不同的 token 開始全部重算）：
 - system prompt（get_system_prompt）只放不常變的：AGENT.md、目前上下文模式的規則、長期記憶、滾動摘要、
   使用者原話、技能索引、工具使用檢索清單。清單一千多 tokens、只在跑完獨立 session 時多一筆，留在這裡最划算。
-- 動態區（build_state_tail）放小而常變的：Current Agent State、Objective、已核准的計畫、檢索清單最新一筆。
+- 動態區（build_state_tail）放小而常變的：Current Agent State、Objective、檢索清單最新一筆。
   每次呼叫只接在送出快照的最後一則訊息後面（ask_ai），不寫進 self.messages——切目錄不再讓整段歷史重算，
   而且它們離生成點最近，小模型最看得到。"""
 import os
@@ -55,19 +55,13 @@ class PromptMixin:
         note = f"\n（另有 {dropped} 條較舊的記憶超過載入上限，沒有載入。）" if dropped else ""
         return guide + "\n" + "\n".join(kept) + note
 
-    # ---------------------------------------------------------------- Plan 模式（草稿與執行在 plan.py）
+    # ---------------------------------------------------------------- 新的使用者訊息
     def end_plan_for_new_task(self):
-        """使用者送出新訊息時（CLI／Web 共用）：做完或退出的計畫到此清掉；執行中的計畫保留（使用者可能只是在回答追問，
-        計畫要留著才能繼續），用 /plan done 提早結束。回傳要顯示給使用者的說明（沒有要說的回 None）。"""
-        status = self.plan_status()
-        if status in ("done", "aborted"):
-            self.plan_clear()
-            return "🧹 上一個計畫已結束，隨新任務清除。"
-        if status == "active":
-            return "📝 計畫仍在執行中（/plan done 可提早結束）。"
-        if self.current_plan:   # 相容：沒有草稿結構、只有文字的計畫
-            self.current_plan = None
-            return "🧹 上一個已核准的計畫已隨新任務自動清除。"
+        """使用者送出新訊息時（CLI／Web／評測共用）：任務引擎還沒接著問的確認（使用者先前捨棄了那份報告）不再自動接著問——
+        停下來等確認的任務本身留著，使用者同意時主對話用 task_run --continue。回傳要顯示給使用者的說明（沒有要說的回 None）。"""
+        if getattr(self, "task_pending_approval", None):
+            self.task_pending_approval = None
+            return "📝 停下來等確認的任務還留著：要繼續就跟 AI 說（task_run --continue），不要了就說取消。"
         return None
 
     # ---------------------------------------------------------------- 各區塊
@@ -84,7 +78,6 @@ class PromptMixin:
         - current_task：使用者最新的一句話（每次送出新訊息都由 set_current_task 更新，/clear 清空）
         - task_history：任務線，連同最新一句共最近 TASK_HISTORY_KEEP（3）句使用者的原話；最新一句常只是
           「第一個」這種短回答，原本要做什麼要看前幾句
-        - current_plan：Plan 模式核准的計畫（到下一個新任務為止）
         有幾層就給幾層，不互斥。「這一步的目的」（決策 AI 的 thought／reply／action）由 _last_assistant_step
         另外提供，這裡不夾帶 AI 的回覆。"""
         parts = []
@@ -97,10 +90,6 @@ class PromptMixin:
                 # 任務線：使用者回答追問時最新一句常只剩關鍵字（例如「看 motor_rear_left」），原本要做什麼在前幾句
                 parts.append("這串對話較早的使用者訊息（舊→新；最新訊息可能只是對其中一項的追問，原本的目的看這裡）：\n"
                              + "\n".join(f"{i}. {t}" for i, t in enumerate(earlier, 1)))
-        if self.plan_status() == "active":
-            parts.append(f"使用者已核准的任務計畫（[→] 是目前這一步）：\n{self.plan_text()}")
-        elif self.current_plan:
-            parts.append(f"使用者已核准的任務計畫（逐步執行中）：\n{self.current_plan}")
         return "\n".join(parts) if parts else "(未取得使用者原始任務敘述)"
 
     def _user_words_block(self):
@@ -229,7 +218,6 @@ class PromptMixin:
             workspace_line,
             self.analysis_state_line(),   # 📊 目前分析的數據、最近一次 analysis_run（analysis_job.py）
             self._build_objective_prompt(),
-            self.plan_block(),
             self.tool_use_index_pointer(),
         ]
 

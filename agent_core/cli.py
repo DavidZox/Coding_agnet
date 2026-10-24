@@ -17,14 +17,14 @@ from .turn import _append_discarded_tool_result, _content_for_context, after_tur
 
 
 def _run_plan_flow(agent, user_task=None):
-    """/plan 模式（草稿與規則在 agent_core/plan.py）：user_task 有值時先讓規劃 session 產生第一版草稿；接著等使用者
+    """/plan 模式（草稿與規則在 agent_core/plan.py）：user_task 有值時先讓任務引擎規劃第一版草稿；接著等使用者
     y 核准／n 取消／/plan 指令直接改／其他文字＝用說的改（AI 只提出要改哪幾條，harness 套用）。
 
     安全設計：規劃階段自始至終不會呼叫 agent.run_tool()，也不碰主對話——確認關卡是靠「這個函式根本不執行工具」保證的。
-    回傳 True 代表使用者已核准（任務原文＋[PLAN_CONFIRMED] 已加入主對話），False 代表取消。
+    回傳 True 代表使用者已核准（任務原文已加入主對話；接著的 execute_turn 一開始由 harness 直接請任務引擎照計畫做），False 代表取消。
     """
     if user_task is not None:
-        print("📝 規劃中（一次性的規劃 session，不進主對話）…")
+        print("📝 規劃中（任務引擎的規劃，不進主對話）…")
         print(f"\n📝 計畫草稿:\n{'-'*30}\n{agent.plan_start_draft(user_task)}\n{'-'*30}")
     while True:
         outcome, msg = agent.plan_handle_input(input("\n📝 計畫> "))
@@ -149,21 +149,27 @@ def main():
         """一個回合：反覆 ask_ai → 執行前確認 → run_tool → 依 auto／hybrid／manual 決定結果怎麼加入，直到模型不再下 action；
         最後做軟水位檢查。模式變數（auto_mode 等）由外層的 slash 指令改，這裡只讀。"""
         while True:
-            # --- 🧠 AI 推論 ---
-            ai_msg = agent.ask_ai()
-            ai_tokens = agent.last_ai_tokens(ai_msg)
-            agent.total_ai_tokens += ai_tokens
-            if agent.auto_cleared:
-                print(f"🧹 上下文超過門檻，呼叫前先把 {agent.auto_cleared['results']} 則舊的工具回傳清成存檔編號"
-                      f"（騰出約 {agent.auto_cleared['tokens']} tokens，原文仍在存檔）。")
-            if agent.auto_compressed:
-                print("📦 上下文超過門檻，呼叫前已自動壓縮並歸檔。")
-            parsed = agent.parse_reply(ai_msg)  # 回覆協議：顯示 reply／thought，執行只看 action
-            if agent.last_reply_retry:
-                print(agent.last_reply_retry)
-            print(f"\n🧠 AI:\n{'-'*30}\n{agent.format_reply_for_console(parsed)}\n{'-'*30}")
-            print(f"📤 AI Tokens: {ai_tokens}")
-            agent.messages.append({'role': 'assistant', 'content': ai_msg})
+            # --- 🧭 任務引擎查完、要改的步驟等使用者確認（或 Plan 模式剛核准）：harness 直接接著做，不經過模型 ---
+            parsed = agent.take_task_continuation()
+            if parsed:
+                print(f"\n🧭 {parsed['reply']}（{parsed['action']['args']}）")
+                agent.messages.append({'role': 'assistant', 'content': parsed["raw"]})
+            else:
+                # --- 🧠 AI 推論 ---
+                ai_msg = agent.ask_ai()
+                ai_tokens = agent.last_ai_tokens(ai_msg)
+                agent.total_ai_tokens += ai_tokens
+                if agent.auto_cleared:
+                    print(f"🧹 上下文超過門檻，呼叫前先把 {agent.auto_cleared['results']} 則舊的工具回傳清成存檔編號"
+                          f"（騰出約 {agent.auto_cleared['tokens']} tokens，原文仍在存檔）。")
+                if agent.auto_compressed:
+                    print("📦 上下文超過門檻，呼叫前已自動壓縮並歸檔。")
+                parsed = agent.parse_reply(ai_msg)  # 回覆協議：顯示 reply／thought，執行只看 action
+                if agent.last_reply_retry:
+                    print(agent.last_reply_retry)
+                print(f"\n🧠 AI:\n{'-'*30}\n{agent.format_reply_for_console(parsed)}\n{'-'*30}")
+                print(f"📤 AI Tokens: {ai_tokens}")
+                agent.messages.append({'role': 'assistant', 'content': ai_msg})
 
             # --- 🛡️ 執行前關卡：會改變系統狀態的技能先問使用者（程式擋，不靠模型記得要問）---
             guard = agent.guard_check(parsed)
@@ -208,14 +214,6 @@ def main():
                     print(notice)
                 if claim:
                     agent.messages.append({'role': 'user', 'content': claim})
-                    continue
-                # /plan 執行中：剩下的都是不需技能的步驟就算完成；/plan_exec_guard on 時還有步驟沒做就自動提醒 AI 繼續
-                nudge = agent.plan_after_reply(parsed)
-                for notice in agent.pop_notices():
-                    print(notice)
-                if nudge:
-                    print("📝 計畫還沒做完，自動提醒 AI 繼續下一步。")
-                    agent.messages.append({'role': 'user', 'content': nudge})
                     continue
                 break
 
@@ -393,16 +391,11 @@ def main():
                 _run_make_skill_flow(agent, user_msg[len('/make_skill'):].strip())
                 continue
             if user_msg.lower() == '/plan done':
-                if agent.plan or agent.current_plan:
+                if agent.plan:
                     agent.plan_clear()
-                    print("✅ 已清除目前的計畫與草稿")
+                    print("✅ 已清除計畫草稿")
                 else:
-                    print("ℹ️ 目前沒有進行中的計畫")
-                continue
-            if user_msg.lower() in ('/plan_exec_guard on', '/plan_exec_guard off'):
-                agent.plan_exec_guard = user_msg.lower().endswith('on')
-                print("📝 已開啟計畫執行前檢查：計畫執行中，不是目前這一步、又會改變狀態的技能不執行；AI 停下來會自動提醒它繼續；"
-                      "連續失敗 3 次退出計畫" if agent.plan_exec_guard else "📝 已關閉計畫執行前檢查：計畫只顯示進度，沒有限制")
+                    print("ℹ️ 目前沒有計畫草稿")
                 continue
             # /plan add|insert|edit|del|move|show：使用者直接改草稿（不經過模型）；有草稿時進入核准流程
             handled, plan_msg = agent.plan_edit_command(user_msg)
@@ -452,7 +445,7 @@ def main():
             agent.total_user_tokens += user_tokens
             print(f"📥 User Tokens: {user_tokens}")
 
-            # 新訊息：做完或退出的計畫清掉；執行中的保留（使用者可能在回答追問），/plan done 提早結束
+            # 新訊息：任務引擎還沒接著問的確認不再自動接著問（停下來的任務留著，要繼續由 AI 用 task_run --continue）
             cleared_note = agent.end_plan_for_new_task()
             if cleared_note:
                 print(cleared_note)

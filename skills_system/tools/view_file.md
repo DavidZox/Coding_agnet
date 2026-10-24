@@ -2,7 +2,7 @@
 type: Tool
 title: 查看檔案內容
 description: 看本機文字檔（設定檔、log、腳本）的內容，每行附行號；可 --from／--lines 看一段、--tail 看最後幾行。
-version: 2.0.0
+version: 2.0.1
 dependencies: []
 ---
 
@@ -16,8 +16,8 @@ dependencies: []
 * `--from N`：從第 N 行開始；`--lines M`：列 M 行（上限 2000）；`--tail N`：只看最後 N 行（不能跟 --from 一起用）。
 
 # 範例
-`EXECUTE: scripts/cat_cmd.py configs/nav/nav_params.yaml`　`EXECUTE: scripts/cat_cmd.py agent_core/dispatch.py --from 120 --lines 60`
-`EXECUTE: scripts/cat_cmd.py logs/robot_tb3.log --tail 50`
+`EXECUTE: scripts/cat_cmd.py config/camera.yaml`　`EXECUTE: scripts/cat_cmd.py agent_core/dispatch.py --from 120 --lines 60`
+`EXECUTE: scripts/cat_cmd.py logs/camera.log --tail 50`
 
 # 回傳
 `[PASS] 檔案內容 (<路徑>)：共 N 行，顯示第 a-b 行[（上限 2000 行）][；看後面用 --from b+1]`，之後每行 `  行號→內容`。

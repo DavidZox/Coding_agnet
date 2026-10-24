@@ -11,6 +11,9 @@
 - 🧠 模型設定：主對話換模型、thinking 開關只對支援的模型送出、設定存檔與載入、/model 與 /think；
 - prompts/ 裡給模型的文字都讀得到（讀不到時程式不會報錯，只會默默變成空的）。
 - 🧩 /workflow（Web 與 CLI——CLI 用假的 input() 驅動真的 cli.main() 迴圈）：列出、看步驟；直接執行的工作流照常經過確認，核准才執行、拒絕不執行；報告完整進主對話，AI 依報告回答。
+- 🧭 任務引擎（task_run）在 Web 與 CLI 的回合裡：開頭的查詢直接做、停下來；harness 不經過模型直接推確認（Web 卡片、CLI y/n），核准才改；
+  Plan 模式：/plan on → 任務引擎的草稿 → 核准 → harness 直接照計畫做（不再確認），報告進主對話後 AI 依報告回答一次；
+- 說要去做卻沒有動作（「我會先查…」、action 是 null）：提醒一次；問使用者的、做過的事不提醒。
 每一個情境都在臨時目錄複製一份專案，不碰正式的 logs/。"""
 import json
 import os
@@ -21,6 +24,49 @@ import tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROJECT = os.path.dirname(os.path.dirname(HERE))
 COPY = ["agent_core", "skills_system", "prompts", "web_app", "vision"]
+
+
+class FakeAll:
+    """主對話、任務引擎的規劃與 worker 都要回的假模型：依 format 的欄位分；worker 的事實 ref 寫 LAST＝它最近一次工具結果的編號。"""
+
+    def __init__(self, mains=(), plans=(), workers=()):
+        self.mains, self.plans, self.workers = list(mains), list(plans), list(workers)
+        self.calls = 0                                # 主對話被問了幾次
+
+    def __call__(self, model=None, messages=None, format=None, **kw):
+        import re
+        props = sorted((format or {}).get("properties", {})) if isinstance(format, dict) else []
+        if "understanding" in props:
+            data = self.plans.pop(0) if self.plans else {"understanding": "", "summary": "", "items": [], "report": ""}
+        elif "facts" in props and "action" in props:
+            data = json.loads(json.dumps(self.workers.pop(0))) if self.workers else {"thought": "", "reply": "完成", "action": None, "facts": []}
+            rid = next((m.group(1) for x in reversed(messages or []) for m in [re.match(r"\[tool result #(\d+)\]", x.get("content") or "")] if m), "?")
+            for f in data.get("facts") or []:
+                f["ref"] = rid if f.get("ref") == "LAST" else f.get("ref")
+        elif "action" in props:
+            self.calls += 1
+            data = self.mains.pop(0) if self.mains else {"thought": "", "reply": "好的。", "action": None}
+        else:
+            return {"message": {"content": "（摘要）"}, "prompt_eval_count": 100, "eval_count": 20}
+        return {"message": {"content": json.dumps(data, ensure_ascii=False)}, "prompt_eval_count": 100, "eval_count": 20}
+
+
+def task_plan_pair(path):
+    """任務引擎的第一版計畫（先查、再改）與查完之後重排的（只剩要改的那一步）。"""
+    check = {"skill": "view_file", "args": path, "expect": "exposure: 20"}
+    look = {"title": "看現在的值", "goal": f"看 {path} 的 exposure", "skills": ["view_file"], "workflow": "", "workflow_args": "",
+            "changes_state": False, "check": None}
+    change = {"title": "改成 20", "goal": f"把 {path} 的 exposure 從 10 改成 20", "skills": ["file_ops"], "workflow": "",
+              "workflow_args": "", "changes_state": True, "check": check}
+    wrap = lambda *items: {"understanding": "先看再改", "summary": "看 → 改", "items": list(items), "report": "修改前後的值"}   # noqa: E731
+    return wrap(look, change), wrap(change)
+
+
+def task_workers(path):
+    return [{"thought": "", "reply": "", "action": {"command": "scripts/cat_cmd.py", "args": path}, "facts": []},
+            {"thought": "", "reply": "exposure 現在是 10", "action": None, "facts": [{"text": "exposure: 10", "ref": "LAST"}]},
+            {"thought": "", "reply": "", "action": {"command": "scripts/file_ops_cmd.py", "args": f"set {path} exposure 20"}, "facts": []},
+            {"thought": "", "reply": "改好了", "action": None, "facts": [{"text": "exposure: 10 → 20", "ref": "LAST"}]}]
 
 
 class FakeMain:
@@ -161,6 +207,18 @@ def main():
             fake, tools, system = turn("看 prompts/AGENT.md", [step("view_file", "prompts/AGENT.md"), step("scripts/cat_cmd.py", "prompts/AGENT.md"), say("好")])
             assert "規格文件" in tools[0] and tools[1].startswith("[PASS] 檔案內容"), [t[:80] for t in tools]
 
+        def t_script_skill_map():
+            # 腳本 → 技能：規格裡 `EXECUTE: scripts/<x>.py` 指令位置的腳本都對回那個技能（只提到的不算：code_ast_reader 的範例把
+            # scripts/ls_cmd.py 當成參數，以前 ls_cmd.py 被認成 code_ast_reader，任務的 worker 用 list_dir 被擋）
+            import glob
+            import re
+            mapping = agent._script_skill_map()
+            for p in glob.glob(os.path.join(tmp, "skills_system", "tools", "*.md")):
+                skill = os.path.basename(p)[:-3]
+                for s in re.findall(r"EXECUTE:\s*scripts/([A-Za-z0-9_]+\.py)", open(p, encoding="utf-8").read()):
+                    assert mapping.get(s) == skill, (s, mapping.get(s), skill)
+            assert mapping["ls_cmd.py"] == "list_dir" and mapping["cat_cmd.py"] == "view_file"
+
         def t_prompts_loaded():
             # 給模型的文字都在 prompts/：路徑錯了不會報錯（AGENT.md、模式規則、記憶、維運／提煉／工作流的 prompt 都會默默變成空的），所以直接檢查讀到的內容
             text = agent.get_system_prompt()
@@ -169,9 +227,11 @@ def main():
                     first = next(line for line in f.read().splitlines() if line.strip())
                 assert first in text, f"system prompt 裡沒有 prompts/{rel}"
             assert agent._memory_entries(), "讀不到 prompts/Memory.md 的條目"
-            from agent_core.ops_job import _read_prompt as ops_prompt
+            from agent_core.task_engine import _read as task_prompt
             for name in ("planner.md", "worker.md"):
-                assert ops_prompt(name).strip(), f"讀不到 prompts/ops/{name}"
+                assert task_prompt(name).strip(), f"讀不到 prompts/orchestra/{name}"
+            ops = agent.load_task_profile("ops")
+            assert ops and ops["plan"] and ops["work"] and ops["description"], "讀不到 prompts/orchestra/profiles/ops.md 的〈規劃〉〈執行〉"
             from agent_core.extract import read_prompt as extract_prompt
             for name in ("worker.md", "synthesizer.md"):
                 assert extract_prompt(name).strip(), f"讀不到 prompts/extract/{name}"
@@ -333,6 +393,123 @@ def main():
             assert "[PASS] 工作流 config_edit（" in out and "🧠 主對話收到：完整原文" in out, "報告完整進主對話、不再提煉"
             assert fake.calls == 1 and "改好了" in out and "🚫 已拒絕，這個工作流沒有執行。" in out, "y：AI 依報告回答一次；n：不執行、不問 AI"
 
+        def t_promise():
+            # 說要去做卻沒有動作（「我會先查…」、action 是 null）：提醒一次，它接著真的去做；問使用者的、做過的事不提醒
+            fake, tools, system = turn("amr_07 的設定在哪裡", [say("我會先查 amr_07 的設定檔。"), step("scripts/ls_cmd.py", "."), say("在目前的目錄。")])
+            assert fake.calls == 3 and tools, (fake.calls, tools)
+            assert any(m["role"] == "user" and m["content"].startswith("[harness] 你說要「我會先查」") for m in agent.messages)
+            assert any("卻沒有執行任何工具" in s for s in system), system
+            for reply in ("請問要我先查哪一台？", "我查到設定在 config/amr.yaml。", "我先查了一下，設定在 config/amr.yaml。"):
+                fake, tools, system = turn("設定在哪", [say(reply)])
+                assert fake.calls == 1, (reply, fake.calls)
+
+        def stub_containers():
+            agent._task_containers = lambda: ({}, None)      # 不碰主機上的 docker
+
+        def t_task_web():
+            # 🧭 task_run（Web）：開頭的查詢直接做、停下來；harness 不經過模型推確認卡片；核准才改；報告完整進主對話、AI 依報告回答一次
+            from web_app.state import pending
+            stub_containers()
+            path = os.path.join(tmp, "config", "cam_web.yaml")
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("camera:\n  exposure: 10\n")
+            read = lambda: open(path, encoding="utf-8").read()   # noqa: E731
+            first, again = task_plan_pair(path)
+            fake = FakeAll(mains=[step("scripts/task_run_cmd.py", f'"把 {path} 的 exposure 改成 20"'),
+                                  say("改好了：exposure 從 10 改成 20。")], plans=[first, again], workers=task_workers(path))
+            ollama.chat = fake
+            agent.set_current_task("把 exposure 改成 20")
+            n0 = len(agent.messages)
+            agent.messages.append({"role": "user", "content": "把 exposure 改成 20"})
+            ev = []
+            assert flows.run_turn(ev) is True and pending["mode"] == "guard"
+            tool = [e["text"] for e in ev if e.get("channel") == "tool"]
+            guard = [e["text"] for e in ev if e.get("channel") == "guard"]
+            assert tool and tool[0].startswith("[PASS] ⏸️ 任務") and guard and "會改變狀態的是 第 2 步 改成 20" in guard[0], (tool, guard)
+            assert "exposure: 10" in read() and fake.calls == 1, "確認之前沒有改、也沒有再問模型"
+            ev = []
+            assert flows.apply_decision("y", ev) == "continue" and flows.run_turn(ev) is False
+            assert "exposure: 20" in read(), read()
+            tool = [e["text"] for e in ev if e.get("channel") == "tool"]
+            assert tool and tool[0].startswith("[PASS] 任務完成（2/2 步") and fake.calls == 2, (tool, fake.calls)
+            roles = [m["role"] for m in agent.messages[n0:]]
+            assert roles == ["user", "assistant", "user", "assistant", "user", "assistant"], roles
+            assert "--continue" in agent.messages[n0 + 3]["content"] and "（摘要）" not in agent.messages[n0 + 4]["content"]
+
+        def t_plan_web():
+            # 📝 Plan 模式（Web）：/plan on → 任務引擎的草稿（不進主對話）→ y → harness 直接照計畫做（不再確認）→ AI 依報告回答一次
+            from web_app.commands import handle_slash_command
+            from web_app.state import pending
+            stub_containers()
+            path = os.path.join(tmp, "config", "cam_plan.yaml")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("camera:\n  exposure: 10\n")
+            first, _ = task_plan_pair(path)
+            fake = FakeAll(mains=[say("照計畫改好了：exposure 從 10 改成 20。")], plans=[first], workers=task_workers(path))
+            ollama.chat = fake
+            ev = []
+            assert handle_slash_command("/plan on", ev) and state["plan_mode"]
+            n0 = len(agent.messages)
+            flows.start_plan_flow("把 exposure 改成 20", ev)
+            assert [e for e in ev if e.get("channel") == "plan"][-1]["text"].startswith("1. 看現在的值") and len(agent.messages) == n0
+            assert flows.build_stats()["plan"]["total"] == 2
+            ev = []
+            assert flows.handle_plan_response("y", ev) == "approved" and not state["plan_mode"]
+            assert flows.run_turn(ev) is False and pending["mode"] is None and "exposure: 20" in open(path, encoding="utf-8").read()
+            tool = [e["text"] for e in ev if e.get("channel") == "tool"]
+            assert tool and tool[0].startswith("[PASS] 任務完成（2/2 步") and fake.calls == 1, (tool, fake.calls)
+            assert not [e for e in ev if e.get("channel") == "guard"], "核准過的計畫不再確認"
+
+        def run_cli(lines, fake):
+            import builtins
+            import contextlib
+            import io
+            from agent_core import cli
+            asked = []
+
+            def fake_input(prompt=""):
+                asked.append(prompt)
+                if not lines:
+                    raise KeyboardInterrupt
+                return lines.pop(0)
+            ollama.chat = fake
+            real_input, buf = builtins.input, io.StringIO()
+            builtins.input = fake_input
+            try:
+                with contextlib.redirect_stdout(buf):
+                    cli.main()
+            finally:
+                builtins.input = real_input
+            return buf.getvalue(), asked
+
+        def t_task_cli():
+            # 🧭 task_run（CLI）：查完停下來 → harness 直接問 y/n（不經過模型）→ y 才改 → AI 依報告回答一次
+            import agent_core.task_engine as te
+            te.TaskMixin._task_containers = lambda self: ({}, None)
+            path = os.path.join(tmp, "config", "cam_cli.yaml")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("camera:\n  exposure: 10\n")
+            first, again = task_plan_pair(path)
+            fake = FakeAll(mains=[step("scripts/task_run_cmd.py", f'"把 {path} 的 exposure 改成 20"'), say("改好了：從 10 改成 20。")],
+                           plans=[first, again], workers=task_workers(path))
+            out, asked = run_cli(["/auto on", "把 exposure 改成 20", "y"], fake)
+            assert asked.count("確定執行？(y/n): ") == 1 and "exposure: 20" in open(path, encoding="utf-8").read(), (asked, out[-1500:])
+            assert "[PASS] ⏸️ 任務" in out and "[PASS] 任務完成（2/2 步" in out and fake.calls == 2, out[-2000:]
+            assert "🧭 查完了，接下來要改變狀態的步驟請你確認。" in out
+
+        def t_plan_cli():
+            # 📝 Plan 模式（CLI）：/plan on → 草稿 → y → harness 直接照計畫做（不再問 y/n）→ AI 依報告回答一次
+            path = os.path.join(tmp, "config", "cam_plan_cli.yaml")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("camera:\n  exposure: 10\n")
+            first, _ = task_plan_pair(path)
+            fake = FakeAll(mains=[say("照計畫改好了。")], plans=[first], workers=task_workers(path))
+            out, asked = run_cli(["/auto on", "/plan on", "把 exposure 改成 20", "y"], fake)
+            assert asked.count("\n📝 計畫> ") == 1 and "確定執行？(y/n): " not in asked, asked
+            assert "exposure: 20" in open(path, encoding="utf-8").read() and "[PASS] 任務完成（2/2 步" in out and fake.calls == 1, out[-2000:]
+            assert "📝 計畫已核准，已自動退出 Plan 模式" in out and "🧭 照核准的計畫執行。" in out
+
         for name, fn in [("卡住偵測：同樣的動作第二次附提醒、第三次加強提醒、第四次停下這一回合（v4.1）", t_stuck),
                          ("卡住偵測：同一個錯誤不管中間做了什麼，第二次提醒、第四次算卡住", t_same_error_not_consecutive),
                          ("卡住偵測：評測對照組的舊規則（AGENT_TURN_GUARD_RULE=v4，第三次就停）", t_v4_rule),
@@ -348,7 +525,13 @@ def main():
                          ("🧠 主對話 thinking：支援的模型才送 think=True，思考內容推到右欄、不進對話", t_think_main),
                          ("🧠 模型設定：換主模型（摘要跟著換）、存檔與載入、thinking 只對支援的模型送、/model 與 /think", t_model_settings),
                          ("🧩 /workflow：列出、看步驟；直接執行要先過確認卡片，核准才改、拒絕不改；報告完整進主對話、AI 依報告回答", t_workflow_web),
-                         ("🧩 CLI 的 /workflow：真的 cli.main() 迴圈裡列出、看步驟、y 才改、n 不執行；報告完整進主對話、AI 依報告回答", t_workflow_cli)]:
+                         ("🧩 CLI 的 /workflow：真的 cli.main() 迴圈裡列出、看步驟、y 才改、n 不執行；報告完整進主對話、AI 依報告回答", t_workflow_cli),
+                         ("說要去做卻沒有動作（「我會先查…」）：提醒一次；問使用者的、做過的事不提醒", t_promise),
+                         ("腳本 → 技能的對照：規格裡 EXECUTE 指令位置的腳本都對回那個技能（只提到的不算）", t_script_skill_map),
+                         ("🧭 Web 的 task_run：查完停下來、harness 直接推確認卡片、核准才改；報告完整進主對話、AI 回答一次", t_task_web),
+                         ("📝 Web 的 Plan 模式：任務引擎的草稿、核准後照計畫做（不再確認）、AI 回答一次", t_plan_web),
+                         ("🧭 CLI 的 task_run：真的 cli.main() 迴圈裡查完停下來、直接問 y/n、y 才改", t_task_cli),
+                         ("📝 CLI 的 Plan 模式：/plan on → 草稿 → y → 照計畫做（不再問 y/n）", t_plan_cli)]:
             check(name, fn)
     finally:
         os.chdir(cwd)

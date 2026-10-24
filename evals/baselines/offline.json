@@ -1,56 +1,66 @@
 {
  "analysis_selftest": {
-  "label": "第 3 階段之後（加了 CLI 的 /workflow、/analyze 與 --workflow 行程的測試）（2026-10-24）",
-  "passed": 11,
-  "total": 11
+  "label": "第 4 階段（任務引擎，三次完整跑）（2026-10-24）",
+  "passed": 12,
+  "total": 12
  },
  "chat_selftest": {
-  "label": "第 3 階段之後（加了 CLI 的 /workflow、/analyze 與 --workflow 行程的測試）（2026-10-24）",
-  "passed": 16,
-  "total": 16
+  "label": "第 4 階段（任務引擎，三次完整跑）（2026-10-24）",
+  "passed": 22,
+  "total": 22
  },
  "containers_sandbox": {
-  "label": "第 3 階段（commit 前的完整驗證）（2026-10-23）",
-  "passed": 28,
-  "total": 28
+  "label": "第 4 階段（任務引擎，三次完整跑）（2026-10-24）",
+  "passed": 29,
+  "total": 29
  },
  "data_live": {
-  "label": "第 3 階段（commit 前的完整驗證）（2026-10-23）",
+  "label": "第 4 階段（任務引擎，三次完整跑）（2026-10-24）",
   "passed": 8,
   "total": 8
  },
  "extract_selftest": {
-  "label": "第 3 階段（commit 前的完整驗證）（2026-10-23）",
+  "label": "第 4 階段（任務引擎，三次完整跑）（2026-10-24）",
   "passed": 12,
   "total": 12
  },
+ "integrity": {
+  "label": "第 4 階段（任務引擎，三次完整跑）（2026-10-24）",
+  "passed": 4,
+  "total": 4
+ },
  "ops_selftest": {
-  "label": "第 3 階段（commit 前的完整驗證）（2026-10-23）",
-  "passed": 8,
-  "total": 8
+  "label": "第 4 階段（任務引擎，三次完整跑）（2026-10-24）",
+  "passed": 2,
+  "total": 2
  },
  "skills": {
-  "label": "第 3 階段（commit 前的完整驗證）（2026-10-23）",
-  "passed": 96,
-  "total": 96
+  "label": "第 4 階段（任務引擎，三次完整跑）（2026-10-24）",
+  "passed": 97,
+  "total": 97
  },
  "skills_sandbox": {
-  "label": "第 3 階段（commit 前的完整驗證）（2026-10-23）",
+  "label": "第 4 階段（任務引擎，三次完整跑）（2026-10-24）",
   "passed": 24,
   "total": 24
  },
+ "task_selftest": {
+  "label": "第 4 階段（任務引擎；事實可以引用前面各步的工具結果）（2026-10-24）",
+  "passed": 12,
+  "total": 12
+ },
  "tools_live:exp_5090_overheat": {
-  "label": "第 3 階段（commit 前的完整驗證）（2026-10-23）",
+  "label": "第 4 階段（任務引擎，三次完整跑）（2026-10-24）",
   "passed": 21,
   "total": 21
  },
  "tools_live:gen_s1_005": {
-  "label": "第 3 階段（commit 前的完整驗證）（2026-10-23）",
+  "label": "第 4 階段（任務引擎，三次完整跑）（2026-10-24）",
   "passed": 24,
   "total": 24
  },
  "workflow_selftest": {
-  "label": "第 3 階段之後（加了 CLI 的 /workflow、/analyze 與 --workflow 行程的測試）（2026-10-24）",
+  "label": "第 4 階段（任務引擎，三次完整跑）（2026-10-24）",
   "passed": 14,
   "total": 14
  }

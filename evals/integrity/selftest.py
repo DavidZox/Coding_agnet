@@ -1,0 +1,197 @@
+"""評測的完整性（離線、幾秒）：模型會讀的文字裡不能有評測世界獨有的名稱。
+
+範例用了評測情境的檔案、名稱、數值時，評測量到的是「會不會抄範例」而不是會不會做（2026-10-24 查 fs_edit_param 時發現：
+file_ops 的範例正好是那一題的答案；設計筆記 2.19）。這裡把評測世界的名稱從評測的來源自動取出來（新增情境不用改這裡），
+掃模型會讀的文字：
+
+- prompts/ 底下的 .md（prompts/Memory.md 除外：那是使用者的長期記憶，會隨使用改變）、skills_system/SKILLS.md、
+  skills_system/tools/*.md、skills_system/workflows/*.md；
+- agent_core/、skills_system/scripts/ 裡回給模型的字串（用法、[ERROR] 的例子）：程式裡的字串常數，docstring 與註解不算；
+  scripts/mock_server.py（開發用的替身，本來就是評測沙盒）不算。
+
+評測世界的名稱：機器人（tb1…）、工作包（WP_…）、站點（a0…）與語意名稱（組裝線區-2…）、容器、映像、檔案沙盒的路徑、
+設定檔裡的設定名稱、錯誤碼、數據的編號（exp_…）。調度系統本身的協定名稱（distribute、handshake_states、threshold_recovery_sec…）
+是技能要描述的領域知識，評測沙盒照真的系統做，所以不算（ALLOWED）。範例要用 `<檔案>`、`<名稱>` 或評測世界沒有的名稱
+（amr_07、p0、WP_0815、cam_driver、config/camera.yaml…）。
+
+    python3 evals/integrity/selftest.py
+"""
+import ast
+import glob
+import os
+import re
+import sys
+import tempfile
+import traceback
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+PROJECT = os.path.dirname(os.path.dirname(HERE))
+DATASET = os.path.join(PROJECT, "evals", "ops", "dataset")
+SOURCES = ["evals/ops/dataset/scenarios.py", "evals/ops/dataset/scenarios_holdout.py", "evals/ops/dataset/fs_world.py",
+           "evals/ops/dataset/sandbox/sandbox.py", "evals/ops/dataset/sandbox/rmf_sim/rmf_sim.py",
+           "evals/chat/scenarios.py", "evals/workflow/sandbox.py"]
+# 調度系統與 ROS 2 本身的名稱：評測沙盒照真的系統做，技能規格要描述它們
+# （/opt/ros 是 ROS 2 的安裝位置：容器裡的 ros2 指令要先 source 它）
+ALLOWED = {"ros__parameters", "authorize_timeout_sec", "threshold_recovery_sec", "threshold_ovp_sec", "fleet_name",
+           "web_console_url", "manual_trigger_url", "/opt/ros"}
+SKIP_CODE = {"skills_system/scripts/mock_server.py"}
+
+
+def _read(rel):
+    with open(os.path.join(PROJECT, rel), encoding="utf-8") as f:
+        return f.read()
+
+
+def eval_names():
+    """評測世界獨有的名稱 → 種類。"""
+    sys.path[:0] = [DATASET, os.path.join(DATASET, "sandbox")]
+    try:
+        import fs_world
+        import sandbox
+    finally:
+        del sys.path[:2]
+    src = {rel: _read(rel) for rel in SOURCES}
+    joined = "\n".join(src.values())
+    names = {}
+
+    def add(kind, items):
+        for x in items:
+            x = x.strip()
+            if x and x not in ALLOWED:
+                names.setdefault(x, kind)
+
+    add("機器人", re.findall(r"\btb\d+\b", joined))
+    add("工作包", re.findall(r"\bWP_[A-Za-z0-9_]+\b", joined))
+    add("數據", re.findall(r"\bexp_\d{8}_\d{6}\b", joined))
+    add("錯誤碼", re.findall(r"\bE\d{4}\b", src["evals/ops/dataset/fs_world.py"]))
+    sim = src["evals/ops/dataset/sandbox/rmf_sim/rmf_sim.py"]
+    for name, label in re.findall(r'\{"id": \d+, "name": "([^"]*)", "label": "([^"]*)"', sim):
+        if re.fullmatch(r"a\d+", name):
+            add("站點", [name])
+        if label and label != name:
+            add("站點的語意名稱", [label] + [p for p in re.split(r"[-：]", label) if len(p) >= 3])
+    files = [p for p in fs_world.files() if "/" in p]
+    files += re.findall(r'\("fs_\w+", "([\w./-]+/[\w./-]+)"', joined)          # 情境檢查的路徑（建出來的檔案）
+    files += re.findall(r'"([\w./-]+/[\w.-]+\.(?:csv|md|yaml|yml|txt|log))"\s*:', joined)   # fs_extra
+    files += re.findall(r"(?<![\w.])/(?:etc|opt)/[\w./-]*[\w]", joined)
+    add("檔案", files)
+    containers = list(sandbox.CONTAINERS) + re.findall(r'"--name",\s*"([\w.-]+)"', joined)
+    containers += re.findall(r'\("docker_\w+",\s*"([\w.-]+)"', joined)          # 情境檢查的容器（建出來的）
+    containers += re.findall(r'\("([\w.-]+)",\s*"(?:Up|Exited)', joined)          # 主對話評測的假容器清單
+    containers += re.findall(r'"([a-z0-9]+_[a-z0-9_]+)"', re.search(r"DOCKER_SET = \[[^\]]*\]", joined).group(0))
+    add("容器", containers + ["rmf_sim"])
+    add("映像", list(sandbox.IMAGES) + [sandbox.SIM_IMAGE])
+    world_text = "\n".join(text for text, _ in fs_world.files().values())
+    add("設定名稱", re.findall(r"^\s*-?\s*([a-z]+_[a-z0-9_]+):", world_text, re.M))
+    return names
+
+
+def _pattern(names):
+    alts = sorted(names, key=len, reverse=True)
+    return re.compile(r"(?<![\w-])(?:" + "|".join(re.escape(n) for n in alts) + r")(?![\w-])")
+
+
+def facing_docs():
+    docs = glob.glob(os.path.join(PROJECT, "prompts", "**", "*.md"), recursive=True)
+    docs = [p for p in docs if os.path.basename(p) != "Memory.md"]
+    docs += [os.path.join(PROJECT, "skills_system", "SKILLS.md")]
+    docs += glob.glob(os.path.join(PROJECT, "skills_system", "tools", "*.md"))
+    docs += glob.glob(os.path.join(PROJECT, "skills_system", "workflows", "*.md"))
+    return sorted(docs)
+
+
+def code_strings(path):
+    """程式裡的字串常數（f-string 的文字部分也算）→ [(行號, 字串)]；docstring 不算。"""
+    with open(path, encoding="utf-8") as f:
+        tree = ast.parse(f.read())
+    docs = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)) and node.body:
+            first = node.body[0]
+            if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str):
+                docs.add(id(first.value))
+    return [(n.lineno, n.value) for n in ast.walk(tree)
+            if isinstance(n, ast.Constant) and isinstance(n.value, str) and id(n) not in docs]
+
+
+def find_leaks(pattern, docs=None, code=None):
+    """→ [(相對路徑, 行號, 名稱, 那一行)]"""
+    hits = []
+    for path in docs if docs is not None else facing_docs():
+        with open(path, encoding="utf-8") as f:
+            for i, line in enumerate(f, 1):
+                for m in pattern.finditer(line):
+                    hits.append((os.path.relpath(path, PROJECT), i, m.group(0), line.strip()[:160]))
+    if code is None:
+        code = sorted(glob.glob(os.path.join(PROJECT, "agent_core", "*.py")) + glob.glob(os.path.join(PROJECT, "skills_system", "scripts", "*.py")))
+        code = [p for p in code if os.path.relpath(p, PROJECT) not in SKIP_CODE]
+    for path in code:
+        for line_no, text in code_strings(path):
+            for m in pattern.finditer(text):
+                hits.append((os.path.relpath(path, PROJECT), line_no, m.group(0), text.strip()[:160]))
+    return hits
+
+
+def main():
+    results = []
+
+    def check(name, fn):
+        try:
+            fn()
+            results.append((name, True, ""))
+            print(f"✅ {name}")
+        except Exception as e:   # noqa: BLE001
+            results.append((name, False, traceback.format_exc()))
+            print(f"❌ {name}：{e}")
+
+    names = eval_names()
+    pattern = _pattern(names)
+
+    def t_names_extracted():
+        # 從評測的來源取得到各種名稱（取不到的話下面兩項就是空的檢查）；協定名稱不在裡面
+        kinds = set(names.values())
+        for kind in ("機器人", "工作包", "數據", "錯誤碼", "站點", "站點的語意名稱", "檔案", "容器", "映像", "設定名稱"):
+            assert kind in kinds, f"沒有取到「{kind}」：{sorted(kinds)}"
+        for x in ("tb4", "WP_L2", "exp_20261014_084506", "E1203", "a7", "組裝線區-2", "configs/robots.yaml",
+                  "configs/nav/nav_params.yaml", "/etc/web_cache.conf", "ops_notes/2026-10-10.md", "web_cache", "talker_box",
+                  "scratch_box", "ros2_humble", "ubuntu:24.04", "max_vel_x", "battery_low"):
+            assert x in names, f"沒有取到 {x}"
+        assert not ALLOWED & set(names), ALLOWED & set(names)
+
+    def t_detects_planted():
+        # 掃描真的抓得到：放一份含評測名稱的文件與程式，各抓到一次；中性的名稱、docstring 不算
+        with tempfile.TemporaryDirectory() as d:
+            doc = os.path.join(d, "x.md")
+            with open(doc, "w", encoding="utf-8") as f:
+                f.write("改一台的值加 `--after \"id: tb4\"`；派 amr_07 從 p0 到 p2；`docker_ctl status cam_driver`\n")
+            src = os.path.join(d, "x.py")
+            with open(src, "w", encoding="utf-8") as f:
+                f.write('"""例：tb1"""\n\ndef f():\n    """tb2"""\n    return f"[ERROR] 例如 set configs/robots.yaml battery_low 18"\n')
+            hits = find_leaks(pattern, docs=[doc], code=[src])
+            got = sorted(h[2] for h in hits)
+            assert got == ["battery_low", "configs/robots.yaml", "tb4"], hits
+
+    def t_docs():
+        hits = find_leaks(pattern, code=[])
+        assert not hits, ("模型會讀的文件裡有評測世界的名稱（改成 <檔案>、<名稱> 或評測世界沒有的名稱）：\n"
+                          + "\n".join(f"  {p}:{i}：{n}（{names[n]}）｜{ln}" for p, i, n, ln in hits))
+
+    def t_code():
+        hits = find_leaks(pattern, docs=[])
+        assert not hits, ("程式回給模型的字串裡有評測世界的名稱（改成 <名稱> 或評測世界沒有的名稱）：\n"
+                          + "\n".join(f"  {p}:{i}：{n}（{names[n]}）｜{ln}" for p, i, n, ln in hits))
+
+    for name, fn in [("從評測的來源取得評測世界的名稱（機器人、工作包、站點、容器、檔案、設定…）；協定名稱不算", t_names_extracted),
+                     ("掃描抓得到：文件與程式字串裡的評測名稱各抓到；中性的名稱、docstring 不算", t_detects_planted),
+                     ("prompts、SKILLS.md、技能規格、工作流沒有評測世界的名稱", t_docs),
+                     ("agent_core 與技能腳本回給模型的字串沒有評測世界的名稱", t_code)]:
+        check(name, fn)
+    failed = [r for r in results if not r[1]]
+    for name, _, tb in failed:
+        print(f"\n---- {name} ----\n{tb}")
+    print(f"\n{len(results) - len(failed)}/{len(results)} 通過")
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

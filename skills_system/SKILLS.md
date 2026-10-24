@@ -28,19 +28,19 @@
 - [view_file](tools/view_file.md) — 看本機文字檔（每行附行號；--from／--lines 看一段、--tail 看最後幾行）；技能規格文件由 EXECUTE 自動載入，不用這個
 - [host_runcmd](tools/host_runcmd.md) — 其他技能做不到的本機 shell 指令（不能互動、不保留背景程序；唯讀的直接執行，其他的會先請使用者確認）
 - [csv_query](tools/csv_query.md) — 查 CSV／TSV 表格：欄位、篩選、整體或每一組的最大／最小／平均／筆數、排序（數字由腳本算好，可排成 Markdown 表格）；資料表的問題用這個，不要自己寫 python
-- [file_ops](tools/file_ops.md) — 改本機的文件：建目錄、複製、移動／改名、寫入或附加文字檔、取代檔案裡的一段文字；改 YAML 設定檔的一個值用 set（`--after "id: tb4"` 只改那一台的那一行）；會先請使用者確認；不提供刪除
+- [file_ops](tools/file_ops.md) — 改本機的文件：建目錄、複製、移動／改名、寫入或附加文字檔、取代檔案裡的一段文字；改 YAML 設定檔的一個值用 set（`--after "name: amr_07"` 只改那一台的那一行）；會先請使用者確認；不提供刪除
 
 ## 工作流（多步驟，程式照步驟做）
 > 使用者的任務正好是下面某一個時用 `workflow_run <名稱> 名稱=值 …`（值從使用者的話取得，拿不到的先問使用者），不要自己一個技能一個技能做：步驟、檢查、「做完了沒」由程式照規格判斷；會改變狀態的步驟開始時系統會請使用者確認一次，不用先問。停在【確認】時 `workflow_run --continue`。
 - [workflow_run](tools/workflow_run.md) — 執行下面列的工作流；`--continue` 接著做、`--cancel` 不做了、`--list` 列出全部
   - `stuck_package_fix` — 工作包卡住、不往下一站：查原因；完成訊號遺失才補發、等它跑完、有給檔案就寫處理紀錄；其他原因只回報、不修改｜`workflow_run stuck_package_fix wp_id=<工作包> [note_file=<檔案>]`
-  - `config_edit` — 改設定檔裡某一台機器人那一段的一個值（每台各一段的設定檔，例：configs/robots.yaml；設定只有一處、沒有分機器人的直接 `file_ops set <檔案> <名稱> <值>`）：只改那一段的那一行、改完確認；使用者說照維運手冊或要先備份時加 `backup=.bak`（另外留同目錄的備份），只說改值就不加｜`workflow_run config_edit file=<檔案> robot=<機器人> key=<設定名稱> value=<新的值> [backup=.bak] [block="<區塊開頭的字，預設 id: 機器人>"]`
-  - `dispatch_and_confirm` — 派工作包給指定的機器人並等它跑完再回報｜`workflow_run dispatch_and_confirm robot=<機器人> stops=<站點1,站點2,…（照順序；「從 home 到 a3」的 home 也要寫）> [wp_id=<編號>]`
+  - `config_edit` — 改設定檔裡某一台機器人那一段的一個值（每台各一段的設定檔；設定只有一處、沒有分機器人的直接 `file_ops set <檔案> <名稱> <值>`）：只改那一段的那一行、改完確認；使用者要先備份（或使用者提到的文件規定要備份）時加 `backup=.bak`（另外留同目錄的備份），只說改值就不加｜`workflow_run config_edit file=<檔案> robot=<機器人> key=<設定名稱> value=<新的值> [backup=.bak] [block="<區塊開頭的字，預設 id: 機器人>"]`
+  - `dispatch_and_confirm` — 派工作包給指定的機器人並等它跑完再回報｜`workflow_run dispatch_and_confirm robot=<機器人> stops=<站點1,站點2,…（照順序；「從 A 到 B」的 A 也要寫）> [wp_id=<編號>]`
   - `container_restart_verify` — 重新啟動一直在跑的服務容器並確認 Up（跑完就結束的備份、批次容器不適用，直接 docker_ctl restart）；可以在容器裡跑唯讀指令確認設定、寫紀錄｜`workflow_run container_restart_verify container=<容器> [check_command="<唯讀指令>"] [expect=<要看到的字>] [note_file=<檔案>]`
   - `reassign_package` — 工作包派不出去：是原本那台的問題才取消、用同樣的站點改派給指定的機器人並等它跑完｜`workflow_run reassign_package wp_id=<工作包> robot=<機器人>`
 
-## 多步驟維運任務
-- [ops_run](tools/ops_run.md) — 沒有對應的工作流、又是複雜的維運任務（4 步以上、跨檔案／容器／ROS 2／調度系統、或要改好幾個狀態）用這個：args 填使用者的原話，系統先規劃、把整份計畫給使用者確認（只查詢的計畫不用確認），再一步一步執行並檢查
+## 多步驟任務
+- [task_run](tools/task_run.md) — 沒有對應的工作流、又是複雜的維運任務（4 步以上、跨檔案／容器／ROS 2／調度系統、或要改好幾個狀態）用這個：args 填使用者的原話；系統先規劃、先查清楚，要改變狀態的步驟系統會請使用者確認（不用先問），再一步一步執行並檢查，回報每一步的結果與核對過的事實
 
 ## 容器化環境
 - [docker_containers](tools/docker_containers.md) — 列出目前所有容器（名稱、狀態、映像檔），可只看運行中或以關鍵字過濾；要進入容器前先用這個確認完整名稱

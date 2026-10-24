@@ -5,8 +5,9 @@
 - **數據解析**（`analysis_run`）：把一段 ROS 2 錄製（.mcap 與 /rosout）整理成**事實報告**——量到什麼、什麼時候、Log 說了什麼。
   報告全部由程式產生（事實不會錯），AI 依報告回答、討論，要細看時自己用數據技能；只要有 .mcap 就能用；不判斷原因（原因要對照源碼另外分析）。
 - **機器人維運**：檔案系統、Docker 容器、容器內的 ROS 2、fih_rmf_system 的調度系統；會重複做的流程寫成**工作流**（`workflow_run`：
-  程式照步驟做、模型只在判斷點出手、做完了沒由程式判斷，例如工作包卡住的處理、改設定、派工並確認跑完），其他複雜的任務用 `ops_run`
-  先規劃、確認整份計畫，再一步一步做。
+  程式照步驟做、模型只在判斷點出手、做完了沒由程式判斷，例如工作包卡住的處理、改設定、派工並確認跑完），其他複雜的任務交給
+  **任務引擎**（`task_run`）：先規劃、先查清楚，要改變狀態的步驟給使用者確認，再一步一步派執行者做、每一步由程式檢查與核對事實。
+  Plan 模式（`/plan on`）用同一個引擎：使用者先看、改計畫，核准後照計畫做。
 - **視覺**：Web 附圖（框選螢幕或上傳）、`image_inspect` 技能、獨立的框選小工具。
 
 核心想法是**模型不寫程式、只挑技能**：可用的能力是一份技能索引，加上按需載入的規格與既有腳本；會改變實體狀態的動作（派工單、
@@ -112,7 +113,7 @@ Web 左欄是對話，右欄是系統與工具回傳（另一個分頁是「📊
 | ROS 2（容器內） | `ROS2_domain_id`、`ROS2_topic_list`、`ROS2_topic_echo`、`ROS2_node_list`、`ROS2_node_info`、`ROS2_param`、`ROS2_topic_pub` |
 | 調度系統 | `workpackage_send`、`workpackage_status`、`workpackage_cancel`、`overpending_cancel`、`semantic_map`、`rmf_handshake` |
 | 工作流（`skills_system/workflows/`） | `workflow_run`：`stuck_package_fix`、`config_edit`、`dispatch_and_confirm`、`container_restart_verify`、`reassign_package` |
-| 多步驟維運任務 | `ops_run`（規劃 → 確認整份計畫 → 每一步派 worker、程式檢查） |
+| 多步驟任務 | `task_run`（任務引擎：規劃 → 先查 → 依查到的事實重排 → 確認要改的步驟 → 每一步派 worker、程式檢查與核對事實） |
 | 多模態 | `stt_engine`、`image_inspect` |
 | 工具結果存檔 | `result_recall`、`result_grep`、`result_view`、`result_list` |
 | 記憶 | `modify_memory`（用法寫在 `prompts/AGENT.md` 的記憶協議，不列在索引） |
@@ -127,9 +128,10 @@ Web 左欄是對話，右欄是系統與工具回傳（另一個分頁是「📊
 | 主對話 | `evals/chat/selftest.py` | `evals/chat/run.py`（兩種上下文模式 × 情境） |
 | 技能腳本 | `evals/skills/selftest.py`（需要容器的在沙盒裡跑，沒有就略過） | — |
 | 數據解析 | `evals/analysis/selftest.py`、`evals/datagen/check_facts.py` | `evals/analysis/regression.py`（這台的實錄與隨機情境產生器 `evals/datagen/` 的錄製；不呼叫模型，要容器）、`evals/analysis/tools_live.py` |
-| 多步驟維運 | `evals/ops/selftest.py` | `evals/ops/run.py`（Docker-in-Docker 沙盒裡真的執行） |
+| 多步驟維運 | `evals/ops/selftest.py`（維運技能）、`evals/task/selftest.py`（任務引擎、Plan 模式） | `evals/ops/run.py`（Docker-in-Docker 沙盒裡真的執行） |
 | 工作流 | `evals/workflow/selftest.py` | `evals/workflow/sandbox.py`（沙盒裡直接執行工作流） |
 | 提煉 | `evals/chat/extract_selftest.py` | `evals/extract/run.py`（已知答案的長輸出） |
+| 評測的完整性 | `evals/integrity/selftest.py`（模型會讀的文字沒有評測世界的名稱） | — |
 | 每個階段結束 | `evals/phase_check.py`（離線） | `evals/phase_check.py --live --model`（跟 `evals/baselines/` 逐項比） |
 
 怎麼跑、情境清單、怎麼讀報表見〈[評測](evals/README.md)〉。
@@ -141,22 +143,22 @@ Coding_agnet/            （資料夾名稱沿用；原本的 coding agent 已�
 ├── Agent_Runner.py      CLI 入口（實作在 agent_core/cli.py；--workflow 是不用互動的入口）
 ├── web_console.py       Web 入口（實作在 web_app/）
 ├── agent_core/          核心：SkillAgent（由各 mixin 組成）、回覆協議、常數；analysis_job.py＝數據解析、extract.py＝工具回傳的提煉、
-│                        workflow*.py＝工作流、ops_job.py＝多步驟維運
+│                        workflow*.py＝工作流、task_engine.py＝任務引擎（task_run、Plan 模式）
 ├── web_app/             Web 介面（純標準庫）：回合流程、slash 指令、HTTP、static/index.html；analysis.py＝📊 面板的後端
 ├── prompts/             給模型的文字（可以直接改）
 │   ├── AGENT.md         主對話的 system prompt
 │   ├── Memory.md        長期記憶（modify_memory 寫入，每輪常駐）
 │   ├── context_modes/   兩種上下文模式的規則
 │   ├── extract/         工具回傳的提煉：worker 與整合
-│   ├── ops/             多步驟維運的規劃與 worker
+│   ├── orchestra/       任務引擎的規劃與 worker；profiles/＝任務的類型（ops＝維運）
 │   └── workflow/        工作流的判斷點（填值、選分支）
 ├── skills_system/       技能：SKILLS.md（索引）、tools/（規格）、scripts/（腳本與共用模組）、workflows/（工作流）
 ├── vision/              視覺模態：擷取、推論、提取、Web 的框選（web/）、sniper.py（獨立的框選小工具）
-├── evals/               評測：chat/、skills/、analysis/、datagen/、ops/、workflow/、extract/、phase_check.py、baselines/；
+├── evals/               評測：chat/、skills/、analysis/、datagen/、ops/、task/、workflow/、extract/、integrity/、phase_check.py、baselines/；
 │                        results/（.gitignore）
 ├── doc/                 文件；diagrams/（圖的 .puml）、images/（產生的 PNG）、archive/（第一～九輪的根因版本，只供閱讀）
 ├── test_data/           實機錄製、正確答案、回歸工具（只在本機，.gitignore）
-└── logs/                執行時產生：工具回傳存檔、檢索清單、軌跡、摘要、extract_jobs/、analysis_jobs/、workflow_jobs/、ops_jobs/
+└── logs/                執行時產生：工具回傳存檔、檢索清單、軌跡、摘要、extract_jobs/、analysis_jobs/、workflow_jobs/、task_jobs/
                          （.gitignore）
 ```
 

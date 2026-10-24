@@ -30,6 +30,7 @@ from .config import (
     ANALYSIS_ANSWER_NOTE,
     ANALYSIS_DATA_ROOT,
     ANALYSIS_JOBS_DIRNAME,
+    ANALYSIS_JOBS_KEEP,
     ANALYSIS_MAX_SECONDS,
     ANALYSIS_REPORT_HEAD,
     ANALYSIS_SAME_TIME_SEC,
@@ -290,6 +291,8 @@ class AnalysisMixin:
             job["id"] += "_1"
         t0 = time.time()
         self.analysis_last = {"id": job["id"], "status": "preparing"}
+        # 只留最近 ANALYSIS_JOBS_KEEP 次：開始時清到剩 KEEP-1 個，加上這一次剛好 KEEP 個（以前沒有清，一台機器累積到上千個、幾百 MB）
+        self._analysis_store().prune(max(1, ANALYSIS_JOBS_KEEP - 1))
         self._analysis_note(job, f"📊 數據分析 job {job['id']}：{_short(question, 80)}")
         try:
             err = self._analysis_prepare(job)

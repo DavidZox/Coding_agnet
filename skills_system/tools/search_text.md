@@ -2,7 +2,7 @@
 type: Tool
 title: 檔案內容搜尋
 description: 在檔案「內部文字」裡搜關鍵字（a|b 同義詞、不分大小寫），命中依檔案分組、筆數由腳本算好。
-version: 2.0.1
+version: 2.0.2
 dependencies: ["grep"]
 ---
 
@@ -19,8 +19,8 @@ dependencies: ["grep"]
 * 每檔最多列 20 筆、總共 200 筆（-C 時 10／50；只搜一個檔案時 200），單行超過 300 字截斷；逾時 30 秒。
 
 # 範例
-`EXECUTE: scripts/grep_cmd.py "E1203" logs`　`EXECUTE: scripts/grep_cmd.py "max_vel_x" ~/ws/src --include "*.yaml"`
-`EXECUTE: scripts/grep_cmd.py "error|fail" logs/robot_tb3.log -C 2`
+`EXECUTE: scripts/grep_cmd.py "Traceback" logs`　`EXECUTE: scripts/grep_cmd.py "use_sim_time" ~/ws/src --include "*.yaml"`
+`EXECUTE: scripts/grep_cmd.py "error|fail" logs/camera.log -C 2`
 
 # 回傳
 `[PASS] 搜尋「…」：共 N 筆命中，分布在 M 個檔案（…）[；只列前 K 筆]`，每個檔案一節 `## 路徑（N 筆）`、每行 `  行號→內容`

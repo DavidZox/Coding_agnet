@@ -2,7 +2,7 @@
 type: Tool
 title: 數據分析：事實報告（全部由程式做）
 description: 要回答「這段數據發生了什麼、前後有哪些變化」這類需要同時看 Log 與好幾個 Topic 的問題時用：程式去重 Log、量全部 Topic 的事實、照規則寫重點，成為有編號的事實報告（不判斷原因）；依報告回答。
-version: 4.0.0
+version: 4.0.1
 dependencies: []
 ---
 
@@ -27,7 +27,7 @@ dependencies: []
 
 # 範例
 `EXECUTE: scripts/analysis_run_cmd.py --data latest "底盤在錄製中途停下來的前後發生了什麼？什麼時候恢復？"`
-`EXECUTE: scripts/analysis_run_cmd.py --data exp_20261014_084506 --topic /cmd_vel "速度指令有哪些變化"`
+`EXECUTE: scripts/analysis_run_cmd.py --data exp_20250301_101500 --topic /battery_state "電壓有哪些變化"`
 
 # 回傳
 `[PASS] 📊 數據事實報告`：總覽、指定的 Topic、重點（一則一則；時間、引用的 Log 與事件的內容列在每一則下面）、有變化的 Topic（類別、發布、變化、

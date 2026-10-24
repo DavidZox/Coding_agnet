@@ -33,6 +33,12 @@ _CLAIM_RE = re.compile(
     r"(?:^|(?<=[，。；！!、：:「（(\n])|(?<=我)|(?<=我們))(已經?|剛剛?)(?:幫你|為你|替你|順利|成功)?(?:地)?"
     r"(執行|完成|重新啟動|重啟|啟動|停止|關閉|建立|新增|刪除|移除|修改|更新|切換|設定|安裝|寫入|儲存|送出|發布|部署|下載|上傳|複製|搬移|清除|派送|派工)")
 _HEDGE_RE = re.compile(r"(沒有|尚未|還沒|未能|無法|不能|失敗|如果|若是|假如|要不要|是否|可以幫|需要我|請問|嗎[？?]|\?|？)")
+# 說要去做、卻沒有動作（「我會先查…」「讓我找一下…」，action 是 null 就結束）：要有表示「接下來要做」的字，動詞後面不是了／過／到／完
+# （「我查到…」「我先查了…」是做過的事）。2026-10-23 fs_find_value：第一步只回「我會先查…」，使用者看到的是沒有結果的承諾（待辦 16）
+_PROMISE_RE = re.compile(
+    r"(?:讓我|我(?:現在|馬上|立刻|接著|這就)?(?:會|將|來|去)|我先|接下來我?(?:會|將)?|我們(?:先|來|會))\s*(?:先|再|來|去)?\s*"
+    r"(?:幫你|為你|替你)?\s*(查詢|查看|查一下|查|檢查|確認|讀取|讀|看一下|看看|搜尋|尋找|找出|找|列出|執行|分析|重新啟動|重啟|啟動|修改|改|派)"
+    r"(?![了過到完])")
 # 依數據分析的報告回答時不能有的說法：把先後寫成誰造成誰（報告只有事實與時間上的對照）
 _CAUSAL_WORDS = ("導致", "造成", "引起", "引發", "觸發", "使得", "歸因", "根因")
 # 回覆的一行寫到報告的哪裡：報告裡的編號（E#、L#、T#）、Topic 名稱、+秒（之後的回合只核對這種行，跟報告無關的回答不核對）
@@ -99,7 +105,8 @@ class TurnGuardMixin:
         return output
 
     def claim_without_action(self, parsed):
-        """這一回合沒有執行任何工具、回覆卻宣稱已經做了某件事：回傳要接在對話後面的提醒（每回合最多一次），否則 None。"""
+        """這一回合沒有執行任何工具、回覆卻宣稱已經做了某件事，或說要去做卻沒有動作：回傳要接在對話後面的提醒（每回合最多一次），
+        否則 None。在問使用者（嗎？、請問、要不要…）或有條件（如果…）的不算。"""
         if not hasattr(self, "_rep_errors"):
             self.begin_turn()
         if self._claim_nudged or self.turn_tool_runs or not parsed or parsed.get("action") or not parsed.get("valid", True):
@@ -107,9 +114,17 @@ class TurnGuardMixin:
         if "turn_guard" in os.environ.get("AGENT_ABLATE", ""):
             return None
         reply = (parsed.get("reply") or "").strip()
-        m = _CLAIM_RE.search(reply)
-        if not m or _HEDGE_RE.search(reply):
+        if _HEDGE_RE.search(reply):
             return None
+        m = _CLAIM_RE.search(reply)
+        if not m:
+            p = _PROMISE_RE.search(reply)
+            if not p:
+                return None
+            self._claim_nudged = True
+            self._add_notice(f"⚠️ AI 說要「{p.group(0)}」卻沒有執行任何工具：已提醒它直接做（或把要問的問清楚）。")
+            return ("[harness] 你說要「" + p.group(0) + "」，但這一回合沒有執行任何工具（action 是 null），使用者看到的是還沒有結果的承諾。"
+                    "要做就現在在 action 填要執行的技能（不用先問使用者）；需要使用者先回答的，直接在 reply 問清楚。")
         self._claim_nudged = True
         self._add_notice(f"⚠️ AI 的回覆說「{m.group(0)}」，但這一回合沒有執行任何工具：已提醒它確認（要做就實際執行，沒做就照實說）。")
         return ("[harness] 你在這一回合沒有執行任何工具（action 都是 null），但回覆說「" + m.group(0) + "」。系統沒有執行過任何動作，"

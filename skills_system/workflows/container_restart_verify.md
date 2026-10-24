@@ -2,20 +2,20 @@
 type: Workflow
 title: 重新啟動容器並確認
 description: 重新啟動一個一直在跑的服務容器、確認它是 Up；有給就在容器裡跑一個唯讀的指令確認設定、把經過寫進紀錄檔（跑完就結束的工作不適用）
-version: 0.1.0
+version: 0.1.1
 dependencies: ["docker_ctl", "docker_runcmd", "file_ops"]
 changes_state: true
 ---
 
 # 用途
-「web_cache 被停掉了，重新啟動、確認設定還在、記一筆」這種：先看容器的狀態（結束碼的意思），重新啟動並確認是 Up；使用者要確認容器裡的
+「cam_driver 被停掉了，重新啟動、確認設定還在、記一筆」這種：先看容器的狀態（結束碼的意思），重新啟動並確認是 Up；使用者要確認容器裡的
 設定時，跑一個唯讀的指令看輸出；要留紀錄時把時間、做了什麼、確認結果寫進紀錄檔。
 
 # 需要的資訊
-* `{container}`：容器名稱（例：`web_cache`）
-* `{check_command}`：起來之後在容器裡跑的唯讀指令（選填，例：`grep max_size /etc/web_cache.conf`）
-* `{expect}`：上面那個指令的輸出要看到的字（選填，例：`512M`）
-* `{note_file}`：紀錄要附加到哪個檔案（選填，例：`ops_notes/web_cache.md`）
+* `{container}`：容器名稱（例：`cam_driver`）
+* `{check_command}`：起來之後在容器裡跑的唯讀指令（選填，例：`grep fps /etc/camera.conf`）
+* `{expect}`：上面那個指令的輸出要看到的字（選填，例：`fps=30`）
+* `{note_file}`：紀錄要附加到哪個檔案（選填，例：`notes/cam_driver.md`）
 
 # 步驟
 1. 【執行】看容器目前的狀態：`EXECUTE: scripts/docker_ctl_cmd.py status {container}`　檢查：輸出有「[PASS]」

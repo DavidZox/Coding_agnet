@@ -2,8 +2,8 @@
 import json
 import os
 import re
-from .config import (ANALYSIS_REPORT_HEAD, PROCEDURE_DOC_TYPE, SKILL_DOC_PREFIX, TOOL_RESULT_FRAME, TOOL_SUMMARY_TAG,
-                     WORKFLOW_REPORT_HEADS)
+from .config import (ANALYSIS_REPORT_HEAD, PROCEDURE_DOC_TYPE, SKILL_DOC_PREFIX, TASK_REPORT_HEADS, TOOL_RESULT_FRAME,
+                     TOOL_SUMMARY_TAG, WORKFLOW_REPORT_HEADS)
 
 _DOC_TYPE_RE = re.compile(r"^type:\s*(\S+)\s*$", re.M)
 
@@ -131,5 +131,5 @@ def is_exempt_result(result, tool_tokens):
     --watch／--duration／語義地圖）都走同一套規則——超過門檻就交給獨立 session 做任務導向擷取。
     CLI／Web 的 ⚠️ 標記與 _content_for_context 共用這個判斷。"""
     # analysis_run 的事實報告（ANALYSIS_REPORT_HEAD 開頭）同理：它本身就是程式整理好、有編號的事實；workflow_run 的報告也是
-    # （每一步的結果、程式檢查的成功判準，WORKFLOW_REPORT_HEADS 開頭）
-    return is_skill_doc_result(result) or result.startswith((TOOL_SUMMARY_TAG, ANALYSIS_REPORT_HEAD) + WORKFLOW_REPORT_HEADS)
+    # （每一步的結果、程式檢查的成功判準，WORKFLOW_REPORT_HEADS 開頭），task_run 的報告也是（每一步的結果、核對過的事實，TASK_REPORT_HEADS）
+    return is_skill_doc_result(result) or result.startswith((TOOL_SUMMARY_TAG, ANALYSIS_REPORT_HEAD) + WORKFLOW_REPORT_HEADS + TASK_REPORT_HEADS)

@@ -2,7 +2,7 @@
 type: Tool
 title: MCAP 智慧時間切片（依 Log 訊號或時間點）
 description: 依 rosout_parser 的 L#、指定時間點或明確的時間窗切出局部 MCAP（toolkit 格式的 sliced_bag_*，附 metadata.yaml 與欄位維度）；可以只切指定的 Topic、帶上時間窗之前的狀態。
-version: 3.0.0
+version: 3.0.1
 dependencies: ["docker", "mcap", "rclpy", "pyyaml"]
 ---
 
@@ -22,8 +22,8 @@ dependencies: ["docker", "mcap", "rclpy", "pyyaml"]
 
 # 範例
 `EXECUTE: scripts/mcap_slicer_cmd.py latest --signal L28 --before 3 --after 10`
-`EXECUTE: scripts/mcap_slicer_cmd.py exp_20261014_084506 --at +15.5`
-`EXECUTE: scripts/mcap_slicer_cmd.py latest --window +140,+170 --topics /cmd_vel /system/safety_gate_status --with-state`
+`EXECUTE: scripts/mcap_slicer_cmd.py exp_20250301_101500 --at +42.0`
+`EXECUTE: scripts/mcap_slicer_cmd.py latest --window +140,+170 --topics /battery_state /imu/data --with-state`
 
 # 回傳
 每一片的資料夾、觸發的訊號、時間窗與訊息數。切片資料夾本身也是數據，可以直接交給 mcap_analyzer／mcap_feature_measure／analysis_run。

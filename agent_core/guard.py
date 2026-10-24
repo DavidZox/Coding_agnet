@@ -210,14 +210,11 @@ class GuardMixin:
         技能名稱（只載入規格）、找不到的腳本、偽技能（result_recall）都不需要確認。"""
         if not getattr(self, "guard_enabled", True) or not GUARDED_SKILLS:
             return None
-        # 計畫執行前檢查（/plan_exec_guard）會擋下的動作不必再問使用者：run_tool 會直接回 [PLAN_BLOCKED]、不執行
-        if self.plan_block_reason(parsed):
-            return None
         return self.state_change_info(parsed)
 
     def state_change_info(self, parsed):
         """這個 action 會不會改變實體／外部狀態（不看 /guard 開關）：回傳 None 或 {skill, script, command, reason}。
-        guard_check（執行前問使用者）與 PlanMixin 的計畫執行前檢查共用。"""
+        guard_check（執行前問使用者）與任務引擎、工作流（哪些步驟會改變狀態、worker 的動作有沒有核准）共用。"""
         if not GUARDED_SKILLS:
             return None
         action = (parsed or {}).get("action") if isinstance(parsed, dict) else None
@@ -239,9 +236,10 @@ class GuardMixin:
         args = self._parse_script_args(script_name, remainder)
         if skill not in GUARDED_SKILLS or self._guard_exempt(skill, args):
             return None
-        if skill == "ops_run":
-            # 確認的說明就是整份計畫（核准＝計畫裡標明的狀態變更都核准了）；沒有草稿時不用確認，ops_run 自己回錯誤
-            reason = self.ops_guard_reason(remainder)
+        if skill == "task_run":
+            # 開始：計畫的第一步就要改變狀態時，說明是整份計畫（核准＝計畫裡標明的狀態變更都核准了）；開頭只查詢的先做、要改的部分
+            # 查完再確認（--continue）。只查詢、規劃失敗、取消不用確認，task_run 自己回報
+            reason = self.task_guard_reason(remainder)
             if reason is None:
                 return None
         elif skill == "workflow_run":
@@ -262,7 +260,7 @@ class GuardMixin:
     @staticmethod
     def guard_prompt_text(info):
         """給使用者看的確認說明（CLI 印出、Web 顯示在確認列上方）。"""
-        if "\n" in info["reason"]:   # ops_run／workflow_run：說明是整份計畫或工作流
+        if "\n" in info["reason"]:   # task_run／workflow_run：說明是整份計畫或工作流
             return f"🛡️ AI 要執行會改變系統狀態的動作，需要你確認：\n- 技能：{info['skill']}\n{info['reason']}"
         return (f"🛡️ AI 要執行會改變系統狀態的動作，需要你確認：\n"
                 f"- 技能：{info['skill']}（{info['reason']}）\n"

@@ -27,7 +27,7 @@ LOG_LINES = 15
 USAGE = ("用法: scripts/docker_est_cmd.py <映像檔[:tag]> [--name 容器名稱] [--cmd \"要執行的指令\"] [--network 網路] [-e 變數=值]...\n"
          "  --name 省略：沒有 tag 的映像檔用映像檔名稱當容器名稱；有 tag 或路徑時一定要給 --name（英數字、_ . -，至少 2 個字）。\n"
          "  --cmd 省略：tail -f /dev/null（一直跑著）；含 && ; | $ source 等 shell 語法時自動包成 bash -lc \"…\"。\n"
-         "  例：scripts/docker_est_cmd.py ros:jazzy-ros-base --name ros_box --network host -e ROS_DOMAIN_ID=42 --cmd \"sleep infinity\"")
+         "  例：scripts/docker_est_cmd.py ros:humble-ros-core --name ros_box --network host -e ROS_DOMAIN_ID=15 --cmd \"sleep infinity\"")
 _NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]+$")
 _ENV_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 _SHELL_SYNTAX_RE = re.compile(r"&&|\|\||[;|<>$`*~(){}\n]|^\s*(source|\.|export|cd)\s")

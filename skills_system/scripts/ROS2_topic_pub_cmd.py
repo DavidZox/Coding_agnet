@@ -7,7 +7,12 @@
 - 發布前先 `ros2 topic info -v` 看訂閱者：等配對（-w 1）最多 PUB_WAIT 秒（容器內的 timeout，不會卡到整個技能逾時）；
   等不到時依訂閱者的數量說是「沒有訂閱者」還是「QoS 不相容」。訂閱端要求 TRANSIENT_LOCAL 而沒有指定 --qos 時，自動用
   transient_local 發布（Humble 的 ros2 topic pub 預設 VOLATILE，跟這種訂閱端永遠配對不上）。
+- 發布前先在容器裡用 ros2 自己的那一套（rosidl 的 get_message、yaml.safe_load——跟 ros2 topic pub 一樣）解析型別與內容，
+  主機核對最上層欄位（payload_problems）：欄位不存在、字串欄位給了布林或數字、布林或數字欄位給了別的 → [ERROR] 附這個型別的欄位，
+  不發布。以前 `{is_authored: true}`（或沒加引號的 yes——YAML 會當成布林）發到字串欄位，ros2 照樣發布、技能回 [PASS]，
+  接收端拿到的是 "True"（2026-10-24 維運評測 ros_pub_yes：範例改成中性之後才露出來）。解析不了的交給 ros2 topic pub 回報。
 - ros2 的錯誤（型別不認得、內容對不上欄位）是 stderr＋exit code 1，翻成原因與下一步（explain_error）。"""
+import json
 import os
 import re
 import shlex
@@ -25,10 +30,22 @@ QOS = {"transient_local": ["--qos-durability", "transient_local"], "volatile": [
        "reliable": ["--qos-reliability", "reliable"], "best_effort": ["--qos-reliability", "best_effort"],
        "sensor_data": ["--qos-profile", "sensor_data"]}
 USAGE = ("用法: scripts/ROS2_topic_pub_cmd.py [容器名稱] <topic> <訊息型別> '<YAML 內容>' [--times N] [--qos 設定]\n"
-         "  例：ROS2_topic_pub rmf_sim /tb2/handshake_states fih_rmf_msgs/msg/HandshakeState '{is_authored: \"yes\"}'\n"
+         "  例：ROS2_topic_pub ros_box /camera/enable std_msgs/msg/Bool '{data: true}'\n"
          f"  預設發一次；--times N 每秒一次共 N 次（上限 {MAX_TIMES}）；--qos {'、'.join(QOS)}（可用逗號合併）。會先請使用者確認。")
 SUBS_TAG, AUTO_TAG = "@@CAH_SUBS@@", "@@CAH_AUTOQOS@@"
 TYPE_TAG = "@@CAH_PUB_TYPE@@"       # ros2 topic info 的 Type（訂閱端的型別；跟要發布的不同就配對不上）
+FIELDS_TAG = "@@CAH_FIELDS@@"
+# 容器裡用 ros2 topic pub 同一套解析：訊息型別的欄位（名稱 → 型別）與 YAML 內容；解析不了的回 error（交給 ros2 topic pub 回報）
+INTROSPECT = ("import json, sys\n"
+              "try:\n"
+              "    import yaml\n"
+              "    from rosidl_runtime_py.utilities import get_message\n"
+              "    fields = get_message(sys.argv[1]).get_fields_and_field_types()\n"
+              "    print('" + FIELDS_TAG + "' + json.dumps({'fields': fields, 'obj': yaml.safe_load(sys.argv[2])}, default=str))\n"
+              "except Exception as e:\n"
+              "    print('" + FIELDS_TAG + "' + json.dumps({'error': type(e).__name__ + ': ' + str(e)}))\n")
+_NUMERIC = {"byte", "char", "octet", "float", "double", "float32", "float64", "int8", "uint8", "int16", "uint16", "int32", "uint32",
+            "int64", "uint64"}
 
 
 def parse_cli(argv, resolve=True, names=None):
@@ -72,7 +89,11 @@ def parse_cli(argv, resolve=True, names=None):
     if idx not in (1, 2):
         return dict(res, error=f"[ERROR] 參數的順序是 [容器名稱] <topic> <訊息型別> '<內容>'，收到：{' '.join(pos)}。\n{USAGE}")
     container_arg = pos[0] if idx == 2 else ""
-    topic, mtype, data = pos[idx - 1], pos[idx], " ".join(pos[idx + 1:])
+    topic, mtype, data = pos[idx - 1], pos[idx], " ".join(pos[idx + 1:]).strip()
+    if len(data) > 2 and data[0] == data[-1] and data[0] in "'\"" and data[1:-1].strip().startswith("{"):
+        # 內容外面多包了一層引號（'"{a: 1}"'、"'{a: 1}'"：shell 拆過一層，引號留在字裡）——ros2 收到的是字串、回「needs to be a
+        # dictionary」，模型照樣重送好幾次（2026-10-24 ros_pub_yes 連 4 次）。內容一定是字典，拿掉那一層
+        data = data[1:-1].strip()
     if not data.strip():
         return dict(res, error=f"[ERROR] 需要訊息內容（YAML，用單引號包住，例如 '{{data: hi}}'；要發預設值就寫 '{{}}'）。這次沒有發布。\n{USAGE}")
     if topic.startswith("-") or " " in topic:
@@ -84,6 +105,43 @@ def parse_cli(argv, resolve=True, names=None):
     if err:
         return dict(res, error=err)
     return dict(res, container=container)
+
+
+def _shown(v):
+    return "布林 true" if v is True else "布林 false" if v is False else f"{type(v).__name__} {v!r}"
+
+
+def payload_problems(fields, obj):
+    """最上層欄位的核對（欄位名稱 → ros2 的型別字串）：不存在的欄位、字串欄位給了布林或數字、布林或數字欄位給了別的。
+    巢狀的訊息、陣列不核對（交給 ros2 topic pub）。回傳問題的清單。"""
+    if not isinstance(fields, dict) or not isinstance(obj, dict):
+        return []
+    out = []
+    for k, v in obj.items():
+        t = fields.get(k)
+        if t is None:
+            out.append(f"沒有 {k} 這個欄位")
+        elif (t == "string" or t.startswith("string<=")) and not isinstance(v, str):
+            out.append(f"{k} 是字串（{t}），給的是{_shown(v)}")
+        elif t == "boolean" and not isinstance(v, bool):
+            out.append(f"{k} 是布林（boolean），給的是{_shown(v)}")
+        elif t in _NUMERIC and (isinstance(v, bool) or not isinstance(v, (int, float))):
+            out.append(f"{k} 是數字（{t}），給的是{_shown(v)}")
+    return out
+
+
+def introspect(container, mtype, data):
+    """容器裡解析型別與內容 → (欄位 dict, 內容)；解析不了 → (None, None)。"""
+    q = shlex.quote
+    res = ros2_run(container, f"python3 -c {q(INTROSPECT)} {q(mtype)} {q(data)}", 30)
+    m = re.search(rf"^{FIELDS_TAG}(.*)$", res.get("out") or "", re.M)
+    try:
+        info = json.loads(m.group(1)) if m else {}
+    except ValueError:
+        info = {}
+    if "fields" not in info:
+        return None, None
+    return info["fields"], info.get("obj")
 
 
 def build_command(p):
@@ -105,6 +163,13 @@ def main(argv):
     if p["error"]:
         return p["error"]
     container, topic, mtype = p["container"], p["topic"], p["type"]
+    fields, obj = introspect(container, mtype, p["data"])
+    problems = payload_problems(fields, obj)
+    if problems:
+        bad = next((k for k in (obj or {}) if (fields or {}).get(k, "").startswith("string") and not isinstance(obj[k], str)), None)
+        hint = (f"字串的值要加引號（YAML 裡沒加引號的 yes／no／true／false／on／off 都是布林），例如 '{{{bad}: \"…\"}}'；" if bad else "")
+        return (f"[ERROR] 內容跟 {mtype} 的欄位對不上，這次沒有發布：{'；'.join(problems)}。這個型別的欄位："
+                f"{'、'.join(f'{n}（{t}）' for n, t in list(fields.items())[:20])}。下一步：{hint}照欄位的名稱與型別改內容再發布")
     res = ros2_run(container, build_command(p), TIMEOUT_SECONDS)
     out = res.get("out") or ""
     m = re.search(rf"^{SUBS_TAG}(\d*)\s*$", out, re.M)

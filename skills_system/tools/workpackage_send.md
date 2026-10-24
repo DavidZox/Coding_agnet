@@ -2,7 +2,7 @@
 type: Tool
 title: 發送 work package（任務協調器）
 description: 對 orchestrtor 發送多站點 work package（站點寫名稱、節點 id 或語意名稱；可設 N 輪或無限循環）；送出前核對、送出後確認收到；會先請使用者確認。
-version: 1.2.0
+version: 1.2.1
 dependencies: ["fih_rmf_system web_console (port 8020)", "或 ROS 2 容器內的 ros2 CLI＋fih_rmf_msgs（--ros2）"]
 ---
 
@@ -16,7 +16,7 @@ web_console `POST /api/send_tasks` → orchestrtor 逐站派給 distribute。送
 * `--url`：web_console（預設環境變數 `RMF_WEB_CONSOLE_URL` 或 http://localhost:8020）。`--ros2 [容器]`：web_console 沒在跑時在容器內發布 `fih_rmf_msgs/msg/WorkPackage`（逾時 30 秒）。`--no-check`：拿不到拓譜圖／快照／名冊時照原樣送（使用者同意才用）。
 
 # 範例
-`EXECUTE: scripts/workpackage_send_cmd.py WP001 home,加工線通道-6,a7 --amr tb1`（一輪）　`EXECUTE: scripts/workpackage_send_cmd.py 巡邏 home,a3 --amr tb1 --loop`（無限）
+`EXECUTE: scripts/workpackage_send_cmd.py WP_0815 p0,包裝區-3,p5 --amr amr_07`（一輪）　`EXECUTE: scripts/workpackage_send_cmd.py 巡邏 p0,p2 --amr amr_07 --loop`（無限）
 
 # 回傳
 `[PASS] work package「id」已送出：N 站，循環：…，機器人：…；orchestrtor 已收到（…）` + `stops:`（送出的值、節點 id、語意名稱）+ 參數。`--dry-run`：同樣的核對＋要送的 payload。

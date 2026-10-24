@@ -113,7 +113,7 @@ def parse_args(argv):
             return dict(out, error=err + "（fin 的第一個參數是機器人，第二個才是 task_id）")
         return dict(out, robots=names[:1], task_id=names[1] if len(names) > 1 else None)
     if not names:
-        return dict(out, error=f"[ERROR] {action} 要指定至少一台機器人（例如 {action} tb1 tb3，或 {action} tb1,tb3）。\n{USAGE}")
+        return dict(out, error=f"[ERROR] {action} 要指定至少一台機器人（例如 {action} amr_07 amr_12，或 {action} amr_07,amr_12）。\n{USAGE}")
     for rid in names:
         err = rc.robot_id_error(rid)
         if err:

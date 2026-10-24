@@ -156,7 +156,7 @@ class ToolSummaryMixin:
 
     def summarize_tool_result(self, result, tool_tokens, step=None, result_id=None):
         """任務導向提煉（Task-Oriented Extraction）：把超過門檻的工具回傳交給獨立、乾淨的 session（不接觸 self.messages）依問題提煉，
-        主對話只收到重點。錨點有兩層：1. 使用者的目標（_build_task_anchor_text：Objective、使用者最近 3 句原話、已核准的計畫）；
+        主對話只收到重點。錨點有兩層：1. 使用者的目標（_build_task_anchor_text：Objective、使用者最近 3 句原話）；
         2. 這一步的目的（_last_assistant_step：決策 AI 剛才的 thought／reply 與執行的 action）。
         提煉讀全文（agent_core/extract.py：放得進一段就一次寫完；更長的依結構切段、每段一個 worker、再整合），每條事實附原文的行號、
         由程式核對；以前超過 16000 字只讀頭尾，中間的內容主對話永遠看不到。
