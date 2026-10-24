@@ -6,7 +6,7 @@ skinparam ActivityBackgroundColor #FFF8E7
 skinparam ActivityBorderColor #996633
 skinparam NoteBackgroundColor #FFFFE0
 
-title 工具回傳管線：原文一定存檔；harness 模式太長才交給獨立 session 提煉（長的依結構切段、每段一個 worker、再整合，行號由程式核對），\nclaude_code 模式原文給模型自己查；附圖的影像分析也存成 #編號、進同一份檢索清單；之後用 result_recall 回去讀原文
+title 工具回傳管線：原文一定存檔；規格文件、提煉過的、程式整理好的報告直接給原文；harness 模式太長才交給獨立 session 提煉（長的依結構切段、每段一個 worker、再整合，行號由程式核對），\nclaude_code 模式原文給模型自己查；附圖的影像分析也存成 #編號、進同一份檢索清單；之後用 result_recall 回去讀原文
 
 partition "這一次的工具回傳" {
 start
@@ -20,8 +20,14 @@ end note
 （每次都存，之後隨時可以回來讀）;
 if (結果要加入主對話？
 auto 直接加入；manual／hybrid 等使用者按 y) then (加入)
-  if (規格文件、recall 的結果？) then (是)
+  if (規格文件、已經提煉過的（recall）、
+程式整理好的報告（analysis_run、workflow_run）？) then (是)
     :原文直接給 main session;
+    note right
+      報告本身就是程式整理好、有編號的事實
+      或每一步的結果；再提煉一次只是摘要的摘要
+      （is_exempt_result）
+    end note
   elseif (claude_code 模式？) then (是)
     :原文＋「完整原文存檔 #編號」給 main session
 >3000 tokens 只給頭尾，中間一行寫明省略第幾行到第幾行
@@ -34,6 +40,13 @@ result_recall 哪一個，由 main session 自己決定;
   elseif (回傳很短（≤500 tokens）？) then (是)
     :原文直接給 main session;
   else (harness 模式，太長)
+    if (/summarize off？) then (是)
+      :只給成功／失敗＋存檔編號與怎麼查
+（result_recall／result_view，不要重新執行同一個工具）; <<#DDEBF7>>
+      note right
+        摘要的程式本身出錯（例外）時也退到這裡
+      end note
+    else (提煉)
     :**① 告訴獨立 session「使用者想知道什麼」**
 使用者最近說的幾句話＋main session 為什麼執行這一步
 ＋其他存檔的一句話描述（工具使用檢索清單，
@@ -61,13 +74,24 @@ result_recall 哪一個，由 main session 自己決定;
       calls.jsonl（每次模型呼叫的 prompt 與原文回覆）
       events.jsonl（進度，Web 右欄看得到）
     end note
-    :**⑤ 一句話描述寫進工具使用檢索清單**
+    if (提煉成功？) then (成功)
+      :**⑤ 一句話描述寫進工具使用檢索清單**
 logs/tool_results/tools_use_index.md（整句照存、不截斷）;
-    :**⑥ 附上下一步建議，連同重點交給 main session**
+      :**⑥ 附上下一步建議，連同重點交給 main session**
 ・還需要舊存檔 → 下一輪執行 result_recall 這份,那份
 ・有段落沒讀到 → 用更具體的問題 recall，或 result_view 看那幾行
 ・缺口原文裡沒有 → 用自然的一句話問使用者
 ・已經回答 → 直接回答，不用 recall;
+      note right
+        **重點不比原文短**（約 700 tokens 的結構化輸出
+        有時會被寫得更長）→ 改給完整原文
+      end note
+    else (失敗：沒有回應、回覆不是 JSON)
+      :照實寫「提煉沒有成功」（附它的原文回覆）＋下一步：
+result_recall 再提煉一次，或 result_view／result_grep
+自己看存檔；不要憑空補上; <<#DDEBF7>>
+    endif
+    endif
   endif
 else (捨棄)
   :只告訴 main session「已執行，結果未加入」;

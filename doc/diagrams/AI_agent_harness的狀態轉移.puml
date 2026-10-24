@@ -54,8 +54,11 @@ rectangle State3 #FFE6CC [
 
 rectangle StateGuard #F4CCCC [
   **3b. 執行前關卡（guard_check）**
-  * 派工單、取消任務、建容器、容器內非唯讀指令
+  * 會改變狀態的技能（派工單、取消任務、建容器、改檔案、
+    容器與主機的非唯讀指令、重啟容器、改 ROS 2 參數、發布…）
     → CLI 問 y／n；Web 暫停，顯示「同意執行／拒絕」
+    （同一個技能查詢的用法放行，參數照腳本自己的解析判斷）
+  * ops_run、workflow_run：列出計畫或步驟裡會改變狀態的，核准一次
   * auto 模式也一樣會停；其他動作直接往下
   * 拒絕 → [DENIED] 加入主對話，回合結束（7）
 ]
@@ -65,8 +68,12 @@ rectangle State4 #FFF2CC [
   * null → 回合結束（7）
   * 技能名稱 → 回規格文件，不執行、不存檔
   * result_recall_cmd.py → 在本程序內 recall（5）
-  * workflow_run_cmd.py → 工作流：程式照步驟執行技能，
-    模型只在判斷點填值、選分支；成功判準程式跑（5）
+  * 偽技能（在本程序內做；報告記軌跡、存 #編號）（5）：
+    workflow_run → 工作流：程式照步驟執行技能，
+      模型只在判斷點填值、選分支；成功判準程式跑
+    analysis_run → 數據分析：全部由程式做，回事實報告
+    ops_plan → 規劃 session 拆步驟（唯讀）；
+    ops_run → 每一步一個 worker 做、程式檢查
   * 腳本路徑 → 執行（5）；找不到 → [ERROR] 指引先載規格；
     被擋的技能沒有 approved → [DENIED]；
     計畫外會改狀態（/plan_exec_guard on）→ [PLAN_BLOCKED]
@@ -80,6 +87,8 @@ rectangle State5 #D5E8D4 [
     vision.analyze()，結果照一般工具回傳處理
   * result_recall：讀出存檔原文 → 獨立 session 依
     使用者的問題提煉（見「工具回傳管線」圖）
+  * 偽技能：工作流的每一步照樣走 run_tool（每一步的輸出
+    各自存 #編號）；數據分析見「數據分析的流程」圖
 ]
 
 rectangle State6a #FFE0B2 [
@@ -104,8 +113,9 @@ rectangle State6c #FFCC80 [
   * (A) 規格文件、≤500 tokens、本身已是提煉結果、
     或程式整理好的報告（數據分析、工作流）→ 原文
   * (B) >500 tokens → 工具摘要 session：重點 + 下一步建議，
-    並把一句話描述寫進工具使用檢索清單
-  * (C) /summarize off 或摘要失敗 → 只給成功／失敗
+    並把一句話描述寫進工具使用檢索清單；提煉沒成功照實說、
+    附下一步；重點不比原文短改給原文
+  * (C) /summarize off 或摘要的程式出錯 → 只給成功／失敗＋#編號
   claude_code 模式：
   * (D) 原文＋存檔編號；>3000 tokens 保留頭尾、標出省略的行號
   ----
@@ -160,7 +170,7 @@ State2 -down-> State3
 State3 -down-> StateGuard
 StateGuard -down-> State4 : 不用確認／同意
 StateGuard -[#CC0000]left-> State7 : 拒絕
-State4 -[#CC6600,bold]down-> State5 : **腳本路徑／recall**
+State4 -[#CC6600,bold]down-> State5 : **腳本路徑／recall／偽技能**
 State4 -[#3366CC]right-> State6c : 技能名稱：規格文件\n（不執行，完整放行）
 State5 -down-> State6a
 State6a -down-> State6b

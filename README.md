@@ -154,7 +154,7 @@ Coding_agnet/            （資料夾名稱沿用；原本的 coding agent 已�
 ├── vision/              視覺模態：擷取、推論、提取、Web 的框選（web/）、sniper.py（獨立的框選小工具）
 ├── evals/               評測：chat/、skills/、analysis/、datagen/、ops/、workflow/、extract/、phase_check.py、baselines/；
 │                        results/（.gitignore）
-├── doc/                 文件；diagrams/（.puml 與產生器）、images/（圖）、archive/（第一～九輪的根因版本，只供閱讀）
+├── doc/                 文件；diagrams/（圖的 .puml）、images/（產生的 PNG）、archive/（第一～九輪的根因版本，只供閱讀）
 ├── test_data/           實機錄製、正確答案、回歸工具（只在本機，.gitignore）
 └── logs/                執行時產生：工具回傳存檔、檢索清單、軌跡、摘要、extract_jobs/、analysis_jobs/、workflow_jobs/、ops_jobs/
                          （.gitignore）

@@ -21,7 +21,9 @@ start
 partition "① 資料預備與事實（程式）" {
 :mcap_analyzer ~--json：全域 Topic Metadata
 （Topic、型別、筆數、頻率、起訖；每個 Key 的類別與維度；
-每個型別的訊息定義 .msg，含註解與常數）; <<#DDEBF7>>
+每個型別的訊息定義 .msg，含註解與常數）；
+字串欄位裝的是 JSON（抽樣八成以上是 JSON 物件或清單）→
+它的欄位展開成 Key（<欄位>.<子欄位>；有名稱欄位的清單展開成對照表）; <<#DDEBF7>>
 if (數據超過 3 分鐘（以整秒算）？) then (超過)
   :回 [ERROR]：先用 mcap_slicer 切出要看的時間段
   （3 分鐘以內），再對切片分析;
@@ -31,7 +33,7 @@ endif
 :rosout_parser ~--json：/rosout 去重成唯一訊號 L#
 （層級、節點、次數、每一次的時間戳；每則 Log 帶 MCAP 記的
 file、function、line →「＠檔名:行 函式」；略過 rosbag2 自己的 Log）; <<#DDEBF7>>
-:mcap_analyzer ~--facts：一次讀完整份數據，**每個 Topic 量全部的 Key**
+:mcap_analyzer ~--facts：一次讀完整份數據，**每個 Topic 量全部的 Key**（含 JSON 展開的）
 發布方式：固定頻率／狀態改變時才發布／不定期／只有一兩則（由時間與內容判斷）；
 只有固定頻率的判斷訊息中斷、中途開始／停止發布；狀態跳轉、數值切換、
 尖峰（跳出去又回來）、數值範圍、到最後的值 → 快取 topic_facts.json; <<#DDEBF7>>

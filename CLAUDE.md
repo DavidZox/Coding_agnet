@@ -60,6 +60,6 @@
 - 改了程式就同步改文件：`README.md`（入口）、`doc/架構說明.md`（模組、常數、流程）、`doc/設計筆記與已知限制.md`（為什麼、實測數字、限制）、
   `doc/待辦清單.md`（記下來還沒做的）、`evals/README.md`（測試怎麼跑）。架構說明與架構圖的更新先問使用者（見上面）。
 - 在長文件裡插入段落前，確認位置不在程式碼區塊裡；改完檢查 ` ``` ` 有成對（曾經整節被插進範例的程式碼區塊裡）。
-- 架構圖用本機的 PlantUML（`~/tools/plantuml/`）產生，做法見 `doc/README.md`〈圖〉；不要用 `doc/diagrams/流程圖產生器.py`
-  （它把圖的內容送到線上伺服器）。產生後打開 PNG 看一次中文與版面。
+- 架構圖用本機的 PlantUML（`~/tools/plantuml/`）產生，做法見 `doc/README.md`〈圖〉；不要用線上的 PlantUML 伺服器（圖的內容會離開
+  這台機器）。產生後打開 PNG 看一次中文與版面。
 - 中文檔名在 git 輸出裡會變成跳脫碼：`git -c core.quotepath=off status`。
