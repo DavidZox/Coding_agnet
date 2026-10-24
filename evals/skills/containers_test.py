@@ -620,10 +620,14 @@ def t_ros2_param_live():
 
 
 def t_ros2_pub_live():
-    """ROS2_topic_pub：topic 自動補 /、型別錯、沒有訂閱者時不會卡到逾時"""
+    """ROS2_topic_pub：topic 自動補 /、型別錯、訂閱端的型別跟發布的不同（說清楚是型別，不是 QoS）、沒有訂閱者時不會卡到逾時"""
     rmf = _rmf()
-    out = _script("ROS2_topic_pub_cmd.py", "incoming_tasks", "std_msgs/msg/String", "{data: hi}", target=rmf)
-    assert out.startswith("[PASS] 已對 /incoming_tasks（std_msgs/msg/String）發布 1 次（訂閱者 1 個"), out
+    # rmf_sim 的 orchestrtor 訂閱 /distribute_ui_state（std_msgs/String，收到不做事）——發布不會改變沙盒的狀態
+    out = _script("ROS2_topic_pub_cmd.py", "distribute_ui_state", "std_msgs/msg/String", "{data: hi}", target=rmf)
+    assert out.startswith("[PASS] 已對 /distribute_ui_state（std_msgs/msg/String）發布 1 次（訂閱者 1 個"), out
+    # /incoming_tasks 的訂閱端是 fih_rmf_msgs/msg/StationTask（同真的 fih_rmf_system）：發 String 配對不上，要說是型別不同
+    out = _script("ROS2_topic_pub_cmd.py", "/incoming_tasks", "std_msgs/msg/String", "{data: hi}", target=rmf)
+    assert_error(out, "型別是 fih_rmf_msgs/msg/StationTask", "型別不同不會配對", "ros2 interface show")
     out = _script("ROS2_topic_pub_cmd.py", "/incoming_tasks", "std_msgs/msg/Strin", "{data: hi}", target=rmf)
     assert_error(out, "--types")
     out = _script("ROS2_topic_pub_cmd.py", "/incoming_tasks", "std_msgs/msg/String", "{dat: hi}", target=rmf)

@@ -128,6 +128,23 @@ def t_not_recording():
         assert "不是錄製數據" not in out, f"{data} 要交給容器端判斷：{out}"
 
 
+def t_not_recording_real_data():
+    """主機端的「不是錄製數據」判斷不能擋到真的錄製：test_data 裡每一份有 .mcap 的數據（實驗資料夾、bag 資料夾）與它的上一層都放行
+    （test_data 不在版控裡，沒有就略過；2026-10-23 是 1,481 份）"""
+    import glob
+    from selftest import PROJECT
+    root = os.path.join(PROJECT, "test_data")
+    mcaps = glob.glob(os.path.join(root, "**", "*.mcap"), recursive=True)
+    if not mcaps:
+        raise Skip("沒有 test_data 的錄製（不在版控裡）")
+    dirs = set()
+    for m in mcaps:
+        d = os.path.dirname(m)
+        dirs.add(os.path.dirname(d) if os.path.basename(d) in ("bag", "mcap") else d)
+    blocked = [(d, e[:160]) for d in sorted(dirs) for cand in (d, os.path.dirname(d)) for e in [rd.not_recording(cand, "x")] if e]
+    assert not blocked, f"{len(blocked)} 份真的錄製被擋：{blocked[:3]}"
+
+
 def _live():
     r = subprocess.run(["docker", "inspect", LIVE, "--format", "{{.State.Running}}"], capture_output=True, text=True)
     if r.stdout.strip() != "true":

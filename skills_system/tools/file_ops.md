@@ -1,14 +1,15 @@
 ---
 type: Tool
 title: 文件與目錄操作
-description: 在本機建目錄、複製、移動／改名、寫入或附加文字檔、取代檔案裡的一段文字（例如改設定檔的一個參數）；會先請使用者確認。
-version: 2.0.0
+description: 在本機建目錄、複製、移動／改名、寫入或附加文字檔、取代檔案裡的一段文字；改 YAML 設定檔的一個值用 set；會先請使用者確認。
+version: 2.1.0
 dependencies: []
 ---
 
 # 用途
 「改」本機的文件（看用 view_file、找用 find_file／search_text）。執行前系統會請使用者確認；覆寫、附加、取代前原檔自動備份到
-logs/file_backups/（移動不覆蓋任何東西，不備份）。沒有刪除。只改 UTF-8 文字檔。改設定檔用 `replace` 只改那一行，
+logs/file_backups/（移動不覆蓋任何東西，不備份）。沒有刪除。只改 UTF-8 文字檔。改 YAML 設定檔的一個值用 `set`：程式找「名稱: 值」那一行、
+只換值（縮排、行尾註解保留）；同樣的設定出現在好幾台時加 `--after "id: tb4"`，只在那一段裡找（不會改到別台）。其他改法用 `replace`，
 `--old` 照檔案實際內容寫（先 view_file 看；**不要抄行號 `12→`**）。
 
 # 語法
@@ -16,11 +17,14 @@ logs/file_backups/（移動不覆蓋任何東西，不備份）。沒有刪除�
 * `mkdir <目錄>`；`copy <來源> <目的>`；`move <來源> <目的>`（目的是既有目錄時放進去）。目的已存在一律不覆蓋。
 * `write <檔案> --text "內容"` 建立或覆寫；`append <檔案> --text "內容"` 加在最後；
   `replace <檔案> --old "原文" --new "新的內容"`：原文要剛好出現一次（`--new ""` 是刪掉原文）。
+* `set <檔案> <設定名稱> <新的值> [--after "那一段開頭的字"]`：`--after` 的那一段＝第一個含這幾個字的行，加上後面縮排比它深的行；
+  不給 `--after` 時名稱在檔案裡要剛好出現一次。已經是那個值就不改（回 `沒有修改`）。
 * 選項順序不拘，內容用雙引號包住（裡面有引號也可以）。跳脫：`\n` 換行、`\t` tab、`\"` 引號、`\\` 反斜線（字面的 `\n` 寫 `\\n`）；
   內容裡已經有真正的換行時只把 `\"` 換成 `"`，其他照原樣寫入。
 
 # 範例
 `EXECUTE: scripts/file_ops_cmd.py replace configs/nav/nav_params.yaml --old "max_vel_x: 0.5" --new "max_vel_x: 0.3"`
+`EXECUTE: scripts/file_ops_cmd.py set configs/robots.yaml battery_low 18 --after "id: tb4"`
 `EXECUTE: scripts/file_ops_cmd.py write reports/battery.md --text "# 電量\n| 機器人 | 最低 |\n|---|---|\n| tb1 | 21.1 |"`
 `EXECUTE: scripts/file_ops_cmd.py move logs/2026-09-28 logs/archive/`
 

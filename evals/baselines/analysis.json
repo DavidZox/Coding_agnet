@@ -1,0 +1,3412 @@
+{
+ "sets": {
+  "gen_s1": {
+   "label": "第 2 階段（8210509）（2026-10-23，analysis_p2_gen_s1）",
+   "per": {
+    "gen_s1_000": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_001": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_002": {
+     "clean": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "no_event": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_003": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_004": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_005": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_006": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_007": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_008": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_009": {
+     "clean": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "no_event": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_010": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_011": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_012": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_013": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_014": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_015": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_016": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_017": {
+     "clean": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "no_event": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_018": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_019": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_020": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_021": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_022": {
+     "clean": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "no_event": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_023": {
+     "clean": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "no_event": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_024": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_025": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_026": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_027": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_028": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_029": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_030": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_031": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_032": {
+     "clean": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "no_event": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_033": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_034": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_035": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_036": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_037": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_038": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_039": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_040": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_041": {
+     "clean": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "no_event": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_042": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_043": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_044": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_045": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_046": {
+     "clean": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_047": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_048": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_049": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_050": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_051": {
+     "clean": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "no_event": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_052": {
+     "clean": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "no_event": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_053": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_054": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_055": {
+     "clean": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "no_event": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_056": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_057": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_058": {
+     "clean": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ]
+    },
+    "gen_s1_059": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    }
+   }
+  },
+  "gen_s2": {
+   "label": "第 2 階段（8210509）（2026-10-23，analysis_p2_gen_s2）",
+   "per": {
+    "gen_s2_000": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_001": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_002": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_003": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_004": {
+     "clean": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "no_event": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_005": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_006": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_007": {
+     "clean": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "no_event": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_008": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_009": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_010": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_011": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_012": {
+     "clean": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_013": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_014": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_015": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_016": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_017": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_018": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_019": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_020": {
+     "clean": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_021": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_022": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_023": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_024": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_025": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_026": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_027": {
+     "clean": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "no_event": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_028": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_029": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_030": {
+     "clean": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "no_event": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_031": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_032": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_033": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_034": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_035": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_036": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_037": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_038": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_039": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_040": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_041": {
+     "clean": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_042": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_043": {
+     "clean": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_044": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_045": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_046": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_047": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_048": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_049": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_050": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_051": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_052": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_053": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_054": {
+     "clean": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_055": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_056": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_057": {
+     "clean": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_058": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s2_059": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    }
+   }
+  },
+  "gen_s3": {
+   "label": "第 2 階段（8210509）（2026-10-23，analysis_p2_gen_s3）",
+   "per": {
+    "gen_s3_000": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s3_001": {
+     "clean": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "no_event": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ]
+    },
+    "gen_s3_002": {
+     "clean": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "no_event": [
+      1,
+      1
+     ],
+     "runs": 1
+    },
+    "gen_s3_003": {
+     "clean": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1
+    },
+    "gen_s3_004": {
+     "clean": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "no_event": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ]
+    },
+    "gen_s3_005": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s3_006": {
+     "clean": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "no_event": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ]
+    },
+    "gen_s3_007": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s3_008": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s3_009": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s3_010": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s3_011": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s3_012": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s3_013": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s3_014": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s3_015": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s3_016": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s3_017": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "tags": [
+      1,
+      1
+     ],
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s3_018": {
+     "clean": [
+      1,
+      1
+     ],
+     "covered": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1,
+     "timeline": [
+      1,
+      1
+     ]
+    },
+    "gen_s3_019": {
+     "clean": [
+      1,
+      1
+     ],
+     "done": 1,
+     "grounded": [
+      1,
+      1
+     ],
+     "runs": 1
+    }
+   }
+  },
+  "real": {
+   "fact_check": [
+    0,
+    1070
+   ],
+   "label": "第 2 階段（8210509）（2026-10-23，analysis_p2_real）",
+   "per": {
+    "aggkill": {
+     "clean": [
+      2,
+      2
+     ],
+     "done": 2,
+     "grounded": [
+      2,
+      2
+     ],
+     "runs": 2,
+     "timeline": [
+      2,
+      2
+     ]
+    },
+    "boot": {
+     "clean": [
+      2,
+      2
+     ],
+     "done": 2,
+     "grounded": [
+      2,
+      2
+     ],
+     "runs": 2,
+     "timeline": [
+      2,
+      2
+     ]
+    },
+    "camera": {
+     "clean": [
+      2,
+      2
+     ],
+     "done": 2,
+     "grounded": [
+      2,
+      2
+     ],
+     "runs": 2,
+     "timeline": [
+      2,
+      2
+     ]
+    },
+    "cmdgap": {
+     "clean": [
+      2,
+      2
+     ],
+     "done": 2,
+     "grounded": [
+      2,
+      2
+     ],
+     "runs": 2,
+     "timeline": [
+      2,
+      2
+     ]
+    },
+    "cmdvel": {
+     "clean": [
+      2,
+      2
+     ],
+     "done": 2,
+     "grounded": [
+      2,
+      2
+     ],
+     "runs": 2,
+     "timeline": [
+      2,
+      2
+     ]
+    },
+    "cmdvel_holdout": {
+     "clean": [
+      2,
+      2
+     ],
+     "done": 2,
+     "grounded": [
+      2,
+      2
+     ],
+     "runs": 2,
+     "timeline": [
+      2,
+      2
+     ]
+    },
+    "fault": {
+     "clean": [
+      2,
+      2
+     ],
+     "done": 2,
+     "grounded": [
+      2,
+      2
+     ],
+     "runs": 2,
+     "timeline": [
+      2,
+      2
+     ]
+    },
+    "lidar": {
+     "clean": [
+      2,
+      2
+     ],
+     "done": 2,
+     "grounded": [
+      2,
+      2
+     ],
+     "runs": 2,
+     "timeline": [
+      2,
+      2
+     ]
+    },
+    "lifecycle": {
+     "clean": [
+      2,
+      2
+     ],
+     "done": 2,
+     "grounded": [
+      2,
+      2
+     ],
+     "runs": 2,
+     "timeline": [
+      2,
+      2
+     ]
+    },
+    "long": {
+     "clean": [
+      2,
+      2
+     ],
+     "done": 2,
+     "grounded": [
+      2,
+      2
+     ],
+     "runs": 2,
+     "timeline": [
+      2,
+      2
+     ]
+    },
+    "monkill": {
+     "clean": [
+      2,
+      2
+     ],
+     "done": 2,
+     "grounded": [
+      2,
+      2
+     ],
+     "runs": 2,
+     "timeline": [
+      2,
+      2
+     ]
+    },
+    "motorhold": {
+     "clean": [
+      2,
+      2
+     ],
+     "done": 2,
+     "grounded": [
+      2,
+      2
+     ],
+     "runs": 2,
+     "timeline": [
+      2,
+      2
+     ]
+    },
+    "overheat": {
+     "clean": [
+      2,
+      2
+     ],
+     "done": 2,
+     "grounded": [
+      2,
+      2
+     ],
+     "runs": 2,
+     "timeline": [
+      2,
+      2
+     ]
+    },
+    "steady": {
+     "clean": [
+      2,
+      2
+     ],
+     "done": 2,
+     "grounded": [
+      2,
+      2
+     ],
+     "no_event": [
+      2,
+      2
+     ],
+     "runs": 2
+    }
+   },
+   "stability": [
+    14,
+    14
+   ]
+  }
+ }
+}

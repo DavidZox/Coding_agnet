@@ -2,7 +2,7 @@
 type: Tool
 title: ROS 2 發布訊息
 description: 對 ROS 2 topic 發布訊息（預設一次）；會影響正在跑的系統，執行前會請使用者確認。
-version: 1.1.0
+version: 1.2.0
 dependencies: ["docker", "ros2"]
 ---
 
@@ -23,5 +23,5 @@ dependencies: ["docker", "ros2"]
 
 # 異常
 * 不認得訊息型別 → `ROS2_topic_list --types` 看型別；自訂型別先 `ROS2_workspace_env` 確認 Workspace。內容跟欄位對不上 → 照提示看欄位。
-* 沒有訂閱者 → 確認接收端 node 在跑、topic 名稱對；有訂閱者但配對不上 → 加 `--qos transient_local` 或 `--qos reliable` 重試。
+* 沒有訂閱者 → 確認接收端 node 在跑、topic 名稱對；有訂閱者但型別跟你給的不同 → `[ERROR]` 寫出訂閱端的型別，改用那個型別的欄位重新發布；型別一樣卻配對不上 → 加 `--qos transient_local` 或 `--qos reliable` 重試。
 * 第一個參數不是容器 → `[ERROR]` 附相近的容器。使用者拒絕確認就不會發布，不要原樣重送。

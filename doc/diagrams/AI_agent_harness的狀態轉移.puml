@@ -16,6 +16,8 @@ rectangle State1 #D1E5F0 [
   * 附圖（Web）：只有新任務會取出影像清單，先做視覺提取（1b）；
     只附圖沒打字時，使用者訊息用預設的描述提示詞
   * /skill：規格以 [skill loaded] 附在訊息後
+  * /analyze、/workflow <名稱> …：使用者直接指定（不經過模型選擇），
+    harness 放進一則「AI 的動作」→ 確認關卡照常（3b）→ 執行（4）
 ]
 
 rectangle StateVision #DDEEF6 [
@@ -63,6 +65,8 @@ rectangle State4 #FFF2CC [
   * null → 回合結束（7）
   * 技能名稱 → 回規格文件，不執行、不存檔
   * result_recall_cmd.py → 在本程序內 recall（5）
+  * workflow_run_cmd.py → 工作流：程式照步驟執行技能，
+    模型只在判斷點填值、選分支；成功判準程式跑（5）
   * 腳本路徑 → 執行（5）；找不到 → [ERROR] 指引先載規格；
     被擋的技能沒有 approved → [DENIED]；
     計畫外會改狀態（/plan_exec_guard on）→ [PLAN_BLOCKED]
@@ -97,7 +101,8 @@ rectangle State6b #FFD580 [
 rectangle State6c #FFCC80 [
   **6c. 決定進主對話的內容（只在「加入」時算）**
   harness 模式：
-  * (A) 規格文件、≤500 tokens、或本身已是提煉結果 → 原文
+  * (A) 規格文件、≤500 tokens、本身已是提煉結果、
+    或程式整理好的報告（數據分析、工作流）→ 原文
   * (B) >500 tokens → 工具摘要 session：重點 + 下一步建議，
     並把一句話描述寫進工具使用檢索清單
   * (C) /summarize off 或摘要失敗 → 只給成功／失敗
@@ -141,9 +146,10 @@ rectangle StateSkill #ECECEC [
   **/make_skill（回合之外）**
   * 上一個起點後的整段對話＋工具回傳＋操作軌跡交給草擬 session
     （對話紀錄在 messages 之外，壓縮、/clear 都不影響）
-  * 寫成流程技能的規格：使用者的要求 → 步驟（執行／確認／檢查／告知）
-  * harness 驗證引用的技能與腳本都存在，不產生腳本；使用者核准才註冊
-  * 之後載入它時提醒「沒有自己的腳本，照步驟一步一步做」
+  * 寫成工作流的規格（workflows/）：步驟（執行／檢查／確認／告知）
+  * harness 用同一套規則驗證（腳本存在、分支只往後），不產生腳本；
+    使用者核准才註冊
+  * 之後 workflow_run／/workflow 由程式照步驟做（判斷點才問模型）
 ]
 
 ' --- 邏輯流向 ---
@@ -165,6 +171,7 @@ State6b -[#CC0000]left-> State7 : manual 的 n／stop
 State7 -[#6A5ACD,dashed]down-> State8 : 使用者再說一句
 State8 -[#6A5ACD,dashed]up-> State1
 State1 -right-> StatePlan : /plan on
+State1 -[#999999,dashed]right-> StateGuard : /analyze、/workflow\n（直接指定）
 StatePlan -[#009933,bold]down-> State2 : **核准**
 State7 -[#999999]down-> StateSkill : 做對之後 /make_skill
 

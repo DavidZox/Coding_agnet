@@ -396,6 +396,26 @@ def run_analysis_turn(question, events, data=None):
     return outcome == "await"
 
 
+def run_workflow_turn(args, events):
+    """🧩 /workflow <名稱> 名稱=值 …：不經過主模型選擇，直接執行使用者指定的工作流（同主模型呼叫 workflow_run 的 action，跟 CLI 共用
+    agent_core/workflow_cmd.begin）。會改變狀態的步驟照常推確認卡片（pending guard，核准後 apply_decision 執行）；報告照一般工具結果
+    進主對話，之後主模型依報告回答、可以接著追問。回傳是否在等使用者決策。"""
+    from agent_core import workflow_cmd
+    parsed, guard, note = workflow_cmd.begin(agent, args)
+    if note:
+        events.append({"channel": "system", "text": note})
+    events.append({"channel": "chat", "role": "assistant", "text": parsed["reply"], "action": action_text(parsed["action"])})
+    if guard:
+        pending.update(mode="guard", parsed=parsed, guard=guard)
+        events.append({"channel": "guard", "text": agent.guard_prompt_text(guard),
+                       "skill": guard["skill"], "command": guard["command"]})
+        return True
+    outcome = _handle_tool_result(agent.run_tool(parsed, approved=True), events)
+    if outcome == "continue":
+        return run_turn(events)
+    return outcome == "await"
+
+
 def apply_decision(action, events):
     """套用使用者對待決策事項的決定。回傳 "continue"（接著跑 run_turn）／"await"（又在等下一個決策）／"stop"（回合結束）。
     - guard（執行前關卡）：y＝以 approved=True 執行、之後照一般工具結果處理；其他＝拒絕，告訴 AI 沒有執行，回合結束等使用者說明。

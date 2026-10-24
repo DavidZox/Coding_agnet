@@ -1,0 +1,82 @@
+{
+ "labels": {
+  "gemma4:26b": "第 2 階段（8210509）（2026-10-23，20261023_204315_extract_gemma4-26b_baseline）",
+  "gemma4:e4b": "第 2 階段（8210509）（2026-10-23，20261023_204431_extract_gemma4-e4b_baseline）"
+ },
+ "models": {
+  "gemma4:26b": {
+   "fleet_120": {
+    "count_ok": true,
+    "extra": 0,
+    "found": 30,
+    "seconds": 13.9,
+    "total": 30
+   },
+   "fleet_40": {
+    "count_ok": null,
+    "extra": 0,
+    "found": 7,
+    "seconds": 7.9,
+    "total": 7
+   },
+   "fleet_80": {
+    "count_ok": true,
+    "extra": 0,
+    "found": 21,
+    "seconds": 9.8,
+    "total": 21
+   },
+   "log_200k": {
+    "count_ok": null,
+    "extra": 0,
+    "found": 6,
+    "seconds": 14.2,
+    "total": 6
+   },
+   "recall_fleet_120": {
+    "count_ok": null,
+    "extra": 0,
+    "found": 11,
+    "seconds": 8.1,
+    "total": 11
+   }
+  },
+  "gemma4:e4b": {
+   "fleet_120": {
+    "count_ok": null,
+    "extra": 0,
+    "found": 30,
+    "seconds": 11.1,
+    "total": 30
+   },
+   "fleet_40": {
+    "count_ok": null,
+    "extra": 0,
+    "found": 7,
+    "seconds": 5.8,
+    "total": 7
+   },
+   "fleet_80": {
+    "count_ok": null,
+    "extra": 0,
+    "found": 21,
+    "seconds": 8.4,
+    "total": 21
+   },
+   "log_200k": {
+    "count_ok": null,
+    "extra": 0,
+    "found": 6,
+    "seconds": 10.8,
+    "total": 6
+   },
+   "recall_fleet_120": {
+    "count_ok": null,
+    "extra": 0,
+    "found": 9,
+    "seconds": 9.1,
+    "total": 11
+   }
+  }
+ }
+}

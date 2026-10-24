@@ -289,6 +289,30 @@ def main():
                 continue
             if _handle_analysis_command(agent, user_msg.strip()):   # 📊 /analysis、/analysis_data、/analysis_root…
                 continue
+            if user_msg.strip().lower() == "/workflow" or user_msg.strip().lower().startswith("/workflow "):
+                # 🧩 使用者直接指定工作流（不經過模型選擇；跟 Web 共用 workflow_cmd）：會改變狀態的照常確認，報告進主對話後 AI 依報告回答
+                from . import workflow_cmd
+                kind, arg = workflow_cmd.parse(user_msg.strip()[len("/workflow"):])
+                if kind != "run":
+                    print(workflow_cmd.list_text(agent) if kind == "list" else workflow_cmd.show_text(agent, arg) if kind == "show" else arg)
+                    continue
+                parsed, guard, cleared_note = workflow_cmd.begin(agent, arg)
+                if cleared_note:
+                    print(cleared_note)
+                if guard:
+                    print(f"\n{agent.guard_prompt_text(guard)}")
+                    if input("確定執行？(y/n): ").strip().lower() != 'y':
+                        agent.messages.append({'role': 'user', 'content': tool_result_message(agent.guard_denied_text(guard), parsed["action"])})
+                        print("🚫 已拒絕，這個工作流沒有執行。")
+                        continue
+                result = agent.run_tool(parsed, approved=True)
+                print(f"\n🚀 系統回傳:\n{'-'*30}\n{result}\n{'-'*30}")
+                tokens = agent.count_tokens(result)
+                agent.total_tool_tokens += tokens
+                agent.messages.append({'role': 'user', 'content': tool_result_message(
+                    _context_content_for_cli(agent, result, tokens, tool_summary_mode), parsed["action"])})
+                execute_turn()
+                continue
             if user_msg.lower() == '/clear':
                 agent.reset_conversation()
                 print("🧹 記憶已清空。")

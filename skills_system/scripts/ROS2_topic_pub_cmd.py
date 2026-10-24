@@ -28,6 +28,7 @@ USAGE = ("用法: scripts/ROS2_topic_pub_cmd.py [容器名稱] <topic> <訊息�
          "  例：ROS2_topic_pub rmf_sim /tb2/handshake_states fih_rmf_msgs/msg/HandshakeState '{is_authored: \"yes\"}'\n"
          f"  預設發一次；--times N 每秒一次共 N 次（上限 {MAX_TIMES}）；--qos {'、'.join(QOS)}（可用逗號合併）。會先請使用者確認。")
 SUBS_TAG, AUTO_TAG = "@@CAH_SUBS@@", "@@CAH_AUTOQOS@@"
+TYPE_TAG = "@@CAH_PUB_TYPE@@"       # ros2 topic info 的 Type（訂閱端的型別；跟要發布的不同就配對不上）
 
 
 def parse_cli(argv, resolve=True, names=None):
@@ -92,6 +93,7 @@ def build_command(p):
     wait = PUB_WAIT + (p["times"] if p["times"] > 1 else 0)
     return (f"_info=$(ros2 topic info -v {q(p['topic'])} 2>&1); "
             f"printf '{SUBS_TAG}%s\\n' \"$(printf '%s\\n' \"$_info\" | sed -n 's/^Subscription count: //p')\"; "
+            f"printf '{TYPE_TAG}%s\\n' \"$(printf '%s\\n' \"$_info\" | sed -n 's/^Type: //p' | head -3 | tr '\\n' ' ')\"; "
             f"_q={q(user_qos)}; "
             f"if [ -z \"$_q\" ] && printf '%s\\n' \"$_info\" | sed -n '/^Subscription count/,$p' | grep -q 'Durability: TRANSIENT_LOCAL'; "
             f"then _q='--qos-durability transient_local'; echo {AUTO_TAG}; fi; "
@@ -107,6 +109,8 @@ def main(argv):
     out = res.get("out") or ""
     m = re.search(rf"^{SUBS_TAG}(\d*)\s*$", out, re.M)
     subs = int(m.group(1)) if m and m.group(1) else 0
+    tm = re.search(rf"^{TYPE_TAG}(.*)$", out, re.M)
+    types = tm.group(1).split() if tm else []
     auto = AUTO_TAG in out
     qos_text = ("、".join(p["qos"]) if p["qos"] else ("transient_local（訂閱端要求，自動選的）" if auto else "預設"))
     dom = domain_text(res.get("env"), short=True)
@@ -121,11 +125,15 @@ def main(argv):
             return (f"[ERROR] {topic} 目前沒有訂閱者（ros2 topic info：Subscription count 0；{where}），等了 {wait} 秒沒有人接收，"
                     f"這次沒有發布。下一步：確認接收端的 node 在跑、topic 名稱正確（ROS2_topic_list --filter、ROS2_node_info）；"
                     f"ROS_DOMAIN_ID 不對時看 ROS2_domain_id")
+        if types and mtype not in types:
+            return (f"[ERROR] {topic} 有 {subs} 個訂閱者，但它們的型別是 {'、'.join(types)}，跟你給的 {mtype} 不同——型別不同不會配對，"
+                    f"等了 {wait} 秒沒有發布（{where}）。下一步：改用 {types[0]} 的欄位重新發布（欄位用 docker_runcmd \"source /opt/ros/$ROS_DISTRO/"
+                    f"setup.bash && ros2 interface show {types[0]}\" 看）；topic 名稱寫錯的話用 ROS2_topic_list --filter 確認")
         return (f"[ERROR] {topic} 有 {subs} 個訂閱者，但 {wait} 秒內沒有配對成功（QoS：{qos_text}；{where}），這次沒有發布。"
                 f"最可能是 QoS 不相容（訂閱端要求 reliable 或 transient_local）。下一步：加 --qos transient_local 或 --qos reliable 重試；"
                 f"還是不行就用 docker_runcmd \"source /opt/ros/$ROS_DISTRO/setup.bash && ros2 topic info -v {topic}\" 看訂閱端的 QoS")
     if res["kind"] != "ok":
-        res["out"] = "\n".join(ln for ln in out.splitlines() if not ln.startswith((SUBS_TAG, AUTO_TAG)))
+        res["out"] = "\n".join(ln for ln in out.splitlines() if not ln.startswith((SUBS_TAG, AUTO_TAG, TYPE_TAG)))
         return describe_failure(res, f"對 {topic} 發布 {mtype}", TIMEOUT_SECONDS, container=container,
                                 timeout_hint="ros2 沒有回應：確認容器內的 ROS 2 與 DDS 網路設定。")
     return with_target_marker(f"[PASS] 已對 {topic}（{mtype}）發布 {sent or p['times']} 次（訂閱者 {subs} 個；QoS：{qos_text}；{where}）："

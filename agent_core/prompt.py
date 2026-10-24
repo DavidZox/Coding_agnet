@@ -8,7 +8,7 @@
   而且它們離生成點最近，小模型最看得到。"""
 import os
 import re
-from .config import CONTEXT_MODES, MEMORY_MAX_CHARS
+from .config import CONTEXT_MODES, MEMORY_MAX_CHARS, WORKFLOWS_ENABLED
 
 # 摘要裡「看起來是技能」的名稱：反引號包住的 snake_case（可帶 scripts/ 前綴與 _cmd.py／.py 後綴），或 scripts/<x>_cmd.py
 _SKILL_REF_RE = re.compile(r"`(?:scripts/)?([a-z][a-z0-9]*(?:_[a-z0-9]+)+?)(?:_cmd)?(?:\.py)?`|scripts/([a-z][a-z0-9_]*?)_cmd\.py")
@@ -162,6 +162,8 @@ class PromptMixin:
                 profile = f.read().strip()
         with open(self.index_file, "r", encoding="utf-8") as f:
             skills = f.read().strip()
+        if not WORKFLOWS_ENABLED:   # 評測「沒有工作流」的對照：工作流那一節整段拿掉
+            skills = re.sub(r"^## 工作流.*?(?=^## )", "", skills, flags=re.S | re.M)
         mode_rules = self.context_mode_rules()
         blocks = [
             profile,

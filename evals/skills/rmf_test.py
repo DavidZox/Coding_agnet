@@ -664,3 +664,30 @@ def t_sandbox_ros2():
     assert "對授權一直回 no" in out and "/tb3/handshake_states：yes 0、no " in out and "[TARGET_CONTAINER] rmf_sim" in out, out
     code, out = run_script("rmf_handshake_cmd.py", "status", "tb3", "--seconds", "12", env=env, timeout=120)
     assert "自動選的" in out and "[TARGET_CONTAINER]" not in out, out
+
+
+def t_sandbox_status_stable():
+    """沙盒（ROS 2）：交握 status 連續幾次的判斷都對——忙碌的機器人只會是「一直回 no」或「剛好在冷卻」（不會是沒有回應、看不到 distribute），
+    沒回應的機器人是「沒有回應授權」而且 handshake_states 沒有發布者（2026-10-23 以前的聽法從 CLI 啟動就開始計時，忙碌的被判錯 8 次）"""
+    sandbox = _sandbox()
+    import scenarios
+    urls = sandbox.urls()
+    env = {"RMF_WEB_CONSOLE_URL": urls["web_console"], "RMF_MANUAL_TRIGGER_URL": urls["manual_trigger"], "DOCKER_HOST": sandbox.DOCKER_HOST,
+           "TARGET_CONTAINER": ""}
+    busy_ok = ("對授權一直回 no", "這幾秒剛好沒有授權（工作項在冷卻／等待）")
+    for sid, rid, n, allowed in (("hs_busy_diag", "tb3", 4, busy_ok), ("hs_silent_diag", "tb4", 2, ("沒有回應授權",))):
+        world = scenarios.BY_ID[sid]["world"]
+        sandbox.reset(world)
+        time.sleep(world.get("wait", 0))
+        verdicts = []
+        for _ in range(n):
+            code, out = run_script("rmf_handshake_cmd.py", "status", rid, env=env, timeout=120)
+            head = first_line(out)
+            assert head.startswith(f"[PASS] {rid} 的交握狀況："), out[:600]
+            verdict = head.split("：", 1)[1]
+            verdicts.append(verdict)
+            assert verdict.split("；")[0] in allowed, f"{sid}：{verdict}\n{out[:1200]}"
+            if rid == "tb4":
+                assert f"graph 上沒有任何 /{rid}/handshake_states 的發布者" in out, out[:1200]
+            time.sleep(3)
+        print(f"     {sid}：{'｜'.join(verdicts)}")

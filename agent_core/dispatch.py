@@ -3,9 +3,9 @@ import os
 import shlex
 import subprocess
 import sys
-from .config import SKILL_DOC_PREFIX, SKILL_LOADED_MARKER, TOOL_EXEC_TIMEOUT
+from .config import SKILL_DOC_PREFIX, SKILL_LOADED_MARKER, TOOL_EXEC_TIMEOUT, WORKFLOWS_ENABLED
 
-from .protocol import action_text, is_procedure_doc, parse_agent_reply
+from .protocol import action_text, doc_type, is_procedure_doc, parse_agent_reply
 
 # 流程技能（/make_skill 依對話整理的規格，沒有自己的腳本）載入後，下一步怎麼做：照步驟一步一步來
 PROCEDURE_NEXT_STEP = ("這是流程技能，沒有自己的腳本：照規格的「步驟」從第 1 步開始，一輪只做一步——要執行的步驟，"
@@ -21,6 +21,21 @@ from skills_system.scripts._shell_common import STATE_MARKERS  # noqa: E402
 OPS_PSEUDO_SCRIPTS = ("ops_plan_cmd.py", "ops_run_cmd.py")
 # 數據分析（agent_core/analysis_job.py，全部由程式做）：同上，交給 AnalysisMixin
 ANALYSIS_PSEUDO_SCRIPTS = ("analysis_run_cmd.py",)
+# 工作流（agent_core/workflow.py）：同上，交給 WorkflowMixin
+WORKFLOW_PSEUDO_SCRIPTS = ("workflow_run_cmd.py",)
+
+
+def workflow_next_step(name, doc):
+    """模型用工作流的名稱當技能載入時：說明要用 workflow_run 執行（需要的資訊照規格的「需要的資訊」）。"""
+    need = []
+    for ln in doc.splitlines():
+        ln = ln.strip()
+        if ln.startswith("* `{") and "}`" in ln:
+            key = ln[4:ln.index("}`")]
+            need.append(f"{key}=<值>" + ("（選填）" if "選填" in ln else ""))
+    return (f"這是工作流（程式照步驟做，不是一個技能）：下一輪 action.command 填 scripts/workflow_run_cmd.py、args 填「{name} "
+            f"{' '.join(need)}」（值從使用者的話取得，拿不到的先問使用者），不要自己照步驟一個技能一個技能做；"
+            f"會改變狀態的步驟系統會在開始時請使用者確認，不用先問。")
 
 
 class DispatchMixin:
@@ -71,6 +86,10 @@ class DispatchMixin:
             skill_name = skill_name[:-3]
         doc_path = os.path.join(self.tools_dir, f"{skill_name}.md")
         if not os.path.exists(doc_path):
+            wf_path = os.path.join(self.base_path, "workflows", f"{skill_name}.md")   # 工作流：模型直接用它的名稱當技能
+            if WORKFLOWS_ENABLED and os.path.exists(wf_path) and not skill_name.startswith("_"):
+                with open(wf_path, "r", encoding="utf-8") as f:
+                    return f.read()
             return None
         with open(doc_path, "r", encoding="utf-8") as f:
             return f.read()
@@ -195,6 +214,11 @@ class DispatchMixin:
             remainder = parts[1] if len(parts) > 1 else ""
 
             skill_doc = self._load_skill_doc(raw_token)
+            if skill_doc is not None and doc_type(skill_doc) == "Workflow":
+                name = raw_token[:-3] if raw_token.endswith(".md") else raw_token
+                print(f"📖 Agent 選擇工作流: {name}（載入工作流的規格，尚未執行）")
+                return (f"{SKILL_DOC_PREFIX} '{name}' 的規格文件（由系統提供）。這一輪只是載入規格、還沒有執行任何東西："
+                        f"{workflow_next_step(name, skill_doc)}\n{skill_doc}")
             if skill_doc is not None:
                 procedure = is_procedure_doc(skill_doc)
                 print(f"📖 Agent 選擇技能索引: {raw_token}（載入{'流程技能的' if procedure else ''}規格文件，尚未執行）")
@@ -261,6 +285,13 @@ class DispatchMixin:
                 # 偽技能（同 result_recall）：規劃與執行要呼叫模型，在本 process 內做（agent_core/ops_job.py）；腳本檔只是讓
                 # 存在性檢查與確認關卡（ops_run）照常運作，所以攔在關卡之後。記一筆軌跡：報告有存檔編號，之後可以 result_recall
                 output_text = self.ops_plan(remainder) if script_name == "ops_plan_cmd.py" else self.ops_run(remainder)
+                self._record_trajectory(script_name, clean_args, output_text, cwd_before, container_before, target_before)
+                return output_text
+            if script_name in WORKFLOW_PSEUDO_SCRIPTS:
+                # 偽技能：工作流由程式照步驟推進（agent_core/workflow.py），判斷點要呼叫模型；每一步的輸出各自記軌跡（#編號），
+                # 整份報告也記一筆
+                output_text = (self.workflow_run(remainder) if WORKFLOWS_ENABLED else
+                               "[ERROR] 這個環境關閉了工作流（AGENT_WORKFLOWS=0）：用技能一步一步做，或用 ops_run。")
                 self._record_trajectory(script_name, clean_args, output_text, cwd_before, container_before, target_before)
                 return output_text
             if script_name in ANALYSIS_PSEUDO_SCRIPTS:

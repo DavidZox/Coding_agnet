@@ -74,16 +74,19 @@ rectangle NodeSub #FCE5CD [
      每一步寫的名稱與數值由程式核對；全部存在 extract_jobs/）
   * 滾動壓縮 summarize_messages：舊對話 → 融合摘要
   * 視覺 sub-session：在 vision/（附圖 → 結構化提取），同樣做完即丟
-  * /make_skill 草擬：整段對話＋工具回傳＋操作軌跡 → 流程技能的規格
-    （步驟：執行既有技能／確認／檢查／告知；不產生腳本）
+  * /make_skill 草擬：整段對話＋工具回傳＋操作軌跡 → 工作流的規格
+    （步驟：執行既有技能／檢查／確認／告知；不產生腳本）
+  * 工作流的判斷點：只填這一步要的值、或選分支（其他由程式推進）
 ]
 
 rectangle NodeSkills #D5E8D4 [
   **skills_system/（模型能做的事只有這些）**
   ----
   * SKILLS.md：一行一個技能（常駐 system prompt）
-  * tools/<name>.md：規格（按需載入；/make_skill 產生的流程技能
-    type: Procedure，沒有自己的腳本）
+  * tools/<name>.md：規格（按需載入）
+  * workflows/<name>.md：工作流（會重複做的多步驟流程；程式照步驟
+    執行技能、做完了沒由程式判斷；workflow_run、/workflow、
+    Agent_Runner.py --workflow；/make_skill 產生的也是）
   * scripts/<name>_cmd.py：真正執行的腳本
   * 檔案系統／容器與 ROS2／調度系統／多模態／存檔回查／記憶
   * image_inspect：對影像檔路徑呼叫 vision.analyze()，
@@ -112,6 +115,8 @@ rectangle NodeStore #E1D5E7 [
     可以 result_recall；原圖不保存，保留上限另計（100 份）
   * extract_jobs/<編號>/：每一次提煉的切段、每段的結果與核對、整合、
     每次模型呼叫的 prompt 與回覆（留最近 500 次）
+  * workflow_jobs/<編號>/：每一次工作流的步驟、判斷點的模型呼叫
+    （每一步的輸出照常存成 #編號；留最近 300 次）
   * trajectory.jsonl（操作軌跡）、summary_*.md／.json（滾動摘要＋
     使用者原話）、perf.jsonl（每次模型呼叫的耗時）
   * prompts/Memory.md（長期記憶，整份常駐；記憶只寫這裡）

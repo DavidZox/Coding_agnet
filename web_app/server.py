@@ -18,6 +18,7 @@ from .flows import (
     handle_skill_draft_response,
     run_analysis_turn,
     run_turn,
+    run_workflow_turn,
     start_plan_flow,
 )
 from .state import (
@@ -361,6 +362,15 @@ class ConsoleHandler(BaseHTTPRequestHandler):
             agent.messages.append({'role': 'user', 'content': question or "這段錄製期間發生了哪些狀態變化？"})
             self._finish_turn(stream, run_analysis_turn(question, stream))
             return
+
+        if message.lower() == "/workflow" or message.lower().startswith("/workflow "):
+            # 🧩 /workflow <名稱> 名稱=值 …：使用者直接指定工作流（不經過模型選擇）；列出、看步驟在 handle_slash_command
+            from agent_core import workflow_cmd
+            kind, args = workflow_cmd.parse(message[len("/workflow"):])
+            if kind == "run":
+                stream.append({"channel": "chat", "role": "user", "text": message, "tokens": agent.count_tokens(message)})
+                self._finish_turn(stream, run_workflow_turn(args, stream))
+                return
 
         if handle_slash_command(message, stream):
             self._finish(stream, False)  # slash 指令不消耗附件

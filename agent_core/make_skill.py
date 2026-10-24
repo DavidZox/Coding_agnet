@@ -1,13 +1,14 @@
-"""MakeSkillMixin：/make_skill——把使用者引導 Agent 做對的一段對話整理成「流程技能」的規格（草擬、驗證、預覽、註冊）。
+"""MakeSkillMixin：/make_skill——把使用者引導 Agent 做對的一段對話整理成「工作流」（skills_system/workflows/<名稱>.md，type: Workflow；
+2026-10-23 架構整合第 3 階段以前產生的是 type: Procedure 的流程技能，由主對話自己照步驟做）——草擬、驗證、預覽、註冊。
 
 做一個技能光知道用了哪些技能不夠：很多步驟跟使用者當時的對話有關——要先跟使用者確認的地方、要看某個回傳裡的
 某個欄位再決定怎麼走、使用者中途補充或糾正的做法。所以草擬 session 拿到的是整段對話紀錄（transcript：使用者的話、
 AI 的想法／回覆／action、當時進上下文的工具回傳）加上操作軌跡，由它推論出下次做同一件事的步驟。
 
-不產生任何腳本：規格的步驟只有四種——執行（呼叫既有技能的腳本）、確認（問使用者）、檢查（看回傳決定怎麼走）、
-告知（整理結果給使用者）。新的腳本仍由使用者另外寫好，再產生對應的規格。程式負責：挑範圍、驗證（引用的技能與腳本
-都要真的存在、佔位符都要宣告）、用範本排版、寫入索引；使用者在預覽後核准。規格的 frontmatter 是 type: Procedure，
-載入時 run_tool 會告訴模型「這個技能沒有自己的腳本，照步驟一步一步做」。
+不產生任何腳本：步驟只有四種——執行（呼叫既有技能的腳本）、確認（停下來讓使用者確認）、檢查（看前面的輸出決定怎麼走：
+「輸出裡的字」→ 第 N 步）、告知（要回報什麼）。新的腳本仍由使用者另外寫好，再產生對應的規格。程式負責：挑範圍、驗證（引用的
+技能與腳本要真的存在；排好的文件交給工作流的解析與驗證——分支只能往後、腳本存在、changes_state 跟步驟一致）、用範本排版、
+寫入 SKILLS.md〈工作流〉；使用者在預覽後核准。之後由 workflow_run 照步驟執行（agent_core/workflow.py）。
 """
 import json
 import os
@@ -19,17 +20,14 @@ from .config import (
     MAKE_SKILL_TRANSCRIPT_TOKENS,
     NON_READONLY_SKILLS,
     NUM_CTX,
-    PROCEDURE_DOC_TYPE,
     SKILL_NAME_RE,
 )
 from .schemas import MAKE_SKILL_SCHEMA
+from . import workflow_spec as ws
 
 _PLACEHOLDER_RE = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
 _SCRIPT_RE = re.compile(r"^(?:scripts/)?([A-Za-z0-9_]+\.py)$")
 PSEUDO_SCRIPTS = {"result_recall_cmd.py": "result_recall"}   # run_tool 攔截的偽技能：沒有實體檔案，但可以寫進步驟
-KIND_HINTS = {"確認": "在 reply 問使用者、action 填 null，等使用者回答再做下一步",
-              "檢查": "依前面步驟的回傳判斷，不用執行新的腳本",
-              "告知": "在 reply 整理給使用者"}
 
 
 class MakeSkillMixin:
@@ -51,8 +49,9 @@ class MakeSkillMixin:
         if not SKILL_NAME_RE.match(name or ""):
             return "技能名稱只能用英文字母、數字與底線，須以字母開頭、2～41 字（例如 check_lidar_scan）。"
         if os.path.exists(os.path.join(self.tools_dir, f"{name}.md")) or \
-                os.path.exists(os.path.join(self.base_path, "scripts", f"{name}_cmd.py")):
-            return f"技能 {name} 已存在（tools/{name}.md 或 scripts/{name}_cmd.py），請換一個名稱。"
+                os.path.exists(os.path.join(self.base_path, "scripts", f"{name}_cmd.py")) or \
+                os.path.exists(os.path.join(self.base_path, "workflows", f"{name}.md")):
+            return f"技能或工作流 {name} 已存在（tools/、scripts/ 或 workflows/），請換一個名稱。"
         return None
 
     # ---------- 交給草擬 session 的材料 ----------
@@ -98,22 +97,21 @@ class MakeSkillMixin:
         return text, dropped
 
     def _make_skill_prompts(self, name, transcript_text, entries, steps, plans, previous=None, feedback=None):
-        categories = self._skill_categories() or [DEFAULT_SKILL_CATEGORY]
-        system_prompt = f"""你是機器人維運 Agent 框架的「技能規格撰寫者」。使用者剛剛在對話裡一步步引導 Agent 把一件事做對，現在要把這段過程整理成一個可以重複使用的「流程技能」（名稱：{name}）。之後在別的對話裡，負責決策的小模型會載入這份規格、照步驟一步一步做——它看不到這段對話，只看得到你寫的規格。
+        system_prompt = f"""你是機器人維運 Agent 框架的「工作流撰寫者」。使用者剛剛在對話裡一步步引導 Agent 把一件事做對，現在要把這段過程整理成一個可以重複使用的「工作流」（名稱：{name}）。之後由程式照你寫的步驟一步一步執行：【執行】的命令程式直接跑；只有命令裡要依前面結果決定的值、以及要判斷怎麼走的【檢查】，才交給一個小模型——它看不到這段對話，只看得到你寫的規格與前面步驟的輸出。
 
-你會拿到：可用的技能清單、這段對話用到的技能的語法、實際執行過的腳本（操作軌跡）、使用者在這段對話說的話、整段對話紀錄（使用者的話、AI 的想法與回覆、當時進上下文的工具回傳）。請從對話推論「下次要做同一件事該怎麼做」，不只是列出用過哪些技能：
-0. requirements 先寫：使用者在對話裡提出的每一個要求、條件、偏好與糾正都列一項——said 照抄使用者的原話，rule 寫成這個技能要怎麼遵守，step 填之後在 steps 裡落實它的步驟編號（從 1 起算；只能寫成注意事項的填 0）。只列使用者自己說的，不要把 AI 的做法當成使用者的要求；AI 當時沒做到的要求更要列出來，下次要做對。
+你會拿到：可用的技能清單、這段對話用到的技能的語法、實際執行過的腳本（操作軌跡，含輸出的開頭）、使用者在這段對話說的話、整段對話紀錄（使用者的話、AI 的想法與回覆、當時進上下文的工具回傳）。請從對話推論「下次要做同一件事該怎麼做」，不只是列出用過哪些技能：
+0. requirements 先寫：使用者在對話裡提出的每一個要求、條件、偏好與糾正都列一項——said 照抄使用者的原話，rule 寫成這個工作流要怎麼遵守，step 填之後在 steps 裡落實它的步驟編號（從 1 起算；只能寫成注意事項的填 0）。只列使用者自己說的，不要把 AI 的做法當成使用者的要求；AI 當時沒做到的要求更要列出來，下次要做對。
 1. steps 依序寫，每一步選一種 kind：
-   - 執行：呼叫既有技能的腳本。command 寫腳本路徑與參數（例如 scripts/ROS2_topic_echo_cmd.py {{container}} {{topic}} 5），只能用操作軌跡或語法裡出現過的腳本；skill 填它所屬的技能名稱；on_failure 寫這一步失敗時怎麼辦（對話裡遇過的錯誤與修正優先）。
-   - 確認：要先問使用者、取得資訊或得到同意才能繼續的地方（對話裡使用者補充過的資訊、做會改變狀態的動作之前、使用者說過「要先問我」的地方）。instruction 寫要問什麼。
-   - 檢查：看前面步驟的回傳裡的某個資訊，依條件決定下一步（例如「第 2 步的回傳裡 /scan 沒有資料 → 做第 4 步；有資料 → 跳到第 6 步」）。instruction 寫看哪個資訊、判斷條件、接下來怎麼走。
-   - 告知：把結果整理給使用者，instruction 寫要告訴使用者哪些具體資訊。
+   - 執行：command 寫腳本路徑與參數（例如 scripts/ROS2_topic_echo_cmd.py {{topic}} --duration 5），只能用操作軌跡或語法裡出現過的腳本；skill 填它所屬的技能名稱；on_failure 寫這一步失敗時怎麼辦（對話裡遇過的錯誤與修正優先）。命令裡的值：使用者每次會給的（容器、機器人、站點、路徑）寫成 {{名稱}} 並在 inputs 宣告；要從前面步驟的輸出取得的（例如第 2 步查到的機器人、要寫進紀錄的內容）也寫成 {{名稱}}，但不要放進 inputs，instruction 寫明照第幾步的輸出。
+   - 確認：做會改變狀態、而且要看前面的結果才決定的動作之前，停下來讓使用者確認（instruction 寫要確認什麼）。開始執行時系統已經會請使用者確認一次，不需要每個動作都加確認。
+   - 檢查：依前面某一步的輸出決定接下來怎麼走。instruction 照這個寫法：看第 N 步：「輸出裡會出現的字」→ 第 M 步；「另一種字」→ 結束；其他 → 第 K 步（引號裡是工具輸出裡真的會出現的字，照操作軌跡的輸出抄；只能往後跳，不能往回）。寫不出具體的字時，instruction 寫要判斷的事（執行時由小模型判斷要不要繼續）。
+   - 告知：instruction 寫要告訴使用者哪些具體資訊。
    instruction 都要寫成具體的做法；確認、檢查、告知步驟的 command、skill、on_failure 給空字串。
-2. 只保留完成這件事需要的步驟；走錯又修正的過程寫進 on_failure 或 pitfalls，不要照抄成步驟。requirements 裡的每一項都要落實：要先問使用者的地方要有確認步驟，有條件的地方要有檢查步驟（例如「電量低於 20% 的車不要派任務」→ 派任務之前檢查電量，低於門檻就不派、告知使用者）。
-3. 下次會變的值（容器、機器人、站點、topic、路徑、關鍵字）在 command 與 instruction 裡寫成 {{名稱}} 佔位符，並在 inputs 宣告：name（英文 snake_case）、description、source（從哪裡取得，例如「使用者提供」「第 1 步的回傳」）、example（對話裡實際出現的值，照抄）。固定不變的值直接寫。
+2. 只保留完成這件事需要的步驟；走錯又修正的過程寫進 on_failure 或 pitfalls，不要照抄成步驟。requirements 裡的每一項都要落實：要先問使用者的地方要有確認步驟，有條件的地方要有檢查步驟（例如「電量低於 20% 的車不要派任務」→ 派任務之前檢查電量，低於門檻就結束、告知使用者）。
+3. inputs 只宣告使用者每次執行時要給的值：name（英文 snake_case）、description、source（填「使用者提供」）、example（對話裡實際出現的值，照抄）。固定不變的值直接寫在命令裡。
 4. 不可以發明不存在的技能或腳本；需要的功能沒有對應的腳本時，寫成確認或告知步驟（例如請使用者手動處理），並在 pitfalls 註明。
-5. purpose：這個技能做什麼、什麼情境用（兩三句）；success_criteria：怎樣算做完（一句）；pitfalls：注意事項（每則一句，沒有就給空陣列）。
-6. 最後寫 title（12 字內的中文短標題）、description（SKILLS.md 索引的一行：什麼情境該用這個技能，40 字內）、category（從現有分類選一個：{"、".join(categories)}；都不合適就填「{DEFAULT_SKILL_CATEGORY}」）。
+5. purpose：這個工作流做什麼、什麼情境用（兩三句）；success_criteria：怎樣算做完，盡量寫成程式檢查得了的一句：第 N 步的輸出有「…」（引號裡照輸出抄）；寫不出來就用一句話描述；pitfalls：注意事項（每則一句，沒有就給空陣列）。
+6. 最後寫 title（12 字內的中文短標題）、description（SKILLS.md〈工作流〉的一行：什麼情境該用它，60 字內）、category（填「工作流」）。
 全部使用繁體中文；名稱、路徑、參數照原文。只輸出 JSON。"""
 
         skills_index = ""
@@ -176,7 +174,7 @@ class MakeSkillMixin:
         clean = lambda v, n: " ".join(str(v or "").split())[:n]
         skill_map = self._script_skill_map()
 
-        inputs, seen = [], set()
+        inputs, seen, runtime = [], set(), []
         for p in (get("inputs") or []):
             if not isinstance(p, dict):
                 continue
@@ -186,6 +184,9 @@ class MakeSkillMixin:
             if not pname or pname in seen:
                 continue
             seen.add(pname)
+            if re.search(r"第\s*\d+\s*步", str(p.get("source") or "")):   # 從前面的輸出取得：執行時由判斷點決定，不是使用者要給的
+                runtime.append(pname)
+                continue
             inputs.append({"name": pname, "description": clean(p.get("description"), 120) or pname,
                            "source": clean(p.get("source"), 80), "example": clean(p.get("example"), 120)})
 
@@ -219,23 +220,22 @@ class MakeSkillMixin:
         elif not any(s["kind"] == "執行" for s in steps_out):
             warnings.append("沒有任何執行步驟：這份規格只有確認／檢查／告知，請確認這是想要的")
 
-        # 佔位符：指令與做法裡用到的 {名稱} 都要在 inputs 宣告；沒宣告的補上，宣告了沒用到的提醒
+        # 佔位符：命令裡沒有宣告成需要的資訊的 {名稱}，執行時由判斷點依前面的輸出決定（工作流的規則）——列出來給使用者確認
         declared = {p["name"] for p in inputs}
         used = set()
         for s in steps_out:
             used.update(_PLACEHOLDER_RE.findall(s["command"] + " " + s["instruction"]))
-        for pname in sorted(used - declared):
-            inputs.append({"name": pname, "description": pname, "source": "（草擬模型沒有說明）", "example": ""})
-            warnings.append(f"佔位符 {{{pname}}} 沒有在「需要的資訊」裡宣告，已補上（請補說明與範例）")
+        in_commands = set()
+        for s in steps_out:
+            in_commands.update(_PLACEHOLDER_RE.findall(s["command"]))
+        decided = sorted((in_commands - declared - set(ws.BUILTIN)) | (set(runtime) & in_commands))
+        if decided:
+            warnings.append(f"{'、'.join('{' + x + '}' for x in decided)} 不是使用者要給的：執行時由判斷點依前面步驟的輸出決定"
+                            f"（照 instruction 寫的第幾步；不對的話把它加進「需要的資訊」）")
         for pname in sorted(declared - used):
             warnings.append(f"「需要的資訊」裡的 {pname} 沒有被任何步驟用到")
 
-        categories = self._skill_categories()
-        category = clean(get("category"), 40)
-        if category not in categories:
-            if category and category != DEFAULT_SKILL_CATEGORY:
-                warnings.append(f"分類「{category}」不在 SKILLS.md 裡，改放「{DEFAULT_SKILL_CATEGORY}」")
-            category = DEFAULT_SKILL_CATEGORY
+        category = "工作流"                    # 工作流一律列在 SKILLS.md〈工作流〉
 
         skills_used = list(dict.fromkeys(s["skill"] for s in steps_out if s["kind"] == "執行" and s["skill"]))
         executed = {r["skill"] for r in steps if r.get("skill")}
@@ -252,8 +252,8 @@ class MakeSkillMixin:
                 step_no = 0
             requirements.append({"said": clean(r.get("said"), 150), "rule": clean(r.get("rule"), 150), "step": step_no})
         pitfalls = list(dict.fromkeys(t for t in (clean(x, 150) for x in (get("pitfalls") or [])) if t))[:8]
-        description = clean(get("description"), 100) or "由 make_skill 依對話整理的流程技能"
-        return {
+        description = clean(get("description"), 100) or "由 make_skill 依對話整理的工作流"
+        draft = {
             "name": name, "title": clean(get("title"), 30) or name, "description": description,
             "category": category, "purpose": clean(get("purpose"), 400) or description,
             "requirements": requirements, "inputs": inputs, "steps": steps_out,
@@ -263,6 +263,12 @@ class MakeSkillMixin:
             "created": time.strftime("%Y-%m-%d %H:%M"), "model": self.skill_model, "revision": 0,
             "source": {"session": self.session_id, "step_ids": [r["id"] for r in steps], "plans": plans, **scope},
         }
+        if not errors:   # 排好的文件交給工作流的解析與驗證（分支往後、腳本存在、changes_state 一致）：有問題就擋下註冊
+            wf = ws.parse(self.render_skill_doc(draft), name, "")
+            draft["changes_state"] = any(self._wf_step_changes(x) for x in wf["steps"])
+            wf["meta"]["changes_state"] = draft["changes_state"]
+            errors.extend(f"工作流的規格：{p}" for p in self.validate_workflow(wf))
+        return draft
 
     def draft_skill_from_conversation(self, name, entries, steps, plans, previous=None, feedback=None):
         """呼叫草擬模型（獨立一次性 session，不碰 self.messages）產生流程技能草稿 dict。失敗拋 ValueError。"""
@@ -290,12 +296,16 @@ class MakeSkillMixin:
 
     # ---------- 範本渲染：規格文件 / 索引行 / 預覽 ----------
     def render_skill_doc(self, draft):
-        """tools/<name>.md：frontmatter（type: Procedure）＋用途／需要的資訊／步驟／成功判準／異常與注意事項。"""
+        """workflows/<name>.md：frontmatter（type: Workflow）＋用途／使用者的要求／需要的資訊／步驟／成功判準／異常與注意事項
+        （步驟照工作流的寫法，程式解析得了；agent_core/workflow_spec.py）。"""
         d = draft
+        changes = d.get("changes_state")
+        if changes is None:
+            changes = bool(d.get("non_readonly"))
         lines = [
-            "---", f"type: {PROCEDURE_DOC_TYPE}", f"title: {d['title']}", f"description: {d['description']}",
-            "version: 0.1.0", f"dependencies: {json.dumps(d['skills_used'], ensure_ascii=False)}",
-            f"source: make_skill {d['created']}（依對話與工具回傳整理的流程技能；沒有自己的腳本，步驟呼叫既有技能；可直接編輯）",
+            "---", "type: Workflow", f"title: {d['title']}", f"description: {d['description']}",
+            "version: 0.1.0", f"dependencies: {json.dumps(d['skills_used'], ensure_ascii=False)}", f"changes_state: {'true' if changes else 'false'}",
+            f"source: make_skill {d['created']}（依對話與工具回傳整理；步驟呼叫既有技能，由 workflow_run 照步驟執行；可直接編輯）",
             "---", "", "# 用途", d["purpose"], "",
         ]
         if d.get("requirements"):
@@ -306,40 +316,37 @@ class MakeSkillMixin:
             lines.append("")
         lines.append("# 需要的資訊")
         for p in d["inputs"]:
-            extra = "；".join(x for x in (f"來源：{p['source']}" if p["source"] else "",
-                                          f"例：`{p['example']}`" if p["example"] else "") if x)
+            extra = f"例：`{p['example']}`" if p["example"] else ""
             lines.append(f"* `{{{p['name']}}}`：{p['description']}" + (f"（{extra}）" if extra else ""))
         if not d["inputs"]:
             lines.append("不需要額外的資訊。")
-        else:
-            lines.append("開始前先從使用者的話或前面的對話取得；拿不到的先問使用者，不要用猜的。")
-        lines += ["", "# 步驟", "這個技能沒有自己的腳本：從第 1 步開始照順序做，一輪只做一步。"]
+        lines += ["", "# 步驟"]
         for i, s in enumerate(d["steps"], 1):
             if s["kind"] == "執行":
-                lines.append(f"{i}. 【執行】{s['instruction']}".rstrip())
-                lines.append(f"   `EXECUTE: {s['command']}`" + (f"（技能 {s['skill']}）" if s["skill"] else ""))
-                if s["on_failure"]:
-                    lines.append(f"   失敗時：{s['on_failure']}")
+                lines.append(f"{i}. 【執行】{s['instruction'] or s['skill'] or '執行'}：`EXECUTE: {s['command']}`")
             else:
-                lines.append(f"{i}. 【{s['kind']}】{s['instruction']}（{KIND_HINTS[s['kind']]}）")
-        lines += ["", "# 成功判準", d["success_criteria"] or "所有步驟完成，並已把結果告知使用者。", "", "# 異常與注意事項"]
+                lines.append(f"{i}. 【{s['kind']}】{s['instruction']}")
+        lines += ["", "# 成功判準", f"* {d['success_criteria'] or '所有步驟完成，並已把結果告知使用者。'}", "", "# 異常與注意事項"]
+        lines += [f"* 第 {i} 步失敗時：{s['on_failure']}" for i, s in enumerate(d["steps"], 1) if s.get("on_failure")]
         lines += [f"* {p}" for p in d["pitfalls"]]
         if d["non_readonly"]:
-            lines.append(f"* 會改變系統狀態的步驟（{'、'.join(d['non_readonly'])}）執行前，系統照常會請使用者確認。")
+            lines.append(f"* 會改變系統狀態的步驟（{'、'.join(d['non_readonly'])}）：開始執行時系統會請使用者確認一次。")
         if d["skills_used"]:
             lines.append(f"* 各步驟的參數規則與其他異常見底層技能的規格：{'、'.join(d['skills_used'])}。")
         return "\n".join(lines) + "\n"
 
     def skill_index_line(self, draft):
-        return f"- [{draft['name']}](tools/{draft['name']}.md) — {draft['description']}"
+        """SKILLS.md〈工作流〉的一行（子項目：list_skills 不當成技能）：名稱、描述、呼叫語法。"""
+        args = " ".join(f"{p['name']}=<{p['description'][:12]}>" for p in draft["inputs"])
+        return f"  - `{draft['name']}` — {draft['description']}｜`workflow_run {draft['name']} {args}`".rstrip("`").rstrip() + "`"
 
     def skill_draft_preview(self, draft):
         """給使用者看的預覽：讀了多少對話、需要修正的問題、提醒，最後附完整規格文件。"""
         d, src = draft, draft["source"]
         steps = f"操作軌跡 {len(src['step_ids'])} 步" + (f"（#{src['step_ids'][0]}～#{src['step_ids'][-1]}）" if src["step_ids"] else "")
-        lines = [f"🧩 技能草稿 {d['name']}：{d['title']}（流程技能，沒有自己的腳本）"
+        lines = [f"🧩 工作流草稿 {d['name']}：{d['title']}（程式照步驟執行；步驟呼叫既有技能）"
                  + (f"（第 {d['revision']} 次重擬）" if d.get("revision") else ""),
-                 f"分類：{d['category']}｜索引描述：{d['description']}",
+                 f"SKILLS.md〈工作流〉：{d['description']}",
                  f"讀了：對話 {src['messages']} 則（使用者說了 {src['user_turns']} 句）、{steps}"
                  + (f"；對話太長，最早的 {src['dropped']} 則沒有交給草擬模型" if src.get("dropped") else "")]
         if d["errors"]:
@@ -347,14 +354,14 @@ class MakeSkillMixin:
             lines += [f"  - {e}" for e in d["errors"]]
         notes = list(d["warnings"])
         if d["non_readonly"]:
-            notes.append(f"含會改變狀態的步驟（{'、'.join(d['non_readonly'])}）：之後執行時照常會請使用者確認。")
+            notes.append(f"含會改變狀態的步驟（{'、'.join(d['non_readonly'])}）：之後執行時，開始前系統會請使用者確認一次。")
         if notes:
             lines.append("⚠️ 提醒：")
             lines += [f"  - {n}" for n in notes]
         paths = d.get("paths") or {}
         if paths:
             lines.append(f"草稿檔案：{os.path.relpath(os.path.dirname(paths['doc']), self.script_dir)}/（{d['name']}.md、draft.json）")
-        lines.append("── 規格文件預覽（tools/%s.md）──" % d["name"])
+        lines.append("── 工作流預覽（workflows/%s.md）──" % d["name"])
         lines.append(self.render_skill_doc(d).rstrip())
         return "\n".join(lines)
 
@@ -370,6 +377,24 @@ class MakeSkillMixin:
         with open(paths["json"], "w", encoding="utf-8") as f:
             json.dump({k: v for k, v in draft.items() if k != "_scope"}, f, ensure_ascii=False, indent=2)
         return paths
+
+    def _insert_workflow_index_line(self, line):
+        """SKILLS.md〈工作流〉一節的最後一個子項目後面插入；沒有這一節就建一節。"""
+        with open(self.index_file, "r", encoding="utf-8") as f:
+            lines = f.read().splitlines()
+        start = next((i for i, ln in enumerate(lines) if ln.startswith("## 工作流")), None)
+        if start is None:
+            if lines and lines[-1].strip():
+                lines.append("")
+            lines += ["## 工作流（多步驟，程式照步驟做）", "- [workflow_run](tools/workflow_run.md) — 執行下面列的工作流", line]
+        else:
+            end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith("## ")), len(lines))
+            insert_at = end
+            while insert_at > start + 1 and not lines[insert_at - 1].strip():
+                insert_at -= 1
+            lines.insert(insert_at, line)
+        with open(self.index_file, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines).rstrip("\n") + "\n")
 
     def _insert_skill_index_line(self, category, line):
         with open(self.index_file, "r", encoding="utf-8") as f:
@@ -390,16 +415,17 @@ class MakeSkillMixin:
             f.write("\n".join(lines).rstrip("\n") + "\n")
 
     def register_skill_draft(self, draft):
-        """核准：寫進 tools/、寫入 SKILLS.md、刪除草稿目錄、軌跡與對話紀錄記起點。不產生腳本。回傳給使用者的訊息。"""
+        """核准：寫進 workflows/、寫入 SKILLS.md〈工作流〉、刪除草稿目錄、軌跡與對話紀錄記起點。不產生腳本。回傳給使用者的訊息。"""
         if draft["errors"]:
             raise ValueError("草稿還有需要修正的問題：" + "；".join(draft["errors"]))
         err = self.validate_new_skill_name(draft["name"])
         if err:
             raise ValueError(err)
-        doc_path = os.path.join(self.tools_dir, f"{draft['name']}.md")
+        os.makedirs(os.path.join(self.base_path, "workflows"), exist_ok=True)
+        doc_path = os.path.join(self.base_path, "workflows", f"{draft['name']}.md")
         with open(doc_path, "w", encoding="utf-8") as f:
             f.write(self.render_skill_doc(draft))
-        self._insert_skill_index_line(draft["category"], self.skill_index_line(draft))
+        self._insert_workflow_index_line(self.skill_index_line(draft))
         # 稽核：草稿 JSON 搬到 logs/，草稿目錄刪除
         try:
             log_dir = os.path.join(self.script_dir, "logs")
@@ -412,12 +438,12 @@ class MakeSkillMixin:
         self.discard_skill_draft(draft)
         self.add_trajectory_boundary("make_skill", name=draft["name"])
         return (
-            f"✅ 已註冊流程技能 {draft['name']}（{draft['title']}）：\n"
-            f"- 規格：{os.path.relpath(doc_path, self.script_dir)}（{len(draft['steps'])} 步；沒有自己的腳本，"
-            f"步驟呼叫 {'、'.join(draft['skills_used']) or '（無）'}）\n"
-            f"- 索引：SKILLS.md「{draft['category']}」新增一行\n"
-            f"之後 action.command 填 `{draft['name']}` 載入規格，系統會提醒模型照步驟一步一步做；"
-            f"下一次呼叫 AI 時 system prompt 的技能索引就會包含它。規格可以直接手動修改。"
+            f"✅ 已註冊工作流 {draft['name']}（{draft['title']}）：\n"
+            f"- 規格：{os.path.relpath(doc_path, self.script_dir)}（{len(draft['steps'])} 步；步驟呼叫 "
+            f"{'、'.join(draft['skills_used']) or '（無）'}，由程式照步驟執行）\n"
+            f"- 索引：SKILLS.md〈工作流〉新增一行（含呼叫語法）\n"
+            f"之後主對話用 `workflow_run {draft['name']} …` 執行；下一次呼叫 AI 時 system prompt 的技能索引就會包含它。"
+            f"規格可以直接手動修改（改完可用 workflow_run --list 確認、evals/workflow/selftest.py 驗證）。"
         )
 
     def discard_skill_draft(self, draft):

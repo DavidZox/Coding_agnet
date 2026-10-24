@@ -1,0 +1,57 @@
+{
+ "analysis_selftest": {
+  "label": "第 3 階段（commit 前的完整驗證）（2026-10-23）",
+  "passed": 10,
+  "total": 10
+ },
+ "chat_selftest": {
+  "label": "第 3 階段（commit 前的完整驗證）（2026-10-23）",
+  "passed": 15,
+  "total": 15
+ },
+ "containers_sandbox": {
+  "label": "第 3 階段（commit 前的完整驗證）（2026-10-23）",
+  "passed": 28,
+  "total": 28
+ },
+ "data_live": {
+  "label": "第 3 階段（commit 前的完整驗證）（2026-10-23）",
+  "passed": 8,
+  "total": 8
+ },
+ "extract_selftest": {
+  "label": "第 3 階段（commit 前的完整驗證）（2026-10-23）",
+  "passed": 12,
+  "total": 12
+ },
+ "ops_selftest": {
+  "label": "第 3 階段（commit 前的完整驗證）（2026-10-23）",
+  "passed": 8,
+  "total": 8
+ },
+ "skills": {
+  "label": "第 3 階段（commit 前的完整驗證）（2026-10-23）",
+  "passed": 96,
+  "total": 96
+ },
+ "skills_sandbox": {
+  "label": "第 3 階段（commit 前的完整驗證）（2026-10-23）",
+  "passed": 24,
+  "total": 24
+ },
+ "tools_live:exp_5090_overheat": {
+  "label": "第 3 階段（commit 前的完整驗證）（2026-10-23）",
+  "passed": 21,
+  "total": 21
+ },
+ "tools_live:gen_s1_005": {
+  "label": "第 3 階段（commit 前的完整驗證）（2026-10-23）",
+  "passed": 24,
+  "total": 24
+ },
+ "workflow_selftest": {
+  "label": "第 3 階段（commit 前的完整驗證）（2026-10-23）",
+  "passed": 13,
+  "total": 13
+ }
+}

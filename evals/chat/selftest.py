@@ -10,6 +10,7 @@
 - 兩階段揭露照舊：技能名稱回規格文件、腳本路徑才執行；
 - 🧠 模型設定：主對話換模型、thinking 開關只對支援的模型送出、設定存檔與載入、/model 與 /think；
 - prompts/ 裡給模型的文字都讀得到（讀不到時程式不會報錯，只會默默變成空的）。
+- 🧩 /workflow（Web）：列出、看步驟；直接執行的工作流照常經過確認卡片，核准才執行、拒絕不執行；報告完整進主對話，AI 依報告回答。
 每一個情境都在臨時目錄複製一份專案，不碰正式的 logs/。"""
 import json
 import os
@@ -254,6 +255,42 @@ def main():
             assert agent.model == "gemma4:26b", agent.model
             agent.set_main_model(old)
 
+        def t_workflow_web():
+            # 🧩 /workflow：使用者直接指定工作流（不經過模型選擇）；會改變狀態的照常推確認卡片，核准才執行；報告直接進主對話、AI 依報告回答
+            from web_app.commands import handle_slash_command
+            from web_app.state import pending
+            ev = []
+            assert handle_slash_command("/workflow", ev) and "/workflow config_edit file=<…>" in ev[-1]["text"], ev[-1]
+            assert handle_slash_command("/workflow show config_edit", ev) and "步驟：" in ev[-1]["text"], ev[-1]
+            assert handle_slash_command("/workflow show", ev) and "用法" in ev[-1]["text"], ev[-1]
+            assert not handle_slash_command("/workflow config_edit file=a.yaml", ev), "執行要跑一個回合：交給 server._handle_send"
+            os.makedirs(os.path.join(tmp, "configs"), exist_ok=True)
+            path = os.path.join(tmp, "configs", "robots.yaml")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("robots:\n  - id: tb1\n    max_speed: 0.5\n  - id: tb2\n    max_speed: 0.5\n")
+            read = lambda: open(path, encoding="utf-8").read()   # noqa: E731
+            fake = FakeMain([say("改好了：tb1 的 max_speed 從 0.5 改成 0.9，tb2 沒有動。")])
+            ollama.chat = fake
+            n0, ev = len(agent.messages), []
+            assert flows.run_workflow_turn("config_edit file=configs/robots.yaml robot=tb1 key=max_speed value=0.9", ev) is True
+            guard = [e for e in ev if e.get("channel") == "guard"]
+            assert pending["mode"] == "guard" and guard and "第 3 步" in guard[0]["text"], ev
+            assert "0.9" not in read() and fake.calls == 0, "確認之前什麼都沒做、也沒有問模型"
+            ev = []
+            assert flows.apply_decision("y", ev) == "continue" and flows.run_turn(ev) is False
+            assert "tb1\n    max_speed: 0.9" in read() and "tb2\n    max_speed: 0.5" in read(), read()
+            tool = [e for e in ev if e.get("channel") == "tool"]
+            assert tool and tool[0]["text"].startswith("[PASS] 工作流 config_edit（") and not tool[0]["oversized"], tool
+            new = agent.messages[n0:]
+            assert [m["role"] for m in new] == ["user", "assistant", "user", "assistant"], [m["role"] for m in new]
+            assert "/workflow 直接執行工作流" in new[0]["content"] and "workflow_run_cmd.py" in new[1]["content"], new[:2]
+            assert "[PASS] 工作流 config_edit（" in new[2]["content"] and "（摘要）" not in new[2]["content"], "報告完整進主對話、不再提煉"
+            assert fake.calls == 1 and "改好了" in new[3]["content"], "AI 只在報告之後回答一次"
+            ev = []
+            assert flows.run_workflow_turn("config_edit file=configs/robots.yaml robot=tb1 key=max_speed value=1.2", ev) is True
+            assert flows.apply_decision("n", ev) == "stop" and "1.2" not in read() and pending["mode"] is None
+            assert "使用者沒有同意執行 workflow_run" in agent.messages[-1]["content"], agent.messages[-1]["content"][:200]
+
         for name, fn in [("卡住偵測：同樣的動作第二次附提醒、第三次加強提醒、第四次停下這一回合（v4.1）", t_stuck),
                          ("卡住偵測：同一個錯誤不管中間做了什麼，第二次提醒、第四次算卡住", t_same_error_not_consecutive),
                          ("卡住偵測：評測對照組的舊規則（AGENT_TURN_GUARD_RULE=v4，第三次就停）", t_v4_rule),
@@ -267,7 +304,8 @@ def main():
                          ("兩階段揭露照舊：技能名稱回規格、腳本路徑才執行", t_two_stage_disclosure),
                          ("prompts/ 裡的文字都讀得到：AGENT.md、上下文模式的規則、長期記憶、數據解析與維運各角色", t_prompts_loaded),
                          ("🧠 主對話 thinking：支援的模型才送 think=True，思考內容推到右欄、不進對話", t_think_main),
-                         ("🧠 模型設定：換主模型（摘要跟著換）、存檔與載入、數據分析各角色的模型與 thinking、/model 與 /think", t_model_settings)]:
+                         ("🧠 模型設定：換主模型（摘要跟著換）、存檔與載入、數據分析各角色的模型與 thinking、/model 與 /think", t_model_settings),
+                         ("🧩 /workflow：列出、看步驟；直接執行要先過確認卡片，核准才改、拒絕不改；報告完整進主對話、AI 依報告回答", t_workflow_web)]:
             check(name, fn)
     finally:
         os.chdir(cwd)

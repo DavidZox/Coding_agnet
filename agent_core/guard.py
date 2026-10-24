@@ -244,6 +244,12 @@ class GuardMixin:
             reason = self.ops_guard_reason(remainder)
             if reason is None:
                 return None
+        elif skill == "workflow_run":
+            # 開始：列出到第一個【確認】之前會改變狀態的步驟（核准＝那幾步都核准了）；--continue：那個【確認】的內容＋接下來的步驟；
+            # 只查詢的工作流、取消、列出、參數錯（交給 workflow_run 回錯誤）不用確認
+            reason = self.workflow_guard_reason(remainder)
+            if reason is None:
+                return None
         else:
             reason = _GUARD_REASONS.get(skill, "這個技能會改變系統狀態")
             if skill in ("docker_runcmd", "docker_ctl"):   # 實際會操作的容器（省略名稱、部分名稱時使用者看得到是哪一個）
@@ -256,7 +262,7 @@ class GuardMixin:
     @staticmethod
     def guard_prompt_text(info):
         """給使用者看的確認說明（CLI 印出、Web 顯示在確認列上方）。"""
-        if "\n" in info["reason"]:   # ops_run：說明是整份計畫
+        if "\n" in info["reason"]:   # ops_run／workflow_run：說明是整份計畫或工作流
             return f"🛡️ AI 要執行會改變系統狀態的動作，需要你確認：\n- 技能：{info['skill']}\n{info['reason']}"
         return (f"🛡️ AI 要執行會改變系統狀態的動作，需要你確認：\n"
                 f"- 技能：{info['skill']}（{info['reason']}）\n"

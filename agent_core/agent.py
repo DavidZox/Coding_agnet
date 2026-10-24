@@ -34,11 +34,12 @@ from .tool_summary import ToolSummaryMixin
 from .tool_use_index import ToolUseIndexMixin
 from .trajectory import TrajectoryMixin
 from .turn_guard import TurnGuardMixin
+from .workflow import WorkflowMixin
 
 
 class SkillAgent(ConversationMixin, PromptMixin, DispatchMixin, GuardMixin, ContextModeMixin, PlanMixin,
                  ToolSummaryMixin, ToolUseIndexMixin, ArchiveMixin, TrajectoryMixin, CompressionMixin,
-                 MakeSkillMixin, PerfMixin, TurnGuardMixin, OpsMixin, AnalysisMixin):
+                 MakeSkillMixin, PerfMixin, TurnGuardMixin, OpsMixin, AnalysisMixin, WorkflowMixin):
     def __init__(self, model="gemma4:e4b", max_history=None, summary_model=None):
         # max_history：訊息「則數」滑動視窗，預設停用（None）。上下文大小統一以 token 門檻
         # （TOKEN_THRESHOLD）觸發壓縮歸檔；這個參數只保留作為極端情境的保險絲，需要時再開。

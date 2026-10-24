@@ -28,16 +28,18 @@ USAGE = ("用法: scripts/file_ops_cmd.py <動作> …\n"
          "  move <來源> <目的>                   移動或改名（目的是既有目錄時放進去；目的已存在不覆蓋）\n"
          "  write <檔案> --text \"內容\"           建立或覆寫文字檔（\\n 換行、\\t tab、\\\" 引號、\\\\ 反斜線）\n"
          "  append <檔案> --text \"內容\"          在文字檔最後加上內容\n"
-         "  replace <檔案> --old \"原文\" --new \"新的內容\"   取代檔案裡的一段文字（原文要剛好出現一次）")
+         "  replace <檔案> --old \"原文\" --new \"新的內容\"   取代檔案裡的一段文字（原文要剛好出現一次）\n"
+         "  set <檔案> <設定名稱> <新的值> [--after \"那一段開頭的字\"]   改設定檔（YAML 的「名稱: 值」）裡一個設定的值，只改那一行、\n"
+         "                                       縮排與註解保留；給 --after 時只在含這幾個字的那一行開始的那一段裡找（例如 --after \"id: tb4\"）")
 _FORBIDDEN_PREFIXES = ("/etc", "/usr", "/bin", "/sbin", "/lib", "/lib64", "/boot", "/dev", "/proc", "/sys", "/var/lib", "/opt/ros")
-_ACTIONS = ("mkdir", "copy", "move", "write", "append", "replace")
-_OPTIONS = ("--text", "--old", "--new")
+_ACTIONS = ("mkdir", "copy", "move", "write", "append", "replace", "set")
+_OPTIONS = ("--text", "--old", "--new", "--after")
 _IGNORED_FLAGS = {"mkdir": {"-p", "--parents"}, "copy": {"-r", "-R", "-a", "--recursive"}, "move": set(), "write": set(),
-                  "append": set(), "replace": set()}
+                  "append": set(), "replace": set(), "set": set()}
 MAX_EDIT_BYTES = 20 * 1024 * 1024
-_OPT_RE = re.compile(r"(?:(?<=\s)|^)(--text|--old|--new)(?==|\s|$)")
-_AFTER_VALUE_RE = re.compile(r"^(\s*$|\s+(--text|--old|--new)(=|\s|$)|\s+[^\s\"']+(\s+[^\s\"']+)*\s*$"
-                             r"|\s+[^\s\"']+(\s+[^\s\"']+)*\s+(--text|--old|--new)(=|\s|$))")
+_OPT_RE = re.compile(r"(?:(?<=\s)|^)(--text|--old|--new|--after)(?==|\s|$)")
+_AFTER_VALUE_RE = re.compile(r"^(\s*$|\s+(--text|--old|--new|--after)(=|\s|$)|\s+[^\s\"']+(\s+[^\s\"']+)*\s*$"
+                             r"|\s+[^\s\"']+(\s+[^\s\"']+)*\s+(--text|--old|--new|--after)(=|\s|$))")
 _NUMBERED_RE = re.compile(r"^\s*\d+→")
 
 
@@ -243,7 +245,7 @@ def main(argv):
         extra = "；file_ops 不提供刪除，要刪檔請使用者自己決定" if got in ("delete", "rm", "remove", "del") else ""
         return f"[ERROR] 第一個參數要是動作（{'／'.join(_ACTIONS)}），收到「{got}」{extra}。\n{USAGE}"
     action = positional[0]
-    allowed = {"write": {"--text"}, "append": {"--text"}, "replace": {"--old", "--new"}}.get(action, set())
+    allowed = {"write": {"--text"}, "append": {"--text"}, "replace": {"--old", "--new"}, "set": {"--after"}}.get(action, set())
     stray = [o for o in opts if o not in allowed]
     if stray:
         return f"[ERROR] {action} 不用 {'、'.join(stray)}。下一步：照下面的用法改。\n{USAGE}"
@@ -252,6 +254,8 @@ def main(argv):
             return _mkdir(positional)
         if action in ("copy", "move"):
             return _copy_move(action, positional)
+        if action == "set":
+            return _set(positional, opts)
         return _edit(action, positional, opts)
     except PermissionError as e:
         return _perm_error(e, {"mkdir": "建立目錄", "copy": "複製", "move": "移動"}.get(action, "寫入檔案"))
@@ -377,6 +381,61 @@ def _edit(action, positional, opts):
     line = content[:content.index(old)].count("\n") + 1
     return f"[PASS] 已修改 {_rel(path)} 第 {line} 行附近：「{old.strip()[:80]}」→「{new.strip()[:80]}」；原本的檔案備份在 {bk}"
 
+def _indent(line):
+    return len(line) - len(line.lstrip(" "))
+
+
+def _set(positional, opts):
+    """set <檔案> <名稱> <值> [--after 錨點]：YAML 設定檔裡「名稱: 值」那一行換成新的值（縮排、清單的 -、行尾註解保留）。給 --after 時只在
+    第一個含錨點的行開始的那一段裡找（之後縮排比它深的行；碰到縮排一樣或更淺的就是下一段）——同樣的設定出現在好幾台時不會改到別台；
+    不給時名稱在檔案裡要剛好出現一次。找不到、出現好幾次都不改，回 [ERROR] 與下一步。"""
+    args = positional[1:]
+    if len(args) != 3:
+        return (f"[ERROR] set 需要三個參數：檔案、設定名稱、新的值（收到 {len(args)} 個：{'、'.join(args) or '沒有'}）。下一步：值有空白就用引號包住，"
+                f"例如 set configs/robots.yaml battery_low 18 --after \"id: tb4\"。\n{USAGE}")
+    path_arg, key, value = args
+    path, err = _resolve(path_arg)
+    if err:
+        return err
+    if not os.path.isfile(path):
+        return pc.not_found(path_arg, "file", "檔案")
+    content, err = _read_text(path, "修改")
+    if err:
+        return err
+    lines = content.split("\n")
+    start, end, anchor = 0, len(lines), opts.get("--after", "").strip()
+    where = "檔案"
+    if anchor:
+        idx = next((i for i, ln in enumerate(lines) if anchor in ln), None)
+        if idx is None:
+            last = anchor.split()[-1]
+            near = [f"{i + 1}: {ln.strip()}" for i, ln in enumerate(lines) if last and last in ln][:5]
+            return (f"[ERROR] {_rel(path)} 裡沒有含「{anchor}」的行，沒有修改。下一步：用 view_file {_rel(path)} 看那一段開頭實際的寫法"
+                    + ("；相關的行：" + "；".join(near) if near else "") + "。")
+        ind = _indent(lines[idx])
+        end = next((j for j in range(idx + 1, len(lines)) if lines[j].strip() and _indent(lines[j]) <= ind), len(lines))
+        start, where = idx, f"「{anchor}」那一段（第 {idx + 1}～{end} 行）"
+    pat = re.compile(rf"^(?P<pre>\s*(?:-\s+)?){re.escape(key)}(?P<sep>\s*:\s*)(?P<val>.*?)(?P<post>\s+#.*)?(?P<cr>\r?)$")
+    hits = [i for i in range(start, end) if pat.match(lines[i])]
+    if not hits:
+        near = [f"{i + 1}: {lines[i].strip()}" for i in range(start, end) if key.split("_")[0] in lines[i]][:5]
+        return (f"[ERROR] {where}找不到「{key}: …」這一行，沒有修改。下一步：用 view_file {_rel(path)} 確認設定的名稱"
+                + ("；相關的行：" + "；".join(near) if near else "") + (f"；不在那一段的話換 --after" if anchor else "") + "。")
+    if len(hits) > 1:
+        shown = "、".join(str(i + 1) for i in hits[:20])
+        return (f"[ERROR] {where}有 {len(hits)} 行「{key}: …」（第 {shown} 行），沒有修改。下一步：加 --after \"<那一段開頭的字>\""
+                f"（例如那一台的 id 那一行）只在那一段裡找。")
+    i = hits[0]
+    m = pat.match(lines[i])
+    if m.group("val").strip() == value.strip():
+        return f"[PASS] 沒有修改 {_rel(path)}：第 {i + 1} 行已經是「{lines[i].strip()}」。"
+    old_line = lines[i]
+    lines[i] = f"{m.group('pre')}{key}{m.group('sep')}{value}{m.group('post') or ''}{m.group('cr')}"
+    bk = _backup(path)
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        f.write("\n".join(lines))
+    return (f"[PASS] 已修改 {_rel(path)} 第 {i + 1} 行" + (f"（在「{anchor}」那一段）" if anchor else "") + f"：「{old_line.strip()}」→「{lines[i].strip()}」"
+            f"；原本的檔案備份在 {bk}")
 
 if __name__ == "__main__":
     try:

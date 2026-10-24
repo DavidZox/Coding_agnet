@@ -4,8 +4,9 @@
 
 - **數據解析**（`analysis_run`）：把一段 ROS 2 錄製（.mcap 與 /rosout）整理成**事實報告**——量到什麼、什麼時候、Log 說了什麼。
   報告全部由程式產生（事實不會錯），AI 依報告回答、討論，要細看時自己用數據技能；只要有 .mcap 就能用；不判斷原因（原因要對照源碼另外分析）。
-- **機器人維運**：檔案系統、Docker 容器、容器內的 ROS 2、fih_rmf_system 的調度系統；複雜的任務用 `ops_run` 先規劃、確認整份計畫，
-  再一步一步做。
+- **機器人維運**：檔案系統、Docker 容器、容器內的 ROS 2、fih_rmf_system 的調度系統；會重複做的流程寫成**工作流**（`workflow_run`：
+  程式照步驟做、模型只在判斷點出手、做完了沒由程式判斷，例如工作包卡住的處理、改設定、派工並確認跑完），其他複雜的任務用 `ops_run`
+  先規劃、確認整份計畫，再一步一步做。
 - **視覺**：Web 附圖（框選螢幕或上傳）、`image_inspect` 技能、獨立的框選小工具。
 
 核心想法是**模型不寫程式、只挑技能**：可用的能力是一份技能索引，加上按需載入的規格與既有腳本；會改變實體狀態的動作（派工單、
@@ -21,6 +22,7 @@
 ```bash
 python3 web_console.py      # Web：http://127.0.0.1:8765（只綁本機）
 python3 Agent_Runner.py     # CLI
+python3 Agent_Runner.py --workflow <名稱> 名稱=值 … [--yes]   # 不用互動執行一次工作流（排程、之後的心跳用；結束碼見架構說明 14.1）
 python3 -m vision.sniper    # 獨立的「截圖 → 框選 → 視覺推論」小工具：http://127.0.0.1:8766
 ```
 
@@ -33,9 +35,10 @@ Web 左欄是對話，右欄是系統與工具回傳（另一個分頁是「📊
 | `/auto on`、`/hybrid on` | 工具結果自動加入、連續執行到做完（Web 最多 25 輪）／每次問要不要加入 |
 | `/plan on` | 下一個任務先由 AI 列步驟草稿，核准（y）後才執行；`/plan add`、`/plan edit N`… 直接改草稿 |
 | `/analyze [問題]`、`/analysis_help` | 數據分析（見下面）／數據分析的全部指令 |
+| `/workflow`、`/workflow show <名稱>`、`/workflow <名稱> 名稱=值 …` | 列出工作流／看步驟／直接執行（不經過 AI 選擇；會改變狀態的步驟照常請你確認，報告進對話、AI 依報告回答）；停在【確認】時 `/workflow --continue`／`--cancel` |
 | `/context_mode harness`、`/context_mode claude_code` | 切換上下文模式（見〈[架構說明 1.1](doc/架構說明.md#11-兩種上下文模式context_mode-harnessclaude_code)〉） |
 | `/guard on`、`/guard off` | 執行前確認的開關（預設開；關閉只限這次執行） |
-| `/skill <名稱>`、`/skills`、`/make_skill <名稱>` | 手動載入某技能的規格／列出所有技能／把做對的對話整理成流程技能 |
+| `/skill <名稱>`、`/skills`、`/make_skill <名稱>` | 手動載入某技能的規格／列出所有技能／把做對的對話整理成工作流 |
 | `/compress`、`/clear`、`/menu` | 手動壓縮上下文／清空對話／列出全部指令 |
 
 常用的環境變數：`WEB_CONSOLE_MODEL`（Web 的主模型，預設 `gemma4:e4b`；在 🧠 設定過之後以畫面上的為準）、`AGENT_NUM_CTX`（context
@@ -107,6 +110,7 @@ Topic 頻率中途改變不會列成事件。完整的在〈設計筆記〉第 6
 | 容器 | `docker_containers`、`docker_images`、`docker_est`、`docker_open`、`docker_runcmd`、`docker_ctl`、`ROS2_workspace_env` |
 | ROS 2（容器內） | `ROS2_domain_id`、`ROS2_topic_list`、`ROS2_topic_echo`、`ROS2_node_list`、`ROS2_node_info`、`ROS2_param`、`ROS2_topic_pub` |
 | 調度系統 | `workpackage_send`、`workpackage_status`、`workpackage_cancel`、`overpending_cancel`、`semantic_map`、`rmf_handshake` |
+| 工作流（`skills_system/workflows/`） | `workflow_run`：`stuck_package_fix`、`config_edit`、`dispatch_and_confirm`、`container_restart_verify`、`reassign_package` |
 | 多步驟維運任務 | `ops_run`（規劃 → 確認整份計畫 → 每一步派 worker、程式檢查） |
 | 多模態 | `stt_engine`、`image_inspect` |
 | 工具結果存檔 | `result_recall`、`result_grep`、`result_view`、`result_list` |
@@ -122,6 +126,9 @@ Topic 頻率中途改變不會列成事件。完整的在〈設計筆記〉第 6
 | 主對話 | `evals/chat/selftest.py` | `evals/chat/run.py`（兩種上下文模式 × 情境） |
 | 數據解析 | `evals/analysis/selftest.py`、`evals/datagen/check_facts.py` | `evals/analysis/regression.py`（這台的實錄與隨機情境產生器 `evals/datagen/` 的錄製）、`evals/analysis/tools_live.py` |
 | 多步驟維運 | `evals/ops/selftest.py` | `evals/ops/run.py`（Docker-in-Docker 沙盒裡真的執行） |
+| 工作流 | `evals/workflow/selftest.py` | `evals/workflow/sandbox.py`（沙盒裡直接執行工作流） |
+| 提煉 | `evals/chat/extract_selftest.py` | `evals/extract/run.py`（已知答案的長輸出） |
+| 每個階段結束 | `evals/phase_check.py`（離線） | `evals/phase_check.py --live --model`（跟 `evals/baselines/` 逐項比） |
 
 怎麼跑、情境清單、怎麼讀報表見〈[評測](evals/README.md)〉。
 
@@ -150,6 +157,7 @@ Coding_agnet/            （資料夾名稱沿用）
 
 - 〈[架構說明](doc/架構說明.md)〉：每個模組負責什麼、一回合怎麼跑、狀態存在哪裡、要改某件事該看哪裡；數據解析在 §13
 - 〈[設計筆記與已知限制](doc/設計筆記與已知限制.md)〉：各機制的理由與實測數據、完整技能清單、已知限制、未來方向
+- 〈[技能撰寫規範](doc/技能撰寫規範.md)〉、〈[工作流撰寫規範](doc/工作流撰寫規範.md)〉：新增或修改技能腳本與工作流的規則與怎麼測
 - 〈[待辦清單](doc/待辦清單.md)〉：數據解析 agent 的下一步（都還沒開始）
 - 〈[長期願景](doc/長期願景.md)〉：AGV/AMR 車隊調度場景的構想、心跳機制與定時任務要注意的事
 - 〈[評測](evals/README.md)〉、〈[隨機情境的錄製產生器](evals/datagen/README.md)〉

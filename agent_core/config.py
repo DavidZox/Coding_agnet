@@ -142,7 +142,7 @@ SKILL_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{1,40}$")
 # 會改變狀態（建容器、送工單、寫記憶、切換目錄／容器）的技能：流程技能的步驟用到它們時，草稿預覽與規格會提醒（執行時照常確認）
 NON_READONLY_SKILLS = {"docker_est", "workpackage_send", "workpackage_cancel", "overpending_cancel", "modify_memory", "change_dir", "docker_open",
                        "docker_ctl", "file_ops", "ROS2_param", "ROS2_topic_pub", "rmf_handshake", "host_runcmd", "ops_run",
-                       "mcap_recorder", "mcap_slicer", "ROS2_domain_id", "ROS2_workspace_env"}
+                       "mcap_recorder", "mcap_slicer", "ROS2_domain_id", "ROS2_workspace_env", "workflow_run"}
 
 # 使用者角色但實為工具回傳的訊息前綴（見 _split_for_compression 的配對規則）
 TOOL_RESULT_PREFIXES = ("[tool result]",)
@@ -233,7 +233,8 @@ TOOL_CLEARED_TAG = "[tool result - 已清除]"       # 被清成佔位的舊回�
 # AGENT_GUARDED_SKILLS 可覆寫清單（逗號分隔，none＝全部不擋）；/guard off 只對目前 session 關閉。
 # =========================================================
 _GUARDED_DEFAULT = ("workpackage_send,workpackage_cancel,overpending_cancel,docker_est,docker_runcmd,"
-                    "host_runcmd,docker_ctl,file_ops,ROS2_param,ROS2_topic_pub,ROS2_domain_id,ROS2_workspace_env,rmf_handshake,ops_run")
+                    "host_runcmd,docker_ctl,file_ops,ROS2_param,ROS2_topic_pub,ROS2_domain_id,ROS2_workspace_env,rmf_handshake,ops_run,"
+                    "workflow_run")
 _guarded_env = os.environ.get("AGENT_GUARDED_SKILLS", _GUARDED_DEFAULT).strip()
 GUARDED_SKILLS = set() if _guarded_env.lower() in ("", "none", "off") else {s.strip() for s in _guarded_env.split(",") if s.strip()}
 GUARD_DEFAULT = os.environ.get("AGENT_GUARD", "1").strip().lower() not in ("0", "off", "false", "no")
@@ -270,6 +271,16 @@ TOOL_EXEC_TIMEOUT = 600
 MAIN_THINK_DEFAULT = os.environ.get("AGENT_MAIN_THINK", "").strip().lower() in ("1", "on", "true", "yes")
 THINK_EXTRA_PREDICT = 8192               # 開了 thinking 的呼叫若有 num_predict 上限，再加這麼多給思考（思考也算在 num_predict 裡）
 MODEL_SETTINGS_NAME = "model_settings.json"   # logs/ 下：Web Console 設定的主對話模型與 thinking 開關，重開也記得
+
+# 🧩 工作流（agent_core/workflow.py、workflow_spec.py；workflow_run 偽技能）：skills_system/workflows/<名稱>.md 的步驟由程式推進，
+# 模型只在判斷點（填這一步的值、選分支）出手；每一次的步驟、判斷點的模型呼叫存在 logs/workflow_jobs/<編號>/
+WORKFLOW_JOBS_DIRNAME = "workflow_jobs"
+WORKFLOW_JOBS_KEEP = int(os.environ.get("AGENT_WORKFLOW_JOBS_KEEP", "300"))
+WORKFLOW_CONTEXT_CHARS = int(os.environ.get("AGENT_WORKFLOW_CONTEXT_CHARS", "3000"))   # 判斷點看前面每一步的輸出最多幾字（完整的在存檔）
+WORKFLOWS_ENABLED = os.environ.get("AGENT_WORKFLOWS", "1").strip() != "0"   # 0：不列工作流、不接受 workflow_run（評測「沒有工作流」的對照）
+# workflow_run 的報告固定以這幾個開頭（agent_core/workflow.py 的報告、列表、取消都用它們）：跟 analysis_run 的事實報告一樣是程式整理好的，
+# 不再交給提煉 session（is_exempt_result），主對話直接收到完整的報告（2026-10-23 實測：一份 1000 字的報告被提煉了一次，多一次模型呼叫）
+WORKFLOW_REPORT_HEADS = ("[PASS] 工作流 ", "[PASS] ⏸️ 工作流 ", "[ERROR] 工作流 ")
 
 # 🧭 非編碼的多步驟任務（agent_core/ops_job.py）：ops_plan 規劃 → 使用者確認 → ops_run 每一步派一個乾淨的 worker
 OPS_MAX_ITEMS = 6                        # 計畫最多幾步（小模型規劃太多步時後面的步驟品質差，也難確認）

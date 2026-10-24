@@ -57,6 +57,11 @@ SLASH_COMMANDS = [
     {"cmd": "/analysis_mode on", "desc": "📊 分析模式：送出的問題直接交給數據分析", "group": "數據分析"},
     {"cmd": "/analysis_mode off", "desc": "關閉分析模式（訊息回到主對話）", "group": "數據分析"},
     {"cmd": "/analysis_help", "desc": "數據分析的全部指令說明", "group": "數據分析"},
+    {"cmd": "/workflow", "desc": "列出工作流（多步驟、程式照步驟做的維運流程）與呼叫語法", "group": "工作流"},
+    {"cmd": "/workflow show ", "desc": "看一個工作流的步驟與需要的資訊（後接名稱）", "group": "工作流", "args": True},
+    {"cmd": "/workflow ", "desc": "直接執行工作流、不經過 AI 選擇：/workflow <名稱> 名稱=值 …（會改變狀態的步驟照常請你確認，AI 依報告回答）", "group": "工作流", "args": True},
+    {"cmd": "/workflow --continue", "desc": "停在【確認】的工作流接著做", "group": "工作流"},
+    {"cmd": "/workflow --cancel", "desc": "停在【確認】的工作流不做了", "group": "工作流"},
     {"cmd": "/model", "desc": "查看主對話的模型與 thinking 開關", "group": "模型"},
     {"cmd": "/model ", "desc": "設定主對話的模型，例如 /model gemma4:26b", "group": "模型", "args": True},
     {"cmd": "/think ", "desc": "thinking 開關：/think main on|off（模型支援 thinking 才有作用）", "group": "模型", "args": True},
@@ -66,6 +71,8 @@ MENU_TEXT = """可用指令：
 /menu                  顯示本說明
 /analyze [問題]         數據分析：直接交給 analysis_run（Log 去重＋程式量全部 Topic 的事實＋程式寫重點 → 事實報告，AI 依報告回答）；
                         /analysis_help 看全部數據分析指令
+/workflow [名稱 名稱=值 …] 工作流：不接名稱＝列出全部；/workflow show <名稱> 看步驟；/workflow <名稱> 名稱=值 … 直接執行
+                        （不經過 AI 選擇，會改變狀態的步驟照常請你確認，報告進對話、AI 依報告回答）；--continue／--cancel
 /clear                  清空對話記憶，重新開始
 /model [模型]           查看主對話的模型與 thinking；給模型名稱＝換主對話的模型（也可以按標題列的 🧠）
 /think main on|off      thinking 開關（模型支援才有作用）
@@ -205,6 +212,15 @@ def handle_slash_command(message, events):
         return True
     from .analysis import handle_analysis_command   # /analysis 系列（/analyze 在 server._handle_send，要跑一個回合）
     if handle_analysis_command(text, events):
+        return True
+    if lower == "/workflow" or lower.startswith("/workflow "):
+        # 🧩 列出、看步驟（執行要跑一個回合，在 server._handle_send；跟 CLI 共用 agent_core/workflow_cmd.py）
+        from agent_core import workflow_cmd
+        kind, arg = workflow_cmd.parse(text[len("/workflow"):])
+        if kind == "run":
+            return False
+        events.append({"channel": "system", "text": workflow_cmd.list_text(agent) if kind == "list"
+                       else workflow_cmd.show_text(agent, arg) if kind == "show" else arg})
         return True
     if lower == "/model" or lower.startswith(("/model ", "/think")):
         return _handle_model_command(text, events)

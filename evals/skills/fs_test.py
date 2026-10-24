@@ -630,6 +630,27 @@ def t_fileops_replace_counts():
                  "行號", "下一步")
 
 
+def t_fileops_set():
+    """file_ops set：只改 --after 那一段的那一行（縮排、清單的 -、行尾註解保留，別台不動）；不給 --after 而出現好幾次、那一段找不到、
+    錨點不存在都不改並說下一步；已經是那個值就不改；對照表的寫法（tb4:）也認得"""
+    d = _tmp()
+    yaml_list = ("robots:\n  - id: tb4\n    model: deliveryBot\n    battery_low: 15  # 低電量\n"
+                 "  - id: tb5\n    model: deliveryBot\n    battery_low: 15\n")
+    _w(d, "robots.yaml", yaml_list)
+    out = run_raw("file_ops_cmd.py", 'set robots.yaml battery_low 18 --after "id: tb4"', d)
+    assert out.startswith("[PASS] 已修改 robots.yaml 第 4 行（在「id: tb4」那一段）：「battery_low: 15  # 低電量」→「battery_low: 18  # 低電量」"), out
+    assert _read(os.path.join(d, "robots.yaml")) == yaml_list.replace("battery_low: 15  #", "battery_low: 18  #"), "別台不動、縮排與註解保留"
+    assert "備份在" in out
+    assert run_raw("file_ops_cmd.py", 'set robots.yaml battery_low 18 --after "id: tb4"', d).startswith("[PASS] 沒有修改 robots.yaml：第 4 行已經是")
+    assert_error(run_raw("file_ops_cmd.py", "set robots.yaml model x", d), "有 2 行「model: …」", "--after")
+    assert_error(run_raw("file_ops_cmd.py", 'set robots.yaml battery 20 --after "id: tb5"', d), "那一段", "找不到「battery: …」", "battery_low")
+    assert_error(run_raw("file_ops_cmd.py", 'set robots.yaml battery_low 20 --after "id: tb9"', d), "沒有含「id: tb9」的行", "view_file")
+    assert_error(run_raw("file_ops_cmd.py", "set robots.yaml battery_low", d), "需要三個參數")
+    _w(d, "map.yaml", "tb4:\n  max_speed: 1.0\ntb5:\n  max_speed: 1.0\n")
+    out = run_raw("file_ops_cmd.py", 'set map.yaml max_speed 0.6 --after "tb5:"', d)
+    assert out.startswith("[PASS] 已修改 map.yaml 第 4 行") and _read(os.path.join(d, "map.yaml")) == "tb4:\n  max_speed: 1.0\ntb5:\n  max_speed: 0.6\n", out
+
+
 def t_fileops_errors():
     """file_ops：mkdir 在檔案上、非 UTF-8、二進位檔、路徑位置的不認識選項、系統目錄、刪除、缺內容都是 [ERROR] 加下一步"""
     d = _tmp()

@@ -1,0 +1,54 @@
+{
+ "date": "2026-10-23",
+ "dirs": [
+  "20261023_184134_p2_final",
+  "20261023_193240_p2_final4"
+ ],
+ "label": "第 2 階段（8210509）",
+ "per": {
+  "compare_two_archives": {
+   "passed": 6,
+   "runs": 6
+  },
+  "containers_basic": {
+   "passed": 6,
+   "runs": 6
+  },
+  "count_from_script": {
+   "passed": 6,
+   "runs": 6
+  },
+  "cross_session_recall": {
+   "passed": 6,
+   "runs": 6
+  },
+  "current_state_rerun": {
+   "passed": 6,
+   "runs": 6
+  },
+  "error_recovery": {
+   "passed": 6,
+   "runs": 6
+  },
+  "fleet_battery": {
+   "passed": 6,
+   "runs": 6
+  },
+  "fleet_followup": {
+   "passed": 6,
+   "runs": 6
+  },
+  "followup_in_context": {
+   "passed": 5,
+   "runs": 6
+  },
+  "guard_dispatch": {
+   "passed": 6,
+   "runs": 6
+  },
+  "memory_stale_state": {
+   "passed": 6,
+   "runs": 6
+  }
+ }
+}

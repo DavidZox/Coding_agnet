@@ -30,7 +30,9 @@ OPS_ALWAYS_READ = {"list_dir", "find_file", "search_text", "view_file", "csv_que
                    "docker_ctl", "docker_runcmd", "host_runcmd", "ROS2_topic_list", "ROS2_topic_echo", "ROS2_node_list",
                    "ROS2_node_info", "ROS2_param", "ROS2_domain_id", "workpackage_status", "semantic_map", "rmf_handshake",
                    "docker_open"}
-_NOT_FOR_OPS = {"ops_plan", "ops_run", "modify_memory", "stt_engine",
+# workflow_run 也不放進計畫：工作流本身就是一份由程式推進的步驟、有自己的確認關卡，計畫裡再包一層時確認畫面看不到它的步驟
+# （第四階段的任務引擎把兩者合起來之前先分開；2026-10-23 的對照評測 ops_run 的計畫一次都沒有用到它）
+_NOT_FOR_OPS = {"ops_plan", "ops_run", "workflow_run", "modify_memory", "stt_engine",
                 "result_recall", "result_grep", "result_view", "result_list"}
 # 計畫的目標寫了這些動作、用的又是兩用的技能（docker_ctl、ROS2_param…）時，這一步算會改變狀態
 _CHANGE_WORDS = re.compile(r"重新啟動|重啟|啟動|停掉|關掉|restart|改成|改為|修改|設定為|設成|設為|寫入|新增|建立|"
