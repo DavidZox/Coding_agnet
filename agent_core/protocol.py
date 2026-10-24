@@ -19,7 +19,7 @@ def doc_type(doc):
 
 
 def is_procedure_doc(doc):
-    """規格文件是不是流程技能（frontmatter 的 type: Procedure，/make_skill 產生）：只看開頭的 frontmatter。"""
+    """規格文件是不是舊的流程技能（frontmatter 的 type: Procedure；第 3 階段以前 /make_skill 產生的，第 6 階段清掉）：只看開頭的 frontmatter。"""
     text = str(doc or "")
     if not text.startswith("---"):
         return False

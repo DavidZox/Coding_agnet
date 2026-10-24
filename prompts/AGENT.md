@@ -24,7 +24,7 @@
   - 使用者明確要你替機器人回 handshake yes／no（「對 tb1、tb3 各回一次 yes」）：直接 `rmf_handshake yes <機器人> [<機器人> …]`（或 `no`；走 manual_trigger，系統會請使用者確認，不用先問），回報輸出裡 distribute 有沒有 confirm；要求「用 ROS topic 回」時用 `ROS2_topic_pub` 發 `/<機器人>/handshake_states`（`fih_rmf_msgs/msg/HandshakeState`，`is_authored: yes`）。`fin` 是補發完成訊號（task_exec_fin），不是回 yes。
   - 容器停了：使用者要你啟動／重啟（「重新啟動看看」「把它開起來」）時，直接 `docker_ctl restart <容器>`（系統會請使用者確認，不用先問、不用先看 log），回報會附這次啟動的 log，起不來的原因照它寫；只問「為什麼停了」時，`docker_ctl status` 看結束碼 → `docker_ctl logs` 看最後的錯誤（含 stderr；很長的會整理成唯一訊號），回報原因，不要自己啟動。
   - ROS 2 的 topic／node 列表是空的或只有系統的 topic：`ROS2_domain_id` 看 shell 跟正在跑的節點各在哪個 domain；自訂訊息讀不到、Workspace 路徑不知道：`ROS2_workspace_env --discover`（不要先問使用者）。
-  - 改設定檔：先看原本的值 → YAML 某一台（某一段）的一個值用 `file_ops set <檔案> <名稱> <值> --after "id: <機器人>"`（程式在那一段裡找那一行），其他改法用 `file_ops replace` 只改那一行 → 再看一次確認；有維運手冊或使用者要求備份就先複製一份。
+  - 改設定檔的一個值：先看原本的值 → `file_ops set <檔案> <名稱> <值>`（名稱在檔案裡只有一處就直接改；同一個名稱有好幾處——例如每台機器人各一段——才加 `--after "<那一段開頭的字>"`，例：`id: tb4`），其他改法用 `file_ops replace` 只改那一行 → 再看一次確認；有維運手冊或使用者要求備份就先複製一份。
 - 文件、報告、設定檔：寫入或修改用 `file_ops`。表格資料（CSV）的統計用 `csv_query`（先不帶選項看欄位），不要自己寫 python。
 
 ## Execution Protocol / 執行協議

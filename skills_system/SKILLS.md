@@ -34,7 +34,7 @@
 > 使用者的任務正好是下面某一個時用 `workflow_run <名稱> 名稱=值 …`（值從使用者的話取得，拿不到的先問使用者），不要自己一個技能一個技能做：步驟、檢查、「做完了沒」由程式照規格判斷；會改變狀態的步驟開始時系統會請使用者確認一次，不用先問。停在【確認】時 `workflow_run --continue`。
 - [workflow_run](tools/workflow_run.md) — 執行下面列的工作流；`--continue` 接著做、`--cancel` 不做了、`--list` 列出全部
   - `stuck_package_fix` — 工作包卡住、不往下一站：查原因；完成訊號遺失才補發、等它跑完、有給檔案就寫處理紀錄；其他原因只回報、不修改｜`workflow_run stuck_package_fix wp_id=<工作包> [note_file=<檔案>]`
-  - `config_edit` — 改設定檔裡某一台的一個值：只改那一段的那一行、改完確認；使用者說照維運手冊或要先備份時加 `backup=.bak`（另外留同目錄的備份），只說改值就不加｜`workflow_run config_edit file=<檔案> robot=<機器人> key=<設定名稱> value=<新的值> [backup=.bak] [block="<區塊開頭的字，預設 id: 機器人>"]`
+  - `config_edit` — 改設定檔裡某一台機器人那一段的一個值（每台各一段的設定檔，例：configs/robots.yaml；設定只有一處、沒有分機器人的直接 `file_ops set <檔案> <名稱> <值>`）：只改那一段的那一行、改完確認；使用者說照維運手冊或要先備份時加 `backup=.bak`（另外留同目錄的備份），只說改值就不加｜`workflow_run config_edit file=<檔案> robot=<機器人> key=<設定名稱> value=<新的值> [backup=.bak] [block="<區塊開頭的字，預設 id: 機器人>"]`
   - `dispatch_and_confirm` — 派工作包給指定的機器人並等它跑完再回報｜`workflow_run dispatch_and_confirm robot=<機器人> stops=<站點1,站點2,…（照順序；「從 home 到 a3」的 home 也要寫）> [wp_id=<編號>]`
   - `container_restart_verify` — 重新啟動一直在跑的服務容器並確認 Up（跑完就結束的備份、批次容器不適用，直接 docker_ctl restart）；可以在容器裡跑唯讀指令確認設定、寫紀錄｜`workflow_run container_restart_verify container=<容器> [check_command="<唯讀指令>"] [expect=<要看到的字>] [note_file=<檔案>]`
   - `reassign_package` — 工作包派不出去：是原本那台的問題才取消、用同樣的站點改派給指定的機器人並等它跑完｜`workflow_run reassign_package wp_id=<工作包> robot=<機器人>`

@@ -1,4 +1,4 @@
-"""全域狀態：單一 SkillAgent 實例、模式開關、待決策的工具結果、待核准的計畫、附件與手動載入的技能規格。
+"""全域狀態：單一 SkillAgent 實例、模式開關、待決策的工具結果、附件與手動載入的技能規格（計畫的草稿在 SkillAgent，plan.py）。
 其他模組 import 這裡的物件（都是可變的 dict／物件、沒有重新賦值），所以大家看到的是同一份狀態。"""
 import os
 import threading

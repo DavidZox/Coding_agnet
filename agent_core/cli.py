@@ -53,7 +53,7 @@ def _context_content_for_cli(agent, result, tool_tokens, use_summary):
     return content
 
 def _run_make_skill_flow(agent, arg_text):
-    """CLI 的 /make_skill：讀這段對話草擬流程技能 → 預覽 → y 核准／n 取消／其他文字＝修改意見重擬。
+    """CLI 的 /make_skill：讀這段對話草擬工作流 → 預覽 → y 核准／n 取消／其他文字＝修改意見重擬。
     與 Web 的 handle_skill_draft_response 用同一套 SkillAgent 狀態機。"""
     parts = arg_text.split()
     if not parts:
@@ -61,7 +61,7 @@ def _run_make_skill_flow(agent, arg_text):
               "/trajectory 可查編號")
         return
     name, spec = parts[0], (parts[1] if len(parts) > 1 else None)
-    print(f"🧩 正在讀這段對話與工具回傳，草擬流程技能 {name}（模型 {agent.skill_model}）…")
+    print(f"🧩 正在讀這段對話與工具回傳，草擬工作流 {name}（模型 {agent.skill_model}）…")
     draft, err = agent.start_skill_draft(name, spec)
     if err:
         print(f"⚠️ {err}")
@@ -268,15 +268,13 @@ def main():
                 break
             if user_msg.strip().lower() == "/analyze" or user_msg.strip().lower().startswith("/analyze "):
                 # 📊 直接交給數據分析（同主模型選用 analysis_run），報告進主對話後讓 AI 依報告回答、可以接著追問
-                from .protocol import quote_cli_arg
                 import json as _json
                 question = user_msg.strip()[len("/analyze"):].strip()
                 agent.set_current_task(question or user_msg.strip())
                 agent.end_plan_for_new_task()
                 agent.messages.append({'role': 'user', 'content': question or "這段錄製期間發生了哪些狀態變化？"})
-                data = agent.analysis_data or "latest"
-                action = {"command": "scripts/analysis_run_cmd.py",
-                          "args": f"--data {quote_cli_arg(data)}" + (f" {quote_cli_arg(question)}" if question else "")}
+                # 「/analyze --data exp_x 問題」的選項照原樣交給 analysis_run（跟 Web 共用 analyze_command_args）
+                action = {"command": "scripts/analysis_run_cmd.py", "args": agent.analyze_command_args(question)}
                 agent.messages.append({'role': 'assistant', 'content': _json.dumps(
                     {"thought": "使用者要求數據分析，直接交給 analysis_run", "reply": "交給數據分析。", "action": action}, ensure_ascii=False)})
                 result = agent.run_tool({"action": action}, approved=True)

@@ -41,7 +41,7 @@ SLASH_COMMANDS = [
     {"cmd": "/plan_exec_guard on", "desc": "計畫執行前檢查：計畫外會改變狀態的技能不執行、自動推進、連續失敗 3 次退出", "group": "模式開關"},
     {"cmd": "/plan_exec_guard off", "desc": "關閉計畫執行前檢查（預設：沒有限制）", "group": "模式開關"},
     {"cmd": "/context_mode", "desc": "查看目前的上下文模式", "group": "動作與查詢"},
-    {"cmd": "/make_skill ", "desc": "把這段做對的對話整理成流程技能的規格（後接技能名稱，可再接軌跡範圍如 3-7）", "group": "動作與查詢", "args": True},
+    {"cmd": "/make_skill ", "desc": "把這段做對的對話整理成工作流的規格（後接名稱，可再接軌跡範圍如 3-7）", "group": "動作與查詢", "args": True},
     {"cmd": "/trajectory", "desc": "列出本次 session 記錄到的腳本執行軌跡（步驟編號、成功／失敗）", "group": "動作與查詢"},
     {"cmd": "/objective set ", "desc": "設定 Sticky Objective（後面接內容）", "group": "動作與查詢", "args": True},
     {"cmd": "/objective show", "desc": "查看目前的 Objective", "group": "動作與查詢"},
@@ -93,7 +93,7 @@ MENU_TEXT = """可用指令：
 /skills                 列出所有可用技能
 /skill <技能名稱>        手動載入該技能的規格，隨你下一則訊息一起送出
 /trajectory             列出本次 session 記錄到的腳本執行軌跡（步驟編號、成功／失敗、所屬技能）
-/make_skill <名稱> [範圍] 把做對的對話整理成流程技能的規格（範圍省略＝上一個起點之後；可用 3-7、3,5,8 或 all）
+/make_skill <名稱> [範圍] 把做對的對話整理成工作流的規格（範圍省略＝上一個起點之後；可用 3-7、3,5,8 或 all）
 
 在輸入框打「/」會彈出選單：上半是功能開關與指令，下半是 SKILLS.md 裡的技能（依分類）。
 ↑↓ 移動、Enter／Tab 選取、Esc 關閉，也可以繼續打字過濾。選指令只會填入輸入框、要再按
@@ -183,17 +183,18 @@ prompt_eval_count），使用者輸入與工具回傳以每次呼叫後校準的
 單 slot，同模型的背景摘要會讓你的下一次對話在 Ollama 內排隊，等待只是搬到下一次呼叫。
 算力弱的設備建議維持關閉（序列處理）。
 
-自建技能（/make_skill）：每一則對話訊息（你說的話、AI 的想法／回覆／動作、當時進上下文的工具回傳）都會
+自建工作流（/make_skill）：每一則對話訊息（你說的話、AI 的想法／回覆／動作、當時進上下文的工具回傳）都會
 留一份在「對話紀錄」，每次腳本執行也會記進「操作軌跡」（/trajectory 可以查看）；兩者都存在對話 messages
-之外，上下文壓縮、/clear 都不會沖掉。當你一步步引導 AI 把一件事做對之後，輸入 /make_skill <技能名稱>，
+之外，上下文壓縮、/clear 都不會沖掉。當你一步步引導 AI 把一件事做對之後，輸入 /make_skill <名稱>，
 會把「上一個起點（/clear、計畫核准、上一次 make_skill）之後」的整段對話與工具回傳、這段的操作軌跡、可用的
 技能與語法交給草擬模型（{skill_model}，可用 AGENT_SKILL_MODEL 換更大的模型），由它推論下次做同一件事的步驟，
-寫成一份「流程技能」的規格：步驟分成執行（呼叫既有技能的腳本）、確認（先問使用者）、檢查（看前面的回傳
-決定怎麼走）、告知（整理結果給使用者），會變的值寫成 {{名稱}} 佔位符。不會產生任何腳本：系統檢查每個執行
-步驟引用的腳本都真的存在、佔位符都有宣告，引用不存在的腳本就不能註冊。左欄會顯示草稿預覽（skills_system/
-drafts/<名稱>/），下方出現「核准並註冊／取消」按鈕，也可以直接打字送出修改意見重擬。核准後才寫進 tools/ 與
-SKILLS.md；之後 AI 載入它的規格時，系統會提醒「這個技能沒有自己的腳本，照步驟一步一步做」。需要新腳本的話，
-另外寫好腳本再補對應的規格。只有一句話的做法，用 modify_memory 記住就好，不必做技能。""".format(
+寫成一份「工作流」的規格：步驟分成執行（呼叫既有技能的腳本）、檢查（看前面的輸出決定怎麼走）、確認（停下來
+等你）、告知（整理結果），會變的值寫成 {{名稱}}——你給的資訊，或前面步驟的輸出才知道、執行到那一步時由模型
+填的值。不會產生任何腳本：系統用跟工作流同一套規則驗證（腳本存在、分支只能往後），不通過就不能註冊。左欄
+會顯示草稿預覽（skills_system/drafts/<名稱>/），下方出現「核准並註冊／取消」按鈕，也可以直接打字送出修改意見
+重擬。核准後寫進 skills_system/workflows/ 與 SKILLS.md〈工作流〉；之後 AI 用 workflow_run、或你用 /workflow
+<名稱> 執行，步驟由程式照規格推進。需要新腳本的話，另外寫好腳本與規格。只有一句話的做法，用 modify_memory
+記住就好。""".format(
     threshold=TOOL_RESULT_TOKEN_THRESHOLD, vision_model=VISION_MODEL, raw_max=RAW_RESULT_MAX_TOKENS,
     token_threshold=TOKEN_THRESHOLD, soft_threshold=SOFT_TOKEN_THRESHOLD,
     keep_recent=KEEP_RECENT_TOKENS, num_ctx=NUM_CTX, min_compress=MIN_COMPRESS_TOKENS,
@@ -338,7 +339,7 @@ def handle_slash_command(message, events):
             )})
             return True
         name, spec = parts[0], (parts[1] if len(parts) > 1 else None)
-        events.append({"channel": "system", "text": f"🧩 正在讀這段對話與工具回傳，草擬流程技能 {name}（模型 {agent.skill_model}）…"})
+        events.append({"channel": "system", "text": f"🧩 正在讀這段對話與工具回傳，草擬工作流 {name}（模型 {agent.skill_model}）…"})
         draft, err = agent.start_skill_draft(name, spec)
         if err:
             events.append({"channel": "system", "text": f"⚠️ {err}"})

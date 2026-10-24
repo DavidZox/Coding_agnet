@@ -179,8 +179,11 @@ class WorkflowMixin:
         if unknown or missing:
             why = "；".join(x for x in (f"不認識的參數：{'、'.join(unknown)}" if unknown else "",
                                         f"少了必填的：{'、'.join(missing)}" if missing else "") if x)
-            return None, (f"[ERROR] 工作流 {wf['name']} 的參數不對（{why}）。需要的資訊：{usage}。下一步：從使用者的話取得；拿不到的先問使用者，"
-                          f"不要用猜的。")
+            # 少了必填的有兩種：使用者的需求本來就沒有這一項（例：設定檔沒有分機器人，卻用了改「某一台」的工作流）＝這個工作流不適用；
+            # 有這一項但沒說清楚＝問使用者。以前只說「先問使用者」，主對話就去問一個不存在的東西（2026-10-24 fs_edit_param）
+            return None, (f"[ERROR] 工作流 {wf['name']} 的參數不對（{why}）。需要的資訊：{usage}。這個工作流是：{wf['description']}。"
+                          f"下一步：從使用者的話取得；使用者的需求本來就沒有這一項時，表示不適合用這個工作流，改用技能一步一步做；"
+                          f"有這一項只是沒說清楚的，先問使用者，不要用猜的。")
         out = dict(_builtin())
         out.update({k: str(values.get(k, "")).strip() for k in declared})
         for name, i in declared.items():                 # 預設值可以用內建的 {today}／{now} 與使用者給的其他資訊（例：`id: {robot}`）

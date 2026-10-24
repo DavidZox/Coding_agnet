@@ -102,8 +102,8 @@ SUMMARY_MODEL = os.environ.get("AGENT_SUMMARY_MODEL", "").strip() or None
 # /parallel_cal 的預設值（CLI 與 Web Console 啟動時的初始狀態），可用 AGENT_PARALLEL_CAL=1 開啟。
 PARALLEL_CAL_DEFAULT = os.environ.get("AGENT_PARALLEL_CAL", "").strip().lower() in ("1", "on", "true", "yes")
 
-# 🧩 make_skill：把使用者引導 Agent「做對」的一段對話（使用者的話、AI 的判斷、工具回傳）整理成流程技能的規格
-# （SkillAgent.start_skill_draft 起）。不產生腳本：步驟只呼叫既有技能的腳本，其餘是向使用者確認、檢查回傳、告知。
+# 🧩 make_skill：把使用者引導 Agent「做對」的一段對話（使用者的話、AI 的判斷、工具回傳）整理成工作流的規格
+# （SkillAgent.start_skill_draft 起）。不產生腳本：執行步驟只呼叫既有技能的腳本，其餘是檢查、確認、告知。
 # 草擬用的模型預設同摘要模型（AGENT_SUMMARY_MODEL，再退回主模型）；這是離線、一次性的工作，要從整段對話推論流程，
 # 記憶體夠的話建議用 AGENT_SKILL_MODEL 指定較大的模型（例如 gemma4:26b）。模型只填 JSON，排版由程式做。
 SKILL_MODEL = os.environ.get("AGENT_SKILL_MODEL", "").strip() or None
@@ -139,7 +139,7 @@ TASK_HISTORY_KEEP = 3   # 任務線：摘要錨點帶最近幾則使用者訊息
 TRAJECTORY_OUTPUT_HEAD = 300          # 每筆軌跡保留的輸出開頭字元數（讓草擬模型知道結果長什麼樣）
 DEFAULT_SKILL_CATEGORY = "自建技能"   # 模型選的分類不在 SKILLS.md 裡時的落點（沒有這個段落會自動建立）
 SKILL_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{1,40}$")
-# 會改變狀態（建容器、送工單、寫記憶、切換目錄／容器）的技能：流程技能的步驟用到它們時，草稿預覽與規格會提醒（執行時照常確認）
+# 會改變狀態（建容器、送工單、寫記憶、切換目錄／容器）的技能：工作流草稿的步驟用到它們時，預覽會提醒（執行時照常確認）
 NON_READONLY_SKILLS = {"docker_est", "workpackage_send", "workpackage_cancel", "overpending_cancel", "modify_memory", "change_dir", "docker_open",
                        "docker_ctl", "file_ops", "ROS2_param", "ROS2_topic_pub", "rmf_handshake", "host_runcmd", "ops_run",
                        "mcap_recorder", "mcap_slicer", "ROS2_domain_id", "ROS2_workspace_env", "workflow_run"}
@@ -199,7 +199,7 @@ RECALL_MAX_RECORDS = 3   # result_recall 一次最多讀幾份存檔（幾份的
 # 對這類結果一律放行、不套用 TOOL_RESULT_TOKEN_THRESHOLD，Web Console 也不標記 ⚠️。
 # 規格書本身仍應維持精簡（以 400 tokens／約 800 字元以內為原則），節省每次載入的上下文成本。
 SKILL_DOC_PREFIX = "📘 已載入技能"
-# /make_skill 產生的流程技能：規格 frontmatter 的 type。沒有自己的腳本，步驟是「執行既有技能／向使用者確認／檢查回傳／告知」，
+# 舊的流程技能（第 3 階段以前 /make_skill 產生的；現在產生工作流，讀取的程式第 6 階段清掉）：規格 frontmatter 的 type。沒有自己的腳本，步驟是「執行既有技能／向使用者確認／檢查回傳／告知」，
 # 載入時告訴模型照步驟一步一步做（dispatch），也不拿它來對照「腳本屬於哪個技能」（trajectory._script_skill_map）。
 PROCEDURE_DOC_TYPE = "Procedure"
 
@@ -269,7 +269,6 @@ TOOL_EXEC_TIMEOUT = 600
 # Web Console 的「🧠 模型」可以切換（存檔：logs/model_settings.json）。注意：有些模型關掉也還是會思考（deepseek-r1）。
 # =========================================================
 MAIN_THINK_DEFAULT = os.environ.get("AGENT_MAIN_THINK", "").strip().lower() in ("1", "on", "true", "yes")
-THINK_EXTRA_PREDICT = 8192               # 開了 thinking 的呼叫若有 num_predict 上限，再加這麼多給思考（思考也算在 num_predict 裡）
 MODEL_SETTINGS_NAME = "model_settings.json"   # logs/ 下：Web Console 設定的主對話模型與 thinking 開關，重開也記得
 
 # 🧩 工作流（agent_core/workflow.py、workflow_spec.py；workflow_run 偽技能）：skills_system/workflows/<名稱>.md 的步驟由程式推進，

@@ -271,7 +271,7 @@ class MakeSkillMixin:
         return draft
 
     def draft_skill_from_conversation(self, name, entries, steps, plans, previous=None, feedback=None):
-        """呼叫草擬模型（獨立一次性 session，不碰 self.messages）產生流程技能草稿 dict。失敗拋 ValueError。"""
+        """呼叫草擬模型（獨立一次性 session，不碰 self.messages）產生工作流草稿 dict。失敗拋 ValueError。"""
         transcript_text, dropped = self._render_transcript(entries)
         system_prompt, user_prompt = self._make_skill_prompts(name, transcript_text, entries, steps, plans, previous, feedback)
         res = self._timed_chat(

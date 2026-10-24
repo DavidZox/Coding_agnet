@@ -11,7 +11,8 @@
 - 報告（程式）：每個重要的時間點一則重點（引用那一刻全部的編號，Log 與事件的內容列在下面）、到最後跟開頭不同的值、指定的 Topic、
   不呼叫模型；
 - 句子的意思（agent_core/claims.py）與主對話：依報告回答卻寫成因果、或寫錯事實 → 提醒一次改寫；
-- 一次最多 3 分鐘、拿掉的選項說清楚、設定檔只存改過的值；dispatch、Web 的 /analyze 回合、面板、程式重新啟動時標中斷。
+- 一次最多 3 分鐘、拿掉的選項說清楚、設定檔只存改過的值；dispatch、Web 的 /analyze 回合、面板、程式重新啟動時標中斷；
+- CLI 的 /analyze（驅動真的 cli.main() 迴圈）：選項照原樣交給 analysis_run，跟 Web 同一套參數。
 每一個情境都在臨時目錄複製一份專案，不碰正式的 logs/。"""
 import json
 import os
@@ -468,6 +469,43 @@ def main():
             assert seen[0] == "--data exp_other LiDAR 出錯之後發生了什麼", seen
             assert seen[1].startswith("--data ") and seen[1].endswith(" --topic /cmd_vel 什麼時候歸零"), seen
 
+        def t_cli_analyze():
+            # CLI 的 /analyze 跟 Web 同一套參數（analyze_command_args）：驅動真的 cli.main() 迴圈，選項照原樣交給 analysis_run、
+            # 沒有 --data 時補目前的數據、沒有選項時整段是問題（2026-10-24 以前 CLI 整段加引號，--data 被當成問題的一部分）
+            import builtins
+            import contextlib
+            import io
+            from agent_core import cli
+            from agent_core.agent import SkillAgent
+            setup()
+            seen, lines = [], ["/analyze --data exp_other LiDAR 出錯之後發生了什麼", "/analyze --topic /cmd_vel 什麼時候歸零", "/analyze 馬達過熱前後"]
+
+            def fake_input(prompt=""):
+                if not lines:
+                    raise KeyboardInterrupt
+                return lines.pop(0)
+            real_run, real_input = SkillAgent.run_tool, builtins.input
+
+            def fake_run(self, parsed, approved=False):
+                action = (parsed or {}).get("action")
+                if not action:
+                    return None                    # 這一輪沒有動作（跟真的 run_tool 一樣回空的）
+                seen.append((action["args"], approved))
+                return "[ERROR] 測試：不執行"
+            SkillAgent.run_tool = fake_run
+            builtins.input = fake_input
+            try:
+                with contextlib.redirect_stdout(io.StringIO()):
+                    cli.main()
+            finally:
+                SkillAgent.run_tool, builtins.input = real_run, real_input
+            args = [a for a, _ in seen]
+            assert args[0] == "--data exp_other LiDAR 出錯之後發生了什麼", args
+            assert args[1].startswith("--data ") and args[1].endswith(" --topic /cmd_vel 什麼時候歸零"), args
+            assert args[2].startswith("--data ") and args[2].endswith(" 馬達過熱前後"), "沒有選項：整段是問題"
+            assert all(ap for _, ap in seen), "使用者直接指定的：不經過確認關卡"
+            assert agent.analyze_command_args("--data exp_other x") == args[0].replace("LiDAR 出錯之後發生了什麼", "x"), "跟 Web 同一個函式"
+
         def t_limits_and_settings():
             long_idx = dict(IDX, duration_sec=181.2)
             fake, calls = setup(index=long_idx)
@@ -553,6 +591,7 @@ def main():
                          ("主對話：依報告回答卻寫成因果、或寫錯事實 → 提醒一次（之後的回合核對寫到報告的那幾行）；否定、條件、Log 原文不算", t_main_reply_check),
                          ("dispatch：analysis_run 偽技能存檔與軌跡、[ANALYSIS_DATA] 同步、省略 --data、腳本拿得到環境變數", t_dispatch_and_state),
                          ("Web：/analyze 的回合（進度、報告進主對話、寫成因果時改寫）、面板 state 與設定、拿掉的指令、分析模式", t_web),
+                         ("CLI：/analyze 的選項照原樣交給 analysis_run、沒有 --data 時補目前的數據（跟 Web 共用 analyze_command_args）", t_cli_analyze),
                          ("限制與設定：一次最多 3 分鐘（以整秒算）、只有 Log 的錄製、拿掉的選項、設定檔只存改過的值", t_limits_and_settings),
                          ("程式重新啟動：沒做完的 job（進度很久沒更新）標成中斷，剛更新的不動", t_mark_interrupted),
                          ("錄製：資料夾名稱放錯在 --out-root 改當 --name；含 / 的相對路徑、--name 帶路徑擋下", t_recorder_target)]:

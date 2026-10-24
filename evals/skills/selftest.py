@@ -2,7 +2,7 @@
 輸出的結構、可以自己用（不讀標準輸入、有逾時）。規範見 doc/技能撰寫規範.md。
 
     python3 evals/skills/selftest.py            # 全部
-    python3 evals/skills/selftest.py fs docker  # 只跑某幾組（檔名 <組>_test.py）
+    python3 evals/skills/selftest.py fs containers  # 只跑某幾組（檔名 <組>_test.py）
 
 每一組一個檔案 evals/skills/<組>_test.py，裡面的 t_* 函式各是一個情境（docstring 第一行是名稱）。需要容器或沙盒的情境自己判斷環境，
 沒有就丟 Skip（印出略過的原因，不算失敗）。每個情境在臨時目錄跑，不碰正式的 logs/ 與使用者的檔案。"""

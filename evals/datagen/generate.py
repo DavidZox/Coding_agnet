@@ -6,7 +6,7 @@
     python3 evals/datagen/generate.py --set s3 --seed 3 --n 20 --require bridge   # 每一份都有 bridge
     python3 evals/datagen/check_facts.py test_data/recordings/gen/s2/cases.json   # 先驗程式那一層（不呼叫模型）
     python3 evals/analysis/regression.py --run --runs 2 --cases-file test_data/recordings/gen/s2/cases.json \\
-        --data-root /workspace/experiment_logs/gen/s2 --container cah_analysis_test --model gemma4:26b --out evals/results/gen_s2
+        --data-root /workspace/experiment_logs/gen/s2 --container cah_analysis_test --out evals/results/gen_s2
 
 容器要有 ROS 2 Jazzy 與自訂訊息（diagnostics_package、base_motor_controller、fih_rmf_msgs，見 README.md），數據根目錄
 test_data/recordings 掛載成容器的 /workspace/experiment_logs。同一個 seed 每次產生一樣的數據。"""

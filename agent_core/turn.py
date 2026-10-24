@@ -32,7 +32,8 @@ def _content_for_context(result, tool_tokens, agent=None, use_summary=True):
     harness 模式：門檻內原封不動。超過 TOOL_RESULT_TOKEN_THRESHOLD 時：
     - use_summary=True（預設）且提供 agent：交給 agent.summarize_tool_result()——獨立、乾淨的 session 拿完整原始輸出
       + 使用者目標 + 這一步的目的做任務導向提煉（長的依結構切段、每段一個 worker 再整合，見 agent_core/extract.py），
-      主對話收到的是跟任務有關的重點（每條附原文的行號）。所有工具回傳同一套規則，沒有腳本自帶的豁免。
+      主對話收到的是跟任務有關的重點（每條附原文的行號）。例外只有 is_exempt_result 的那幾種：規格文件、
+      已經是提煉結果的、程式整理好的報告（數據分析、工作流）——直接原文。
     - use_summary=False（/summarize off）、沒有 agent、或摘要 session 失敗：退回只給成功／失敗判定——零延遲，
       但模型拿不到內容，只能換更精確的參數重查。
     """

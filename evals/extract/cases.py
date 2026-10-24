@@ -7,7 +7,10 @@
   truth     正確答案：[{"key": 名稱或時間戳, "value": 值或 None}]
   match     怎麼在回答裡找答案：fleet（名稱＋電量同一行）／name（名稱）／text（字串）
   recall    有的話是追問：先照 text 提煉一次，再用 result_recall 問這一句（同一份存檔）"""
+import os
 import random
+
+HERE = os.path.dirname(os.path.abspath(__file__))
 
 FLEET_THRESHOLD = 40
 
@@ -65,7 +68,20 @@ def long_log(n_lines=3000, seed=3):
             "truth": truth, "match": "text"}
 
 
+def robot_heading():
+    """ROS2_topic_echo 觀察 5 秒的 robot_state（2026-10-24 維運評測 ros_moving 的真實輸出，約 6 千字一段，fixtures/robot_state_moving.txt）：
+    問「有在移動嗎？往哪裡走？」，要答出要去的站（target_id、current_edge 都是 a7）——那一次的提煉只寫了座標往哪個方向增加，
+    主對話就答不出往哪一站。"""
+    with open(os.path.join(HERE, "fixtures", "robot_state_moving.txt"), encoding="utf-8") as f:
+        text = f.read()
+    return {"id": "robot_heading", "kind": "echo", "text": text, "script": "ROS2_topic_echo_cmd.py",
+            "args": ["--duration", "5", "/tb1/robot_state"], "question": "觀察 tb1 的 robot_state 大約 5 秒，它有在移動嗎？往哪裡走？",
+            "step": {"thought": "讀 tb1 的 robot_state 幾秒，看位置有沒有變、要去哪裡",
+                     "action": {"command": "scripts/ROS2_topic_echo_cmd.py", "args": "--duration 5 /tb1/robot_state"}},
+            "truth": [{"key": "a7", "value": None}], "match": "text"}
+
+
 def all_cases():
     """fleet_40：一段就放得下（一次寫完）；fleet_80：小模型一次讀會漏、切 2 段；fleet_120：切 3 段；log_200k：切 26 段、依問題挑 8 段讀；
-    recall_fleet_120：追問同一份存檔裡提煉沒寫到的。"""
-    return [fleet_low_battery(40), fleet_low_battery(80), fleet_low_battery(120), long_log(), fleet_recall(120)]
+    recall_fleet_120：追問同一份存檔裡提煉沒寫到的；robot_heading：一段就放得下，但答案（要去哪一站）不在數值變化裡，要看問題挑欄位。"""
+    return [fleet_low_battery(40), fleet_low_battery(80), fleet_low_battery(120), long_log(), fleet_recall(120), robot_heading()]

@@ -374,18 +374,8 @@ def run_turn(events):
 def run_analysis_turn(question, events, data=None):
     """📊 /analyze 與分析模式：不經過主模型決定，直接執行 analysis_run（同主模型選用它時的 action），報告照一般工具結果
     進主對話（auto 直接加入、manual／hybrid 等你決定），之後主模型依報告回答、可以接著追問。回傳是否在等使用者決策。"""
-    from agent_core.protocol import quote_cli_arg
     import json
-    import re
-    data = data or agent.analysis_data or "latest"
-    if question and re.search(r"(?:^|\s)--(?:data|dir|topic|source|no-source|workers|before|after|rounds)\b", question):
-        # 「/analyze --data exp_x 問題」：選項照原樣交給 analysis_run（它會解析，剩下的字是問題）。以前整段加引號當成問題，
-        # 選項沒被認出來、數據靜靜地用了目前的（latest）——實測問 LiDAR 的數據，分析的卻是最後錄的另一份
-        has_data = re.search(r"(?:^|\s)--(?:data|dir)\b", question)
-        args = ("" if has_data else f"--data {quote_cli_arg(data)} ") + question
-    else:
-        args = f"--data {quote_cli_arg(data)}" + (f" {quote_cli_arg(question)}" if question else "")
-    action = {"command": "scripts/analysis_run_cmd.py", "args": args}
+    action = {"command": "scripts/analysis_run_cmd.py", "args": agent.analyze_command_args(question, data)}   # 選項的處理跟 CLI 共用
     reply = "交給數據分析（程式量全部的事實、整理成事實報告）。"
     agent.messages.append({"role": "assistant", "content": json.dumps(
         {"thought": "使用者要求數據分析，直接交給 analysis_run", "reply": reply, "action": action}, ensure_ascii=False)})

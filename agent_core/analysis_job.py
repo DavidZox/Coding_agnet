@@ -124,6 +124,10 @@ def _signal_source(s):
     return f"  ＠{os.path.basename(str(src.get('file') or ''))}:{src.get('line')} {src.get('function') or ''}".rstrip()
 
 
+# /analyze 後面的字裡有這些選項時照原樣交給 analysis_run（已經拿掉的選項也照樣交過去，由 analysis_run 回 [ERROR] 說明）
+_ANALYZE_OPTION_RE = re.compile(r"(?:^|\s)--(?:data|dir|topic|source|no-source|workers|before|after|rounds)\b")
+
+
 class AnalysisMixin:
 
     # ---------------------------------------------------------------- 設定（logs/analysis_settings.json）
@@ -237,6 +241,17 @@ class AnalysisMixin:
             except (OSError, TypeError):
                 pass
         return {"job": job, "events": store.read_jsonl(jid, "events.jsonl")[-300:], "files": texts}
+
+    def analyze_command_args(self, question, data=None):
+        """/analyze（CLI 與 Web 共用）：使用者打的字 → analysis_run 的參數。「/analyze --data exp_x 問題」的選項照原樣交給 analysis_run
+        （它會解析，剩下的字是問題），沒給 --data／--dir 時補上目前的數據；沒有選項時整段是問題。以前整段加引號當成問題，選項沒被認出來、
+        數據靜靜地用了目前的（latest）——實測問 LiDAR 的數據，分析的卻是最後錄的另一份（Web 先修了，CLI 到 2026-10-24 才跟上）。"""
+        from .protocol import quote_cli_arg
+        data = data or self.analysis_data or "latest"
+        if question and _ANALYZE_OPTION_RE.search(question):
+            has_data = re.search(r"(?:^|\s)--(?:data|dir)\b", question)
+            return ("" if has_data else f"--data {quote_cli_arg(data)} ") + question
+        return f"--data {quote_cli_arg(data)}" + (f" {quote_cli_arg(question)}" if question else "")
 
     # ---------------------------------------------------------------- 主流程（全部由程式做）
     def analysis_run(self, remainder):

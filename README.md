@@ -59,7 +59,7 @@ Web 左欄是對話，右欄是系統與工具回傳（另一個分頁是「📊
 
 | 數據分析指令 | 作用 |
 |---|---|
-| `/analyze [--data 數據] [--topic T] [問題]` | 直接交給 analysis_run（問題省略＝這段錄製期間發生了哪些狀態變化）；報告進主對話，可以接著追問 |
+| `/analyze [--data 數據] [--topic T] [問題]` | 直接交給 analysis_run（問題省略＝這段錄製期間發生了哪些狀態變化）；報告進主對話，可以接著追問（CLI 與 Web 一樣） |
 | `/analysis`、`/analysis jobs` | 看最近一次的報告／列出最近的 job |
 | `/analysis_data`、`/analysis_root`、`/analysis_container` | 目前的數據、數據根目錄、預設容器（`-` 清除） |
 
@@ -81,10 +81,10 @@ Web 左欄是對話，右欄是系統與工具回傳（另一個分頁是「📊
 | 模型 | 主對話：理解問題、依報告回答與討論、用數據技能細看某個 Topic、某段時間或某則 Log |
 
 細節：每一步做什麼、產物存在哪裡、報告的範例見〈[架構說明 §13](doc/架構說明.md#13-數據分析agent_coreanalysis_jobpy全部由程式做)〉；
-設計理由與實測見〈[設計筆記 2.15](doc/設計筆記與已知限制.md)〉（2026-10-23 以前的版本由 Orchestrator → Workers → Synthesizer 寫說明與重點，
-三個版本的比較見〈七〉）。**已知的限制**：一次最多分析 3 分鐘；時間上的對照不代表誰造成誰；主對話的回答只核對寫得出主詞的說法
-（Key 或 Topic 名稱：從 A 變成 B、到最後的值、沒有變化、回到初始），中文主詞的說法不核對；JSON 字串的 Topic 只量訊息流；固定頻率的
-Topic 頻率中途改變不會列成事件。完整的在〈設計筆記〉第 6 節。
+設計理由與實測（為什麼全部由程式做：三個版本的比較）見〈[設計筆記 2.15](doc/設計筆記與已知限制.md)〉。**已知的限制**：一次最多分析
+3 分鐘；時間上的對照不代表誰造成誰；主對話的回答只核對寫得出主詞的說法（Key 或 Topic 名稱：從 A 變成 B、到最後的值、沒有變化、
+回到初始），中文主詞的說法不核對；字串裡的 JSON 要抽樣八成以上是 JSON 物件才展開成 Key（其他的字串只量訊息流）；固定頻率的 Topic
+頻率中途改變不會列成事件。完整的在〈設計筆記〉第 6 節。
 
 ## harness 怎麼運作
 
@@ -97,7 +97,8 @@ Topic 頻率中途改變不會列成事件。完整的在〈設計筆記〉第 6
    **claude_code** 原文直接進上下文，太大保留頭尾並標明存檔編號與中間有哪幾節。使用者之後追問舊資料時，模型用 `result_recall <編號>` 回到原文重新提煉。
 4. system prompt 只放不常變的內容（KV cache 才能重用）；工作目錄、目標容器、核准的計畫這些常變的小東西，每次接在送出內容的最後面。
 5. 上下文超過水位時，舊對話融合成一份滾動摘要；使用者的原話由程式逐字保留，被壓掉的對話也存成 `#編號`。
-6. 主對話的程式把關：同樣的動作一直得到同樣的結果時提醒、第四次停下；沒有執行卻宣稱做完時提醒；路徑找不到時列出相近的路徑。
+6. 主對話的程式把關（`turn_guard.py`）：同樣的動作一直得到同樣的結果時提醒、第四次停下；沒有執行卻宣稱做完時提醒一次；依數據分析的
+   報告回答時把先後寫成因果、或寫錯事實時提醒一次。
 
 每一步對應到哪個函式、狀態存在哪裡、要改某件事該看哪裡，見〈[架構說明](doc/架構說明.md)〉。
 
@@ -114,17 +115,18 @@ Topic 頻率中途改變不會列成事件。完整的在〈設計筆記〉第 6
 | 多步驟維運任務 | `ops_run`（規劃 → 確認整份計畫 → 每一步派 worker、程式檢查） |
 | 多模態 | `stt_engine`、`image_inspect` |
 | 工具結果存檔 | `result_recall`、`result_grep`、`result_view`、`result_list` |
-| 記憶 | `modify_memory` |
+| 記憶 | `modify_memory`（用法寫在 `prompts/AGENT.md` 的記憶協議，不列在索引） |
 
-索引在 [`skills_system/SKILLS.md`](skills_system/SKILLS.md)，每個技能的規格在 `skills_system/tools/<name>.md`；各技能的參數與重點見
+索引在 [`skills_system/SKILLS.md`](skills_system/SKILLS.md)，每個技能的規格在 `skills_system/tools/<name>.md`、工作流在 `skills_system/workflows/<名稱>.md`；各技能的參數與重點見
 〈[設計筆記 §3](doc/設計筆記與已知限制.md#3-技能清單全部功能)〉。
 
 ## 評測
 
-| 對象 | 不用模型（改程式之後先跑） | 真模型 |
+| 對象 | 不用模型（改程式之後先跑） | 真模型或真的容器 |
 |---|---|---|
 | 主對話 | `evals/chat/selftest.py` | `evals/chat/run.py`（兩種上下文模式 × 情境） |
-| 數據解析 | `evals/analysis/selftest.py`、`evals/datagen/check_facts.py` | `evals/analysis/regression.py`（這台的實錄與隨機情境產生器 `evals/datagen/` 的錄製）、`evals/analysis/tools_live.py` |
+| 技能腳本 | `evals/skills/selftest.py`（需要容器的在沙盒裡跑，沒有就略過） | — |
+| 數據解析 | `evals/analysis/selftest.py`、`evals/datagen/check_facts.py` | `evals/analysis/regression.py`（這台的實錄與隨機情境產生器 `evals/datagen/` 的錄製；不呼叫模型，要容器）、`evals/analysis/tools_live.py` |
 | 多步驟維運 | `evals/ops/selftest.py` | `evals/ops/run.py`（Docker-in-Docker 沙盒裡真的執行） |
 | 工作流 | `evals/workflow/selftest.py` | `evals/workflow/sandbox.py`（沙盒裡直接執行工作流） |
 | 提煉 | `evals/chat/extract_selftest.py` | `evals/extract/run.py`（已知答案的長輸出） |
@@ -135,32 +137,35 @@ Topic 頻率中途改變不會列成事件。完整的在〈設計筆記〉第 6
 ## 目錄結構
 
 ```
-Coding_agnet/            （資料夾名稱沿用）
-├── Agent_Runner.py      CLI 入口（實作在 agent_core/cli.py）
+Coding_agnet/            （資料夾名稱沿用；原本的 coding agent 已移到 ~/Coding_agent_harness）
+├── Agent_Runner.py      CLI 入口（實作在 agent_core/cli.py；--workflow 是不用互動的入口）
 ├── web_console.py       Web 入口（實作在 web_app/）
-├── agent_core/          核心：SkillAgent（由各 mixin 組成）、回覆協議、常數；analysis_job.py＝數據解析、ops_job.py＝多步驟維運
+├── agent_core/          核心：SkillAgent（由各 mixin 組成）、回覆協議、常數；analysis_job.py＝數據解析、extract.py＝工具回傳的提煉、
+│                        workflow*.py＝工作流、ops_job.py＝多步驟維運
 ├── web_app/             Web 介面（純標準庫）：回合流程、slash 指令、HTTP、static/index.html；analysis.py＝📊 面板的後端
 ├── prompts/             給模型的文字（可以直接改）
 │   ├── AGENT.md         主對話的 system prompt
 │   ├── Memory.md        長期記憶（modify_memory 寫入，每輪常駐）
 │   ├── context_modes/   兩種上下文模式的規則
-│   └── ops/             多步驟維運的規劃與 worker
-├── skills_system/       技能：SKILLS.md（索引）、tools/（規格）、scripts/（腳本與共用模組）
+│   ├── extract/         工具回傳的提煉：worker 與整合
+│   ├── ops/             多步驟維運的規劃與 worker
+│   └── workflow/        工作流的判斷點（填值、選分支）
+├── skills_system/       技能：SKILLS.md（索引）、tools/（規格）、scripts/（腳本與共用模組）、workflows/（工作流）
 ├── vision/              視覺模態：擷取、推論、提取、Web 的框選（web/）、sniper.py（獨立的框選小工具）
-├── evals/               評測：chat/、analysis/、datagen/、ops/；results/（.gitignore）
+├── evals/               評測：chat/、skills/、analysis/、datagen/、ops/、workflow/、extract/、phase_check.py、baselines/；
+│                        results/（.gitignore）
 ├── doc/                 文件；diagrams/（.puml 與產生器）、images/（圖）、archive/（第一～九輪的根因版本，只供閱讀）
 ├── test_data/           實機錄製、正確答案、回歸工具（只在本機，.gitignore）
-└── logs/                執行時產生：工具回傳存檔、檢索清單、軌跡、摘要、extract_jobs/、analysis_jobs/、ops_jobs/（.gitignore）
+└── logs/                執行時產生：工具回傳存檔、檢索清單、軌跡、摘要、extract_jobs/、analysis_jobs/、workflow_jobs/、ops_jobs/
+                         （.gitignore）
 ```
 
 ## 文件
 
-- 〈[架構說明](doc/架構說明.md)〉：每個模組負責什麼、一回合怎麼跑、狀態存在哪裡、要改某件事該看哪裡；數據解析在 §13
+- 〈[架構說明](doc/架構說明.md)〉：每個模組負責什麼、一回合怎麼跑、狀態存在哪裡、要改某件事該看哪裡；數據解析在 §13、工作流在 §14
 - 〈[設計筆記與已知限制](doc/設計筆記與已知限制.md)〉：各機制的理由與實測數據、完整技能清單、已知限制、未來方向
 - 〈[技能撰寫規範](doc/技能撰寫規範.md)〉、〈[工作流撰寫規範](doc/工作流撰寫規範.md)〉：新增或修改技能腳本與工作流的規則與怎麼測
-- 〈[待辦清單](doc/待辦清單.md)〉：數據解析 agent 的下一步（都還沒開始）
+- 〈[待辦清單](doc/待辦清單.md)〉：已記錄、還沒做的——架構整合剩下的階段（第 4～6 階段）與數據解析、技能的下一步
 - 〈[長期願景](doc/長期願景.md)〉：AGV/AMR 車隊調度場景的構想、心跳機制與定時任務要注意的事
 - 〈[評測](evals/README.md)〉、〈[隨機情境的錄製產生器](evals/datagen/README.md)〉
 - 圖的來源在 `doc/diagrams/`，怎麼重新產生見〈[文件導覽](doc/README.md)〉
-
-2026-10-14 之前這個資料夾也有 coding agent，它連同評測已經移到 Coding_agent_harness（這台機器在 `~/Coding_agent_harness`）。

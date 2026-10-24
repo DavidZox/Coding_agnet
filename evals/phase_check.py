@@ -1,6 +1,6 @@
 """每個階段結束時的持續驗證：跑一組固定的檢查，跟 evals/baselines/ 的基準逐項比，列出退步、變慢、禁止動作。
 
-    python3 evals/phase_check.py                  # 離線（約 5 分鐘）：技能、主對話、提煉、維運、數據分析的自我測試
+    python3 evals/phase_check.py                  # 離線（約 2 分鐘）：技能、主對話、提煉、維運、數據分析、工作流的自我測試
     python3 evals/phase_check.py --live           # 再加上要容器／沙盒、不呼叫模型的（約 10 分鐘）：技能接沙盒、數據技能實機、數據分析回歸
     python3 evals/phase_check.py --model          # 再加上真模型（約 1 小時）：提煉（26b、e4b）、主對話（e4b 11 個情境 ×3）、
                                                   #   工作流沙盒（26b、e4b 各 7 個案例 ×2）、維運（26b 70 個）
@@ -8,7 +8,7 @@
     python3 evals/phase_check.py --only ops,extract --model     # 只跑某幾項（名稱見 summary.md 的第一欄括號）
     python3 evals/phase_check.py --compare <結果目錄> [...]      # 不跑，只拿已經跑好的結果跟基準比（維運、主對話、提煉、數據分析回歸）
     python3 evals/phase_check.py --save-baseline <結果目錄> [...]  # 階段 commit 之後，用這幾次的結果更新基準（同一種的多個目錄合成一份）
-    python3 evals/phase_check.py --save-baseline <phase_check 目錄> --only skills,workflow    # 只更新這幾項（其他的基準不動）
+    python3 evals/phase_check.py --save-baseline <phase_check 目錄> --only skills,workflow_selftest,workflow   # 只更新這幾項（其他的基準不動）
 
 結果在 evals/results/<時間>_phase_check/：summary.md（每一項一行：結果、基準、判定；要注意的逐項列出）、summary.json。
 容器與沙盒用完就關；logs/analysis_settings.json 測試前後比對，有變就還原。基準的格式與來源見 evals/baselines/README.md。"""

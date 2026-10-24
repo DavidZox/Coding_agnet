@@ -175,7 +175,7 @@ class SkillAgent(ConversationMixin, PromptMixin, DispatchMixin, GuardMixin, Cont
         #   另有 kind="boundary" 的起點記錄（/clear、計畫核准、上一次 make_skill）。
         # transcript：這個 session 每一則對話訊息的副本（使用者的話、AI 的想法／回覆／action、當時進上下文的工具回傳），
         #   只增不減；transcript_starts 記每個起點在 transcript 的位置。兩者都在 messages 之外，壓縮、/clear、
-        #   claude_code 的清除都不會沖掉——/make_skill 從這裡取「整段對話＋工具回傳」交給草擬 session 寫流程技能的規格。
+        #   claude_code 的清除都不會沖掉——/make_skill 從這裡取「整段對話＋工具回傳」交給草擬 session 寫工作流的規格。
         # pending_skill_draft：等待使用者核准／修改／取消的技能草稿（CLI 與 Web 共用同一份狀態）。
         # =========================
         self.session_id = time.strftime("%Y%m%d_%H%M%S")
@@ -196,7 +196,7 @@ class SkillAgent(ConversationMixin, PromptMixin, DispatchMixin, GuardMixin, Cont
         self.pending_skill_draft = None
         self.last_reply_retry = None  # 最近一次 ask_ai 是否因「空白回覆」自動重試過（給 UI 顯示的說明），見 ask_ai
         # 📊 數據解析（analysis_job.py）：目前分析的數據（容器內路徑；ROS 2 數據技能末行的 [ANALYSIS_DATA] 同步，比照目標容器）、
-        # 各角色的模型與數據根目錄（logs/analysis_settings.json）、最近一次 analysis_run、平行的 worker 共用的鎖，
+        # 數據根目錄與預設容器（logs/analysis_settings.json）、最近一次 analysis_run、寫進度（events.jsonl）的鎖，
         # 以及執行中回報進度的 callback（Web 執行工具時設定，把進度推到右欄；CLI 直接 print）
         self.analysis_data = ""
         self.analysis_cfg = self.load_analysis_settings()
@@ -209,8 +209,7 @@ class SkillAgent(ConversationMixin, PromptMixin, DispatchMixin, GuardMixin, Cont
 
     # ---------------------------------------------------------------- 🧠 主對話的模型與 thinking（Web Console 的「🧠 模型」）
     def set_main_model(self, model):
-        """換主對話的模型；下一次呼叫開始生效。摘要模型（與 /make_skill 的草擬模型）原本跟著主模型的話一起換；
-        數據分析的各角色沒有另外設定時也跟著主模型。"""
+        """換主對話的模型；下一次呼叫開始生效。摘要模型（與 /make_skill 的草擬模型）原本跟著主模型的話一起換。"""
         model = (model or "").strip()
         if not model:
             raise ValueError("模型名稱是空的")

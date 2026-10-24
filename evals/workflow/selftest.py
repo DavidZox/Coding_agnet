@@ -13,6 +13,7 @@
 - dispatch：工作流的名稱當技能載入時說明用 workflow_run；沒有核准不執行；AGENT_WORKFLOWS=0 時不接受；
 - /workflow（CLI 與 Web 共用的 agent_core/workflow_cmd.py）：列出、看步驟；不用互動的入口（Agent_Runner.py --workflow）沒有 --yes 不執行
   會改變狀態的、結束碼（完成／提早結束 0、沒有完成 1、停在【確認】2、要核准 3、沒有執行 4）、--continue；工作流的報告不再交給提煉；
+  `Agent_Runner.py --workflow` 真的當成一個行程跑（結束碼、印出的報告、沒有 --yes 不改；OLLAMA_HOST 指到沒有服務的位址，證明不需要模型）；
 - /make_skill：草稿排成工作流、交給同一套驗證、註冊到 workflows/ 與 SKILLS.md〈工作流〉。
 每一個情境都在臨時目錄複製一份專案，不碰正式的 logs/。"""
 import json
@@ -25,7 +26,7 @@ import traceback
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROJECT = os.path.dirname(os.path.dirname(HERE))
-COPY = ["agent_core", "skills_system", "prompts", "web_app", "vision"]
+COPY = ["agent_core", "skills_system", "prompts", "web_app", "vision", "Agent_Runner.py"]
 
 CONFIRM_WF = """---
 type: Workflow
@@ -104,6 +105,8 @@ def make_env():
         src = os.path.join(PROJECT, item)
         if os.path.isdir(src):
             shutil.copytree(src, os.path.join(tmp, item), ignore=shutil.ignore_patterns("__pycache__"))
+        elif os.path.exists(src):
+            shutil.copy2(src, os.path.join(tmp, item))
     return tmp
 
 
@@ -259,7 +262,9 @@ def main():
 
         def t_args_and_guard():
             assert agent.workflow_run("nope x=1").startswith("[ERROR] 沒有工作流 nope。現有的：")
-            assert "少了必填的：wp_id" in agent.workflow_run("stuck_package_fix")
+            out = agent.workflow_run("stuck_package_fix")
+            assert "少了必填的：wp_id" in out and "這個工作流是：工作包卡住" in out and "不適合用這個工作流，改用技能一步一步做" in out, \
+                "少了必填的：說明這個工作流的用途，需求本來就沒有這一項時改用技能，不要去問一個不存在的東西"
             assert "不認識的參數：wpid" in agent.workflow_run("stuck_package_fix wpid=WP1")
             assert "要寫成 名稱=值" in agent.workflow_run("stuck_package_fix WP1")
             assert agent.workflow_run("--list").startswith("[PASS] 工作流 ")
@@ -352,6 +357,32 @@ def main():
             assert agent._wf_parse_args(seen[0][0])[2] == {"file": "a.yaml", "block": "id: tb1"}
             assert seen[1][0] == "stuck_package_fix wp_id=WP_L2" and seen[2] == ("--continue", {"yes": True, "model": None, "cwd": None}), seen
 
+        def t_headless_process():
+            # Agent_Runner.py --workflow（之後心跳、排程直接呼叫的入口）當成一個行程跑：結束碼、印出的報告、沒有 --yes 不改。
+            # OLLAMA_HOST 指到沒有服務的位址：config_edit 沒有判斷點，整條路不需要模型
+            import subprocess
+            ws_dir = tempfile.mkdtemp(prefix="wf_headless_", dir=tmp)
+            path = os.path.join(ws_dir, "robots.yaml")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("robots:\n  - id: tb1\n    max_speed: 0.5\n  - id: tb2\n    max_speed: 0.5\n")
+            read = lambda: open(path, encoding="utf-8").read()   # noqa: E731
+
+            def runner(*argv):
+                p = subprocess.run([sys.executable, os.path.join(tmp, "Agent_Runner.py"), "--workflow", *argv], cwd=tmp, capture_output=True,
+                                   text=True, timeout=120, stdin=subprocess.DEVNULL,
+                                   env=dict(os.environ, AGENT_PERF_LOG="0", PYTHONDONTWRITEBYTECODE="1", OLLAMA_HOST="127.0.0.1:9"))
+                return p.returncode, p.stdout + p.stderr
+            call = ["config_edit", "file=robots.yaml", "robot=tb1", "key=max_speed", "value=0.9", "--cwd", ws_dir]
+            code, out = runner(*call)
+            assert code == 3 and out.startswith("[需要核准，沒有執行]") and "0.9" not in read(), (code, out[-600:])
+            code, out = runner(*call, "--yes")
+            assert code == 0 and "[PASS] 工作流 config_edit（" in out, (code, out[-800:])
+            assert "tb1\n    max_speed: 0.9" in read() and "tb2\n    max_speed: 0.5" in read(), read()
+            code, out = runner()
+            assert code == 0 and "🧩 工作流" in out and "/workflow stuck_package_fix wp_id=<…>" in out, (code, out[-400:])
+            code, out = runner("config_edit", "fil=x", "--yes")
+            assert code == 4 and "不認識的參數：fil" in out, (code, out[-400:])
+
         def t_make_skill():
             draft_data = {"purpose": "查 topic 有沒有在發，沒有就重啟發布的容器", "requirements": [], "category": "工作流",
                           "title": "topic 不動就重啟", "description": "某個 topic 沒在發時重啟發布它的容器並確認",
@@ -399,6 +430,7 @@ def main():
                          ("參數錯誤與確認關卡的說明", t_args_and_guard),
                          ("dispatch：名稱當技能載入、沒有核准不執行、可以關閉", t_dispatch),
                          ("/workflow 與不用互動的入口：列出、看步驟；沒有 --yes 不執行、結束碼、--continue；報告不再提煉；命令列參數", t_workflow_cmd),
+                         ("Agent_Runner.py --workflow 當成行程跑：沒有 --yes 不改（3）、--yes 改了（0）、列出（0）、參數錯（4）；不需要模型", t_headless_process),
                          ("/make_skill 產生工作流：前面輸出的值交給判斷點、驗證得過、寫進 workflows/ 與 SKILLS.md；往回跳的擋下", t_make_skill)]:
             check(name, fn)
     finally:

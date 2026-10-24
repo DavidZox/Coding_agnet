@@ -1,0 +1,276 @@
+[PASS] 觀察 '/tb1/robot_state'（fih_rmf_msgs/msg/RobotState）5 秒：收到 10 則，狀態改變時才發布，平均 1.997 Hz；有變化的欄位 6 個、固定不變 14 個
+觀察：1792805219.041 ～ 1792805224.134（5.1 秒）；[+秒] 是距離開始觀察的時間；publisher 1 個，QoS RELIABLE／VOLATILE
+## 訊息流
+訊息 10 則（第一則 +0.39s、最後一則 +4.89s）；發布方式：狀態改變時才發布，最大間隔 0.501 秒；每一則：+0.39s、+0.89s、+1.39s、+1.89s、+2.39s、+2.89s、+3.39s、+3.89s、+4.39s、+4.89s
+## 有變化的欄位（6 個）
+  current_state.x：min 0.186（+0.39s）  max 0.267（+4.89s）  mean 0.2265  std 0.0259  slope 0.018/s  首 0.186→末 0.267（10 筆）
+    最大跳變 0.186→0.195 @ 1792805219.927[+0.89s]
+  current_state.y：min 0.093（+0.39s）  max 0.133（+4.89s）  mean 0.1134  std 0.0128  slope 0.0089/s  首 0.093→末 0.133（10 筆）
+    最大跳變 0.093→0.098 @ 1792805219.927[+0.89s]
+  current_state.sim_timestamp：min 10.53（+0.39s）  max 15.03（+4.89s）  mean 12.78  std 1.4361  slope 0.9984/s  首 10.53→末 15.03（10 筆）
+    最大跳變 10.53→11.03 @ 1792805219.927[+0.89s]
+  current_state.distance_to_target：min 4.174（+4.89s）  max 4.264（+0.39s）  mean 4.219  std 0.0287  slope -0.02/s  首 4.264→末 4.174（10 筆）
+    最大跳變 4.264→4.254 @ 1792805219.927[+0.89s]
+  current_state.battery_level：min 81.7（+2.89s）  max 81.8（+0.39s）  mean 81.75  std 0.05  slope -0.0303/s  首 81.8→末 81.7（10 筆）
+    數值切換 1 次（只有 2 種值）：1792805221.931[+2.89s] 81.8→81.7
+  sequence.timestamp：狀態跳轉 4 次（首 1792805219 → 末 1792805223；占比 1792805219 21%、1792805220 21%、1792805221 21%、1792805222 21%）
+    1792805220.428[+1.39s] 1792805219 → 1792805220
+    1792805221.430[+2.39s] 1792805220 → 1792805221
+    1792805222.432[+3.39s] 1792805221 → 1792805222
+    1792805223.433[+4.39s] 1792805222 → 1792805223
+## 固定不變（14 個）
+- robot_id = tb1
+- priority = 0
+- current_state.theta = 0.464
+- current_state.v = 0.02
+- current_state.omega = 0
+- current_state.current_edge = home->a7
+- current_state.target_id = a7
+- current_state.is_arrived = False
+- current_state.has_distance_to_target = True
+- current_state.is_charging = False
+- sequence.robot_name = tb1
+- sequence.workstations = [a7]
+- sequence.priority = 0
+- sequence.state = running
+## 原始訊息（共 10 則；列出 10 則：全部）
+--- #1 +0.39s
+robot_id: tb1
+priority: 0
+current_state:
+  x: 0.186
+  y: 0.093
+  theta: 0.464
+  v: 0.02
+  omega: 0.0
+  sim_timestamp: 10.53
+  current_edge: home->a7
+  target_id: a7
+  is_arrived: false
+  distance_to_target: 4.264
+  has_distance_to_target: true
+  battery_level: 81.8
+  is_charging: false
+sequence:
+  robot_name: tb1
+  workstations:
+  - a7
+  priority: 0
+  state: running
+  timestamp: 1792805219
+--- #2 +0.89s
+robot_id: tb1
+priority: 0
+current_state:
+  x: 0.195
+  y: 0.098
+  theta: 0.464
+  v: 0.02
+  omega: 0.0
+  sim_timestamp: 11.03
+  current_edge: home->a7
+  target_id: a7
+  is_arrived: false
+  distance_to_target: 4.254
+  has_distance_to_target: true
+  battery_level: 81.8
+  is_charging: false
+sequence:
+  robot_name: tb1
+  workstations:
+  - a7
+  priority: 0
+  state: running
+  timestamp: 1792805219
+--- #3 +1.39s
+robot_id: tb1
+priority: 0
+current_state:
+  x: 0.204
+  y: 0.102
+  theta: 0.464
+  v: 0.02
+  omega: 0.0
+  sim_timestamp: 11.53
+  current_edge: home->a7
+  target_id: a7
+  is_arrived: false
+  distance_to_target: 4.244
+  has_distance_to_target: true
+  battery_level: 81.8
+  is_charging: false
+sequence:
+  robot_name: tb1
+  workstations:
+  - a7
+  priority: 0
+  state: running
+  timestamp: 1792805220
+--- #4 +1.89s
+robot_id: tb1
+priority: 0
+current_state:
+  x: 0.213
+  y: 0.107
+  theta: 0.464
+  v: 0.02
+  omega: 0.0
+  sim_timestamp: 12.03
+  current_edge: home->a7
+  target_id: a7
+  is_arrived: false
+  distance_to_target: 4.234
+  has_distance_to_target: true
+  battery_level: 81.8
+  is_charging: false
+sequence:
+  robot_name: tb1
+  workstations:
+  - a7
+  priority: 0
+  state: running
+  timestamp: 1792805220
+--- #5 +2.39s
+robot_id: tb1
+priority: 0
+current_state:
+  x: 0.222
+  y: 0.111
+  theta: 0.464
+  v: 0.02
+  omega: 0.0
+  sim_timestamp: 12.53
+  current_edge: home->a7
+  target_id: a7
+  is_arrived: false
+  distance_to_target: 4.224
+  has_distance_to_target: true
+  battery_level: 81.8
+  is_charging: false
+sequence:
+  robot_name: tb1
+  workstations:
+  - a7
+  priority: 0
+  state: running
+  timestamp: 1792805221
+--- #6 +2.89s
+robot_id: tb1
+priority: 0
+current_state:
+  x: 0.231
+  y: 0.116
+  theta: 0.464
+  v: 0.02
+  omega: 0.0
+  sim_timestamp: 13.03
+  current_edge: home->a7
+  target_id: a7
+  is_arrived: false
+  distance_to_target: 4.214
+  has_distance_to_target: true
+  battery_level: 81.7
+  is_charging: false
+sequence:
+  robot_name: tb1
+  workstations:
+  - a7
+  priority: 0
+  state: running
+  timestamp: 1792805221
+--- #7 +3.39s
+robot_id: tb1
+priority: 0
+current_state:
+  x: 0.24
+  y: 0.12
+  theta: 0.464
+  v: 0.02
+  omega: 0.0
+  sim_timestamp: 13.53
+  current_edge: home->a7
+  target_id: a7
+  is_arrived: false
+  distance_to_target: 4.204
+  has_distance_to_target: true
+  battery_level: 81.7
+  is_charging: false
+sequence:
+  robot_name: tb1
+  workstations:
+  - a7
+  priority: 0
+  state: running
+  timestamp: 1792805222
+--- #8 +3.89s
+robot_id: tb1
+priority: 0
+current_state:
+  x: 0.249
+  y: 0.125
+  theta: 0.464
+  v: 0.02
+  omega: 0.0
+  sim_timestamp: 14.03
+  current_edge: home->a7
+  target_id: a7
+  is_arrived: false
+  distance_to_target: 4.194
+  has_distance_to_target: true
+  battery_level: 81.7
+  is_charging: false
+sequence:
+  robot_name: tb1
+  workstations:
+  - a7
+  priority: 0
+  state: running
+  timestamp: 1792805222
+--- #9 +4.39s
+robot_id: tb1
+priority: 0
+current_state:
+  x: 0.258
+  y: 0.129
+  theta: 0.464
+  v: 0.02
+  omega: 0.0
+  sim_timestamp: 14.53
+  current_edge: home->a7
+  target_id: a7
+  is_arrived: false
+  distance_to_target: 4.184
+  has_distance_to_target: true
+  battery_level: 81.7
+  is_charging: false
+sequence:
+  robot_name: tb1
+  workstations:
+  - a7
+  priority: 0
+  state: running
+  timestamp: 1792805223
+--- #10 +4.89s
+robot_id: tb1
+priority: 0
+current_state:
+  x: 0.267
+  y: 0.133
+  theta: 0.464
+  v: 0.02
+  omega: 0.0
+  sim_timestamp: 15.03
+  current_edge: home->a7
+  target_id: a7
+  is_arrived: false
+  distance_to_target: 4.174
+  has_distance_to_target: true
+  battery_level: 81.7
+  is_charging: false
+sequence:
+  robot_name: tb1
+  workstations:
+  - a7
+  priority: 0
+  state: running
+  timestamp: 1792805223

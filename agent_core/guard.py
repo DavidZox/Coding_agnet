@@ -3,8 +3,8 @@
 跟 Plan 模式的核准關卡同一個原則：確認由程式路徑保證，不靠模型記得要先問。判斷在這裡（guard_check），
 執行在 DispatchMixin.run_tool：沒有 approved=True 就不執行被擋的技能（CLI／Web 以外的呼叫端也一樣擋得住）。
 哪些技能要擋見 config.GUARDED_SKILLS；各技能的查詢用法放行（docker_runcmd／host_runcmd 的唯讀指令、workpackage_send --dry-run、
-docker_ctl status、ROS2_param get、rmf_handshake status…），參數一律照腳本自己的解析（_guard_parse）判斷，不另外解析。流程技能（make_skill）沒有自己的腳本，它的每一步都是一般的
-run_tool，被擋的技能照樣在那一步確認。"""
+docker_ctl status、ROS2_param get、rmf_handshake status…），參數一律照腳本自己的解析（_guard_parse）判斷，不另外解析。工作流（workflow_run）在開始時確認：
+workflow_guard_reason 列出到第一個【確認】之前會改變狀態的步驟，核准一次；【確認】之後接著做時再問一次。"""
 import os
 import re
 import shlex
@@ -145,7 +145,7 @@ class GuardMixin:
             if p.get("error"):                         # 參數錯、不會自己結束的指令：腳本不執行，不必問
                 return p.get("error_kind") in ("usage", "refused")
             command = p.get("command") or ""
-            return "{" not in command and is_readonly_shell(command)   # 含 {…}（例如流程技能沒代入的佔位符）看不出實際指令，不放行
+            return "{" not in command and is_readonly_shell(command)   # 含 {…}（例如沒代入的佔位符）看不出實際指令，不放行
         if skill == "host_runcmd":                     # 主機上的唯讀指令（ls、cat、docker ps／logs、git status…）不用問；指令照腳本的解析取
             from skills_system.scripts.host_runcmd_cmd import parse_args as host_args
             _, command, err = host_args(args)

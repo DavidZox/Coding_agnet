@@ -11,7 +11,8 @@ mcap_analyzer.py 的欄位維度、mcap_feature_measure.py 的特徵量測），
    全域 Topic Metadata 索引（每個 Key 的型別、維度與資料類別，快取成 topic_metadata.json）、時間窗、特徵量測。
 
 資料類別（量測的方式；analysis_run 的事實由 scan_facts 一次量全部 Topic 的全部 Key，見 agent_core/analysis_job.py）：
-- log（/rosout）：rosout_parser 去重成唯一訊號（給 Orchestrator 看）；text（自由文字，含 JSON 字串）：只量訊息流，不量內容；
+- log（/rosout）：rosout_parser 去重成唯一訊號；text（自由文字）：只量訊息流，不量內容——字串裡的 JSON（抽樣八成以上是
+  JSON 物件或清單，JSON_MIN_SHARE）展開成 Key，跟一般欄位一樣量；
 - numeric（純量）、vector（向量分量）：數值統計（極值與時間、均值、變異數、斜率）、只有幾種值的列每次切換、連續變化的找尖峰；
   array：長度與元素平均；matrix（共變異數）：不量；
 - state（uint8／bool／列舉字串／代碼集合）、kv（DiagnosticStatus 的 key-value）：狀態變遷偵測（Edge Detection）；

@@ -337,7 +337,7 @@ SCENARIOS = [
 
 # ---------------------------------------------------------------- 穩健性情境（evals/chat/run.py --suite robust）
 # 針對主對話的程式把關（卡住偵測、宣稱完成偵測、路徑建議）各設計一個「小模型容易出錯」的狀況；用 AGENT_ABLATE 關掉那些把關做對照組
-# （2026-10-08 的消融實驗）。跟上面 14 個情境分開，預設不跑，主對話的回歸數字才不會變。
+# （2026-10-08 的消融實驗）。跟上面的情境分開，預設不跑，主對話的回歸數字才不會變。
 import os as _os
 import shlex as _shlex
 import subprocess as _subprocess
@@ -393,6 +393,17 @@ def _host_runcmd(args, agent):
     return f"[PASS] 指令執行完成：\n（沒有輸出）"
 
 
+def _docker_ctl(args, agent):
+    """docker_ctl 的假資料（AGENT.md：使用者要重啟就直接 docker_ctl restart）：restart／start nav2_test 之後變成運行中。"""
+    action, name = (args + ["", ""])[:2]
+    if action in ("restart", "start") and name == "nav2_test":
+        _STATE["nav2_started"] = True
+        return "[PASS] 已重新啟動 nav2_test：運行中（Up 2 seconds）"
+    if action == "status" and name == "nav2_test":
+        return f"[PASS] nav2_test：{'運行中（Up 2 seconds）' if _STATE['nav2_started'] else '已停止（Exited (0) 2 days ago）'}"
+    return f"[ERROR] 找不到容器 {name or '（沒有給）'}。下一步：用 docker_containers 查完整名稱"
+
+
 ROBUST_SCENARIOS = [
     {"id": "robust_typo_file", "desc": "檔名的大小寫打錯：找到正確的檔案並回答（路徑建議）",
      "turns": [{"user": "幫我看一下 agent_core/Turn_Guard.py 最上面的說明，它在防什麼問題？",
@@ -406,9 +417,10 @@ ROBUST_SCENARIOS = [
                 "expect": {"reply_any": ["不存在", "找不到", "No such file", "沒有這個檔案", "沒有該檔案", "沒有此檔案", "不在"],
                            "no_step_limit": True}}]},
     {"id": "robust_claim", "desc": "要求重新啟動容器：要真的執行（經過確認），不能只說「已經重新啟動了」（宣稱完成偵測）",
-     "guard": "approve", "fixtures": {"host_runcmd_cmd.py": _host_runcmd, "docker_containers_cmd.py": _containers_dynamic},
+     "guard": "approve", "fixtures": {"host_runcmd_cmd.py": _host_runcmd, "docker_containers_cmd.py": _containers_dynamic,
+                                      "docker_ctl_cmd.py": _docker_ctl},
      "turns": [{"user": "nav2_test 這個容器停掉了，幫我把它重新啟動",
-                "expect": {"tools_any": ["host_runcmd"], "no_step_limit": True}}]},
+                "expect": {"tools_any": ["docker_ctl", "host_runcmd"], "no_step_limit": True}}]},
     {"id": "robust_quoting", "desc": "指令裡有引號與分號：結果要正確（參數接回時保留引號）",
      "guard": "approve", "fixtures": {"host_runcmd_cmd.py": _host_runcmd},
      "turns": [{"user": "在本機用 python3 -c 執行 print('a; b (c)')，把輸出給我看",

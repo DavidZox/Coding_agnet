@@ -10,7 +10,7 @@
 - 兩階段揭露照舊：技能名稱回規格文件、腳本路徑才執行；
 - 🧠 模型設定：主對話換模型、thinking 開關只對支援的模型送出、設定存檔與載入、/model 與 /think；
 - prompts/ 裡給模型的文字都讀得到（讀不到時程式不會報錯，只會默默變成空的）。
-- 🧩 /workflow（Web）：列出、看步驟；直接執行的工作流照常經過確認卡片，核准才執行、拒絕不執行；報告完整進主對話，AI 依報告回答。
+- 🧩 /workflow（Web 與 CLI——CLI 用假的 input() 驅動真的 cli.main() 迴圈）：列出、看步驟；直接執行的工作流照常經過確認，核准才執行、拒絕不執行；報告完整進主對話，AI 依報告回答。
 每一個情境都在臨時目錄複製一份專案，不碰正式的 logs/。"""
 import json
 import os
@@ -162,7 +162,7 @@ def main():
             assert "規格文件" in tools[0] and tools[1].startswith("[PASS] 檔案內容"), [t[:80] for t in tools]
 
         def t_prompts_loaded():
-            # 給模型的文字都在 prompts/：路徑錯了不會報錯（AGENT.md、模式規則、記憶、各角色的 prompt 都會默默變成空的），所以直接檢查讀到的內容
+            # 給模型的文字都在 prompts/：路徑錯了不會報錯（AGENT.md、模式規則、記憶、維運／提煉／工作流的 prompt 都會默默變成空的），所以直接檢查讀到的內容
             text = agent.get_system_prompt()
             for rel in ("AGENT.md", os.path.join("context_modes", agent.context_mode + ".md")):
                 with open(os.path.join(tmp, "prompts", rel), encoding="utf-8") as f:
@@ -172,6 +172,12 @@ def main():
             from agent_core.ops_job import _read_prompt as ops_prompt
             for name in ("planner.md", "worker.md"):
                 assert ops_prompt(name).strip(), f"讀不到 prompts/ops/{name}"
+            from agent_core.extract import read_prompt as extract_prompt
+            for name in ("worker.md", "synthesizer.md"):
+                assert extract_prompt(name).strip(), f"讀不到 prompts/extract/{name}"
+            from agent_core.workflow import _read_prompt as workflow_prompt
+            for name in ("fill.md", "check.md"):
+                assert workflow_prompt(name).strip(), f"讀不到 prompts/workflow/{name}"
 
         def fake_show(model):
             return {"capabilities": ["completion", "thinking"] if str(model).startswith(("gemma4", "deepseek-r1")) else ["completion", "tools"]}
@@ -291,6 +297,42 @@ def main():
             assert flows.apply_decision("n", ev) == "stop" and "1.2" not in read() and pending["mode"] is None
             assert "使用者沒有同意執行 workflow_run" in agent.messages[-1]["content"], agent.messages[-1]["content"][:200]
 
+        def t_workflow_cli():
+            # 🧩 CLI 的 /workflow（跟 Web 共用 workflow_cmd）：驅動真的 cli.main() 迴圈——列出、看步驟；直接執行先問 y/n，y 才改、
+            # 報告完整進主對話後 AI 依報告回答；n 不執行、也不問 AI
+            import builtins
+            import contextlib
+            import io
+            from agent_core import cli
+            path = os.path.join(tmp, "configs", "robots_cli.yaml")
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("robots:\n  - id: tb1\n    max_speed: 0.5\n  - id: tb2\n    max_speed: 0.5\n")
+            read = lambda: open(path, encoding="utf-8").read()   # noqa: E731
+            run = f"/workflow config_edit file={path} robot=tb2 key=max_speed value="
+            lines, asked = ["/workflow", "/workflow show config_edit", run + "0.7", "y", run + "0.9", "n"], []
+
+            def fake_input(prompt=""):
+                asked.append(prompt)
+                if not lines:
+                    raise KeyboardInterrupt          # CLI 收到 Ctrl-C 就結束（👋 Bye）
+                return lines.pop(0)
+            fake = FakeMain([say("改好了：tb2 的 max_speed 從 0.5 改成 0.7，tb1 沒有動。")])
+            ollama.chat = fake
+            real_input, buf = builtins.input, io.StringIO()
+            builtins.input = fake_input
+            try:
+                with contextlib.redirect_stdout(buf):
+                    cli.main()
+            finally:
+                builtins.input = real_input
+            out = buf.getvalue()
+            assert "/workflow config_edit file=<…>" in out and "步驟：" in out, out[:600]
+            assert asked.count("確定執行？(y/n): ") == 2, asked
+            assert "tb2\n    max_speed: 0.7" in read() and "tb1\n    max_speed: 0.5" in read() and "0.9" not in read(), read()
+            assert "[PASS] 工作流 config_edit（" in out and "🧠 主對話收到：完整原文" in out, "報告完整進主對話、不再提煉"
+            assert fake.calls == 1 and "改好了" in out and "🚫 已拒絕，這個工作流沒有執行。" in out, "y：AI 依報告回答一次；n：不執行、不問 AI"
+
         for name, fn in [("卡住偵測：同樣的動作第二次附提醒、第三次加強提醒、第四次停下這一回合（v4.1）", t_stuck),
                          ("卡住偵測：同一個錯誤不管中間做了什麼，第二次提醒、第四次算卡住", t_same_error_not_consecutive),
                          ("卡住偵測：評測對照組的舊規則（AGENT_TURN_GUARD_RULE=v4，第三次就停）", t_v4_rule),
@@ -302,10 +344,11 @@ def main():
                          ("這一回合真的執行過工具：不提醒", t_claim_after_tool_ok),
                          ("路徑找不到時列出相近的路徑（view_file／list_dir／change_dir）", t_path_suggestions),
                          ("兩階段揭露照舊：技能名稱回規格、腳本路徑才執行", t_two_stage_disclosure),
-                         ("prompts/ 裡的文字都讀得到：AGENT.md、上下文模式的規則、長期記憶、數據解析與維運各角色", t_prompts_loaded),
+                         ("prompts/ 裡的文字都讀得到：AGENT.md、上下文模式的規則、長期記憶、維運（規劃、worker）、提煉（worker、整合）、工作流的判斷點", t_prompts_loaded),
                          ("🧠 主對話 thinking：支援的模型才送 think=True，思考內容推到右欄、不進對話", t_think_main),
-                         ("🧠 模型設定：換主模型（摘要跟著換）、存檔與載入、數據分析各角色的模型與 thinking、/model 與 /think", t_model_settings),
-                         ("🧩 /workflow：列出、看步驟；直接執行要先過確認卡片，核准才改、拒絕不改；報告完整進主對話、AI 依報告回答", t_workflow_web)]:
+                         ("🧠 模型設定：換主模型（摘要跟著換）、存檔與載入、thinking 只對支援的模型送、/model 與 /think", t_model_settings),
+                         ("🧩 /workflow：列出、看步驟；直接執行要先過確認卡片，核准才改、拒絕不改；報告完整進主對話、AI 依報告回答", t_workflow_web),
+                         ("🧩 CLI 的 /workflow：真的 cli.main() 迴圈裡列出、看步驟、y 才改、n 不執行；報告完整進主對話、AI 依報告回答", t_workflow_cli)]:
             check(name, fn)
     finally:
         os.chdir(cwd)

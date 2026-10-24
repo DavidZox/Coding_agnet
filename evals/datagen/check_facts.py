@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """只驗程式那一層（不呼叫模型）：產生器的每一份錄製，用分析程式量全部的事實（mcap_analyzer --facts、rosout_parser，
 analysis_job.build_facts），跟產生器的評分標準比——時間線該有的事件、Topic 的類別、穩定的錄製沒有事件（背景的 Topic 除外）。
-大量數據時先跑這個（快、結果固定），程式的事實對了，再跑有模型的回歸（evals/analysis/regression.py）。
+大量數據時先跑這個（快、結果固定），程式的事實對了，再跑整條流程的回歸（evals/analysis/regression.py，也不呼叫模型）。
 
     python3 evals/datagen/check_facts.py test_data/recordings/gen/s1/cases.json [--container cah_analysis_test] [--only id1,id2] [-v]"""
 import argparse

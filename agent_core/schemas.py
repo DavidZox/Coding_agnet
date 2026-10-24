@@ -26,7 +26,7 @@ AGENT_REPLY_SCHEMA = {
     "required": ["thought", "reply", "action"],
 }
 
-# /make_skill 的流程技能草稿（Ollama format=）：欄位意義見 SkillAgent._make_skill_prompts，驗證見 _normalize_skill_draft。
+# /make_skill 的工作流草稿（Ollama format=）：欄位意義見 SkillAgent._make_skill_prompts，驗證見 _normalize_skill_draft。
 # 欄位順序＝生成順序：先讀完對話寫用途，再逐條列出使用者的要求（requirements），然後才寫需要的資訊與步驟——實測
 # 直接寫步驟時，e4b 與 26b 都會漏掉使用者說過的條件（「低電量的車不要派任務」「派之前先跟我確認」）；
 # 最後才寫標題與索引描述（根據寫好的內容總結）。

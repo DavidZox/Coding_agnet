@@ -1,13 +1,13 @@
 {
  "analysis_selftest": {
-  "label": "第 3 階段（commit 前的完整驗證）（2026-10-23）",
-  "passed": 10,
-  "total": 10
+  "label": "第 3 階段之後（加了 CLI 的 /workflow、/analyze 與 --workflow 行程的測試）（2026-10-24）",
+  "passed": 11,
+  "total": 11
  },
  "chat_selftest": {
-  "label": "第 3 階段（commit 前的完整驗證）（2026-10-23）",
-  "passed": 15,
-  "total": 15
+  "label": "第 3 階段之後（加了 CLI 的 /workflow、/analyze 與 --workflow 行程的測試）（2026-10-24）",
+  "passed": 16,
+  "total": 16
  },
  "containers_sandbox": {
   "label": "第 3 階段（commit 前的完整驗證）（2026-10-23）",
@@ -50,8 +50,8 @@
   "total": 24
  },
  "workflow_selftest": {
-  "label": "第 3 階段（commit 前的完整驗證）（2026-10-23）",
-  "passed": 13,
-  "total": 13
+  "label": "第 3 階段之後（加了 CLI 的 /workflow、/analyze 與 --workflow 行程的測試）（2026-10-24）",
+  "passed": 14,
+  "total": 14
  }
 }

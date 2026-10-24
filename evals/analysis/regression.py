@@ -261,7 +261,7 @@ def main():
     if args.cases:
         want = set(args.cases.split(","))
         cases = [c for c in cases if c["id"] in want]
-    out_dir = args.out or os.path.join(HERE, "results", "analysis_" + time.strftime("%Y%m%d_%H%M%S"))
+    out_dir = args.out or os.path.join(PROJECT, "evals", "results", "analysis_" + time.strftime("%Y%m%d_%H%M%S"))   # evals/results/ 在 .gitignore
     if args.run:
         runs = run_cases(cases, args, args.data_root or spec["data_root"])
         os.makedirs(out_dir, exist_ok=True)
