@@ -244,6 +244,13 @@ TASK_WORKER_WRAPUP_SCHEMA = {
     "required": ["done", "summary", "facts"],
 }
 
+# worker 回報「沒有完成」時對照這一步的目標問一次：目標做到了沒有（查到的結果有問題、修不了，不算沒做到）、照實的摘要
+TASK_GOAL_CHECK_SCHEMA = {
+    "type": "object",
+    "properties": {"goal_met": {"type": "boolean"}, "summary": _text(1500)},
+    "required": ["goal_met", "summary"],
+}
+
 # 事實核對不過時交回改一次：只輸出改正後的事實與摘要
 TASK_FACTS_FIX_SCHEMA = {
     "type": "object",

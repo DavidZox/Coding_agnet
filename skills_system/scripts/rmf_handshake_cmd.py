@@ -21,7 +21,6 @@ RMF_MANUAL_TRIGGER_URL 或 http://localhost:8002；它不在 rmf_launch.py 裡�
 parse_args(argv) 是純函式（guard 用它判斷 status 是唯讀的）。
 """
 import json
-import math
 import os
 import re
 import shlex
@@ -338,16 +337,6 @@ def _robot_line(rid, info, topo):
             + pos)
 
 
-def _distance_to(info, station, topo):
-    node = rc.node_by_ref(station, topo)
-    x, y = (info or {}).get("x"), (info or {}).get("y")
-    if not node or not isinstance(x, (int, float)) or not isinstance(y, (int, float)):
-        return None
-    if not isinstance(node.get("x"), (int, float)) or not isinstance(node.get("y"), (int, float)):
-        return None
-    return math.hypot(node["x"] - x, node["y"] - y)
-
-
 def _diagnose(rid, info, data, topo, lis, processing, pkgs, waiting):
     """回傳 [(重要度, 標題, 判斷文字)]；重要度越小越前面，第一行寫前幾個標題。"""
     diag = []
@@ -408,15 +397,17 @@ def _diagnose(rid, info, data, topo, lis, processing, pkgs, waiting):
         iid = cur.get("item_id")
         if cur.get("status") != "DISPATCHED" or rc.queue_of(data, iid)[0]:
             continue
-        if info and info.get("status") == "ONLINE" and info.get("real_state") == "standby":
-            dist = _distance_to(info, cur.get("station"), topo)
+        if rc.robot_idle(info):
+            lost = rc.fin_lost(data, p, topo, rid)            # 同 workpackage_status --until-done 提早結束的判斷
             station = rc.station_text(cur.get("station"), topo)
-            if dist is None or dist <= rc.NEAR_STATION_DISTANCE:
+            if lost:
+                dist = lost["distance"]
                 where = f"已經在 {station}（距 {dist:.2f}）" if dist is not None else f"已經閒置（座標對不到 {station}）"
                 diag.append((0, "完成訊號多半遺失了（task_exec_fin）", f"完成訊號多半遺失了：工作包 {p.get('package_id')} 的工作項 {iid} 已經 confirm 給 {rid}，{rid} {where}、自報 standby，"
                                 f"但 orchestrtor 還在等 /{rid}/task_exec_fin。使用者要你處理的話，下一步直接執行 `rmf_handshake fin {rid} {iid}` 補發"
                                 f"（系統會請使用者確認，不用先問），再用 workpackage_status {p.get('package_id')} --until-done 等它跑完；只要查原因就回報。"))
             else:
+                dist = rc.distance_to(info, cur.get("station"), topo)
                 diag.append((1, "領了工作項但沒有在動（不是完成訊號遺失）", f"{rid} 領了 {iid}（{station}）但自報 standby、離那一站還有 {dist:.2f}：可能還沒出發或導航失敗，不是完成訊號遺失；"
                                 f"不要補發 fin。下一步：觀察一下（workpackage_status {p.get('package_id')} --watch 20），沒有動靜就請機器人端確認導航。"))
         elif info and info.get("real_state") == "running":

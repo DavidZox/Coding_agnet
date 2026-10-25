@@ -38,7 +38,8 @@ from .config import (GUARDED_SKILLS, NUM_CTX, PROMPTS_DIR, SKILL_DOC_PREFIX, TAS
 from .extract import missing_tokens
 from .jobstore import JobStore
 from .protocol import action_text, parse_agent_reply
-from .schemas import TASK_FACTS_FIX_SCHEMA, TASK_PLAN_SCHEMA, TASK_WORKER_REPLY_SCHEMA, TASK_WORKER_WRAPUP_SCHEMA
+from .schemas import (TASK_FACTS_FIX_SCHEMA, TASK_GOAL_CHECK_SCHEMA, TASK_PLAN_SCHEMA, TASK_WORKER_REPLY_SCHEMA,
+                      TASK_WORKER_WRAPUP_SCHEMA)
 
 _DIR = os.path.join(PROMPTS_DIR, "orchestra")
 DEFAULT_PROFILE = "ops"
@@ -694,6 +695,13 @@ class TaskRun:
             self.note(f"🧭 任務第 {it['n']}/{n_items} 步：{it['title']}")
             self.do_item(it)
             self.save()
+            if it["status"] in ("done", "unverified") and it.get("finding") and job["mode"] == "auto" and job["replans"] < TASK_MAX_REPLANS:
+                # worker 說沒有完成、對照目標其實做到了：查到的狀況（問題還在）可能讓剩下的步驟不夠用（例如 domain 不對，要換一個再讀），
+                # 照它重排剩下的步驟（不重試這一步）；規劃覺得不用再做什麼可以給空的。這就是照查到的事實重排過了：要改狀態之前不再重排
+                # 一次（2026-10-24 cx_reassign：連著重排兩次把次數用完，後面的步驟失敗時就沒得重排）
+                job["surveyed"] = True
+                a._task_replan(job, f"第 {it['n']} 步「{it['title']}」做完了，查到的狀況：{_one_line(it['summary'], 300)}")
+                continue
             if it["status"] == "failed":
                 if job["mode"] == "auto" and job["replans"] < TASK_MAX_REPLANS:
                     why = f"第 {it['n']} 步「{it['title']}」沒有完成：{_one_line(it['summary'], 300)}"
@@ -743,6 +751,7 @@ class TaskRun:
             it["steps"] += res["steps"]
             it["calls"] += res["calls"]
             it["summary"], it["facts"], it["dropped"] = res["summary"], res["facts"], res["dropped"]
+            it["finding"] = bool(res.get("finding"))
             if res["status"] != "done":
                 it["status"] = "failed"
                 prev_failure = res["summary"]
@@ -934,6 +943,10 @@ class TaskWorker:
                                                             "action 填技能的腳本路徑去做，做完再回報。"})
                     continue
                 failed = bool(_FAILED_RE.match(last_reply))
+                if failed and executed:              # 「沒有完成」常混了「問題還在」：對照這一步的目標問一次做到了沒有
+                    met, summary, steps = self._goal_check(msgs, last_reply, steps)
+                    if met:                          # 做到了，但查到的狀況有問題：交給 TaskRun 照它重排剩下的步驟
+                        return self._finish(msgs, "done", summary, (data or {}).get("facts"), steps, calls, finding=True)
                 return self._finish(msgs, "failed" if failed else "done", last_reply, (data or {}).get("facts"), steps, calls)
             out, name, payload = self._act(action)
             if out is None:                          # 同一個動作做了 3 次
@@ -960,6 +973,25 @@ class TaskWorker:
         if data.get("done") is True and executed:
             return self._finish(msgs, "done", summary, data.get("facts"), steps + 1, calls)
         return self._result("failed", f"做了 {TASK_WORKER_MAX_STEPS} 輪還沒做完。{summary}", [], steps + 1, calls)
+
+    def _goal_check(self, msgs, reply, steps):
+        """worker 回報「沒有完成」時，對照這一步的目標問一次做到了沒有（TASK_GOAL_CHECK_SCHEMA，只有兩個欄位）。目標要查的查到了、
+        要改的改好了就是做到了；查到的結果是有問題、問題還在、修不了，不算沒做到（2026-10-24 cx_batch_dispatch：診斷的步驟查到
+        「一直回 no」卻回「沒有完成：已完成診斷，但問題仍未解決」，worker.md 寫清楚了也一樣——引擎就重試、重排，任務標成沒做完）。
+        做到了的不重試，TaskRun 照查到的狀況重排剩下的步驟（cx_domain_fix：在 domain 42 讀不到也算「確認了」，但要換 domain 再讀）。
+        回傳 (做到了沒, 摘要, 步數)；問不出來就照原本的「沒有完成」。"""
+        ask = ("[系統] 你回報這一步沒有完成。對照這一步的目標判斷做到了沒有：\n"
+               f"目標：{self.item['goal']}\n"
+               "- 做到了：目標要查的查到了、要確認的確認清楚了（結果是有問題——卡住、被拒、離線、沒成功、設定不對——也是做到了；"
+               "問題還在、修不了，不算沒做到：修好問題不在這一步的目標裡，除非目標寫了要修好）；要改的改好了。\n"
+               "- 沒做到：要查的查不到（找不到對象、技能一直錯誤）、要改的沒改成（技能被擋、檢查不過）、目標要等的結果沒有發生"
+               "（例如要等它跑完，它卻卡住了）。\n"
+               "goal_met 填 true／false；summary 照實寫這一步最後的結果：做了什麼、現在是什麼狀態（問題還在就寫問題是什麼，不要寫「沒有完成」）。")
+        raw, data = self._call(msgs + [{"role": "user", "content": ask}], TASK_GOAL_CHECK_SCHEMA, steps + 1,
+                               kind="worker_goal_check", num_predict=2048)
+        summary = str((data or {}).get("summary") or "").strip()
+        met = bool(data) and data.get("goal_met") is True and bool(summary)
+        return met, (summary if met else reply), steps + 1
 
     def _act(self, action):
         """執行 worker 的一個動作（權限照計畫）：回傳 (輸出, 技能名稱, 動作文字)；同一個動作第 3 次回 (None, …)。"""
@@ -1027,7 +1059,7 @@ class TaskWorker:
                 ok.append({"text": text, "ref": ref})
         return ok, bad
 
-    def _finish(self, msgs, status, summary, facts, steps, calls):
+    def _finish(self, msgs, status, summary, facts, steps, calls, finding=False):
         """worker 說做完（或沒做完）時：核對事實，對不上的交回改一次（帶著具體的問題），還是不行就拿掉。"""
         ok, bad = self._check_facts(facts, summary)
         if bad and (self.outputs or self.prior):
@@ -1042,9 +1074,9 @@ class TaskWorker:
                     ok, bad = ok2, bad2
                     summary = str(data.get("summary") or "").strip() or summary
                 steps += 1
-        return self._result(status, summary, ok, steps, calls, dropped=[f for f, _ in bad])
+        return self._result(status, summary, ok, steps, calls, dropped=[f for f, _ in bad], finding=finding)
 
     @staticmethod
-    def _result(status, summary, facts, steps, calls, dropped=()):
+    def _result(status, summary, facts, steps, calls, dropped=(), finding=False):
         return {"status": status, "summary": summary or "（沒有說明）", "facts": list(facts)[:8], "dropped": list(dropped),
-                "steps": steps, "calls": calls}
+                "steps": steps, "calls": calls, "finding": finding}

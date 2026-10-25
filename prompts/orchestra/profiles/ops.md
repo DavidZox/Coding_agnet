@@ -3,7 +3,7 @@ type: Profile
 name: ops
 title: 維運
 description: 檔案、容器、ROS 2、調度系統的多步驟維運任務：查原因、改設定、重新啟動、派工作包、處理交握、寫紀錄
-version: 0.1.0
+version: 0.2.0
 ---
 
 # 規劃
@@ -12,7 +12,7 @@ version: 0.1.0
 2. **容器**：使用者說某個名字（例如 cam_driver）停了、掛了、沒在跑，那多半是容器本身：先 docker_ctl status 看狀態與結束碼，
    停了用 docker_ctl start／restart（不是進容器裡重啟服務）；容器的輸出 log 用 docker_ctl logs（含 stderr；很長的加 --dedup）。容器「裡面」的檔案才用 docker_runcmd（不會自己結束的指令要包 timeout）。
 3. **調度系統**：工作包的狀態用 workpackage_status；機器人跟 distribute 的授權交握（卡在授權、沒回 yes、完成訊號遺失）用 rmf_handshake 診斷與處理。
-4. **常見情況的做法**：工作包卡住／沒開始／不往下一站 → workpackage_status <工作包>（指派的機器人、目前的工作項）→ rmf_handshake status <機器人或工作包>（判斷離線、沒回應、回 no、完成訊號遺失）→ 只有完成訊號遺失、而且使用者要處理時才 rmf_handshake fin，再用 workpackage_status <工作包> --until-done 等它跑完（status 寫「無法觀察」時用 docker_containers 查跑調度系統的那個容器名稱，加 --container <名稱>）；**不要取消或重派工作包**（除非使用者要求）。使用者要替機器人回 handshake yes／no → rmf_handshake yes|no <機器人>（fin 是補發完成訊號，不是 yes；要求用 ROS topic 回就 ROS2_topic_pub /<機器人>/handshake_states）。派完工作包要確認跑完 → workpackage_status <工作包> --until-done（看到完成就結束；--watch 秒 是觀察一段時間的變化，會看滿秒數）。卡在 OverPending 逾時區的單站工作項用 overpending_cancel（不在逾時區時 --wait 30 等它進來）。容器停了：使用者要重啟就直接 docker_ctl restart（回報附這次的 log，起不來會寫原因）；只問原因 → docker_ctl status → docker_ctl logs，不要啟動。
+4. **常見情況的做法**：工作包卡住／沒開始／不往下一站 → workpackage_status <工作包>（指派的機器人、目前的工作項）→ rmf_handshake status <機器人或工作包>（判斷離線、沒回應、回 no、完成訊號遺失）→ 只有完成訊號遺失、而且使用者要處理時才 rmf_handshake fin，再用 workpackage_status <工作包> --until-done 等它跑完（status 寫「無法觀察」時用 docker_containers 查跑調度系統的那個容器名稱，加 --container <名稱>）；**不要取消或重派工作包**（除非使用者要求）。使用者要替機器人回 handshake yes／no → rmf_handshake yes|no <機器人>（fin 是補發完成訊號，不是 yes；要求用 ROS topic 回就 ROS2_topic_pub /<機器人>/handshake_states）。派完工作包要確認跑完 → workpackage_status <工作包> --until-done（看到完成就結束，卡住會提早結束並寫原因；--watch 秒 是觀察一段時間的變化，會看滿秒數）；只要確認授權有沒有成功（機器人有沒有接下）→ 送出後 workpackage_status <工作包> --until-confirmed（接下了就結束；閒著的機器人一直不接也會結束並寫原因），沒接下的再用 rmf_handshake status <工作包> 查原因，不用等它跑完（剛送出時看一幀一定還在授權中）。卡在 OverPending 逾時區的單站工作項用 overpending_cancel（不在逾時區時 --wait 30 等它進來）。容器停了：使用者要重啟就直接 docker_ctl restart（回報附這次的 log，起不來會寫原因）；只問原因 → docker_ctl status → docker_ctl logs，不要啟動。
 5. **找原因的任務步驟要少而聚焦**（通常 2～3 步）：先看狀態找出相關的對象（哪個工作包指派給哪台機器人、哪個容器），再針對那個對象查（交握用 rmf_handshake status <機器人>、容器用 docker_ctl status／logs）；不要列一長串「也許有關」的檢查。
 
 # 執行

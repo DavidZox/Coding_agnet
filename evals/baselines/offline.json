@@ -35,19 +35,19 @@
   "total": 2
  },
  "skills": {
-  "label": "第 4 階段（任務引擎，三次完整跑）（2026-10-24）",
-  "passed": 97,
-  "total": 97
+  "label": "待辦 20、23（2026-10-25）",
+  "passed": 100,
+  "total": 100
  },
  "skills_sandbox": {
-  "label": "第 4 階段（任務引擎，三次完整跑）（2026-10-24）",
-  "passed": 24,
-  "total": 24
+  "label": "待辦 20、23（2026-10-25）",
+  "passed": 27,
+  "total": 27
  },
  "task_selftest": {
-  "label": "第 4 階段（任務引擎；事實可以引用前面各步的工具結果）（2026-10-24）",
-  "passed": 12,
-  "total": 12
+  "label": "待辦 20、23（2026-10-25）",
+  "passed": 13,
+  "total": 13
  },
  "tools_live:exp_5090_overheat": {
   "label": "第 4 階段（任務引擎，三次完整跑）（2026-10-24）",

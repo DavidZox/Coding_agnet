@@ -417,6 +417,94 @@ def t_status_until_done():
     assert_error(load("workpackage_send_cmd").parse_args(["WP9", "a3", "--amr", "tb1", "--until-done"])["error"], "workpackage_status")
 
 
+def t_until_done_stuck():
+    """--until-done 看得出不會自己往下走就提早結束（2026-10-24 以前一律等滿 300 秒：一直回 no 的機器人、完成訊號遺失）：
+    完成訊號遺失、閒著的機器人一直不接授權 → 寫原因與下一步；第一次授權沒回應之後照常的、走很慢（在動）的照常等。
+    第一行不能有「已完成」（工作流的檢查看這三個字）"""
+    robots = [dict(ROBOTS3[0], behavior="lost_fin"), dict(ROBOTS3[1], behavior="lost_yes_once"), dict(ROBOTS3[2], behavior="busy"),
+              {"id": "tb4", "station": "a4", "behavior": "slow"}]
+    pk = [pkg("WP_F", "tb1", "a3"), pkg("WP_Y", "tb2", "a7"), pkg("WP_B", "tb3", "a6"), pkg("WP_S", "tb4", "a8")]
+    with Sim(robots=robots, packages=pk, authorize_timeout_sec=2.0, threshold_recovery_sec=2.0) as sim:
+        procs = {p["task_id"]: subprocess.Popen([sys.executable, os.path.join(SCRIPTS, "workpackage_status_cmd.py"), p["task_id"], "--until-done",
+                                                 "--watch", "12" if p["task_id"] == "WP_S" else "40"], cwd=PROJECT,
+                                                env=dict(os.environ, **sim.env()), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, text=True)
+                 for p in pk}
+        outs = {pid: p.communicate(timeout=90)[0].strip() for pid, p in procs.items()}
+    head, nxt = outs["WP_F"].splitlines()[0], outs["WP_F"].splitlines()[1]
+    assert head.startswith("[PASS] WP_F 沒有進展，提早結束觀察") and "完成訊號多半遺失了" in head and "已完成" not in head, outs["WP_F"][:600]
+    assert nxt.startswith("下一步：") and "rmf_handshake fin tb1 WP_F::" in nxt and "workpackage_status WP_F --until-done" in nxt, nxt
+    head, nxt = outs["WP_B"].splitlines()[0], outs["WP_B"].splitlines()[1]
+    assert head.startswith("[PASS] WP_B 沒有進展，提早結束觀察") and "tb3 閒著" in head and "授權 2 次都逾時" in head and "已完成" not in head, outs["WP_B"][:600]
+    assert "rmf_handshake status tb3 --seconds 15" in nxt and "## 結束時" in outs["WP_B"], nxt
+    assert first_line(outs["WP_Y"]).startswith("[PASS] WP_Y 已完成：COMPLETED"), outs["WP_Y"][:400]
+    assert "WP_S 還沒完成" in first_line(outs["WP_S"]), "走很慢（自報 running）不是卡住：照常等到時間到"
+
+
+def t_until_confirmed():
+    """--until-confirmed：等目前這一站的授權有結果就結束（只要確認授權時不用等整個工作包跑完）——confirm 給機器人＝成功（走很慢的也是、
+    第一次授權沒回應之後照常的也是）、閒著的機器人一直不接＝失敗（同 --until-done 的提早結束）、已經 confirm 的立刻回；參數錯回 [ERROR]"""
+    st = load("workpackage_status_cmd")
+    assert_error(st.parse_args(["WP_A", "--until-done", "--until-confirmed"])["error"], "只能選一個", "--until-confirmed")
+    assert_error(st.parse_args(["--until-confirmed"])["error"], "要指定工作包", "下一步")
+    assert_error(st.parse_args(["WP_A::0::0::x-1", "--until-confirmed"])["error"], "workpackage_status WP_A --until-confirmed")
+    assert st.parse_args(["WP_A", "--until-confirmed"])["watch"] == 300
+    robots = [ROBOTS3[0], dict(ROBOTS3[1], behavior="lost_yes_once"), dict(ROBOTS3[2], behavior="busy"),
+              {"id": "tb4", "station": "a4", "behavior": "slow"}]
+    pk = [pkg("WP_A", "tb1", "a3", "a7"), pkg("WP_Y", "tb2", "a7"), pkg("WP_B", "tb3", "a6"), pkg("WP_S", "tb4", "a8")]
+    with Sim(robots=robots, packages=pk, authorize_timeout_sec=2.0, threshold_recovery_sec=2.0) as sim:
+        procs = {p["task_id"]: subprocess.Popen([sys.executable, os.path.join(SCRIPTS, "workpackage_status_cmd.py"), p["task_id"],
+                                                 "--until-confirmed", "--watch", "40"], cwd=PROJECT, env=dict(os.environ, **sim.env()),
+                                                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, text=True) for p in pk}
+        outs = {pid: p.communicate(timeout=90)[0].strip() for pid, p in procs.items()}
+        for pid, rid in (("WP_A", "tb1"), ("WP_Y", "tb2"), ("WP_S", "tb4")):
+            assert first_line(outs[pid]).startswith(f"[PASS] {pid} 授權成功：工作項 {pid}::") and f"已經 confirm 給 {rid}" in first_line(outs[pid]), outs[pid][:400]
+        head = first_line(outs["WP_B"])
+        assert head.startswith("[PASS] WP_B 授權沒有成功，提早結束觀察") and "tb3 閒著" in head, outs["WP_B"][:500]
+        assert "rmf_handshake status tb3" in outs["WP_B"].splitlines()[1], outs["WP_B"][:600]
+        out = sim.run("workpackage_status_cmd.py", "WP_A", "--until-confirmed")
+        assert "授權成功" in first_line(out) and "觀察開始時就是這樣" in first_line(out), out[:300]
+
+
+def t_until_done_stuck_rules():
+    """StuckWatch 的規則（假的快照）：機器人在忙（自報 running）時的授權逾時不算；工作包往下走就重新算；完成訊號遺失要持續
+    CONFIRM_SECONDS 才算（剛到站、訊息還在路上的不算）"""
+    st, rc = load("workpackage_status_cmd"), load("_rmf_common")
+
+    def frame(where, real="standby", status="DISPATCHED", robot_id=None, idx=0, x=0.0):
+        iid = f"WP_Z::0::{idx}::x-{idx + 1}"
+        data = {"orchestrtor": {"packages": [{"package_id": "WP_Z", "status": "RUNNING", "station_index": idx, "station_count": 3, "iteration": 0,
+                                              "items_done": idx, "current_item": {"item_id": iid, "station": "p2", "status": status,
+                                                                                  "robot_id": robot_id}}]},
+                "robots": {"amr_07": {"status": "ONLINE", "real_state": real, "state": "duty", "x": x, "y": 0.0}},
+                "processing_tasks": [], "overpending_tasks": [], "raw_tasks": []}
+        if where == "processing":
+            data["processing_tasks"] = [{"id": iid, "robot": "amr_07", "station": "p2"}]
+        elif where == "OverPending":
+            data["overpending_tasks"] = [{"id": iid, "wait": 0.5}]
+        elif where == "raw":
+            data["raw_tasks"] = [{"id": iid, "age": 0.5}]
+        return data
+    cycle = ["processing", "processing", "OverPending", "raw", "processing", "OverPending"]
+    w = st.StuckWatch("WP_Z")
+    assert not any(w.feed(i, frame(q, real="running"), None) for i, q in enumerate(cycle)), "在忙時的逾時不算"
+    w = st.StuckWatch("WP_Z")
+    got = [w.feed(i, frame(q), None) for i, q in enumerate(cycle)]
+    assert got[:-1] == [None] * 5 and got[-1] == {"kind": "auth_loop", "robot": "amr_07", "item": "WP_Z::0::0::x-1", "count": 2}, got
+    w = st.StuckWatch("WP_Z")
+    seq = [frame("processing"), frame("OverPending"), frame("processing", idx=1), frame("OverPending", idx=1)]
+    assert not any(w.feed(i, f, None) for i, f in enumerate(seq)), "中間往下一站走了：重新算"
+    node = {"ref": "p2", "name": "p2", "sid": "2", "sem": "", "x": 0.0, "y": 0.0}
+    topo = {"by_name": {"p2": node}, "by_id": {"2": node}}
+    w = st.StuckWatch("WP_Z")
+    at_station = frame(None, robot_id="amr_07")
+    assert rc.fin_lost(at_station, at_station["orchestrtor"]["packages"][0], topo)["robot"] == "amr_07"
+    assert w.feed(0.0, at_station, topo) is None and w.feed(rc.CONFIRM_SECONDS - 0.5, at_station, topo) is None, "剛到站的不算"
+    got = w.feed(rc.CONFIRM_SECONDS, at_station, topo)
+    assert got and got["kind"] == "fin_lost" and got["lasted"] == rc.CONFIRM_SECONDS, got
+    away = frame(None, robot_id="amr_07", x=5.0)
+    assert rc.fin_lost(away, away["orchestrtor"]["packages"][0], topo) is None, "不在那一站：不是完成訊號遺失（可能導航失敗）"
+
+
 # ================================================================ workpackage_cancel
 def t_cancel():
     """取消：打錯的 id 不送（附相近的）、工作項 id 指路、存在的確認從清單消失並說明當前那一站"""

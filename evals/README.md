@@ -264,4 +264,4 @@ python3 evals/phase_check.py --save-baseline <結果目錄…> --label "第 N �
 - 近期加進來的案例：第 2 階段——提煉的真模型評測（〈提煉〉一節）、交握 status 連續幾次的判斷（`skills/rmf_test.py` 的 `t_sandbox_status_stable`）、
   數據技能的「不是錄製數據」判斷不擋任何一份真的錄製（`skills/data_test.py` 的 `t_not_recording_real_data`）、維運評測的 `logs/<情境>/`
   （每一步的紀錄）；第 3 階段——工作流的自我測試（`workflow_selftest`）與沙盒測試（`workflow:<模型>`）；第 4 階段——評測的完整性（`integrity`）、
-  任務引擎與 Plan 模式（`task_selftest`；CLI／Web 的回合在 `chat_selftest`）、數據分析的存檔只留最近幾次（`analysis_selftest`）。
+  任務引擎與 Plan 模式（`task_selftest`；CLI／Web 的回合在 `chat_selftest`）、數據分析的存檔只留最近幾次（`analysis_selftest`）；第 4 階段之後——`--until-done` 看得出卡住就提早結束、`--until-confirmed` 等授權有結果（`skills/rmf_test.py` 的 `t_until_done_stuck`、`t_until_confirmed`、`t_until_done_stuck_rules`）、任務引擎的 worker 說沒有完成時對照目標問一次（`task/selftest.py` 的 `t_goal_check`）。

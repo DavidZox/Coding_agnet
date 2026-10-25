@@ -66,7 +66,7 @@
 
 ## 調度系統
 - [workpackage_send](tools/workpackage_send.md) — 對任務協調器 orchestrtor 發送多站點 work package（站點寫名稱、節點 id 或語意名稱；可設 N 輪或無限循環；送出前核對、送出後確認收到）
-- [workpackage_status](tools/workpackage_status.md) — 查 work package 狀態：一幀快照；--watch 觀察一段時間、整理每個工作包／工作項／機器人的變化；--until-done 等指定的工作包跑完（看到完成就結束）
+- [workpackage_status](tools/workpackage_status.md) — 查 work package 狀態：一幀快照；--watch 觀察一段時間、整理每個工作包／工作項／機器人的變化；--until-done 等指定的工作包跑完（看到完成就結束；看得出卡住——完成訊號遺失、閒著的機器人一直不接授權——就提早結束）；--until-confirmed 等目前這一站的授權有結果（只要確認授權時用）
 - [workpackage_cancel](tools/workpackage_cancel.md) — 取消（刪除）一個 work package（先確認存在、送出後確認消失），orchestrtor 停止派下一站
 - [overpending_cancel](tools/overpending_cancel.md) — 刪除卡在 OverPending 逾時區的單站工作項（id 含 ::）；不在逾時區時可 --wait 等它進來再刪
 - [semantic_map](tools/semantic_map.md) — 語義地圖：站點（名稱／節點 id／語意名稱）、說明、路段，對應目前機器人與工作包；也可只列站點或機器人

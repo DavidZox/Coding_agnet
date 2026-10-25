@@ -6,7 +6,10 @@ msg_codec.py），站點以 /api/topology 附上語意名稱。一幀只是瞬�
 每台機器人（ONLINE／顯示狀態／自報狀態）各是一條狀態序列，用 _ros2_data_common.state_features 算出每次變遷（從什麼到什麼、
 什麼時候）、次數與時間占比，太多次只列頭尾（trim_changes）；摘要（結束時的狀態）在前。帶 task_id 時只看那個工作包、它的工作項
 與相關的機器人。觀察提早結束（web_console 斷線、停止推送）會寫在第一行。--until-done（要帶工作包）：看到它 COMPLETED 或從
-清單消失就結束，不用猜要看幾秒（最多 --watch 的秒數，沒給就 300 秒）；第一幀就沒有它、或它是無限循環（不會完成）立刻回 [ERROR]。
+清單消失就結束，不用猜要看幾秒（最多 --watch 的秒數，沒給就 300 秒）；第一幀就沒有它、或它是無限循環（不會完成）立刻回 [ERROR]；
+看得出它不會自己往下走（完成訊號遺失、閒著的機器人一直不接授權，見 StuckWatch）就提早結束，寫原因與下一步，不用等滿。
+--until-confirmed（要帶工作包）：等目前這一站的授權有結果——工作項 confirm 給機器人（離開 distribute）就是成功、閒著的機器人一直不接就是
+失敗（同 StuckWatch），機器人在忙就繼續等（最多 --watch 秒）；只要確認授權有沒有成功時用，不用等整個工作包跑完。
 共用層見 _rmf_common.py。
 """
 import os
@@ -28,14 +31,16 @@ USAGE = (
     "用法: scripts/workpackage_status_cmd.py [task_id] [--watch 秒] [--until-done] [--url 位址]\n"
     "  不帶 task_id：全部 work package、distribute 佇列、機器人、最近事件的一幀快照；task_id 可以是 work package 或工作項（含 ::）。\n"
     f"  --watch 秒（1～{rc.MAX_WATCH_SECONDS}）：持續收幀，整理這段時間每個工作包／工作項／機器人的狀態變遷（時間＝距觀察開始的秒數）。\n"
-    f"  --until-done：等這個工作包跑完——看到 COMPLETED 或從清單消失就結束，最多 --watch 的秒數（沒給就 {rc.MAX_WATCH_SECONDS} 秒）；要帶工作包編號。"
+    f"  --until-done：等這個工作包跑完——看到 COMPLETED 或從清單消失就結束，最多 --watch 的秒數（沒給就 {rc.MAX_WATCH_SECONDS} 秒）；要帶工作包編號。\n"
+    "  看得出它不會自己往下走（完成訊號遺失、閒著的機器人一直不接授權）就提早結束，寫原因與下一步。\n"
+    "  --until-confirmed：等目前這一站的授權有結果——confirm 給機器人＝成功、閒著的機器人一直不接＝失敗，機器人在忙就繼續等；要帶工作包編號。"
 )
 
 
 def parse_args(argv):
     """純函式：回傳 dict（error、task_id、watch、url）。"""
     pos, opts, err = rc.parse_cli(argv, values={"--watch": "秒數（1～300）", "--url": "web_console 位址（例如 http://localhost:8020）"},
-                                  flags=("--until-done",), elsewhere={"--cancel": "workpackage_cancel", "--wait": "overpending_cancel", "--amr": "workpackage_send",
+                                  flags=("--until-done", "--until-confirmed"), elsewhere={"--cancel": "workpackage_cancel", "--wait": "overpending_cancel", "--amr": "workpackage_send",
                                              "--loop": "workpackage_send", "--stations": "semantic_map", "--robots": "semantic_map",
                                              "--seconds": "rmf_handshake"}, usage=USAGE)
     if err:
@@ -48,21 +53,25 @@ def parse_args(argv):
         if err:
             return {"error": f"{err}要看一幀快照就不要加 --watch。"}
     task_id = pos[0].strip() if pos else None
-    until_done = bool(opts.get("--until-done"))
-    if until_done:
+    until_done, until_confirmed = bool(opts.get("--until-done")), bool(opts.get("--until-confirmed"))
+    if until_done and until_confirmed:
+        return {"error": "[ERROR] --until-done（等它跑完）與 --until-confirmed（等授權有結果）只能選一個。下一步：只要確認授權有沒有成功用 "
+                         f"--until-confirmed；要等整個工作包跑完用 --until-done。\n{USAGE}"}
+    flag = "--until-done" if until_done else "--until-confirmed" if until_confirmed else None
+    if flag:
         if not task_id:
-            return {"error": "[ERROR] --until-done 要指定工作包（等哪一個跑完）。下一步：workpackage_status <工作包> --until-done；"
+            return {"error": f"[ERROR] {flag} 要指定工作包（等哪一個）。下一步：workpackage_status <工作包> {flag}；"
                              f"要看全部的變化用 --watch 秒。\n{USAGE}"}
         if "::" in task_id:
             pid = task_id.split("::", 1)[0]
-            return {"error": f"[ERROR] --until-done 要用工作包編號（{pid}），不是工作項 {task_id}：工作項會隨站點推進換成新的 id。"
-                             f"下一步：workpackage_status {pid} --until-done。"}
+            return {"error": f"[ERROR] {flag} 要用工作包編號（{pid}），不是工作項 {task_id}：工作項會隨站點推進換成新的 id。"
+                             f"下一步：workpackage_status {pid} {flag}。"}
         if watch is None:
             watch = rc.MAX_WATCH_SECONDS
     url, err = rc.resolve_url(opts.get("--url"))
     if err:
         return {"error": err}
-    return {"error": None, "task_id": task_id, "watch": watch, "until_done": until_done, "url": url}
+    return {"error": None, "task_id": task_id, "watch": watch, "until_done": until_done, "until_confirmed": until_confirmed, "url": url}
 
 
 # ---------------------------------------------------------------- 文字
@@ -327,16 +336,101 @@ def _section(title, feats, series, unchanged_label):
     return lines, len(changed)
 
 
+class StuckWatch:
+    """--until-done 提早結束：看得出這個工作包不會自己往下走、要有人處理時，不用等滿秒數（等待的上限不變）。只用快照的欄位：
+    - 完成訊號遺失（rc.fin_lost，同 rmf_handshake status 的判斷）：持續 CONFIRM_SECONDS（快照反映變化要的時間）還是這樣。
+    - 閒著的機器人一直不接授權：目前的工作項對同一台機器人授權逾時（processing→機器人 → OverPending）第 2 次，兩次授權的期間它都閒著
+      （rc.robot_idle）——distribute 冷卻後重試還是一樣，不會自己好（回 no 或沒有回應，要聽交握 topic 才分得出來）。機器人在忙
+      （自報 running）時的逾時不算：TaskAgent 忙的時候不回授權，做完就會接。
+    工作包往下走（站、輪、完成的項數、目前的工作項或它的狀態變了）就重新算。離線不算：機器人可能自己恢復（重開、網路），照常等。"""
+
+    def __init__(self, pid):
+        self.pid, self.key = pid, None
+        self._reset()
+
+    def _reset(self):
+        self.fin_since = None          # 完成訊號遺失的樣子從什麼時候開始（持續的才算）
+        self.attempt = None            # 正在授權：[機器人, 這段期間它都閒著]
+        self.fails = {}                # 機器人 → 閒著時授權逾時的次數
+
+    def feed(self, t, data, topo):
+        """一幀（t＝距觀察開始的秒數）：回傳卡住的原因（dict：kind 是 fin_lost／auth_loop，robot、item…）或 None。"""
+        p = rc.find_package(data, self.pid)
+        if not p or p.get("status") != "RUNNING":
+            return None
+        cur = p.get("current_item") or {}
+        key = (p.get("station_index"), p.get("iteration"), p.get("items_done"), cur.get("item_id"), cur.get("status"))
+        if key != self.key:
+            self.key = key
+            self._reset()
+        lost = rc.fin_lost(data, p, topo)
+        if lost:
+            self.fin_since = t if self.fin_since is None else self.fin_since
+            if t - self.fin_since >= rc.CONFIRM_SECONDS:
+                return dict(lost, kind="fin_lost", lasted=t - self.fin_since)
+        else:
+            self.fin_since = None
+        iid = cur.get("item_id")
+        label, entry = rc.queue_of(data, iid)
+        if label == "processing":
+            rid = entry.get("robot")
+            idle = rc.robot_idle((data.get("robots") or {}).get(rid))
+            if self.attempt and self.attempt[0] == rid:
+                self.attempt[1] = self.attempt[1] and idle
+            else:
+                self.attempt = [rid, idle]
+        elif self.attempt:
+            rid, idle = self.attempt
+            self.attempt = None
+            if label == "OverPending" and idle:              # 授權逾時（回 yes 就是離開 distribute，不算）
+                self.fails[rid] = self.fails.get(rid, 0) + 1
+                if self.fails[rid] >= 2:
+                    return {"kind": "auth_loop", "robot": rid, "item": iid, "count": self.fails[rid]}
+        return None
+
+
+def stuck_text(pid, s, topo):
+    """StuckWatch 的原因 → (第一行的原因, 下一步)。"""
+    rid, iid = s["robot"], s["item"]
+    if s["kind"] == "fin_lost":
+        station = rc.station_text(s["station"], topo)
+        where = f"在 {station}（距 {s['distance']:.2f}）" if s["distance"] is not None else f"閒置（座標對不到 {station}）"
+        return (f"完成訊號多半遺失了：工作項 {iid} 已經 confirm 給 {rid}，{rid} 已經{where}、自報 standby，orchestrtor 還在等 "
+                f"/{rid}/task_exec_fin（這樣持續了 {s['lasted']:.0f} 秒；TaskAgent 到站時先發完成訊號才回到閒置，不會再發）",
+                f"使用者要你處理的話直接執行 rmf_handshake fin {rid} {iid} 補發（系統會請使用者確認），再 workpackage_status {pid} --until-done "
+                f"等它跑完；只要查原因就回報（要再確認用 rmf_handshake status {rid}）")
+    return (f"{rid} 閒著（ONLINE、自報 standby）卻一直沒有接下 {iid}：對它授權 {s['count']} 次都逾時進 OverPending，distribute 冷卻後重試"
+            f"還是一樣，不會自己好（TaskAgent 在忙時才不回授權；閒著還不接是回 no，或 TaskAgent 沒有回應）",
+            f"rmf_handshake status {rid} --seconds 15 分辨是回 no（忙碌、站點無效、定位異常）還是沒有回應（TaskAgent 沒在跑、站點解析不出來），"
+            f"照它的判斷回報；要取消工作包或改派別台要使用者同意")
+
+
+def confirmed_to(data, p):
+    """--until-confirmed：目前這一站的授權有結果了沒——工作項已經離開 distribute、有指定的機器人（distribute confirm 給它了），或這一站已經
+    做完、工作包跑完。回傳 (機器人或 None, 工作項或 None, 說明) 或 None（還在授權、還在等機器人）。"""
+    if p.get("status") == "COMPLETED":
+        return None, None, f"已經跑完（{pkg_state(p, None)}）"
+    cur = p.get("current_item") or {}
+    iid, rid = cur.get("item_id"), cur.get("robot_id")
+    if cur.get("status") == "CONFIRMED":
+        return rid, iid, f"這一站已經由 {rid or '機器人'} 做完"
+    if iid and rid and not rc.queue_of(data, iid)[0]:
+        return rid, iid, f"工作項 {iid} 已經 confirm 給 {rid}"
+    return None
+
+
 def _never_completes(p):
     """無限循環（loop、loop_count 是 None＝循環到手動停止，同 orchestrator.py）的工作包永遠不會 COMPLETED。"""
     return bool(p.get("loop")) and p.get("loop_count") is None and p.get("status") != "COMPLETED"
 
 
-def watch_mode(base, seconds, task_id, topo=None, until_done=False):
+def watch_mode(base, seconds, task_id, topo=None, until_done=False, until_confirmed=False):
     pk_s, it_s, rb_s = Series(), Series(), Series()
     seen_events, new_events = set(), []
     first = last = None
     done = None                                    # --until-done：(時間, 結束時的狀態, 是不是第一幀)
+    stuck, watch = None, StuckWatch(task_id) if (until_done or until_confirmed) else None   # (時間, 卡住的原因)
+    confirmed = None                               # --until-confirmed：(時間, (機器人, 工作項, 說明), 是不是第一幀)
     related_robots = set()
     t = 0.0
     try:
@@ -392,6 +486,25 @@ def watch_mode(base, seconds, task_id, topo=None, until_done=False):
                     if state == GONE_PKG or str(state or "").startswith("COMPLETED"):
                         done = (t, state, data is first)
                         break
+                    why = watch.feed(t, data, topo)
+                    if why:
+                        stuck = (t, why)
+                        break
+                if until_confirmed:
+                    p = rc.find_package(data, task_id)
+                    if data is first and p is None:
+                        return render_one(data, topo, task_id)
+                    if p is None:
+                        done = (t, GONE_PKG, False)
+                        break
+                    hit = confirmed_to(data, p)
+                    if hit:
+                        confirmed = (t, hit, data is first)
+                        break
+                    why = watch.feed(t, data, topo)
+                    if why and why["kind"] == "auth_loop":     # 完成訊號遺失要先 confirm，到不了這裡
+                        stuck = (t, why)
+                        break
             frames, pings, end_text, span = ws.count, ws.pings, ws.end_text(), ws.elapsed
     except rc._WsError as e:
         return str(e)
@@ -415,8 +528,14 @@ def watch_mode(base, seconds, task_id, topo=None, until_done=False):
     scope = f"{task_id}：" if task_id else ""
     counts = f"work package 有變化 {n_p} 個、工作項 {n_i} 個、機器人 {n_r} 台；期間新增事件 {len(new_events)} 則"
     again = f"workpackage_status {task_id} --until-done" if until_done else \
+        f"workpackage_status {task_id} --until-confirmed" if until_confirmed else \
         f"workpackage_status{' ' + task_id if task_id else ''} --watch {seconds}"
-    if done:
+    if confirmed:
+        t_ok, (rid, iid, desc), at_first = confirmed
+        head = (f"[PASS] {task_id} 授權成功：{desc}" + ("（觀察開始時就是這樣，不用再等）" if at_first else
+                                                         f"，在 {rc.fmt_s(t_ok)} 看到就結束觀察（最多 {seconds} 秒，收到 {frames} 幀）")
+                + f"；{counts}")
+    elif done:
         t_done, state, at_first = done
         if state == GONE_PKG:
             head = (f"[PASS] {task_id} 在 {rc.fmt_s(t_done)} 從 orchestrtor 的清單消失（被刪除），沒有跑完；看到就結束觀察"
@@ -426,11 +545,20 @@ def watch_mode(base, seconds, task_id, topo=None, until_done=False):
         else:
             head = (f"[PASS] {task_id} 已完成：{state}，在 {rc.fmt_s(t_done)} 看到完成就結束觀察（最多 {seconds} 秒，收到 {frames} 幀）；"
                     f"{counts}")
+    elif stuck:
+        t_stuck, why = stuck
+        reason, nxt = stuck_text(task_id, why, topo)
+        what = "授權沒有成功" if until_confirmed else "沒有進展"
+        head = (f"[PASS] {task_id} {what}，提早結束觀察（{rc.fmt_s(t_stuck)}，不等滿 {seconds} 秒；收到 {frames} 幀）：{reason}。"
+                f"結束時 {pk_s.last.get(task_id)}；{counts}\n下一步：{nxt}。")
     elif end_text:
         head = (f"[PASS] ⚠️ 只觀察到 {span:.1f} 秒就中斷（要求 {seconds} 秒；{end_text}）"
-                + (f"，還沒看到 {task_id} 完成" if until_done else "")
+                + (f"，還沒看到 {task_id} 完成" if until_done else f"，還沒看到 {task_id} 的授權結果" if until_confirmed else "")
                 + f"，以下是中斷前 {frames} 幀的整理：{scope}{counts}\n"
                 f"下一步：再執行一次 {again} 接著看；一直中斷就請使用者檢查 web_console。")
+    elif until_confirmed:
+        head = (f"[PASS] 觀察 {span:.1f} 秒（最多 {seconds} 秒，收到 {frames} 幀）{task_id} 的授權還沒有結果：結束時 {pk_s.last.get(task_id)}；"
+                f"{counts}\n下一步：機器人在忙就等它做完再看（{again}）；要知道在等哪一台、為什麼用 rmf_handshake status {task_id}。")
     elif until_done:
         head = (f"[PASS] 觀察 {span:.1f} 秒（最多 {seconds} 秒，收到 {frames} 幀）{task_id} 還沒完成：結束時 {pk_s.last.get(task_id)}；{counts}\n"
                 f"下一步：要繼續等就再執行一次 {again}；一直停在同一站就照卡住的情況查（rmf_handshake status <機器人或工作包>）。")
@@ -457,7 +585,7 @@ def main(argv):
     if p["error"]:
         return p["error"]
     if p["watch"]:
-        return watch_mode(p["url"], p["watch"], p["task_id"], until_done=p["until_done"])
+        return watch_mode(p["url"], p["watch"], p["task_id"], until_done=p["until_done"], until_confirmed=p["until_confirmed"])
     data, err = rc.ws_read_json(p["url"])      # 先讀快照：web_console 有問題時最快知道（6 秒）
     if err:
         return err

@@ -747,6 +747,43 @@ def item_ids(data):
     return [i for key, _ in QUEUES for i in _ids(data, key)]
 
 
+# ---------------------------------------------------------------- 卡住的判斷（rmf_handshake status、workpackage_status --until-done 共用）
+def robot_idle(info):
+    """機器人閒著：ONLINE、自報 standby（RobotState 的 sequence.state）。TaskAgent 閒著才受理授權，在忙的時候不回（做完就會接）。
+    網頁的顯示狀態（state）confirm 之後一直鎖在 duty、直到下一個任務進來（resource_allocator），不能拿來判斷忙不忙。"""
+    info = info or {}
+    return info.get("status") == "ONLINE" and info.get("real_state") == "standby"
+
+
+def distance_to(info, station, topo):
+    """機器人（快照的 x、y）到站點的距離；座標或站點對不到回 None。"""
+    node = node_by_ref(station, topo)
+    x, y = (info or {}).get("x"), (info or {}).get("y")
+    if not node or not isinstance(x, (int, float)) or not isinstance(y, (int, float)):
+        return None
+    if not isinstance(node.get("x"), (int, float)) or not isinstance(node.get("y"), (int, float)):
+        return None
+    return math.hypot(node["x"] - x, node["y"] - y)
+
+
+def fin_lost(data, pkg, topo, rid=None):
+    """完成訊號多半遺失了：工作包目前的工作項已經 confirm 給機器人（DISPATCHED、不在 distribute 的佇列），那台機器人閒著（robot_idle），
+    而且在那一站（距離 ≤ NEAR_STATION_DISTANCE；座標對不到也算）——TaskAgent 到站時先發 task_exec_fin 才回到閒置，閒在站上、
+    orchestrtor 卻還在等＝訊息掉了。rid 給了就看那一台（rmf_handshake 查某台機器人時），沒給看工作項的 robot_id。
+    回傳 {"robot", "item", "station", "distance"（對不到座標是 None）}；不是這樣回 None。"""
+    cur = (pkg or {}).get("current_item") or {}
+    iid, rid = cur.get("item_id"), rid or cur.get("robot_id")
+    if (pkg or {}).get("status") != "RUNNING" or cur.get("status") != "DISPATCHED" or not iid or not rid or queue_of(data, iid)[0]:
+        return None
+    info = ((data or {}).get("robots") or {}).get(rid)
+    if not robot_idle(info):
+        return None
+    dist = distance_to(info, cur.get("station"), topo)
+    if dist is not None and dist > NEAR_STATION_DISTANCE:
+        return None
+    return {"robot": rid, "item": iid, "station": cur.get("station"), "distance": dist}
+
+
 def fetch_roster(base_url, data=None):
     """機器人名冊：/api/robots（robots.yaml）＋快照裡的機器人。回傳 (sorted 名單, error)；兩邊都拿不到才是 error。"""
     status, body, err = http_json("GET", base_url, "/api/robots")

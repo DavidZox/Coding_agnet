@@ -10,6 +10,7 @@
   取消；新的使用者訊息之後不再自動接著問、任務還留著；
 - worker：沒核准的狀態變更 [DENIED]、沒用技能就說做完推回去一次、這一步不能用的技能、檢查沒過換一個 worker 重試、再沒過標成「檢查沒過」繼續；
 - 事實的核對：每條附出處（#編號：這一步或前面各步的工具結果，前面的讀回存檔），名稱與數值要在那份輸出裡；對不上的交回改一次，還是不行就拿掉；
+- worker 說「沒有完成」：對照這一步的目標問一次做到了沒有（查到的結果有問題也算做到），做到了不重試；
 - 失敗：自動模式重排剩下的步驟（那一步標成「重排了」）；Plan 模式不重排、停下來；
 - 程式看得出的前提：在停著的容器裡做事排在啟動它之前、使用者提到手冊卻沒有先讀；規劃看得到每個容器的狀態；
 - 做不了的計畫（要改變狀態卻沒有技能、列的技能都不存在、工作流的參數不對）修一次還是這樣就不執行；要寫檔卻沒列 file_ops 交回修；
@@ -59,13 +60,15 @@ CONFIRM_WF = NOTE_WF.replace("title: 附加一行紀錄", "title: 有確認的")
 
 
 class FakeTask:
-    """規劃（第一版、修正、重排）依序回 plans；worker 依序回 steps；收尾回 wrapups；事實的修正回 fixes；Plan 模式的修改回 ops；
+    """規劃（第一版、修正、重排）依序回 plans；worker 依序回 steps；收尾回 wrapups；事實的修正回 fixes；「沒有完成」時對照目標的問題回 goals；
+    Plan 模式的修改回 ops；
     主對話回 mains；其他 session 回固定文字。事實的 ref 寫 LAST＝這個 worker 最近一次工具結果的編號、FIRST＝這個任務第一次工具結果的編號
     （前面的步驟執行的；執行時才知道）。"""
 
-    def __init__(self, plans=(), steps=(), wrapups=(), fixes=(), ops=(), mains=()):
-        self.plans, self.steps, self.wrapups, self.fixes, self.ops, self.mains = (list(x) for x in (plans, steps, wrapups, fixes, ops, mains))
-        self.plan_msgs, self.worker_msgs, self.fix_msgs = [], [], []
+    def __init__(self, plans=(), steps=(), wrapups=(), fixes=(), ops=(), mains=(), goals=()):
+        self.plans, self.steps, self.wrapups, self.fixes, self.ops, self.mains, self.goals = (
+            list(x) for x in (plans, steps, wrapups, fixes, ops, mains, goals))
+        self.plan_msgs, self.worker_msgs, self.fix_msgs, self.goal_msgs = [], [], [], []
 
     @staticmethod
     def _last_rid(messages):
@@ -101,6 +104,9 @@ class FakeTask:
             data = self._refs(json.loads(json.dumps(self.steps.pop(0))) if self.steps else done("完成"), messages)
         elif props == ["done", "facts", "summary"]:
             data = self._refs(self.wrapups.pop(0) if self.wrapups else {"done": False, "summary": "沒做完", "facts": []}, messages)
+        elif props == ["goal_met", "summary"]:
+            self.goal_msgs.append(list(messages or []))
+            data = self.goals.pop(0) if self.goals else {"goal_met": False, "summary": ""}
         elif props == ["facts", "summary"]:
             self.fix_msgs.append(list(messages or []))
             data = self._refs(self.fixes.pop(0) if self.fixes else {"facts": [], "summary": ""}, messages)
@@ -383,6 +389,57 @@ def t_fact_refs_before(agent, ollama, tmp, home):
     assert f"fps 是 30（#{first}）" in rep and "另外 1 條在引用的輸出裡找不到" in rep, rep
 
 
+def t_goal_check(agent, ollama, tmp, home):
+    """worker 回報「沒有完成」（而且這一步執行過工具）：對照這一步的目標問一次做到了沒有——做到了（查到的結果有問題也算）就算完成、
+    摘要換成照實的、不重試，照查到的狀況重排剩下的步驟（問題可能讓剩下的步驟不夠用）；沒做到才照舊重試、重排；一個工具都沒用就說沒完成的不問"""
+    agent.guard_enabled = False
+    goal = "看 config/cam.yaml 找出 exposure 跟規定的 20 不一樣的原因"
+    look = item("看目錄", "看 config 有哪些檔案", ["list_dir"])
+    fake = FakeTask([plan(item("查原因", goal, ["view_file"]), look), plan(look)],
+                    [step("scripts/cat_cmd.py", "config/cam.yaml"), done("❌ 沒有完成：已經查到原因，但問題還在（exposure 是 10）", [fact("exposure: 10")]),
+                     step("scripts/ls_cmd.py", "config"), done("一個檔案", [fact("cam.yaml")])],
+                    goals=[{"goal_met": True, "summary": "查到了：exposure 是 10，不是規定的 20（還沒改）"}])
+    ollama.chat = fake
+    rep = agent.run_tool(task("查相機的 exposure 為什麼跟規定不一樣，再看 config 有哪些檔案"))
+    assert agent.task_last, rep
+    it = agent.task_last["items"][0]
+    assert rep.startswith("[PASS] 任務完成（2/2 步") and it["status"] == "done" and it["attempts"] == 1, rep
+    # 查到的狀況有問題：照它重排剩下的步驟（不重試這一步；規劃看得到它查到的）
+    assert fake.plan_calls == 2 and "第 2 版：第 1 步「查原因」做完了，查到的狀況：查到了：exposure 是 10" in rep, rep
+    assert "查到了：exposure 是 10" in fake.plan_msgs[1][1]["content"], fake.plan_msgs[1][1]["content"][-600:]
+    assert it["summary"] == "查到了：exposure 是 10，不是規定的 20（還沒改）" and [f["text"] for f in it["facts"]] == ["exposure: 10"], it
+    ask = fake.goal_msgs[0][-1]["content"]
+    assert f"目標：{goal}" in ask and "問題還在、修不了，不算沒做到" in ask, ask
+    calls = [json.loads(l) for l in open(os.path.join(job_dir(agent, agent.task_last), "calls.jsonl"), encoding="utf-8")]
+    assert any(c.get("kind") == "worker_goal_check" for c in calls), "這一次問的也記在 calls.jsonl"
+    # 重排出要改的步驟：照查到的事實重排過了，停下來確認之前不再重排一次（重排的次數留給後面的失敗）
+    change = item("改成 20", "把 config/cam.yaml 的 exposure 改成 20", ["file_ops"], True, CHECK20)
+    fake = FakeTask([plan(item("查原因", goal, ["view_file"]), look), plan(change)],
+                    [step("scripts/cat_cmd.py", "config/cam.yaml"), done("❌ 沒有完成：查到了，exposure 是 10", [fact("exposure: 10")])],
+                    goals=[{"goal_met": True, "summary": "查到了：exposure 是 10"}])
+    ollama.chat = fake
+    rep = agent.run_tool(task("查相機的 exposure 為什麼跟規定不一樣，需要的話改好"))
+    paused = agent._task_find(agent.task_pending_approval)
+    assert rep.startswith("[PASS] ⏸️ 任務") and fake.plan_calls == 2 and paused and paused["replans"] == 1, (rep[:160], fake.plan_calls)
+    assert [p["why"][:12] for p in paused["plans"]] == ["第一版", "第 1 步「查原因」做完了"[:12]], paused["plans"]
+    agent.run_tool({"action": {"command": "scripts/task_run_cmd.py", "args": "--cancel"}})
+    # 沒做到：照舊重試（第二個 worker），還是沒做到就重排；重排不出新的步驟＝任務沒做完
+    fake = FakeTask([plan(item("查原因", goal, ["view_file"]), look)],
+                    [step("scripts/cat_cmd.py", "config/cam.yaml"), done("❌ 沒有完成：找不到 exposure"),
+                     step("scripts/cat_cmd.py", "config/cam.yaml"), done("❌ 沒有完成：還是找不到")],
+                    goals=[{"goal_met": False, "summary": "找不到"}, {"goal_met": False, "summary": "還是找不到"}])
+    ollama.chat = fake
+    rep = agent.run_tool(task("查相機的 exposure 為什麼跟規定不一樣，再看 config（再一次）"))
+    it = agent.task_last["items"][0]
+    assert it["attempts"] == 2 and len(fake.goal_msgs) == 2 and rep.startswith("[ERROR] 任務沒有做完"), (it["attempts"], rep[:200])
+    assert it["summary"] == "❌ 沒有完成：還是找不到", "沒做到：摘要照 worker 原本的回報"
+    # 一個工具都沒用就說沒完成：不問
+    fake = FakeTask([plan(item("整理", "整理前面的結果", []), look)], [done("❌ 沒有完成：沒有東西可以整理")] * 2)
+    ollama.chat = fake
+    agent.run_tool(task("整理一下，再看 config"))
+    assert not fake.goal_msgs and agent.task_last["items"][0]["attempts"] == 2, agent.task_last["items"][0]
+
+
 # ---------------------------------------------------------------- 失敗：自動模式重排、Plan 模式不重排
 def t_failure_replan(agent, ollama, tmp, home):
     agent.guard_enabled = False
@@ -586,6 +643,7 @@ def main():
                      ("worker 用完步數時請它總結：做完了就算完成（交給檢查）", t_step_cap_wrapup),
                      ("事實的核對：名稱與數值要在引用的輸出裡；出處要是這個任務的；交回改一次，還是不行就拿掉", t_fact_check),
                      ("事實引用前面各步的工具結果：讀回存檔核對（只整理前面結果的步驟不會被當成找不到）", t_fact_refs_before),
+                     ("worker 說沒有完成：對照目標問一次做到了沒有（查到的結果有問題也算做到，照它重排剩下的）；沒做到才重試、重排", t_goal_check),
                      ("失敗：自動模式重排剩下的步驟（那一步標成重排了）；Plan 模式不重排", t_failure_replan),
                      ("前提：停著的容器排在啟動之前、容器停著卻要進去、使用者提到手冊卻沒先讀；規劃看得到容器的狀態", t_preconditions),
                      ("做不了的計畫不執行（要改卻沒有技能、技能都不存在）；要寫檔卻沒列 file_ops 交回修；Plan 模式擋核准", t_broken_plans),
