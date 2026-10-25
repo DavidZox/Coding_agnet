@@ -8,10 +8,27 @@
   而且它們離生成點最近，小模型最看得到。"""
 import os
 import re
+from . import prompt_files
 from .config import CONTEXT_MODES, MEMORY_MAX_CHARS, WORKFLOWS_ENABLED
 
 # 摘要裡「看起來是技能」的名稱：反引號包住的 snake_case（可帶 scripts/ 前綴與 _cmd.py／.py 後綴），或 scripts/<x>_cmd.py
 _SKILL_REF_RE = re.compile(r"`(?:scripts/)?([a-z][a-z0-9]*(?:_[a-z0-9]+)+?)(?:_cmd)?(?:\.py)?`|scripts/([a-z][a-z0-9_]*?)_cmd\.py")
+
+
+
+def _sp(key, /, **fields):
+    """prompts/harness/system_prompt.md 的一則：主對話 system prompt 裡程式組進去的部分。"""
+    return prompt_files.load("harness/system_prompt.md", key, **fields)
+
+
+def _st(key, /, **fields):
+    """prompts/harness/state_tail.md 的一則：動態區（每次送出時接在最後）。"""
+    return prompt_files.load("harness/state_tail.md", key, **fields)
+
+
+def _an(key, /, **fields):
+    """prompts/harness/anchor.md 的一則：交給獨立 session 的「使用者的目標」。"""
+    return prompt_files.load("harness/anchor.md", key, **fields)
 
 
 class PromptMixin:
@@ -34,7 +51,7 @@ class PromptMixin:
         entries = self._memory_entries()
         if not entries:
             self.memory_dropped = 0
-            return "No long-term memory."
+            return _sp("memory_none")
         kept, used = [], 0
         for e in reversed(entries):
             if kept and used + len(e) > budget:
@@ -49,10 +66,8 @@ class PromptMixin:
             self._memory_warning = (f"⚠️ 長期記憶有 {dropped} 條較舊的條目超過載入上限（{budget} 字，AGENT_MEMORY_MAX_CHARS）沒有載入，"
                                     f"AI 看不到它們；請整理 Memory.md（合併或刪除過時的條目）。")
         self.memory_dropped = dropped
-        guide = ("（每條開頭的 [月-日 時:分] 是寫入時間。規則、偏好、做法一律遵守；描述某個時間點狀態或觀察的條目"
-                 "（例如「系統整體健康」「資源不足」）只代表當時：使用者問現在的狀態時，先執行會實際查詢系統的技能"
-                 "（例如 docker_containers、ROS2_topic_list、workpackage_status）再回答，不要當成現況。）")
-        note = f"\n（另有 {dropped} 條較舊的記憶超過載入上限，沒有載入。）" if dropped else ""
+        guide = (_sp("memory_guide"))
+        note = "\n" + _sp("memory_dropped", count=dropped) if dropped else ""
         return guide + "\n" + "\n".join(kept) + note
 
     # ---------------------------------------------------------------- 新的使用者訊息
@@ -69,8 +84,7 @@ class PromptMixin:
         """若有設定 sticky objective，組成提醒 AI 優先遵守的區塊；否則回傳空字串。"""
         if not self.sticky_objective:
             return ""
-        return (f"## CURRENT PRIMARY OBJECTIVE\n{self.sticky_objective}\n"
-                "規則：你必須始終以此任務為最高優先級；除非使用者明確清除 objective，不可自行移除或遺忘；上下文過長時優先維持此目標。")
+        return (_st("objective", objective=self.sticky_objective))
 
     def _build_task_anchor_text(self):
         """獨立 session（summarize_tool_result、_result_recall）的「使用者的目標」，依序組合：
@@ -82,25 +96,24 @@ class PromptMixin:
         另外提供，這裡不夾帶 AI 的回覆。"""
         parts = []
         if self.sticky_objective:
-            parts.append(f"使用者設定的最高優先 Objective：{self.sticky_objective}")
+            parts.append(_an("objective", objective=self.sticky_objective))
         if self.current_task:
-            parts.append(f"使用者最新的訊息：{self.current_task}")
+            parts.append(_an("latest", task=self.current_task))
             earlier = [t for t in self.task_history[:-1] if t and t != self.current_task]
             if earlier:
                 # 任務線：使用者回答追問時最新一句常只剩關鍵字（例如「看 motor_rear_left」），原本要做什麼在前幾句
-                parts.append("這串對話較早的使用者訊息（舊→新；最新訊息可能只是對其中一項的追問，原本的目的看這裡）：\n"
-                             + "\n".join(f"{i}. {t}" for i, t in enumerate(earlier, 1)))
-        return "\n".join(parts) if parts else "(未取得使用者原始任務敘述)"
+                parts.append(_an("earlier") + "\n" + "\n".join(f"{i}. {t}" for i, t in enumerate(earlier, 1)))
+        return "\n".join(parts) if parts else _an("none")
 
     def _user_words_block(self):
         """被壓縮掉的對話裡使用者的原話（程式逐字保留，見 CompressionMixin._keep_user_words）。對話片段存檔的編號與描述
         另外列在「過去的對話片段」一節（ToolUseIndexMixin._conversation_index_block）。"""
         if not self.user_words:
             return ""
-        lines = ["## 使用者說過的話（已被壓縮的對話裡使用者的原話，程式逐字保留，舊→新）"]
+        lines = [_sp("user_words_header")]
         lines += [f"- [{w['ts']}] {w['text']}" if w.get("ts") else f"- {w['text']}" for w in self.user_words]
         if self.user_words_dropped:
-            lines.append(f"（更早還有 {self.user_words_dropped} 則沒有列出，原文在「過去的對話片段」的存檔裡）")
+            lines.append(_sp("user_words_more", count=self.user_words_dropped))
         return "\n".join(lines)
 
     # ---------------------------------------------------------------- 滾動摘要（可能是之前的 session 留下的）
@@ -135,12 +148,10 @@ class PromptMixin:
         """system prompt 的滾動摘要一節（提到已不存在技能的行已拿掉，見 clean_summary）。摘要是之前的 session 留下的
         （啟動時接回、這次還沒壓縮過）就註明：裡面的進度與未完成事項可能已經過時，使用者沒提起就不要主動接續。"""
         if not self.rolling_summary:
-            return "No history summary yet."
+            return _sp("summary_none")
         body = self.clean_summary(self.rolling_summary)
         if getattr(self, "summary_carried_from", None):
-            body = (f"（這份摘要是之前的對話留下的（{self.summary_carried_from}），不是這次啟動後的對話：裡面的進度、狀態與"
-                    "未完成事項可能已經過時——技能以下面的 Available Skills 為準，系統狀態以重新查詢為準；使用者沒有提起"
-                    "就不要主動接續裡面的未完成事項。）\n" + body)
+            body = _sp("summary_carried", source=self.summary_carried_from) + "\n" + body
         return body
 
     # ---------------------------------------------------------------- system prompt（不常變的部分）
@@ -156,12 +167,12 @@ class PromptMixin:
         mode_rules = self.context_mode_rules()
         blocks = [
             profile,
-            f"## Context Mode：{self.context_mode}\n{mode_rules}" if mode_rules else f"## Context Mode：{self.context_mode}",
-            f"## Long Term Memory\n{self.load_long_term_memory()}",
-            f"## Recent Compressed History Summary\n{self._summary_block()}",
+            _sp("context_mode_rules", mode=self.context_mode, rules=mode_rules) if mode_rules else _sp("context_mode", mode=self.context_mode),
+            _sp("memory", memory=self.load_long_term_memory()),
+            _sp("summary", summary=self._summary_block()),
             self._user_words_block(),
             self._conversation_index_block(),
-            f"## Available Skills (SKILLS.md)\n{skills}",
+            _sp("skills", skills=skills),
             self._tool_use_index_block().strip(),
         ]
         return "\n\n".join(b for b in blocks if b)
@@ -172,11 +183,7 @@ class PromptMixin:
         """每次呼叫主模型時附加目前狀態，不寫進 self.messages。"""
 
         state = (
-            f"## Current Agent State\n"
-            f"- CURRENT_WORKING_DIRECTORY: {self.current_cwd}\n"
-            f"- CURRENT_CONTAINER_DIRECTORY: {self.container_cwd}\n"
-            f"- CURRENT_TARGET_CONTAINER: "
-            f"{self.target_container or '（未設定：需要容器時先用 docker_containers 查、docker_open 選定）'}"
+            _st("agent_state", cwd=self.current_cwd, container_cwd=self.container_cwd, target=self.target_container or _st("target_none"))
         )
 
         # 只有 Workspace 所屬容器與目前目標容器相同時，
@@ -196,21 +203,15 @@ class PromptMixin:
             and workspace_container == self.target_container
         ):
             workspace_line = (
-                f"- CURRENT_ROS2_WORKSPACE: {workspace_path}\n"
-                f"- ROS2_WORKSPACE_CONTAINER: {workspace_container}\n"
-                "- ROS 2 Workspace 已記錄；執行前仍須確認該容器內的 "
-                "install/setup.bash 存在且可載入。"
+                _st("workspace_ok", path=workspace_path, container=workspace_container)
             )
         elif workspace_path:
             workspace_line = (
-                f"- CURRENT_ROS2_WORKSPACE: （目前目標容器為 "
-                f"{self.target_container or '未設定'}，已記錄的 Workspace "
-                f"屬於 {workspace_container}，不可直接沿用）"
+                _st("workspace_other", target=self.target_container or _st("workspace_no_target"), container=workspace_container)
             )
         else:
             workspace_line = (
-                "- CURRENT_ROS2_WORKSPACE: （尚未設定；需要 ROS 2 "
-                "Workspace 時，先確認容器及路徑）"
+                _st("workspace_none")
             )
 
         blocks = [
@@ -223,10 +224,5 @@ class PromptMixin:
 
         body = "\n\n".join(b for b in blocks if b)
 
-        return (
-            "[harness state]\n"
-            "（以下是系統每次附上的目前狀態，不是使用者說的話；"
-            "請回應上面那則訊息）\n"
-            + body
-        )
+        return _st("header") + "\n" + body
 

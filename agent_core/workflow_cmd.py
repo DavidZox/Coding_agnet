@@ -17,6 +17,10 @@
 import json
 import shlex
 
+from . import prompt_files
+
+_DIRECT = "harness/direct_commands.md"   # 替使用者與 AI 放進主對話的那兩則
+
 WORKFLOW_SCRIPT = "scripts/workflow_run_cmd.py"
 USAGE = "用法：/workflow（列出全部）｜/workflow show <名稱>｜/workflow <名稱> 名稱=值 …（執行）｜/workflow --continue｜/workflow --cancel"
 HEADLESS_USAGE = ("用法：python3 Agent_Runner.py --workflow [<名稱> 名稱=值 …｜show <名稱>｜--continue｜--cancel] [--yes] [--model 模型] [--cwd 目錄]"
@@ -66,16 +70,16 @@ def action_for(args):
 
 def synthetic_reply(args):
     """放進主對話的那一則「AI 的動作」（跟 /analyze 一樣）：之後的回合 AI 看得到這個工作流是使用者指定的。"""
-    return json.dumps({"thought": "使用者用 /workflow 直接指定要執行的工作流，照使用者給的參數執行",
+    return json.dumps({"thought": prompt_files.load(_DIRECT, "workflow_thought"),
                        "reply": reply_text(args), "action": action_for(args)}, ensure_ascii=False)
 
 
 def reply_text(args):
-    return f"照你指定的執行工作流：{args}"
+    return prompt_files.load(_DIRECT, "workflow_reply", args=args)
 
 
 def user_note(args):
-    return f"（我用 /workflow 直接執行工作流：{args}。執行完照報告告訴我結果；停在【確認】或沒有完成時說明卡在哪裡、接下來可以怎麼做。）"
+    return prompt_files.load(_DIRECT, "workflow_user", args=args)
 
 
 def begin(agent, args):

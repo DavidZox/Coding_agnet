@@ -12,9 +12,20 @@ from .config import (
     TOOL_SUMMARY_TAG,
     VISION_ARCHIVE_SCRIPT,
 )
+from . import prompt_files
 from .extract import Extraction, lines_text
 from .protocol import action_text, parse_agent_reply
 
+
+
+def _f(key, /, **fields):
+    """prompts/harness/followup.md 的一則：提煉結果最後給主對話的下一步建議。"""
+    return prompt_files.load("harness/followup.md", key, **fields)
+
+
+def _a(key, /, **fields):
+    """prompts/harness/extract_anchor.md 的一則：交給提煉的「使用者想知道什麼」與存檔的背景。"""
+    return prompt_files.load("harness/extract_anchor.md", key, **fields)
 
 class ToolSummaryMixin:
 
@@ -102,45 +113,40 @@ class ToolSummaryMixin:
         提煉沒有成功（回覆不是 JSON）時照實說，不說成「已經回答」。directive=False（claude_code 模式）：只陳述事實，下一步由模型自己決定。"""
         ids = [str(i) for i in (ids if isinstance(ids, (list, tuple)) else [ids]) if i]
         if not ids:
-            return "你看不到原始輸出：需要其他資訊時，換更精確的參數重新執行工具，不要憑空補上。"
+            return _f("no_ids")
         label = "、".join(f"#{i}" for i in ids)
-        view = f"要看某一條事實的原文：result_view {ids[0]} --from <行號> --lines 30。"
+        view = _f("view", id=ids[0])
         ok = out is not None and out.get("structured") and out.get("data") is not None
         if not ok:
-            return (f"提煉沒有成功（獨立 session 的回覆不是預期的格式），上面是它的原文，可能不完整：需要細節時用 result_recall {ids[0]} "
-                    f"\"<使用者的問題>\" 再提煉一次，或用 result_view／result_grep 自己看存檔 {label} 的原文；不要憑空補上。")
+            return (_f("failed", id=ids[0], label=label))
         data = out["data"]
         related = [str(r["id"]) for r in (data.get("related_records") or [])]
         new = [r for r in related if r not in ids]
         has_gap = self._gap_reported(data.get("not_covered"))
         if not directive:
-            parts = [f"原文在存檔 {label}。"]
+            parts = [_f("cc_where", label=label)]
             if new:
-                reasons = "；".join(f"#{r['id']}：{r.get('reason') or '（未給理由）'}" for r in data["related_records"] if str(r["id"]) in new)
-                parts.append(f"獨立 session 認為這個問題可能還需要之前的存檔（{reasons}）。")
+                reasons = "；".join(_f("cc_related_item", id=r["id"], reason=r.get("reason") or _f("cc_no_reason"))
+                                   for r in data["related_records"] if str(r["id"]) in new)
+                parts.append(_f("cc_related", reasons=reasons))
             if has_gap:
-                parts.append("「未涵蓋」的部分原文裡沒有，或這次沒讀到。")
-            parts.append("接下來怎麼做由你決定：看某一段用 result_view、找某個字串用 result_grep、換個問題再 result_recall，或直接回答。")
+                parts.append(_f("cc_gap"))
+            parts.append(_f("cc_next"))
             return "".join(parts)
         if recalled:
-            base = f"不要再對 {label} 重複同一個問題的 recall。{view}"
+            base = _f("recalled_base", label=label, view=view)
         else:
-            base = (f"完整原始輸出已存成 #{ids[0]}：之後使用者追問這份輸出裡上面沒寫到的內容時，執行 result_recall {ids[0]} \"<使用者的話>\" "
-                    f"回原文提煉（只有要找某個字串出現在哪幾行才用 result_grep），不要重新執行同一個工具。{view}")
+            base = (_f("base", id=ids[0], view=view))
         if out.get("fallback"):
-            return base + "整合沒有成功，上面的事實是各段直接摘出的：據此回答，不要補上沒列的內容。"
+            return base + _f("fallback")
         if new and len(ids) < RECALL_MAX_RECORDS:
             combo = ",".join((ids + new)[:RECALL_MAX_RECORDS])
-            return base + (f"獨立 session 判斷這個問題還需要之前的存檔 {'、'.join('#' + r for r in new)} 一起看才答得完整："
-                           f"下一輪直接執行 result_recall {combo} \"<使用者的話>\"（逗號隔開的幾份原文交給同一次提煉一起整合），"
-                           f"拿到後再回答，不要先問使用者、也不要重跑當時的工具。")
+            return base + (_f("need_more", records='、'.join(('#' + r for r in new)), combo=combo))
         if out.get("notes"):
-            return base + ("有些段落這次沒有讀到（見「未涵蓋」）：上面已經回答的就直接回答；使用者要的正好在沒讀到的那幾行時，用更具體的問題 "
-                           f"result_recall {ids[0]} \"<問題>\"（會依問題重新挑段落），或 result_view 看那幾行。")
+            return base + (_f("unread", id=ids[0]))
         if has_gap and data.get("suggested_questions"):
-            return base + ("上面的缺口原文裡沒有：下一輪用 reply 自然地問使用者一句話（不要條列、不要照抄），不要自己選一個方向去執行，"
-                           "除非使用者這句話已經對應到其中一個方向。")
-        return base + "上面已經回答了使用者的問題：直接據此回答或做任務的下一步，不需要再 recall；後面列的方向只是額外可能有興趣的，順口提一句或略過都可以。"
+            return base + (_f("gap_ask"))
+        return base + _f("answered")
 
     def _extract(self, kind, sources, purpose, question, exclude_ids):
         """跑一次 Extraction（附工具使用檢索清單，排除正在讀的存檔），驗證 related_records。回傳 Extraction.run() 的結果；
@@ -168,13 +174,13 @@ class ToolSummaryMixin:
         step = step if step is not None else (self._last_assistant_step() or {})
         step_lines = []
         if step.get("action"):
-            step_lines.append(f"執行的工具：{action_text(step['action'])}")
+            step_lines.append(_a("step_tool", action=action_text(step['action'])))
         if step.get("thought"):
-            step_lines.append(f"決策 AI 執行前的想法：{step['thought']}")
+            step_lines.append(_a("step_thought", thought=step['thought']))
         if step.get("reply"):
-            step_lines.append(f"決策 AI 對使用者的說明：{step['reply']}")
-        step_text = "\n".join(step_lines) or "（沒有取得這一步的說明，請以使用者的目標為依據）"
-        purpose = f"【使用者的目標】\n{anchor}\n\n【這一步的目的（決策 AI 為什麼執行這個工具）】\n{step_text}"
+            step_lines.append(_a("step_reply", reply=step['reply']))
+        step_text = "\n".join(step_lines) or _a("step_none")
+        purpose = _a("summary_purpose", anchor=anchor, step=step_text)
         record = next((r for r in reversed(self.trajectory) if r.get("id") == result_id), None) if result_id else None
         script = (record or {}).get("script") or (action_text(step["action"]).split()[0] if step.get("action") else "工具")
         sources = [{"rid": str(result_id or "?"), "label": f"{script}" + (f"（#{result_id}）" if result_id else ""), "lines": result.splitlines()}]
@@ -245,18 +251,14 @@ class ToolSummaryMixin:
             hint = self._tool_use_index_hint(rid)
             if script == CONVERSATION_ARCHIVE_SCRIPT:
                 # 對話片段不是工具輸出：告訴獨立 session 怎麼讀，讓它回答「當時談了什麼、決定了什麼、使用者怎麼說」
-                kind, bg = "過去的對話片段", (f"這份是過去被壓縮的對話原文（{meta.get('command') or ''}），不是工具輸出——[user] 是使用者當時說的話、"
-                                       f"[assistant] 是 AI 當時的想法與回覆、[harness …] 是當時的工具回傳；回答時說明當時談了什麼、查到什麼、"
-                                       f"決定了什麼，使用者的原話與名稱、數值照抄")
+                kind, bg = _a("recall_kind_conversation"), (_a("recall_conversation_background", command=meta.get('command') or ''))
             elif script == VISION_ARCHIVE_SCRIPT:
                 # 附圖分析：原圖沒有保存，只有當時視覺模型提取的文字——文字裡沒有的不能補，要更多細節只能請使用者重新附圖
-                kind, bg = "附圖分析", (f"這份是過去使用者附圖時系統的影像分析結果（{meta.get('command') or ''}），不是工具輸出；原圖沒有保存，"
-                                     f"只能根據這份文字回答，文字裡沒有的寫進 not_covered（例如「當時的影像分析沒有提到…，需要的話請使用者重新附圖」），"
-                                     f"不要推測影像內容；當時使用者的說明：{meta.get('task') or '(沒有)'}")
+                kind, bg = _a("recall_kind_vision"), (_a("recall_vision_background", command=meta.get('command') or '', task=meta.get("task") or _a("recall_no_task")))
             else:
-                kind, bg = script, f"當時的任務：{meta.get('task') or '(未知)'}；執行的指令：{meta.get('command') or script}"
-            sources.append({"rid": rid, "label": f"{kind}（#{rid}，{meta.get('ts') or '?'}）", "lines": lines,
-                            "background": bg + (f"；檢索清單對它的描述：{hint}" if hint else "")})
+                kind, bg = script, _a("recall_tool_background", task=meta.get("task") or _a("recall_unknown_task"), command=meta.get('command') or script)
+            sources.append({"rid": rid, "label": _a("recall_label", kind=kind, rid=rid, ts=meta.get("ts") or "?"), "lines": lines,
+                            "background": bg + (_a("recall_hint", hint=hint) if hint else "")})
         hints = {self._tool_use_index_hint(i) for i in ids}
         # 錨點用 harness 自己記的任務線，不靠模型抄：實測小模型會把清單上的描述抄進參數當問題，而使用者回答追問時最新一句常只剩「第一個」。
         # 模型給的參數只當聚焦點，跟使用者原話或清單描述一樣時就是噪音、不帶。
@@ -264,8 +266,8 @@ class ToolSummaryMixin:
         focus = question if user_now and question != user_now and question not in hints else ""
         primary = user_now or question
         anchor = self._build_task_anchor_text() if user_now else question
-        purpose = (f"【使用者現在的問題】\n{anchor}\n" + (f"【決策 AI 要聚焦的點】\n{focus}\n" if focus else "")
-                   + f"\n【{'這份' if len(ids) == 1 else '這幾份'}存檔的背景（不是現在要回答的問題）】\n"
+        purpose = (_a("recall_question", anchor=anchor) + "\n" + (_a("recall_focus", focus=focus) + "\n" if focus else "")
+                   + "\n" + _a("recall_background_one" if len(ids) == 1 else "recall_background_many") + "\n"
                    + "\n".join(f"#{s['rid']}：{s['background']}" for s in sources))
         out = self._extract("recall", sources, purpose, f"{primary} {focus}".strip(), ids)
         if out.get("structured") and out.get("data") is not None:

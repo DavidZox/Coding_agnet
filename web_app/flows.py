@@ -15,6 +15,10 @@ from agent_core.config import (
 )
 from agent_core.protocol import action_text, is_exempt_result, tool_result_message
 from agent_core.turn import _append_discarded_tool_result, _content_for_context, context_kind, oversized_notice
+from agent_core import prompt_files
+
+_ATTACH = "harness/attachments.md"   # 附圖、手動載入技能時放進主對話的字
+
 from .state import agent, clear_pending, pending, pending_skill_names, state, vision_session
 
 
@@ -132,7 +136,7 @@ def _emit_context_event(content, events, tool_tokens=None, result=None):
         events.append({"channel": "summary", "kind": kind, "text": f"完整原文（≈{n} tokens，未縮減），與上方系統回傳卡片相同。", "tokens": n})
 
 
-DEFAULT_VISION_PROMPT = "請描述這些影像的內容，並逐字列出可見的文字、數值、錯誤訊息與任何值得注意的異常。"
+DEFAULT_VISION_PROMPT = prompt_files.load(_ATTACH, "default_vision_message")   # 只附圖沒打字時的訊息（也拿來比對）
 # 視覺提取結果的長度提醒門檻（每張影像）：結構化提取（文字、畫面、個體、背景、線索）一張通常 400～700 tokens，
 # 套用工具回傳的 500 門檻幾乎每次附圖都會誤報；超過這個量才代表異常地長（例如整頁 log 都抄進來）。只影響 ⚠️ 提醒。
 VISION_WARN_TOKENS_PER_IMAGE = 600
@@ -182,20 +186,11 @@ def _run_vision_subsession(message, items, events):
     # 「你提供的視覺分析」。這裡明確標示來源是系統的視覺模型；AGENT.md「Harness Messages」也有對應說明。
     # 有結構化結果時再告訴主 Agent 怎麼用：照抄的文字與線索可以直接當技能參數、〔使用者說明〕的名稱不是影像裡讀到的、
     # 影像只是某一刻的畫面——這幾句只在真的附圖時才出現在上下文（2.9：影像相關的稱呼不寫進 AGENT.md）。
-    usage = (
-        "「文字」與「線索」是照畫面原文抄的，名稱、編號、路徑、錯誤訊息可以直接當技能的參數（不要改寫）；"
-        "標〔使用者說明〕的名稱是使用者告訴系統的，不是影像裡讀到的；「無法判斷」的不要自己補。"
-        "影像只是某一刻的畫面，使用者要的是系統現在的狀態時，用技能重新查詢。"
-    ) if data is not None else ""
+    usage = prompt_files.load(_ATTACH, "vision_usage") if data is not None else ""
     # 存檔編號跟工具回傳的「完整原文存檔 #編號」同一個用意：之後這則訊息被壓縮掉，清單上的同一個編號還找得到它
-    archived = f"這份分析存檔為 #{result_id}（工具使用檢索清單標〔附圖分析〕）。" if result_id else ""
-    return (
-        f"{message}\n\n"
-        f"[vision result]\n"
-        f"【系統影像分析】使用者只提供了 {n} 張影像，沒有寫下面這段文字；以下由系統的視覺模型（{VISION_MODEL}）"
-        f"依使用者的訊息從影像提取。你看不到原圖，請把它當作系統回傳的分析結果來回應或決定下一步，"
-        f"回覆時稱「影像分析結果」，不要說成使用者提供的分析。{archived}{usage}\n{result}"
-    )
+    archived = prompt_files.load(_ATTACH, "vision_archived", rid=result_id) if result_id else ""
+    wrapper = prompt_files.load(_ATTACH, "vision_wrapper", count=n, model=VISION_MODEL, archived=archived, usage=usage)
+    return f"{message}\n\n[vision result]\n{wrapper}\n{result}"
 
 
 def _emit_reply_meta(parsed, events):
@@ -374,9 +369,9 @@ def run_analysis_turn(question, events, data=None):
     進主對話（auto 直接加入、manual／hybrid 等你決定），之後主模型依報告回答、可以接著追問。回傳是否在等使用者決策。"""
     import json
     action = {"command": "scripts/analysis_run_cmd.py", "args": agent.analyze_command_args(question, data)}   # 選項的處理跟 CLI 共用
-    reply = "交給數據分析（程式量全部的事實、整理成事實報告）。"
+    reply = prompt_files.load("harness/direct_commands.md", "analyze_reply_web")
     agent.messages.append({"role": "assistant", "content": json.dumps(
-        {"thought": "使用者要求數據分析，直接交給 analysis_run", "reply": reply, "action": action}, ensure_ascii=False)})
+        {"thought": prompt_files.load("harness/direct_commands.md", "analyze_thought"), "reply": reply, "action": action}, ensure_ascii=False)})
     events.append({"channel": "chat", "role": "assistant", "text": reply, "action": action_text(action)})
     outcome = _handle_tool_result(agent.run_tool({"action": action}, approved=True), events)
     if outcome == "continue":

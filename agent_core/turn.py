@@ -9,7 +9,10 @@ from .config import (
     TOOL_SUMMARY_TAG,
     TOOL_TRUNCATED_TAG,
 )
+from . import prompt_files
 from .protocol import is_exempt_result, is_skill_doc_result, tool_result_message
+
+_RESULTS = "harness/tool_results.md"   # 捨棄通知、沒有提煉時只給成功／失敗的那一則
 
 
 def _append_discarded_tool_result(agent):
@@ -18,7 +21,7 @@ def _append_discarded_tool_result(agent):
     agent.messages.append({
         'role': 'user',
         'content': tool_result_message(
-            "工具已執行完畢，但使用者選擇不把結果加入上下文（結果只有使用者看到）。請依此繼續，不要重複執行同一個指令。",
+            prompt_files.load(_RESULTS, "discarded"),
             (agent._last_assistant_step() or {}).get("action"),
         ),
     })
@@ -56,16 +59,11 @@ def _content_for_context(result, tool_tokens, agent=None, use_summary=True):
         except Exception as e:
             print(f"⚠️ 獨立摘要 session 執行失敗，改用成功/失敗判定：{e}")
 
-    status = "失敗" if result.lstrip().startswith("[ERROR]") else "成功"
+    status = prompt_files.load(_RESULTS, "reduced_failed" if result.lstrip().startswith("[ERROR]") else "reduced_ok")
     rid = getattr(agent, "last_result_id", None) if agent is not None else None
-    recall = (f"完整原始輸出已存成結果檔 #{rid}：需要內容時由你自己執行 result_recall {rid} \"<使用者的問題>\"（交給獨立 session 依問題提煉）、"
-              f"或 result_view {rid} --outline 看有哪幾節再 --from <行號> 看那一段（不要叫使用者去看），不要重新執行同一個工具"
-              if rid else "需要內容時請換更精確的參數重新執行工具")
-    return (
-        f"{TOOL_REDUCED_TAG}\n"
-        f"指令已{status}執行（原始輸出約 {tool_tokens} tokens，超過門檻 {TOOL_RESULT_TOKEN_THRESHOLD}，"
-        f"且獨立摘要 session 未啟用或失敗，內容未加入上下文）。完整內容已顯示給使用者；你看不到它。{recall}，不要憑空補上結果。"
-    )
+    recall = (prompt_files.load(_RESULTS, "reduced_recall", rid=rid) if rid else prompt_files.load(_RESULTS, "reduced_no_recall"))
+    return f"{TOOL_REDUCED_TAG}\n" + prompt_files.load(_RESULTS, "reduced", status=status, tokens=tool_tokens,
+                                                     threshold=TOOL_RESULT_TOKEN_THRESHOLD, recall=recall)
 
 
 def oversized_notice(agent, tool_tokens, use_summary):

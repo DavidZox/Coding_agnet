@@ -3,6 +3,7 @@
 import os
 import threading
 from vision import VisionSession
+from agent_core import prompt_files
 from agent_core.agent import SkillAgent
 from agent_core.config import PARALLEL_CAL_DEFAULT, TOOL_SUMMARY_DEFAULT
 
@@ -51,7 +52,7 @@ lock = threading.Lock()
 pending_skills = {}
 pending_skills_lock = threading.Lock()
 
-DEFAULT_SKILL_PROMPT = "我已手動載入上述技能的規格，請依規格用兩三句話說明它的用途與呼叫方式，然後等待我的指示。"
+DEFAULT_SKILL_PROMPT = prompt_files.load("harness/attachments.md", "default_skill_message")   # 只載入技能沒打字時的訊息
 
 
 def load_pending_skill(name):

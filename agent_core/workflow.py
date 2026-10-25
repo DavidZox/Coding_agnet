@@ -23,8 +23,9 @@ import re
 import shlex
 import time
 
+from . import prompt_files
 from . import workflow_spec as ws
-from .config import NUM_CTX, PROMPTS_DIR, WORKFLOW_CONTEXT_CHARS, WORKFLOW_JOBS_DIRNAME, WORKFLOW_JOBS_KEEP
+from .config import NUM_CTX, WORKFLOW_CONTEXT_CHARS, WORKFLOW_JOBS_DIRNAME, WORKFLOW_JOBS_KEEP
 from .jobstore import JobStore
 
 RAW_ARGS_SCRIPTS = {"file_ops_cmd.py"}      # 自己解析 action.args 原文的腳本（HARNESS_RAW_ARGS）：雙引號裡的換行要寫成 \n
@@ -34,11 +35,13 @@ _MARK = {"done": "✅", "skipped": "⏭️", "failed": "❌", "pending": "⬜", 
 
 
 def _read_prompt(name):
-    try:
-        with open(os.path.join(PROMPTS_DIR, "workflow", name), encoding="utf-8") as f:
-            return f.read()
-    except OSError:
-        return ""
+    """prompts/workflow/<name> 整份（fill.md、check.md：判斷點的規則）。"""
+    return prompt_files.load(f"workflow/{name}")
+
+
+def _w(key, /, **fields):
+    """prompts/workflow/inputs.md 的一則：判斷點的 user 訊息裡程式組進去的標籤與選項。"""
+    return prompt_files.load("workflow/inputs.md", key, **fields)
 
 
 def _clip(text, n):
@@ -344,15 +347,16 @@ class WorkflowRun:
 
     def context(self, upto):
         """判斷點看得到的：需要的資訊、前面每一個做過的【執行】步的輸出（每份最多 WORKFLOW_CONTEXT_CHARS 字，完整的在存檔）。"""
-        parts = ["【需要的資訊】" + ("、".join(f"{k}={v}" for k, v in self.job["inputs"].items() if k not in ws.BUILTIN) or "（沒有）")]
+        parts = [_w("context_inputs", inputs="、".join(f"{k}={v}" for k, v in self.job["inputs"].items() if k not in ws.BUILTIN)
+                    or _w("context_no_inputs"))]
         for s in self.wf["steps"]:
             if s["n"] >= upto or s["kind"] != "執行":
                 continue
             st = self.state(s["n"])
             if st["status"] != "done" and not st.get("rid"):
                 continue
-            parts.append(f"【第 {s['n']} 步的輸出】{self.title(s)}（{st.get('command', '')}；存檔 #{st.get('rid', '?')}）\n"
-                         f"{_clip(self.output(s['n']), WORKFLOW_CONTEXT_CHARS)}")
+            parts.append(_w("context_output", n=s["n"], title=self.title(s), command=st.get("command", ""), rid=st.get("rid", "?"),
+                            output=_clip(self.output(s["n"]), WORKFLOW_CONTEXT_CHARS)))
         return "\n\n".join(parts)
 
     def ask(self, kind, system, user, schema):
@@ -480,11 +484,12 @@ class WorkflowRun:
         props = {k: {"type": "string"} for k in names}
         schema = {"type": "object", "properties": {"values": {"type": "object", "properties": props, "required": names},
                                                    "reason": {"type": "string"}}, "required": ["values", "reason"]}
-        user = (f"【工作流】{self.wf['title']}（{self.wf['name']}）：{self.wf['purpose'][:400]}\n\n【整份步驟】\n{ws.outline(self.wf, s['n'], self.job['inputs'])}\n\n"
-                f"【這一步】第 {s['n']} 步：{ws.show(s['text'], self.job['inputs'])}\n命令：scripts/{s['script']} {ws.show(s.get('args', ''), self.job['inputs'])}\n要你決定的值：{'、'.join(names)}\n\n"
-                f"{self.context(s['n'])}")
+        user = _w("fill_user", title=self.wf["title"], name=self.wf["name"], purpose=self.wf["purpose"][:400],
+                  outline=ws.outline(self.wf, s["n"], self.job["inputs"]), n=s["n"], step=ws.show(s["text"], self.job["inputs"]),
+                  script=s["script"], args=ws.show(s.get("args", ""), self.job["inputs"]), names="、".join(names),
+                  context=self.context(s["n"]))
         if error_text:
-            user += f"\n\n【上一次用你給的值執行，技能回報錯誤】\n{error_text}\n依錯誤訊息改正這幾個值（照抄輸出裡的寫法）。"
+            user += "\n\n" + _w("fill_retry", error=error_text)
         data = self.ask("fill", _read_prompt("fill.md"), user, schema)
         if not data or not isinstance(data.get("values"), dict):
             return None
@@ -503,12 +508,14 @@ class WorkflowRun:
         other = next((i for i, b in enumerate(branches) if b["when"] is None), None)
         if other is not None:
             return self._take(s, st, other, "前面的條件都不成立", "程式")
-        options = ([f"「{'」或「'.join(b['when'])}」→ " + ("結束" if b["to"] == "end" else f"第 {b['to']} 步") for b in branches]
-                   if branches else ["繼續做下一步", "結束（不再做下去）"])
+        options = ([_w("check_option_branch", when="」或「".join(b["when"]),
+                       target=_w("check_target_end") if b["to"] == "end" else _w("check_target_step", to=b["to"])) for b in branches]
+                   if branches else [_w("check_option_continue"), _w("check_option_stop")])
         schema = {"type": "object", "properties": {"choice": {"type": "integer", "minimum": 0, "maximum": len(options) - 1},
                                                    "reason": {"type": "string"}}, "required": ["choice", "reason"]}
-        user = (f"【工作流】{self.wf['title']}\n\n【整份步驟】\n{ws.outline(self.wf, s['n'], self.job['inputs'])}\n\n【這一步要判斷的事】第 {s['n']} 步：{ws.show(s['text'], self.job['inputs'])}\n\n"
-                f"【選項】\n" + "\n".join(f"{i}. {o}" for i, o in enumerate(options)) + f"\n\n{self.context(s['n'])}")
+        user = _w("check_user", title=self.wf["title"], outline=ws.outline(self.wf, s["n"], self.job["inputs"]), n=s["n"],
+                  step=ws.show(s["text"], self.job["inputs"]), options="\n".join(f"{i}. {o}" for i, o in enumerate(options)),
+                  context=self.context(s["n"]))
         data = self.ask("check", _read_prompt("check.md"), user, schema)
         choice = data.get("choice") if data else None
         if not isinstance(choice, int) or not 0 <= choice < len(options):

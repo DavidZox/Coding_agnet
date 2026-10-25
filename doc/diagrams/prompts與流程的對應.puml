@@ -1,0 +1,134 @@
+@startuml
+' --- 樣式精準控制 ---
+skinparam shadowing false
+skinparam defaultFontName "Microsoft JhengHei"
+skinparam RectangleWidthMax 440
+skinparam PackageBorderColor #996633
+skinparam ArrowColor #666666
+skinparam ranksep 70
+skinparam nodesep 22
+left to right direction
+
+title prompts/ 與流程的對應：給模型的字都在 prompts/（程式只填算出來的值，讀法 agent_core/prompt_files.py）；\n技能與工作流的說明也是模型會讀的文字；留在程式裡的只有程式的輸出與程式認的標記（右邊）
+
+package "prompts/（改字不用改程式；evals/integrity 檢查範本跟程式對得上）" {
+  package "主對話" {
+    rectangle P_AGENT #D1E5F0 [
+      **AGENT.md**：角色、做法、執行協議（回覆只能是 JSON）、
+      記憶寫入協議、溝通風格
+      **context_modes/**：目前上下文模式的規則
+      **Memory.md**：長期記憶（資料，不是規則；modify_memory 寫入）
+    ]
+    rectangle P_HARNESS #D1E5F0 [
+      **harness/**（程式組進主對話的字）
+      system_prompt：各節標題、記憶的說明、接回舊摘要的提醒
+      tool_use_index：檢索清單（兩種模式）、對話片段、最新一筆
+      state_tail：動態區（工作目錄、容器、Workspace、數據、Objective）
+      tool_results：工具結果的框架句、捨棄通知、只給成功／失敗
+      raw_results：claude_code 模式的省略說明、清除的佔位
+      skill_docs：載入規格之後「下一輪要做什麼」
+      reminders：程式核對後的提醒（重複、沒動作卻說做了、
+        依報告回答寫成因果、空白回覆）
+      followup：提煉結果最後的下一步建議
+      direct_commands、attachments：/analyze、/workflow、附圖、
+        手動載入技能時放進對話的訊息；數據報告的回答規則
+    ]
+  }
+  package "獨立 session" {
+    rectangle P_SUMMARY #FCE5CD [
+      **summary/rolling.md**：滾動摘要的規則與 user 訊息
+    ]
+    rectangle P_EXTRACT #FCE5CD [
+      **extract/**：worker.md、synthesizer.md（規則）、
+      inputs.md（user 訊息的標籤、程式的說明、修一次）
+      **harness/extract_anchor.md、anchor.md**：
+      「使用者想知道什麼」與每份存檔的背景
+    ]
+    rectangle P_ORCH #FFE6CC [
+      **orchestra/**：planner.md、worker.md（通則）、
+      profiles/<類型>.md（〈規劃〉〈執行〉）、
+      engine.md（引擎組進去的字：規劃與重排的訊息、計畫檢查的問題、
+      worker 的說明與提醒、對照目標的兩個問題、重試的原因）、
+      plan_edit.md（Plan 模式用說的改）
+    ]
+    rectangle P_WF #FFF2CC [
+      **workflow/**：fill.md、check.md（判斷點的規則）、
+      inputs.md（標籤與選項）
+    ]
+    rectangle P_MS #ECECEC [
+      **make_skill/draft.md**：/make_skill 草擬工作流
+    ]
+    rectangle P_VISION #DDEEF6 [
+      **vision/extraction.md**：附圖的影像提取
+      （system、純文字的退路、user 訊息）
+    ]
+  }
+}
+
+package "skills_system/：也是模型會讀的" {
+  rectangle K_ALL #D5E8D4 [
+    **SKILLS.md**：一行一個技能＋〈工作流〉（常駐）
+    **tools/<name>.md**：技能的規格（主對話按需載入；
+    任務引擎的 worker 整份附上）
+    **workflows/<名稱>.md**：工作流的規格（規劃看得到清單）
+  ]
+}
+
+package "用到它們的 session" {
+  rectangle S_MAIN #D1E5F0 [
+    **主 session（主對話）**：每一輪；AGENT_REPLY_SCHEMA
+  ]
+  rectangle S_SUMMARY #FCE5CD [
+    **滾動摘要**：超過水位、/compress；SUMMARY_SCHEMA
+  ]
+  rectangle S_EXTRACT #FCE5CD [
+    **提煉**（summarize_tool_result、result_recall）：
+    每段一個 worker → 整合；EXTRACT_WORKER／TOOL_SUMMARY_SCHEMA
+  ]
+  rectangle S_ORCH #FFE6CC [
+    **任務引擎**：規劃與重排（TASK_PLAN_SCHEMA）、每一步的 worker
+    （TASK_WORKER_REPLY_SCHEMA）、對照目標（TASK_GOAL_CHECK_SCHEMA）、
+    Plan 模式的草稿與用說的改（PLAN_OPS_SCHEMA）
+  ]
+  rectangle S_WF #FFF2CC [
+    **工作流的判斷點**：只填那幾個值／選分支
+  ]
+  rectangle S_MS #ECECEC [
+    **/make_skill 草擬**：MAKE_SKILL_SCHEMA
+  ]
+  rectangle S_VISION #DDEEF6 [
+    **視覺 session**：extraction_schema(張數)
+  ]
+}
+
+package "留在程式裡的（不是給模型的指示）" {
+  rectangle C_LIST #ECECEC [
+    * 程式的輸出：技能與工具的 [PASS]／[ERROR]／[DENIED]（附下一步）、
+      任務引擎與工作流與數據分析的報告、提煉結果的排版、檢查的證據
+    * 程式認的標記：[tool result]、【系統回傳】、[vision result]、
+      [skill loaded]、（完整原文存檔 #N…）、（依這份報告回答使用者——
+      範本裡用 {prefix}、{marker} 由程式填
+    * 給使用者看的字（提示、確認關卡的說明）、比對用的詞表
+  ]
+}
+
+P_AGENT --> S_MAIN
+P_HARNESS --> S_MAIN
+K_ALL --> S_MAIN
+P_SUMMARY --> S_SUMMARY
+P_EXTRACT --> S_EXTRACT
+P_ORCH --> S_ORCH
+K_ALL --> S_ORCH : 規格、工作流清單
+P_WF --> S_WF
+P_MS --> S_MS
+P_VISION --> S_VISION
+S_VISION -[hidden]-> C_LIST
+
+legend bottom
+  **用哪個模型**（獨立 session 一律關閉 thinking）
+  ・主 session：主模型（Web 的模型設定，預設 gemma4:e4b）；提煉、滾動摘要：summary_model（AGENT_SUMMARY_MODEL，沒設定時跟著主模型）
+  ・任務引擎、工作流的判斷點、Plan 模式：主模型；/make_skill：skill_model；附圖：VISION_MODEL
+  範本的寫法：一個檔案好幾則時每則用一行 <!~-- @名稱 ~--> 開頭；{名稱} 是程式填的值（prompts/README.md）。
+  改這些字＝改模型會讀的文字：跑對應的真模型評測、跟基準比；範例不用評測世界的名稱
+endlegend
+@enduml

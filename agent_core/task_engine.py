@@ -32,6 +32,7 @@ import os
 import re
 import time
 
+from . import prompt_files
 from . import workflow_spec as ws
 from .config import (GUARDED_SKILLS, NUM_CTX, PROMPTS_DIR, SKILL_DOC_PREFIX, TASK_JOBS_DIRNAME, TASK_JOBS_KEEP, TASK_MAX_ITEMS,
                      TASK_MAX_REPLANS, TASK_WORKER_MAX_STEPS)
@@ -44,6 +45,7 @@ from .schemas import (TASK_FACTS_FIX_SCHEMA, TASK_GOAL_CHECK_SCHEMA, TASK_PLAN_S
 _DIR = os.path.join(PROMPTS_DIR, "orchestra")
 DEFAULT_PROFILE = "ops"
 TASK_SCRIPT = "scripts/task_run_cmd.py"
+_ENGINE = "orchestra/engine.md"   # 程式組進給模型的字：標籤、程式檢查的問題、提醒、對照目標的問題（_t 取一則）
 # 每一步都可以用的技能（查詢、找名稱、切換目錄或目標容器）；其中有些也能改變狀態（docker_ctl restart、ROS2_param set…），
 # 那種用法只有這一步標了 changes_state、核准了、而且技能列在這一步的 skills 裡才放行
 TASK_ALWAYS_READ = {"list_dir", "find_file", "search_text", "view_file", "csv_query", "change_dir", "docker_containers", "docker_images",
@@ -76,12 +78,14 @@ _STATUS_TEXT = {"done": "完成", "unverified": "做完了但檢查沒過", "fai
 _MARK = {"done": "✅", "failed": "❌", "unverified": "⚠️ 檢查沒過", "pending": "⬜", "skipped": "⏭️", "replaced": "↩️ 沒做成、重排了"}
 
 
+def _t(key, /, **fields):
+    """prompts/orchestra/engine.md 的一則，{名稱} 換成 fields。"""
+    return prompt_files.load(_ENGINE, key, **fields)
+
+
 def _read(name):
-    try:
-        with open(os.path.join(_DIR, name), encoding="utf-8") as f:
-            return f.read()
-    except OSError:
-        return ""
+    """prompts/orchestra/<name> 整份（planner.md、worker.md）。"""
+    return prompt_files.load(f"orchestra/{name}")
 
 
 def _clip(text, n=6000):
@@ -213,9 +217,10 @@ class TaskMixin:
         for wf in self.list_workflows():
             if any(s["kind"] == "確認" for s in wf["steps"]):
                 continue                             # 有【確認】的工作流會停下來等使用者，不放進計畫
-            need = "\n".join(f"    {i['name']}=…{'（選填）' if i['optional'] else ''}：{_one_line(i['description'], 160)}" for i in wf["inputs"])
-            lines.append(f"- {wf['name']}：{wf['description']}\n  workflow_args：\n{need or '    （不用）'}")
-        return "\n".join(lines) or "（沒有）"
+            need = "\n".join(_t("wf_catalog_input", name=i["name"], optional=_t("wf_catalog_optional") if i["optional"] else "",
+                                 description=_one_line(i["description"], 160)) for i in wf["inputs"])
+            lines.append(_t("wf_catalog_item", name=wf["name"], description=wf["description"], inputs=need or _t("wf_catalog_no_inputs")))
+        return "\n".join(lines) or _t("wf_catalog_none")
 
     def _task_containers(self):
         """每個容器現在的狀態 {名稱: 狀態}（docker ps -a）；docker 不能用時回 (None, 原因)。"""
@@ -239,14 +244,15 @@ class TaskMixin:
         except OSError:
             entries = []
         shown = "、".join(entries[:40]) + ("…" if len(entries) > 40 else "")
-        lines = [f"現在時間：{time.strftime('%Y-%m-%d %H:%M')}", f"工作目錄：{self.current_cwd}（{len(entries)} 項：{shown}）",
-                 f"目標容器：{self.target_container or '（未設定）'}"]
+        lines = [_t("env_time", now=time.strftime('%Y-%m-%d %H:%M')),
+                 _t("env_cwd", cwd=self.current_cwd, count=len(entries), entries=shown),
+                 _t("env_target", target=self.target_container or _t("env_target_none"))]
         if containers:
             items = sorted(containers.items())
-            lines.append("容器（名稱：狀態）：" + "；".join(f"{n}：{c['status']}" for n, c in items[:30])
-                         + (f"；…共 {len(items)} 個" if len(items) > 30 else ""))
+            lines.append(_t("env_containers", containers="；".join(f"{n}：{c['status']}" for n, c in items[:30]))
+                         + (_t("env_containers_more", count=len(items)) if len(items) > 30 else ""))
         elif why:
-            lines.append(f"容器：查不到（{why}）")
+            lines.append(_t("env_containers_unknown", why=why))
         return "\n".join(lines)
 
     # ---------------------------------------------------------------- 模型呼叫（每一次都存）
@@ -299,18 +305,18 @@ class TaskMixin:
               "inputs": {}, "changes_state": bool(raw.get("changes_state")), "check": None, "approved": False, "status": "pending",
               "summary": "", "facts": [], "dropped": [], "attempts": 0, "steps": 0, "evidence": "", "calls": []}
         if unknown:
-            issues.append(f"第 {n} 步的技能 {'、'.join(unknown)} 不在技能清單裡（只能用清單裡的名稱）")
+            issues.append(_t("issue_unknown_skills", n=n, skills='、'.join(unknown)))
         if wf_name:
             wf = self.load_workflow(wf_name)
             if not wf:
-                issues.append(f"第 {n} 步的工作流 {wf_name} 不存在（只能用工作流清單裡的名稱，或改用技能）")
+                issues.append(_t("issue_no_workflow", n=n, workflow=wf_name))
             elif any(s["kind"] == "確認" for s in wf["steps"]):
-                issues.append(f"第 {n} 步的工作流 {wf_name} 有【確認】、會停下來等使用者，不能放進計畫：改用技能")
+                issues.append(_t("issue_workflow_confirm", n=n, workflow=wf_name))
             else:
                 action, _, values, err = self._wf_parse_args(f"{wf_name} {wf_args}")
                 inputs, err2 = (None, err) if err else self._wf_check_inputs(wf, values)
                 if err2:
-                    issues.append(f"第 {n} 步的工作流 {wf_name}：{_one_line(err2, 300)}")
+                    issues.append(_t("issue_workflow_args", n=n, workflow=wf_name, error=_one_line(err2, 300)))
                 else:
                     it.update(workflow=wf_name, workflow_args=wf_args, inputs=inputs,
                               skills=list((wf.get("meta") or {}).get("dependencies") or []),
@@ -320,15 +326,14 @@ class TaskMixin:
             return it, issues
         mentioned = [w for w in workflows if re.search(rf"(?<![\w]){re.escape(w)}(?![\w])", f"{title} {goal}")]
         if mentioned:
-            issues.append(f"第 {n} 步的目標寫了工作流 {'、'.join(mentioned)}，但沒有填 workflow：要用工作流就填 workflow 與 workflow_args"
-                          f"（skills 給空的），不用的話目標不要寫工作流的名稱")
+            issues.append(_t("issue_workflow_in_goal", n=n, workflows='、'.join(mentioned)))
         if not skills:
             if it["changes_state"] or (raw_skills and unknown):
                 it["broken"] = True              # 要改變狀態卻沒有技能、列的技能全都不存在：worker 做不了
-            issues.append(f"第 {n} 步沒有列出要用的技能（或工作流）")
+            issues.append(_t("issue_no_skills", n=n))
         write = _WRITE_WORDS.search(goal) and _PATH.search(goal)
         if write and not set(skills) & _WRITE_SKILLS:
-            issues.append(f"第 {n} 步要寫進 {_PATH.search(goal).group(0)}，skills 要列 file_ops（不然執行時不能寫）")
+            issues.append(_t("issue_write_needs_file_ops", n=n, path=_PATH.search(goal).group(0)))
         changes = it["changes_state"]
         if any(s in GUARDED_SKILLS and s not in TASK_ALWAYS_READ for s in skills):
             changes = True                           # file_ops、ROS2_topic_pub、workpackage_send…：一定會改變狀態
@@ -340,7 +345,7 @@ class TaskMixin:
             cs = str(check.get("skill") or "").strip()
             check = {"skill": cs, "args": str(check.get("args") or "").strip(), "expect": str(check.get("expect") or "").strip()}
             if cs not in names:
-                issues.append(f"第 {n} 步的檢查技能「{cs}」不在技能清單裡")
+                issues.append(_t("issue_unknown_check_skill", n=n, skill=cs))
             elif check["expect"]:
                 it["check"] = check
         return it, issues
@@ -354,7 +359,7 @@ class TaskMixin:
             items.append(it)
             issues += problems
         if len(items) > TASK_MAX_ITEMS:
-            issues.append(f"步驟太多（{len(items)} 步）：合併成最多 {TASK_MAX_ITEMS} 步")
+            issues.append(_t("issue_too_many_steps", count=len(items), max=TASK_MAX_ITEMS))
         return items[:TASK_MAX_ITEMS], issues
 
     def _task_issues(self, job, items, containers, done=()):
@@ -373,18 +378,15 @@ class TaskMixin:
                     later = next((j for j in items[i + 1:] if "docker_ctl" in j["skills"] and c in mention(j)
                                   and _START_WORDS.search(text_of(j))), None)
                     if later:
-                        issues.append(f"第 {it['n']} 步要在 {c} 裡面做，但 {c} 現在沒有在跑（{containers[c]['status']}），第 {later['n']} 步才啟動它："
-                                      f"把啟動排在前面")
+                        issues.append(_t("issue_container_started_later", n=it['n'], container=c, status=containers[c]['status'], later=later['n']))
                     else:
-                        issues.append(f"第 {it['n']} 步要在 {c} 裡面做，但 {c} 現在沒有在跑（{containers[c]['status']}）：容器停著時只能看狀態與 "
-                                      f"log（docker_ctl status／logs）；要進容器得先啟動（使用者要求才可以）")
+                        issues.append(_t("issue_container_stopped", n=it['n'], container=c, status=containers[c]['status']))
         m = _DOC_WORDS.search(job["task"])
         first_change = next((k for k, it in enumerate(items) if it["changes_state"]), None)
         if m and first_change is not None:
             read_before = any(set(it["skills"]) & _READ_SKILLS for it in list(done) + items[:first_change])
             if not read_before:
-                issues.append(f"使用者提到「{m.group(0)}」：先排一步找到並讀那份文件（find_file／search_text／view_file），"
-                              f"後面要改的步驟照文件寫的做（不要先假設文件的內容）")
+                issues.append(_t("issue_read_document_first", doc=m.group(0)))
         return issues
 
     # ---------------------------------------------------------------- 規劃（第一版）與重排
@@ -403,8 +405,8 @@ class TaskMixin:
         items, issues = self._task_clean(data, start)
         issues += self._task_issues(job, items, containers, done)
         if issues and data is not None:
-            fix = (user + "\n\n【上一版計畫】\n" + json.dumps({"items": data.get("items")}, ensure_ascii=False)[:4000]
-                   + "\n\n【程式檢查發現的問題：修正後輸出完整的計畫】\n" + "\n".join(f"- {x}" for x in issues))
+            fix = _t("plan_fix", plan=user, previous=json.dumps({"items": data.get("items")}, ensure_ascii=False)[:4000],
+                     issues="\n".join(f"- {x}" for x in issues))
             _, data2 = self._task_call(job, kind + "_fix", [{"role": "system", "content": system}, {"role": "user", "content": fix}],
                                        TASK_PLAN_SCHEMA)
             job["plan_calls"] += 1
@@ -430,8 +432,7 @@ class TaskMixin:
                "created": time.strftime("%Y-%m-%d %H:%M:%S"), "model": self.model}
         self._task_note(job, f"🧭 任務（{profile['title']}）：規劃中…")
         t0 = time.time()
-        user = (f"【技能清單】\n{self._task_catalog()}\n\n【工作流清單】（整件事或其中一段正好是其中一個時，那一步寫 workflow）\n"
-                f"{self._task_workflow_catalog()}\n\n【目前狀態】\n{{ENV}}\n\n【任務】\n{task}\n\n（計畫的每個欄位都用繁體中文寫）")
+        user = _t("plan_user", skills=self._task_catalog(), workflows=self._task_workflow_catalog(), task=task)   # {ENV}：_task_plan_call 換
         data, items, issues = self._task_plan_call(job, profile, user, "plan")
         job["seconds"] += round(time.time() - t0, 1)
         job.update(items=items, issues=issues, status="draft" if mode == "plan" else "planned",
@@ -466,11 +467,9 @@ class TaskMixin:
         done = [it for it in job["items"] if it["status"] != "pending"]
         rest = [it for it in job["items"] if it["status"] == "pending"]
         self._task_note(job, f"🧭 {why}：照前面查到的事實重排剩下的步驟…")
-        user = (f"【技能清單】\n{self._task_catalog()}\n\n【工作流清單】\n{self._task_workflow_catalog()}\n\n【目前狀態】\n{{ENV}}\n\n"
-                f"【任務】\n{job['task']}\n\n【已經做完的步驟與查到的事實】\n{self._task_facts_text(done)}\n\n"
-                f"【原本剩下的步驟】\n" + ("\n".join(f"- {it['title']}：{it['goal']}" for it in rest) or "（沒有）")
-                + f"\n\n【為什麼重排】{why}\n\n只排還沒做的部分（已經查到的不要再查一次）：照上面查到的事實決定要改什麼、怎麼改；"
-                  "不需要再改變任何狀態時，只排確認或整理的步驟，或 items 給空的。（計畫的每個欄位都用繁體中文寫）")
+        user = _t("replan_user", skills=self._task_catalog(), workflows=self._task_workflow_catalog(), task=job["task"],
+                  done=self._task_facts_text(done), why=why,
+                  rest="\n".join(_t("replan_rest_item", title=it["title"], goal=it["goal"]) for it in rest) or _t("replan_rest_none"))
         t0 = time.time()
         data, items, issues = self._task_plan_call(job, profile, user, "replan")
         job["seconds"] += round(time.time() - t0, 1)
@@ -508,13 +507,14 @@ class TaskMixin:
     def _task_facts_text(items, limit=700):
         out = []
         for it in items:
-            line = f"第 {it['n']} 步「{it['title']}」{_STATUS_TEXT.get(it['status'], it['status'])}：{_clip(it['summary'], limit)}"
+            line = _t("facts_step", n=it["n"], title=it["title"], status=_STATUS_TEXT.get(it["status"], it["status"]),
+                      summary=_clip(it["summary"], limit))
             for f in it.get("facts") or []:
-                line += f"\n  - {f['text']}（#{f['ref']}）"
+                line += "\n" + _t("facts_item", text=f["text"], ref=f["ref"])
             if it.get("evidence"):
-                line += f"\n  - 檢查：{it['evidence']}"
+                line += "\n" + _t("facts_check", evidence=it["evidence"])
             out.append(line)
-        return "\n".join(out) or "（還沒有）"
+        return "\n".join(out) or _t("facts_none")
 
     # ---------------------------------------------------------------- 確認關卡與 harness 的接續
     @staticmethod
@@ -609,9 +609,9 @@ class TaskMixin:
             return None
         action = {"command": TASK_SCRIPT, "args": f"--continue {jid}"}
         if job.get("status") == "approved":
-            thought, reply = "使用者在 Plan 模式核准了計畫，交給任務引擎照計畫做", "照核准的計畫執行。"
+            thought, reply = _t("continue_plan_thought"), _t("continue_plan_reply")
         else:
-            thought, reply = "任務引擎查完、重排了要改的步驟，等使用者確認", "查完了，接下來要改變狀態的步驟請你確認。"
+            thought, reply = _t("continue_survey_thought"), _t("continue_survey_reply")
         raw = json.dumps({"thought": thought, "reply": reply, "action": action}, ensure_ascii=False)
         return {"thought": thought, "reply": reply, "action": action, "valid": True, "raw": raw}
 
@@ -683,7 +683,7 @@ class TaskRun:
                 done = [x for x in job["items"] if x["status"] != "pending"]
                 if (job["mode"] == "auto" and done and not job.get("surveyed") and job["replans"] < TASK_MAX_REPLANS):
                     job["surveyed"] = True           # 先查的步驟做完了：照查到的事實重排要改的部分（只重排一次）
-                    a._task_replan(job, "查詢的步驟做完了")
+                    a._task_replan(job, _t("replan_why_surveyed"))
                     continue
                 job["status"] = "awaiting_approval"
                 job["seconds"] += round(time.time() - t0, 1)
@@ -700,11 +700,11 @@ class TaskRun:
                 # 照它重排剩下的步驟（不重試這一步）；規劃覺得不用再做什麼可以給空的。這就是照查到的事實重排過了：要改狀態之前不再重排
                 # 一次（2026-10-24 cx_reassign：連著重排兩次把次數用完，後面的步驟失敗時就沒得重排）
                 job["surveyed"] = True
-                a._task_replan(job, f"第 {it['n']} 步「{it['title']}」做完了，查到的狀況：{_one_line(it['summary'], 300)}")
+                a._task_replan(job, _t("replan_why_finding", n=it["n"], title=it["title"], summary=_one_line(it["summary"], 300)))
                 continue
             if it["status"] == "failed":
                 if job["mode"] == "auto" and job["replans"] < TASK_MAX_REPLANS:
-                    why = f"第 {it['n']} 步「{it['title']}」沒有完成：{_one_line(it['summary'], 300)}"
+                    why = _t("replan_why_failed", n=it["n"], title=it["title"], summary=_one_line(it["summary"], 300))
                     it["status"] = "replaced"        # 先標成「重排了」：重排得出來就照新的做，這一步不算整個任務失敗
                     if a._task_replan(job, why, allow_empty=False):
                         continue
@@ -769,13 +769,13 @@ class TaskRun:
                     it["evidence"] = f"{evidence}；程式沒有驗證，對照目標判斷做到了：{why}"
                     return
                 it["evidence"] = evidence = f"{evidence}；對照目標判斷還沒做到" + (f"：{why}" if why else "")
-                failure = f"你回報完成了，但做完之後的檢查：{evidence}"
+                retry = _t("retry_check_error", evidence=evidence)
             else:
-                failure = f"你回報完成了，但做完之後的檢查沒有通過：{evidence}"
+                retry = _t("retry_check_miss", evidence=evidence)
             # 換一個 worker 帶著檢查的輸出再做一次；第二次還是不過，多半是計畫寫的檢查條件不適用（例如要「看到 0」卻是「找不到」）——
             # 不擋下後面的步驟，標成「檢查沒過」交給主對話與使用者確認
             it["status"] = "unverified"
-            prev_failure = f"{failure}。先查清楚現在的狀態：沒做好就修正；確定已經完成、是檢查的條件不適用，就照實回報並說明。"
+            prev_failure = retry
 
     def do_workflow(self, it):
         """工作流的步驟：交給工作流的執行器（它自己推進、檢查、存檔），報告的每一步當這一步的事實（#編號是那一步的輸出）。"""
@@ -836,19 +836,12 @@ class TaskRun:
         就說報告寫好了，檢查讀不到報告——以前一律算完成、標「沒有驗證」，任務報 [PASS]）。一律當成沒過的話，計畫寫錯的檢查每次都多一個
         worker、還報「檢查沒過」。回傳 (做到了沒, 判斷的根據)；問不出來當成沒做到（換 worker 重試，不會報錯的完成）。"""
         chk = it["check"]
-        acts = "\n".join(f"- {c['skill']} {_one_line(c['args'], 160)} → {c['head']}" for c in res.get("calls") or []) or "（沒有執行任何技能）"
-        ask = (f"【使用者的任務】{self.job['task']}\n"
-               f"【這一步】第 {it['n']} 步：{it['title']}\n目標：{it['goal']}\n"
-               f"【worker 的回報】{_one_line(res.get('summary'), 600)}\n"
-               f"【這一步實際執行的動作與結果（系統紀錄）】\n{acts}\n"
-               f"【做完之後系統的檢查】{chk['skill']} {chk['args']}（要看到「{chk['expect']}」）→ 出錯了：\n{_clip(out, 1500)}\n\n"
-               "檢查出錯，程式沒辦法用它確認。依實際執行的動作與檢查的輸出（不是 worker 說的）判斷這一步的目標做到了沒有：\n"
-               "- 沒做到：檢查的錯誤表示目標要的結果不存在、沒有改成（例如要寫的檔案找不到、要建立或送出的東西不在清單裡），"
-               "或執行的動作裡沒有做到目標的那一個（例如只建了目錄、沒有寫檔；只查了、沒有改）。\n"
-               "- 做到了：執行的動作已經做到目標（成功的輸出看得到），檢查出錯是因為檢查本身寫錯（參數的順序、選項、名稱或編號不對）、"
-               "環境裡沒有它要用的指令，或目標本來就會讓它查不到（例如刪除之後查不到）。\n"
-               "goal_met 填 true／false；summary 寫判斷的根據：哪一個動作的輸出、檢查的錯誤代表什麼。")
-        msgs = [{"role": "system", "content": "你核對任務裡的一步做到了沒有：只依系統記下的動作、輸出與檢查判斷，照實回答。"},
+        acts = ("\n".join(_t("check_error_action", skill=c["skill"], args=_one_line(c["args"], 160), head=c["head"]) for c in res.get("calls") or [])
+                or _t("check_error_no_actions"))
+        ask = _t("check_error_ask", task=self.job["task"], n=it["n"], title=it["title"], goal=it["goal"],
+                 report=_one_line(res.get("summary"), 600), actions=acts, skill=chk["skill"], args=chk["args"], expect=chk["expect"],
+                 output=_clip(out, 1500))
+        msgs = [{"role": "system", "content": _t("check_error_system")},
                 {"role": "user", "content": ask}]
         raw, data = self.a._task_call(self.job, "check_error", msgs, TASK_GOAL_CHECK_SCHEMA, num_predict=2048,
                                       extra={"item": it["n"], "attempt": it["attempts"]})
@@ -921,29 +914,28 @@ class TaskWorker:
                 docs.append(f"### {skill}\n{body[:3000]}")
         others = sorted(self.allowed - set(self.item["skills"]))
         work = self.run_.profile.get("work")
-        return (_read("worker.md") + (f"\n\n## 這一類任務（{self.run_.profile['title']}）\n{work}" if work else "")
-                + "\n\n## 這一步的技能規格\n" + "\n\n".join(docs)
-                + f"\n\n## 其他可以用的技能（查詢用；action.command 填技能名稱會拿到規格）\n{'、'.join(others)}")
+        return (_read("worker.md") + ("\n\n" + _t("worker_profile_header", title=self.run_.profile["title"]) + "\n" + work if work else "")
+                + "\n\n" + _t("worker_specs_header") + "\n" + "\n\n".join(docs)
+                + "\n\n" + _t("worker_others_header") + "\n" + "、".join(others))
 
     def _brief(self):
-        overview = "\n".join(f"{it['n']}. {it['title']}" + ("　← 你負責這一步" if it is self.item else
-                                                              "（之後別人負責，不要做）" if it["status"] == "pending" else
-                                                              f"（{_STATUS_TEXT.get(it['status'], it['status'])}）")
+        overview = "\n".join(f"{it['n']}. {it['title']}" + (_t("brief_mine") if it is self.item else
+                                                              _t("brief_later") if it["status"] == "pending" else
+                                                              _t("brief_status", status=_STATUS_TEXT.get(it["status"], it["status"])))
                               for it in self.job["items"])
-        perm = ("這一步可以改變狀態（使用者已經核准），可以用來改變狀態的技能：" + "、".join(sorted(self.writable))
-                if self.writable else "這一步只查詢，不能改變任何狀態")
-        parts = [f"【使用者的任務】{self.job['task']}", f"【整份計畫】\n{overview}",
-                 f"【你負責的這一步】第 {self.item['n']} 步：{self.item['title']}\n目標：{self.item['goal']}\n{perm}"]
+        perm = (_t("brief_perm_write", skills="、".join(sorted(self.writable))) if self.writable else _t("brief_perm_read"))
+        parts = [_t("brief_task", task=self.job["task"]), _t("brief_plan", overview=overview),
+                 _t("brief_step", n=self.item["n"], title=self.item["title"], goal=self.item["goal"], permission=perm)]
         if self.item.get("check"):
             c = self.item["check"]
-            parts.append(f"【做完之後系統會檢查】{c['skill']} {c['args']}，輸出要有「{c['expect']}」")
+            parts.append(_t("brief_check", skill=c["skill"], args=c["args"], expect=c["expect"]))
         before = self.run_.facts_before(self.item)
         if before:
-            parts.append("【前面各步的結果與事實】（#編號是那一次工具輸出的存檔）\n" + before)
+            parts.append(_t("brief_before", facts=before))
         if self.prev_failure:
-            parts.append(f"【上一次做這一步沒有成功】{self.prev_failure}\n先查清楚現在的狀態再做，不要重複同樣的做法。")
+            parts.append(_t("brief_retry", failure=self.prev_failure))
         containers, why = self.a._task_containers()
-        parts.append(f"【目前狀態】\n{self.a._task_env_text(containers, why)}")
+        parts.append(_t("brief_env", env=self.a._task_env_text(containers, why)))
         return "\n\n".join(parts)
 
     def _call(self, msgs, schema, turn, kind="worker", num_predict=8192):
@@ -967,8 +959,7 @@ class TaskWorker:
             parsed = parse_agent_reply(raw)
             if not parsed.get("valid"):              # 被長度上限截斷、不是完整的 JSON：不執行，請它縮短再回一次
                 msgs.append({"role": "assistant", "content": raw[:2000]})
-                msgs.append({"role": "user", "content": "[系統] 你的回覆太長被截斷，不是完整的 JSON，這一輪沒有執行。請縮短："
-                                                        "thought 一兩句、reply 寫重點，一次只做一個動作。"})
+                msgs.append({"role": "user", "content": _t("worker_truncated")})
                 continue
             msgs.append({"role": "assistant", "content": raw})
             last_reply = (parsed.get("reply") or "").strip() or last_reply
@@ -976,8 +967,7 @@ class TaskWorker:
             if not action:
                 if executed == 0 and not nudged and self.item["skills"]:
                     nudged = True                    # 一個技能都沒用就說做完了：先推回去一次
-                    msgs.append({"role": "user", "content": "[系統] 你還沒有用任何技能。這一步的目標要實際查詢或操作才知道結果："
-                                                            "action 填技能的腳本路徑去做，做完再回報。"})
+                    msgs.append({"role": "user", "content": _t("worker_no_tool_yet")})
                     continue
                 failed = bool(_FAILED_RE.match(last_reply))
                 if failed and executed:              # 「沒有完成」常混了「問題還在」：對照這一步的目標問一次做到了沒有
@@ -1001,9 +991,7 @@ class TaskWorker:
                 tag = "[tool result]"
             msgs.append({"role": "user", "content": f"{tag} {payload[:200]}\n{_clip(out)}"})
         # 用完步數：最後請它總結這一步做完了沒有（不能再用技能）。做完了就交給程式的檢查判斷，沒做完才算失敗
-        msgs.append({"role": "user", "content": f"[系統] 已經用完 {TASK_WORKER_MAX_STEPS} 輪，不能再用技能了。依上面的執行結果判斷："
-                                                "這一步的目標做完了沒有？done 填 true／false；summary 寫做了什麼、看到的關鍵事實；"
-                                                "facts 列出關鍵事實（路徑、名稱、數值、修改前→後），ref 填出處的工具結果編號。"})
+        msgs.append({"role": "user", "content": _t("worker_wrapup", max_steps=TASK_WORKER_MAX_STEPS)})
         raw, data = self._call(msgs, TASK_WORKER_WRAPUP_SCHEMA, steps + 1, kind="worker_wrapup", num_predict=4096)
         data = data or {}
         summary = str(data.get("summary") or "").strip() or last_reply
@@ -1017,13 +1005,7 @@ class TaskWorker:
         「一直回 no」卻回「沒有完成：已完成診斷，但問題仍未解決」，worker.md 寫清楚了也一樣——引擎就重試、重排，任務標成沒做完）。
         做到了的不重試，TaskRun 照查到的狀況重排剩下的步驟（cx_domain_fix：在 domain 42 讀不到也算「確認了」，但要換 domain 再讀）。
         回傳 (做到了沒, 摘要, 步數)；問不出來就照原本的「沒有完成」。"""
-        ask = ("[系統] 你回報這一步沒有完成。對照這一步的目標判斷做到了沒有：\n"
-               f"目標：{self.item['goal']}\n"
-               "- 做到了：目標要查的查到了、要確認的確認清楚了（結果是有問題——卡住、被拒、離線、沒成功、設定不對——也是做到了；"
-               "問題還在、修不了，不算沒做到：修好問題不在這一步的目標裡，除非目標寫了要修好）；要改的改好了。\n"
-               "- 沒做到：要查的查不到（找不到對象、技能一直錯誤）、要改的沒改成（技能被擋、檢查不過）、目標要等的結果沒有發生"
-               "（例如要等它跑完，它卻卡住了）。\n"
-               "goal_met 填 true／false；summary 照實寫這一步最後的結果：做了什麼、現在是什麼狀態（問題還在就寫問題是什麼，不要寫「沒有完成」）。")
+        ask = _t("goal_check_ask", goal=self.item["goal"])
         raw, data = self._call(msgs + [{"role": "user", "content": ask}], TASK_GOAL_CHECK_SCHEMA, steps + 1,
                                kind="worker_goal_check", num_predict=2048)
         summary = str((data or {}).get("summary") or "").strip()
@@ -1086,12 +1068,11 @@ class TaskWorker:
             if src is None:
                 mine = "、".join("#" + r for r in self.outputs) or "沒有"
                 before = "、".join("#" + r for r in sorted(self.prior, key=lambda r: int(r) if r.isdigit() else 0)) or "沒有"
-                bad.append(({"text": text, "ref": ref}, f"出處 #{ref or '?'} 不是這個任務執行過的工具結果（這一步的是 {mine}；"
-                                                         f"前面各步的是 {before}）"))
+                bad.append(({"text": text, "ref": ref}, _t("facts_bad_ref", ref=ref or '?', mine=mine, before=before)))
                 continue
             missing = missing_tokens(text, src, src, allowed)
             if missing:
-                bad.append(({"text": text, "ref": ref}, f"「{'、'.join(missing)}」在 #{ref} 的輸出裡找不到"))
+                bad.append(({"text": text, "ref": ref}, _t("facts_not_found", tokens='、'.join(missing), ref=ref)))
             else:
                 ok.append({"text": text, "ref": ref})
         return ok, bad
@@ -1100,9 +1081,8 @@ class TaskWorker:
         """worker 說做完（或沒做完）時：核對事實，對不上的交回改一次（帶著具體的問題），還是不行就拿掉。"""
         ok, bad = self._check_facts(facts, summary)
         if bad and (self.outputs or self.prior):
-            ask = ("[系統] 你列的事實有幾條在引用的工具輸出裡找不到（系統核對名稱與數值）：\n"
-                   + "\n".join(f"- 「{f['text']}」（#{f['ref']}）：{why}" for f, why in bad)
-                   + "\n照輸出的原文改正（或換成正確的出處），找不到根據的就拿掉；facts 輸出完整的清單，summary 照改正後的寫。")
+            ask = (_t("facts_fix_head") + "\n" + "\n".join(_t("facts_fix_item", text=f["text"], ref=f["ref"], problem=why) for f, why in bad)
+                   + "\n" + _t("facts_fix_tail"))
             msgs = msgs + [{"role": "user", "content": ask}]
             raw, data = self._call(msgs, TASK_FACTS_FIX_SCHEMA, steps + 1, kind="worker_facts_fix", num_predict=2048)
             if data:

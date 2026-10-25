@@ -6,8 +6,12 @@ file_ops 的範例正好是那一題的答案；設計筆記 2.19）。這裡把
 
 - prompts/ 底下的 .md（prompts/Memory.md 除外：那是使用者的長期記憶，會隨使用改變）、skills_system/SKILLS.md、
   skills_system/tools/*.md、skills_system/workflows/*.md；
-- agent_core/、skills_system/scripts/ 裡回給模型的字串（用法、[ERROR] 的例子）：程式裡的字串常數，docstring 與註解不算；
-  scripts/mock_server.py（開發用的替身，本來就是評測沙盒）不算。
+- agent_core/、vision/、web_app/、skills_system/scripts/ 裡回給模型的字串（用法、[ERROR] 的例子）：程式裡的字串常數，docstring 與
+  註解不算；scripts/mock_server.py（開發用的替身，本來就是評測沙盒）不算。
+
+另外檢查 prompts/ 的範本跟程式對得上（2026-10-25 把程式裡給模型的字搬進 prompts/ 之後，設計筆記 2.22）：程式用到的每一則（prompt_files.load
+或模組裡的 _t、_x… 這種取一則的小函式）都在、程式填的每個名稱範本裡都有 {名稱}、範本裡沒有沒人用的一則；讀範本的 agent_core/prompt_files.py
+本身（取一則、一次填完、讀不到回空字串）。
 
 評測世界的名稱：機器人（tb1…）、工作包（WP_…）、站點（a0…）與語意名稱（組裝線區-2…）、容器、映像、檔案沙盒的路徑、
 設定檔裡的設定名稱、錯誤碼、數據的編號（exp_…）。調度系統本身的協定名稱（distribute、handshake_states、threshold_recovery_sec…）
@@ -123,13 +127,85 @@ def find_leaks(pattern, docs=None, code=None):
                 for m in pattern.finditer(line):
                     hits.append((os.path.relpath(path, PROJECT), i, m.group(0), line.strip()[:160]))
     if code is None:
-        code = sorted(glob.glob(os.path.join(PROJECT, "agent_core", "*.py")) + glob.glob(os.path.join(PROJECT, "skills_system", "scripts", "*.py")))
+        code = sorted(glob.glob(os.path.join(PROJECT, "agent_core", "*.py")) + glob.glob(os.path.join(PROJECT, "vision", "*.py"))
+                      + glob.glob(os.path.join(PROJECT, "web_app", "*.py")) + glob.glob(os.path.join(PROJECT, "skills_system", "scripts", "*.py")))
         code = [p for p in code if os.path.relpath(p, PROJECT) not in SKIP_CODE]
     for path in code:
         for line_no, text in code_strings(path):
             for m in pattern.finditer(text):
                 hits.append((os.path.relpath(path, PROJECT), line_no, m.group(0), text.strip()[:160]))
     return hits
+
+
+CODE_DIRS = ("agent_core", "vision", "web_app")   # 會讀 prompts/ 範本的程式
+
+
+def _is_load(call):
+    f = call.func
+    return isinstance(f, ast.Attribute) and f.attr == "load" and isinstance(f.value, ast.Name) and f.value.id == "prompt_files"
+
+
+def template_uses():
+    """程式用到的範本 → (uses, unresolved)。uses：[(程式:行, 範本路徑, 段名, {程式填的名稱})]；段名是 None＝整份檔案。
+    看得懂的寫法：prompt_files.load(路徑, 段名, 名稱=…)、模組裡「return prompt_files.load(路徑, key, **fields)」的小函式（_t、_x…）
+    加上段名；路徑、段名可以是字串、模組常數或 a if … else b。整份檔案用 f-string 組路徑的（orchestra/{name}）不算看不懂。"""
+    uses, unresolved = [], []
+    for d in CODE_DIRS:
+        for path in sorted(glob.glob(os.path.join(PROJECT, d, "*.py"))):
+            rel = os.path.relpath(path, PROJECT)
+            tree = ast.parse(_read(rel))
+            consts = {n.targets[0].id: n.value.value for n in tree.body
+                      if isinstance(n, ast.Assign) and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name)
+                      and isinstance(n.value, ast.Constant) and isinstance(n.value.value, str)}
+
+            def val(n):
+                if isinstance(n, ast.Constant) and isinstance(n.value, str):
+                    return [n.value]
+                if isinstance(n, ast.Name) and n.id in consts:
+                    return [consts[n.id]]
+                if isinstance(n, ast.IfExp):
+                    a, b = val(n.body), val(n.orelse)
+                    return a + b if a is not None and b is not None else None
+                return None
+
+            helpers, inside = {}, set()
+            for fn in ast.walk(tree):
+                if not isinstance(fn, ast.FunctionDef):
+                    continue
+                body = [b for b in fn.body if not (isinstance(b, ast.Expr) and isinstance(b.value, ast.Constant))]
+                if len(body) == 1 and isinstance(body[0], ast.Return) and isinstance(body[0].value, ast.Call) and _is_load(body[0].value):
+                    c = body[0].value
+                    params = [a.arg for a in fn.args.posonlyargs + fn.args.args]
+                    paths = val(c.args[0]) if c.args else None
+                    if paths and len(c.args) >= 2 and isinstance(c.args[1], ast.Name) and params and c.args[1].id == params[0]:
+                        helpers[fn.name] = paths[0]
+                        inside.add(id(c))
+                    elif isinstance(c.args[0], ast.JoinedStr) and len(c.args) == 1:
+                        inside.add(id(c))          # 整份檔案、路徑用 f-string 組的小函式（_read("planner.md")）
+            for c in ast.walk(tree):
+                if not isinstance(c, ast.Call) or id(c) in inside:
+                    continue
+                names = {k.arg for k in c.keywords if k.arg}
+                where = f"{rel}:{c.lineno}"
+                if _is_load(c):
+                    if not c.args:
+                        unresolved.append(where)
+                        continue
+                    paths = val(c.args[0])
+                    if paths is None:
+                        if not (isinstance(c.args[0], ast.JoinedStr) and len(c.args) == 1):
+                            unresolved.append(where)
+                        continue
+                    secs = val(c.args[1]) if len(c.args) > 1 else [None]
+                elif isinstance(c.func, ast.Name) and c.func.id in helpers:
+                    paths, secs = [helpers[c.func.id]], (val(c.args[0]) if c.args else None)
+                else:
+                    continue
+                if secs is None:
+                    unresolved.append(where)
+                    continue
+                uses += [(where, p, s, names) for p in paths for s in secs]
+    return uses, unresolved
 
 
 def main():
@@ -181,10 +257,68 @@ def main():
         assert not hits, ("程式回給模型的字串裡有評測世界的名稱（改成 <名稱> 或評測世界沒有的名稱）：\n"
                           + "\n".join(f"  {p}:{i}：{n}（{names[n]}）｜{ln}" for p, i, n, ln in hits))
 
+    def t_templates():
+        sys.path.insert(0, PROJECT)
+        try:
+            from agent_core import prompt_files
+        finally:
+            sys.path.remove(PROJECT)
+        uses, unresolved = template_uses()
+        assert len(uses) > 200, f"只找到 {len(uses)} 處用到範本：檢查的寫法跟程式對不上了"
+        assert not unresolved, "這幾處的範本路徑或段名靜態看不出來（段名用字串常數，或 a if … else b）：\n" + "\n".join(unresolved)
+        bad = []
+        for where, rel, sec, names in uses:
+            if not prompt_files.exists(rel, sec):
+                bad.append(f"{where}：prompts/{rel}" + (f" 沒有「{sec}」這一則" if sec else " 不存在"))
+                continue
+            if sec is None:
+                continue
+            text = prompt_files.sections(_read(os.path.join("prompts", rel)))[sec]
+            missing = [n for n in sorted(names) if "{" + n + "}" not in text]
+            if missing:
+                bad.append(f"{where}：prompts/{rel}「{sec}」裡沒有 {'、'.join('{' + n + '}' for n in missing)}（程式填了，範本沒用到）")
+        used = {(rel, sec) for _, rel, sec, _ in uses}
+        for path in sorted(glob.glob(os.path.join(PROJECT, "prompts", "**", "*.md"), recursive=True)):
+            rel = os.path.relpath(path, os.path.join(PROJECT, "prompts"))
+            for sec in prompt_files.sections(_read(os.path.relpath(path, PROJECT))):
+                if (rel, sec) not in used:
+                    bad.append(f"prompts/{rel}「{sec}」沒有程式用到（拿掉，或接上程式）")
+        assert not bad, "\n".join(bad)
+
+    def t_loader():
+        sys.path.insert(0, PROJECT)
+        try:
+            from agent_core import prompt_files
+        finally:
+            sys.path.remove(PROJECT)
+        text = "給人看的說明\n<!-- @a -->\n\n  第一行 {v}\n  第二行\n\n\n<!-- @b -->\nJSON 例：{\"x\": 1}、{名稱}、{v}{w}\n"
+        secs = prompt_files.sections(text)
+        assert secs == {"a": "\n  第一行 {v}\n  第二行", "b": "JSON 例：{\"x\": 1}、{名稱}、{v}{w}"}, secs   # 開頭的空行留著、最後的換行不算
+        assert prompt_files.fill(secs["b"], {"v": "{w}", "w": "W"}) == "JSON 例：{\"x\": 1}、{名稱}、{w}W"   # 一次填完；別的大括號照留
+        with tempfile.TemporaryDirectory() as d:
+            real = prompt_files.PROMPTS_DIR
+            prompt_files.PROMPTS_DIR = d
+            try:
+                with open(os.path.join(d, "t.md"), "w", encoding="utf-8") as f:
+                    f.write(text)
+                assert prompt_files.load("t.md", "a", v="1") == "\n  第一行 1\n  第二行"
+                assert prompt_files.load("t.md", "b", key="K", section="S", relpath="R") == secs["b"], "名稱叫 key、section、relpath 也行"
+                assert prompt_files.load("t.md") == text, "整份檔案照原樣（不去頭尾）"
+                assert prompt_files.load("t.md", "nope") == "" and prompt_files.load("none.md") == "" and prompt_files.load("none.md", "a") == ""
+                assert prompt_files.exists("t.md", "a") and not prompt_files.exists("t.md", "c") and not prompt_files.exists("none.md")
+                with open(os.path.join(d, "t.md"), "w", encoding="utf-8") as f:
+                    f.write("<!-- @a -->\n改過了，大小也不一樣\n")
+                os.utime(os.path.join(d, "t.md"), None)
+                assert prompt_files.load("t.md", "a") == "改過了，大小也不一樣", "檔案改了就重讀（不用重新啟動）"
+            finally:
+                prompt_files.PROMPTS_DIR = real
+
     for name, fn in [("從評測的來源取得評測世界的名稱（機器人、工作包、站點、容器、檔案、設定…）；協定名稱不算", t_names_extracted),
                      ("掃描抓得到：文件與程式字串裡的評測名稱各抓到；中性的名稱、docstring 不算", t_detects_planted),
                      ("prompts、SKILLS.md、技能規格、工作流沒有評測世界的名稱", t_docs),
-                     ("agent_core 與技能腳本回給模型的字串沒有評測世界的名稱", t_code)]:
+                     ("agent_core、vision、web_app 與技能腳本回給模型的字串沒有評測世界的名稱", t_code),
+                     ("prompts/ 的範本跟程式對得上：用到的每一則都在、填的名稱範本裡都有、沒有沒人用的一則", t_templates),
+                     ("讀範本（agent_core/prompt_files.py）：取一則、一次填完、讀不到回空字串、檔案改了就重讀", t_loader)]:
         check(name, fn)
     failed = [r for r in results if not r[1]]
     for name, _, tb in failed:

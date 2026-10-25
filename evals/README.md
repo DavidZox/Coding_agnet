@@ -11,7 +11,7 @@
 | `datagen/` 隨機情境的錄製產生器 | `check_facts.py`（只驗程式那一層，需要容器） | 產生的錄製交給 `analysis/regression.py` | 六個開發中套件的模擬，評分標準由注入的事件自動產生（見 [`datagen/README.md`](datagen/README.md)） |
 | `ops/` 多步驟維運 | `selftest.py`（file_ops、維運技能的確認關卡） | `run.py`（情境在 `dataset/`，在 Docker-in-Docker 沙盒裡真的執行；`worker.py` 跑一個情境） | 主對話用技能、工作流、任務引擎做完維運任務；狀態、回覆、禁止動作由程式計分 |
 | `task/` 任務引擎 | `selftest.py`（假模型、真的本機檔案技能） | —（真模型用 `ops/run.py`） | task_run 與 Plan 模式：規劃的程式檢查、先查再確認、worker 的權限、事實的核對、對照目標（worker 說沒完成、檢查出錯）、失敗後重排、工作流的步驟、存檔 |
-| `integrity/` 評測的完整性 | `selftest.py` | — | 模型會讀的文字（prompt、技能說明、工作流、程式回給模型的字）沒有評測世界的名稱（從評測的來源自動取） |
+| `integrity/` 評測的完整性 | `selftest.py` | — | 模型會讀的文字（prompt、技能說明、工作流、程式回給模型的字）沒有評測世界的名稱（從評測的來源自動取）；`prompts/` 的範本跟程式對得上 |
 | `extract/` 提煉 | —（不用模型的在 `chat/extract_selftest.py`） | `run.py`（情境在 `cases.py`：程式產生已知答案的長輸出；`worker.py` 跑一個情境） | 工具回傳的提煉與 result_recall：找到幾個、多列幾個、數量的說法、切幾段讀幾段、程式拿掉幾條 |
 | `workflow/` 工作流 | `selftest.py`（規格驗證、跟 SKILLS.md 對得上、引號規則、推進、分支、【確認】、不用互動的入口、/make_skill） | `sandbox.py`（沙盒裡直接執行工作流，用維運情境計分；`sandbox_worker.py` 跑一個案例） | 程式照步驟推進、判斷點只填值與選分支、做完了沒由程式判斷 |
 
@@ -196,11 +196,15 @@ python3 evals/task/selftest.py      # 離線（約 10 秒）：假模型照劇�
 python3 evals/integrity/selftest.py   # 離線（幾秒）
 ```
 
-模型會讀的文字——`prompts/`（長期記憶除外）、`SKILLS.md`、技能規格、工作流、`agent_core/` 與技能腳本回給模型的字串（docstring 與註解不算）——
+模型會讀的文字——`prompts/`（長期記憶除外）、`SKILLS.md`、技能規格、工作流、`agent_core/`、`vision/`、`web_app/` 與技能腳本回給模型的字串（docstring 與註解不算）——
 不能有評測世界獨有的名稱：機器人、工作包、站點與語意名稱、容器、映像、檔案沙盒的路徑、設定名稱、錯誤碼、數據的編號，**從評測的來源自動取**
 （`ops/dataset/`、`chat/scenarios.py`、`workflow/sandbox.py`），新增情境不用改它；調度系統本身的協定名稱（distribute、threshold_recovery_sec…）
 與 `/opt/ros` 不算。2026-10-24 加的：範例正好是評測的答案時（`file_ops` 的範例＝fs_edit_param、`mcap_slicer` 的 `--at +15.5`＝主對話評測要的 15.5），
 評測量到的是會不會抄範例。
+
+另外兩項（2026-10-25 把程式裡給模型的字搬進 `prompts/` 之後）：**範本跟程式對得上**——靜態讀 `agent_core/`、`vision/`、`web_app/`，程式用到的
+每一則範本（`prompt_files.load`、各模組取一則的小函式）都在、程式填的每個名稱範本裡都有 `{名稱}`、範本裡沒有沒人用的一則，段名看不出來的算失敗；
+**讀範本**（`agent_core/prompt_files.py`：取一則、一次填完、讀不到回空字串、填的名稱叫 key 也行、檔案改了就重讀）。
 
 ## 提煉（`extract/`）
 

@@ -5,7 +5,6 @@
   要查細節、要不要把一大份原文交給獨立 session 提煉（result_recall），由模型自己決定；harness 只提供安全網：
   截斷、上下文超過水位時先清除舊的工具回傳（clear_old_tool_results，原文在存檔、可還原），不夠才滾動摘要。
 各模式給模型的規則文字在 prompts/context_modes/<模式>.md（get_system_prompt 依目前模式載入）。"""
-import os
 import re
 from skills_system.scripts import _results_common
 from .config import (
@@ -14,13 +13,13 @@ from .config import (
     CONTEXT_MODES,
     CONTEXT_MODES_DIRNAME,
     DERIVED_RESULT_SCRIPTS,
-    PROMPTS_DIR,
     RAW_RESULT_MAX_TOKENS,
     TOOL_CLEARED_TAG,
     TOOL_RESULT_FRAME,
     TOOL_RESULT_TOKEN_THRESHOLD,
     TOOL_TRUNCATED_TAG,
 )
+from . import prompt_files
 from .tool_use_index import tidy_hint
 
 
@@ -31,6 +30,12 @@ CONTEXT_MODE_DESCRIPTIONS = {
 }
 _ARCHIVE_REF = re.compile(r"完整原文存檔 #(\d+)")
 _MODE_ALIASES = {"cc": "claude_code", "claude": "claude_code", "claudecode": "claude_code", "h": "harness"}
+
+
+
+def _r(key, /, **fields):
+    """prompts/harness/raw_results.md 的一則：claude_code 模式的省略說明與清除舊回傳的佔位。"""
+    return prompt_files.load("harness/raw_results.md", key, **fields)
 
 
 class ContextModeMixin:
@@ -47,12 +52,7 @@ class ContextModeMixin:
 
     def context_mode_rules(self):
         """prompts/context_modes/<模式>.md 的內容（接在 AGENT.md 後面進 system prompt）；檔案不在時回空字串。"""
-        path = os.path.join(PROMPTS_DIR, CONTEXT_MODES_DIRNAME, f"{self.context_mode}.md")
-        try:
-            with open(path, encoding="utf-8") as f:
-                return f.read().strip()
-        except OSError:
-            return ""
+        return prompt_files.load(f"{CONTEXT_MODES_DIRNAME}/{self.context_mode}.md").strip()
 
     def _trajectory_record(self, result_id):
         return next((r for r in reversed(self.trajectory) if r.get("id") == result_id), None)
@@ -87,20 +87,18 @@ class ContextModeMixin:
             tail.insert(0, lines[-1 - len(tail)])
         if head:
             first, last = len(head) + 1, len(lines) - len(tail)
-            where, view_from = f"中間第 {first}～{last} 行", first
+            where, view_from = _r("where_lines", first=first, last=last), first
         else:   # 第一行就超過篇幅（單行的巨大輸出）：退回字元切
             head, tail = [result[:int(max_chars * 0.6)]], [result[-int(max_chars * 0.4):]]
-            where, view_from = "中間（單行過長）", 1
+            where, view_from = _r("where_one_line"), 1
         omitted = max(0, tool_tokens - self.count_tokens("\n".join(head + tail)))
         # 中間有哪幾節（程式依原文的結構列出章節標題與行號）：模型知道省略的那一段有什麼，才判斷得了要不要回存檔查
         inner = [(n, t) for n, t, _ in _results_common.outline(lines) if len(head) < n <= len(lines) - len(tail)] if head and len(lines) > 1 else []
-        contents = ("；中間的章節：" + "、".join(f"行 {n} {t}" for n, t in inner[:12])
-                    + (f"…共 {len(inner)} 節" if len(inner) > 12 else "")) if inner else ""
+        contents = _r("sections", sections="、".join(_r("section_item", n=n, title=t) for n, t in inner[:12])
+                      + (_r("sections_more", count=len(inner)) if len(inner) > 12 else "")) if inner else ""
         # 實測（評測 fleet_battery）：只寫「中間省略、原文在存檔」時，4B 模型看到頭尾沒有 tb6 就回答「資料裡沒有 tb6」，
         # 不會回存檔查。所以明講省略的行號範圍、看不到不代表不存在、以及問題要的東西不在頭尾時先查再答。
-        gap = (f"\n…（{where}省略，約 {omitted} tokens{contents}。上面看不到的內容不代表不存在：使用者問的東西不在頭尾時，"
-               f"先查存檔 #{rid} 再回答——找字串用 result_grep {rid} \"<關鍵字>\"、看這一段用 result_view {rid} --from {view_from} --lines 80、"
-               f"要依問題整理這一大份內容用 result_recall {rid} \"<問題>\"）…\n")
+        gap = "\n" + _r("gap", where=where, omitted=omitted, contents=contents, rid=rid, view_from=view_from) + "\n"
         return f"{TOOL_TRUNCATED_TAG}\n{header}\n" + "\n".join(head) + gap + "\n".join(tail)
 
     # ---------------------------------------------------------------- claude_code：清除舊的工具回傳（可還原）
@@ -128,10 +126,7 @@ class ContextModeMixin:
                 tail = lines[-1] if lines and lines[-1].startswith(TOOL_RESULT_FRAME) else ""
                 record = self._trajectory_record(rid) or {}
                 what = record.get("command") or record.get("script") or ""
-                body = (f"{TOOL_CLEARED_TAG}\n這則舊的工具回傳（約 {tokens} tokens）已從上下文清除以節省空間；完整原文仍在存檔 #{rid}"
-                        + (f"（當時執行：{what}）" if what else "")
-                        + f"。需要時用 result_view {rid}、result_grep {rid} \"<關鍵字>\" 或 result_recall {rid} \"<問題>\" 取回，"
-                          f"不要重新執行同一個工具。")
+                body = f"{TOOL_CLEARED_TAG}\n" + _r("cleared", tokens=tokens, rid=rid, what=_r("cleared_what", what=what) if what else "")
                 new = "\n".join(x for x in ("[tool result]", frame, body, tail) if x)
                 replacement = {'role': self.messages[i]['role'], 'content': new}
                 self._transcript_replaced(self.messages[i], replacement)   # 對話紀錄留的是清除前的原文

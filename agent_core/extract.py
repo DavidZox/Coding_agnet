@@ -33,13 +33,12 @@ from .config import (
     EXTRACT_WORKER_FACTS,
     EXTRACT_WORKER_PREDICT,
     NUM_CTX,
-    PROMPTS_DIR,
     TOOL_USE_INDEX_HINT_TARGET,
 )
+from . import prompt_files
 from .jobstore import JobStore
 from .schemas import EXTRACT_WORKER_SCHEMA, TOOL_SUMMARY_SCHEMA
 
-_PROMPTS = os.path.join(PROMPTS_DIR, "extract")
 LINE_MAX_CHARS = 2000          # 交給模型的一行最多幾個字（更長的截斷並註明；只有一行的那一段放寬到整段的篇幅）
 EVIDENCE_SPAN = 2              # 核對時引用的行前後各多看幾行（模型的行號常差一兩行）
 EVIDENCE_LINES_PER_FACT = 6    # 交給整合的每條事實最多附幾行原文
@@ -48,15 +47,13 @@ PROGRESS_MARK = "📑"           # 進度訊息的開頭（Web 右欄的「⏳ �
 
 
 def read_prompt(name, **fields):
-    """prompts/extract/<name>，{欄位} 換成值（prompt 裡有 JSON 的大括號，不用 str.format）。"""
-    try:
-        with open(os.path.join(_PROMPTS, name), encoding="utf-8") as f:
-            text = f.read()
-    except OSError:
-        return ""
-    for k, v in fields.items():
-        text = text.replace("{" + k + "}", str(v))
-    return text
+    """prompts/extract/<name> 整份，{欄位} 換成值（prompt 裡有 JSON 的大括號，不用 str.format）。"""
+    return prompt_files.load(f"extract/{name}", **fields)
+
+
+def _x(key, /, **fields):
+    """prompts/extract/inputs.md 的一則：交給 worker 與整合的 user 訊息裡程式組進去的標籤與說明。"""
+    return prompt_files.load("extract/inputs.md", key, **fields)
 
 
 # =====================================================================================================================
@@ -380,8 +377,7 @@ class Extraction:
         return "\n".join(f"#{s['rid']}：{s['background']}" for s in self.sources if s.get("background"))
 
     def _catalog_block(self):
-        return (f"【過去的工具使用檢索清單（只用來填 related_records；不是這份原始輸出的內容，不可寫進 answer／facts）】\n{self.catalog}\n\n"
-                if self.catalog else "")
+        return _x("catalog", catalog=self.catalog) + "\n\n" if self.catalog else ""
 
     def _synth_system(self):
         return read_prompt("synthesizer.md", max_chars=self.max_chars, hint_target=TOOL_USE_INDEX_HINT_TARGET)
@@ -393,12 +389,12 @@ class Extraction:
         for s, t in zip(self.sources, self.texts):
             body = "\n".join(rc.numbered(i + 1, _cut(x)) for i, x in enumerate(s["lines"]))
             if len(self.sources) == 1:
-                blocks.append(f"【工具的完整原始輸出（共 {len(s['lines'])} 行；每一行前面是原文的行號）】\n{body}")
+                blocks.append(_x("direct_single", count=len(s['lines']), body=body))
             else:
-                blocks.append(f"===== 存檔 #{s['rid']}（{s['label']}；共 {len(s['lines'])} 行）=====\n{body}")
+                blocks.append(_x("direct_multi_item", rid=s['rid'], label=s['label'], count=len(s['lines']), body=body))
         bg = self._background()
-        user = (f"{self.purpose}\n\n{self._catalog_block()}" + (f"【存檔的背景（不是現在要回答的問題）】\n{bg}\n\n" if bg and len(self.sources) > 1 else "")
-                + ("【這幾份存檔的完整原文（facts 的 record 填存檔編號）】\n" if len(self.sources) > 1 else "") + "\n\n".join(blocks))
+        user = (f"{self.purpose}\n\n{self._catalog_block()}" + (_x("direct_background", background=bg) + "\n\n" if bg and len(self.sources) > 1 else "")
+                + (_x("direct_multi_header") + "\n" if len(self.sources) > 1 else "") + "\n\n".join(blocks))
         data, raw, err = self._call("direct", self._synth_system(), user, TOOL_SUMMARY_SCHEMA, EXTRACT_SYNTH_PREDICT)
         if data is None:
             self.job["synth"] = {"error": err}
@@ -449,10 +445,9 @@ class Extraction:
         limit = EXTRACT_CHUNK_CHARS if b - a == 1 else LINE_MAX_CHARS
         ctx = rc.chunk_context(lines, a)
         user = (f"{self.purpose}\n\n"
-                f"【這一段】{s['label']}：原文共 {len(lines)} 行，依結構切成 {c['of']} 段，你讀第 {c['k']}/{c['of']} 段（第 {a + 1}～{b} 行）。\n"
-                + ("【前情（讀這一段要知道的幾行，不是這一段的內容）】\n" + "\n".join(rc.numbered(j + 1, _cut(lines[j], 300)) for j in ctx) + "\n"
-                   if ctx else "")
-                + "\n【這一段的原文】\n" + "\n".join(rc.numbered(i + 1, _cut(lines[i], limit)) for i in range(a, b)))
+                + _x("worker_chunk", label=s["label"], count=len(lines), of=c["of"], k=c["k"], start=a + 1, end=b) + "\n"
+                + (_x("worker_context", lines="\n".join(rc.numbered(j + 1, _cut(lines[j], 300)) for j in ctx)) + "\n" if ctx else "")
+                + "\n" + _x("worker_body", lines="\n".join(rc.numbered(i + 1, _cut(lines[i], limit)) for i in range(a, b))))
         data, raw, err = self._call("worker", read_prompt("worker.md", max_facts=EXTRACT_WORKER_FACTS), user, EXTRACT_WORKER_SCHEMA,
                                     EXTRACT_WORKER_PREDICT, chunk=c["id"])
         if data is None:
@@ -482,11 +477,11 @@ class Extraction:
         for si, s in enumerate(self.sources):
             miss = [c for c in unread if c["src"] == si]
             if miss:
-                notes.append(f"{'#' + str(s['rid']) + ' ' if len(self.sources) > 1 else ''}原文第 {self._ranges(miss)} 行這次沒有讀"
-                             f"（共 {len(miss)} 段；段數超過 {EXTRACT_MAX_CHUNKS}，依問題挑了最相關的段落）")
+                notes.append(_x("note_unread", source="#" + str(s["rid"]) + " " if len(self.sources) > 1 else "", lines=self._ranges(miss),
+                                count=len(miss), max=EXTRACT_MAX_CHUNKS))
         failed = [c for c, r in zip(selected, results) if not r["ok"]]
         if failed:
-            notes.append(f"原文第 {self._ranges(failed)} 行提煉失敗，沒有讀到")
+            notes.append(_x("note_failed", lines=self._ranges(failed)))
         self.note(f"{PROGRESS_MARK} 整合中：{sum(len(r.get('facts', [])) for r in results)} 條事實（{sum(1 for r in results if r.get('relevant'))} 段有相關內容）")
         data, raw, err = self._call("synth", self._synth_system(), self._merge_input(selected, results, notes), TOOL_SUMMARY_SCHEMA,
                                     EXTRACT_SYNTH_PREDICT)
@@ -510,26 +505,26 @@ class Extraction:
         for si, s in enumerate(self.sources):
             lines = s["lines"]
             n_chunks = sum(1 for c in self.chunks if c["src"] == si)
-            head = f"===== 存檔 #{s['rid']}（{s['label']}）=====\n" if len(self.sources) > 1 else ""
-            parts.append(f"{head}【這份輸出】{s['label']}：原文共 {len(lines)} 行（{len(self.texts[si])} 字），依結構切成 {n_chunks} 段，"
-                         f"由 worker 各讀一段" + (f"；背景：{s['background']}" if s.get("background") else ""))
-            parts.append("【原文的開頭】\n" + "\n".join(rc.numbered(i + 1, _cut(lines[i], 300)) for i in range(min(3, len(lines)))))
+            head = _x("merge_source_head", rid=s["rid"], label=s["label"]) + "\n" if len(self.sources) > 1 else ""
+            parts.append(_x("merge_source", head=head, label=s["label"], count=len(lines), chars=len(self.texts[si]), chunks=n_chunks)
+                         + (_x("merge_background", background=s["background"]) if s.get("background") else ""))
+            parts.append(_x("merge_opening", lines="\n".join(rc.numbered(i + 1, _cut(lines[i], 300)) for i in range(min(3, len(lines))))))
             ol = rc.outline(lines)
             if ol:
-                parts.append("【大綱（章節標題的行號）】\n" + "\n".join(f"  行 {n}：{t}（{k} 行）" for n, t, k in ol))
-            parts.append("【各段提煉的事實（程式核對過：名稱與數值都在引用的行裡；每條下面是那幾行的原文）】")
+                parts.append(_x("merge_outline", lines="\n".join(_x("merge_outline_item", n=n, title=t, count=k) for n, t, k in ol)))
+            parts.append(_x("merge_facts_header"))
             for c, r in by_src.get(si, []):
-                title = f"第 {c['k']} 段（行 {c['start'] + 1}～{c['end']}）"
+                title = _x("merge_chunk_title", k=c["k"], start=c["start"] + 1, end=c["end"])
                 if not r["ok"]:
-                    parts.append(f"{title}：提煉失敗，沒有讀到")
+                    parts.append(_x("merge_chunk_failed", title=title))
                     continue
                 if not (r["facts"] or r["errors"]):
-                    parts.append(f"{title}：沒有跟問題有關的內容" + (f"（{r['summary']}）" if r["summary"] else ""))
+                    parts.append(_x("merge_chunk_empty", title=title) + (_x("merge_chunk_empty_summary", summary=r["summary"]) if r["summary"] else ""))
                     continue
-                parts.append(f"{title}：{r['summary'] or '（沒有寫總結）'}")
-                for label, items in (("", r["facts"]), ("錯誤／異常：", r["errors"])):
+                parts.append(_x("merge_chunk_summary", title=title, summary=r["summary"] or _x("merge_no_summary")))
+                for label, items in (("", r["facts"]), (_x("merge_error_label"), r["errors"])):
                     for it in items:
-                        parts.append(f"- {label}{it['text']}（行 {lines_text(it['nums']) or '？'}）")
+                        parts.append(_x("merge_fact", label=label, text=it["text"], lines=lines_text(it["nums"]) or _x("merge_unknown_lines")))
                         new = [x for x in evidence_lines(lines, it["nums"], span=0) if (si, x) not in shown][:EVIDENCE_LINES_PER_FACT]
                         text = "\n".join("      " + rc.numbered(x, _cut(lines[x - 1], 300)).lstrip() for x in new)
                         if new and budget - len(text) > 0:
@@ -537,7 +532,7 @@ class Extraction:
                             budget -= len(text)
                             shown.update((si, x) for x in new)
         if notes:
-            parts.append("【程式的說明（寫進 not_covered）】\n" + "\n".join(f"- {n}" for n in notes))
+            parts.append(_x("merge_notes", notes="\n".join(f"- {n}" for n in notes)))
         return "\n".join(parts)
 
     def _fallback(self, results, notes, raw):
@@ -586,17 +581,18 @@ class Extraction:
         """帶著程式核對的問題請整合者修一次：只改對不上的地方（照原文改，或拿掉找不到根據的內容）。"""
         problems = []
         if missing:
-            problems.append(f"answer 裡的「{'」「'.join(missing)}」在原文找不到（數值、名稱要照抄原文；原文沒有的不要寫，或改寫成原文的寫法）。")
+            problems.append(_x("repair_answer_missing", tokens='」「'.join(missing)))
         for d in dropped[:8]:
-            problems.append(f"事實「{d['text']}」（行 {d.get('lines') or '？'}）的「{'」「'.join(d['missing']) or '內容'}」不在引用的那幾行。")
+            problems.append(_x("repair_fact_missing", text=d["text"], lines=d.get("lines") or _x("merge_unknown_lines"),
+                               missing="」「".join(d["missing"]) or _x("repair_missing_default")))
         ev = []
         for d in dropped[:8]:
             si = self._src_index(d.get("record")) or 0
             lines = self.sources[si]["lines"]
             for x in evidence_lines(lines, parse_lines(d.get("lines"), len(lines)))[:EVIDENCE_LINES_PER_FACT]:
                 ev.append(rc.numbered(x, _cut(lines[x - 1], 300)))
-        user = (f"{self.purpose}\n\n【你剛才寫的結果】\n{json.dumps(data, ensure_ascii=False)}\n\n【程式核對的問題】\n" + "\n".join(f"- {p}" for p in problems)
-                + ("\n\n【那幾條事實引用的原文】\n" + "\n".join(dict.fromkeys(ev)) if ev else "")
-                + "\n\n只改有問題的地方：照原文改正，或拿掉找不到根據的內容；其他照原樣輸出。輸出同樣格式的 JSON。")
+        user = (_x("repair_user", purpose=self.purpose, result=json.dumps(data, ensure_ascii=False), problems="\n".join(f"- {p}" for p in problems))
+                + ("\n\n" + _x("repair_evidence", lines="\n".join(dict.fromkeys(ev))) if ev else "")
+                + "\n\n" + _x("repair_tail"))
         fixed, raw, _ = self._call("repair", self._synth_system(), user, TOOL_SUMMARY_SCHEMA, EXTRACT_SYNTH_PREDICT)
         return fixed, raw

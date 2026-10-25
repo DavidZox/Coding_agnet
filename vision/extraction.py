@@ -15,7 +15,15 @@ JSON 的欄位順序就是模型生成的順序：重點（focus）放最後，�
 import json
 import re
 
+from agent_core import prompt_files
+
 from .inference import DEFAULT_OPTIONS, analyze
+
+
+def _v(key, /, **fields):
+    """prompts/vision/extraction.md 的一則：給視覺模型的 system 與 user 訊息。"""
+    return prompt_files.load("vision/extraction.md", key, **fields)
+
 
 NAME_SOURCES = ["影像中的文字", "使用者說明", "外觀判斷"]
 
@@ -66,40 +74,11 @@ def extraction_schema(n_images):
     }
 
 
-EXTRACTION_SYSTEM_PROMPT = """你是「影像提取器」：把使用者附上的影像（螢幕框選的區域或上傳的圖片）轉成文字，交給另一個負責決策的 AI。那個 AI 看不到影像，只看得到你的提取結果，會拿它回答使用者、或決定要執行哪個技能。這套系統做 AMR／AGV 車隊調度與 ROS2 維運，畫面裡常見機器人編號、站點、任務、容器、ROS topic／node、錯誤訊息、檔案路徑。
-
-images 每張影像一筆，依附上的順序（影像 1、影像 2…），每張依序提取：
-1. kind：這是什麼畫面（終端機、網頁介面、監控畫面、地圖、表格、照片…），幾個字。
-2. texts：畫面裡看得到的文字，逐字照抄（不翻譯、不改寫、不補字）。一行文字抄成一項；表格的一列抄成一項，欄位之間用「｜」隔開。錯誤訊息、狀態、名稱、編號、數值與單位優先。文字很多（整頁 log、長表格）時，只抄跟使用者說明有關的、錯誤與警告、標題與名稱，最後一項寫「其餘約 N 行未抄錄：<那些行大致是什麼>」。沒有文字就給空陣列 []，不要放空字串。
-3. overview：畫面的系統性描述。先說整體佈局，再依位置（上→下、左→右）逐一說出畫面裡的每個物體與區塊（包括小的、深色的，不只是使用者提到的）。有文字時一兩句即可；沒有文字時要完整，因為決策 AI 只能靠這一段理解畫面。
-4. entities：畫面裡每個明確的個體都列一項（機器人、車輛、人、設備、貨架、箱子或障礙物、視窗、按鈕、圖示…），不要只列跟使用者說明有關的；機器人周圍與行進路線上的物體尤其不要漏。每個寫 name（是什麼）、name_from（名稱從哪來：畫面裡有寫這個名稱就填「影像中的文字」；畫面沒寫、是使用者告訴你的填「使用者說明」；都不是填「外觀判斷」）、details（外觀、顏色、標示、在畫面中的位置、看得出來的狀態，例如燈號亮不亮、有沒有異常；靜態影像看不出是否在移動，不要寫移動中）。沒有明確的個體就給空陣列。
-5. background：個體以外的背景與環境（場地、地面、光線；介面所在的應用程式或視窗），一兩句；介面截圖沒有什麼背景可說就給空字串。不要在這裡推論，也不要重複前面寫過的內容。
-
-全部影像做完後：
-6. relations：多張影像之間的關係（同一畫面的不同部分、前後的變化、互相對照）；只有一張就給空字串。
-7. clues：可以拿去查系統的線索。畫面裡出現的每個機器人／站點／任務編號、容器、topic／node、檔案路徑、網址或 IP 都各列一項，再加上錯誤訊息、關鍵數值、看得出來的異常狀態。每項寫 kind（種類）與 value（照抄原文）；沒有就給空陣列。只列畫面裡真的有的（或使用者說明提到的），不要推測。
-8. unclear：看不清楚、被遮住、無法判斷的地方；沒有就給空陣列。不確定的寫在這裡，不要猜。
-9. focus：針對使用者說明的重點，一到三句，用第三人稱陳述（不要對使用者說話、不要建議操作）。使用者問了問題就直接回答；使用者提到的狀況（例如「被擋住」「有問題」）要說明畫面裡對應的是哪個個體、看起來怎樣，看不出來就說看不出來；只提示了關注方向或畫面裡的東西，就說在那個方向上看到了什麼；沒有說明就用一句話總結這些影像在呈現什麼。只根據上面提取到的內容，影像裡沒有答案就直說「影像中沒有…」。
-10. index_hint：這次的分析會存檔，之後可能是完全不同的一次對話，要靠這一句話判斷「使用者那時問的事跟這次附的影像有沒有關」。寫法「<使用者想知道什麼>：<影像是什麼、關鍵的名稱或結果>」，名稱照抄、放前面，寫成完整的一句話；沒有說明時前半寫影像的主題。例：「amr_03 為什麼停下來：終端機日誌，amr_03 lidar timeout、停在 station a3、電量 18%」。不要用「…」或「等等」收尾。
-
-使用者說明的用法：它決定你的關注方向——跟它有關的文字、個體、細節要優先而且更完整地提取。說明裡指出畫面中某個東西是什麼（例如「左邊那台是 amr_03」）或補充了屬性時，照使用者說的命名與描述，name_from 填「使用者說明」；使用者的說法跟畫面明顯矛盾時，照畫面寫，並在 unclear 註明。說明裡要系統做的事（例如「幫我派車」）不是給你的，你只負責提取影像內容。
-
-使用繁體中文；名稱、編號、錯誤訊息照畫面原文。每一項盡量精簡，不要寫字數、註記或自我檢查，不要寫建議或下一步。"""
+EXTRACTION_SYSTEM_PROMPT = _v("system")   # 匯入時讀的內容（給沿用這個名稱的程式）；extract() 每次呼叫都重讀 prompts/vision/
 
 # 結構化輸出失敗（JSON 解析不了）時的退路：同樣的提取順序，改成純文字格式再問一次，
 # 決策 AI 拿到的仍是看得懂的一段文字，而不是一段斷掉的 JSON。
-FALLBACK_SYSTEM_PROMPT = """你是「影像提取器」：把使用者附上的影像轉成文字，交給另一個看不到影像的決策 AI（這套系統做 AMR／AGV 車隊調度與 ROS2 維運）。
-用純文字、繁體中文，依下面的格式輸出，沒有內容的項目整行省略：
-重點：<針對使用者說明的一到三句；沒有說明就一句話總結>
-影像 1（<這是什麼畫面>）
-- 文字（照抄）：<畫面裡的文字逐字照抄，一行一項；錯誤訊息、名稱、編號、數值優先>
-- 畫面：<整體佈局，再依位置逐一說出每個物體與區塊；沒有文字時要完整>
-- 個體：<每個明確的個體：名稱〔影像中的文字／使用者說明／外觀判斷〕：外觀、位置、看得出來的狀態>
-- 背景：<個體以外的環境>
-（有多張影像就依序寫影像 2、影像 3…）
-可以拿去查的線索（照抄）：<機器人／站點／任務編號、容器、topic、路徑、錯誤訊息，一行一項>
-無法判斷：<看不清楚的地方>
-使用者說明決定關注方向；它指出畫面裡的東西是什麼時照它命名，並標〔使用者說明〕。不要猜、不要建議下一步。"""
+FALLBACK_SYSTEM_PROMPT = _v("fallback_system")
 
 # 結構化輸出比較長；num_predict 是最後一道防線（陣列與字串都有上限，一般碰不到）
 EXTRACTION_OPTIONS = {**DEFAULT_OPTIONS, "num_predict": 3072}
@@ -111,25 +90,25 @@ def describe_sources(items):
     out = []
     for it in items:
         img, source = it.get("img"), str(it.get("source") or "")
-        size = f"（{img.width}×{img.height}）" if hasattr(img, "width") else ""
+        size = _v("size", w=img.width, h=img.height) if hasattr(img, "width") else ""
         if source == "screen":
-            out.append(f"螢幕框選的區域{size}")
+            out.append(_v("source_screen", size=size))
         elif source.startswith("file:"):
-            out.append(f"上傳的檔案 {source[len('file:'):]}{size}")
+            out.append(_v("source_file", name=source[len("file:"):], size=size))
         else:
-            out.append(f"影像{size}")
+            out.append(_v("source_image", size=size))
     return out
 
 
 def build_extraction_prompt(user_text, sources):
     """交給視覺模型的 user 訊息：附上了哪些影像、使用者的說明（沒有說明時明講，模型就照順序完整提取）。"""
-    lines = [f"【附上的影像】共 {len(sources)} 張，依附上的順序："]
-    lines += [f"- 影像 {i}：{desc}" for i, desc in enumerate(sources, 1)]
+    lines = [_v("images_header", count=len(sources))]
+    lines += [_v("image_item", n=i, desc=desc) for i, desc in enumerate(sources, 1)]
     user_text = (user_text or "").strip()
     if user_text:
-        lines += ["", "【使用者的說明】（決定你的關注方向；指出畫面裡的東西是什麼、補充屬性時，照它命名與描述）", user_text]
+        lines += ["", _v("user_text_header"), user_text]
     else:
-        lines += ["", "【使用者的說明】沒有：依順序完整提取，focus 用一句話總結這些影像在呈現什麼。"]
+        lines += ["", _v("no_user_text")]
     return "\n".join(lines)
 
 
@@ -221,9 +200,9 @@ def extract(images, user_text="", sources=None, model=None, timeout=None):
     data 是模型的 JSON。JSON 解析不了時用純文字格式再問一次（FALLBACK_SYSTEM_PROMPT），回傳 (那段文字, None)。
     連線、逾時等失敗照樣拋 VisionError。"""
     images = list(images or [])
-    sources = list(sources or []) or ["影像"] * len(images)
+    sources = list(sources or []) or [_v("source_image", size="")] * len(images)
     prompt = build_extraction_prompt(user_text, sources)
-    raw = analyze(images, prompt, model=model, timeout=timeout, system_prompt=EXTRACTION_SYSTEM_PROMPT,
+    raw = analyze(images, prompt, model=model, timeout=timeout, system_prompt=_v("system"),
                   options=EXTRACTION_OPTIONS, format=extraction_schema(len(images)))
     try:
         data = json.loads(raw)
@@ -233,4 +212,4 @@ def extract(images, user_text="", sources=None, model=None, timeout=None):
         text = render_extraction(data, len(images))
         if text:
             return text, data
-    return analyze(images, prompt, model=model, timeout=timeout, system_prompt=FALLBACK_SYSTEM_PROMPT), None
+    return analyze(images, prompt, model=model, timeout=timeout, system_prompt=_v("fallback_system")), None

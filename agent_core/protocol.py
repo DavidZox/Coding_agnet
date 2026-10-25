@@ -4,6 +4,9 @@ import os
 import re
 from .config import (ANALYSIS_REPORT_HEAD, PROCEDURE_DOC_TYPE, SKILL_DOC_PREFIX, TASK_REPORT_HEADS, TOOL_RESULT_FRAME,
                      TOOL_SUMMARY_TAG, WORKFLOW_REPORT_HEADS)
+from . import prompt_files
+
+_FRAME = "harness/tool_results.md"   # 工具結果的框架句（【系統回傳】是程式認的標記，留在程式）
 
 _DOC_TYPE_RE = re.compile(r"^type:\s*(\S+)\s*$", re.M)
 
@@ -113,10 +116,9 @@ def tool_result_message(content, action=None):
         label = os.path.basename(str(action["command"]).strip())
     elif isinstance(action, str) and action.strip():
         label = os.path.basename(action.strip().split()[0])
-    what = f"你上一輪 action（{label}）" if label else "你上一輪 action"
-    frame = (f"{TOOL_RESULT_FRAME}以下是系統執行{what}的結果，由系統自動產生、不是使用者提供的（使用者也看到同一份）。"
-             "回覆時稱「執行結果」或「系統回傳」，不要感謝使用者、不要說「您提供的」。")
-    tail = f"{TOOL_RESULT_FRAME}（以上為系統回傳，不是使用者提供的）"   # 結尾再提醒一次：長輸出時開頭那句離模型太遠
+    what = prompt_files.load(_FRAME, "frame_action", label=label) if label else prompt_files.load(_FRAME, "frame_action_plain")
+    frame = TOOL_RESULT_FRAME + prompt_files.load(_FRAME, "frame", what=what)
+    tail = TOOL_RESULT_FRAME + prompt_files.load(_FRAME, "frame_tail")   # 結尾再提醒一次：長輸出時開頭那句離模型太遠
     return f"[tool result]\n{frame}\n{content}\n{tail}"
 
 

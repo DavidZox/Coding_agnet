@@ -3,6 +3,7 @@
 import os
 import re
 import time
+from . import prompt_files
 from .config import (
     CONVERSATION_ARCHIVE_SCRIPT,
     CONVERSATION_ARCHIVES_SHOW,
@@ -39,6 +40,11 @@ def result_kind(filename):
 
 
 
+def _i(key, /, **fields):
+    """prompts/harness/tool_use_index.md 的一則：system prompt 尾端的兩個清單與動態區的最新一筆。"""
+    return prompt_files.load("harness/tool_use_index.md", key, **fields)
+
+
 class ToolUseIndexMixin:
 
     def _tool_use_index_block(self):
@@ -55,33 +61,8 @@ class ToolUseIndexMixin:
         rows_text = "\n".join(f"- #{rid}（{ts}）：{hint}" for rid, ts, hint in rows)
         if getattr(self, "context_mode", "harness") == "claude_code":
             # claude_code 模式：清單只是線索（程式寫的「當時的問題＋指令」），怎麼取回、要不要取回由模型決定
-            return f"""
-            ## 工具使用檢索清單（Tool Use Index）
-            以下每筆是過去某次工具回傳的存檔（可能是很早之前、甚至上次啟動的）：當時使用者的問題與執行的指令，最上面最新；
-            開頭標〔附圖分析〕的是使用者附圖時系統的影像分析（原圖沒有保存，只有這份文字）。原文不在這裡：
-            {rows_text}
-
-            需要舊資料時由你決定怎麼取回：看某一段用 result_view <編號>、找某個字串用 result_grep <編號> "<關鍵字>"、
-            要依問題整理一大份內容用 result_recall <編號> "<問題>"（交給獨立 session，只回重點）。
-            問的是「現在」「目前」的狀態 → 重新執行工具；跟清單都無關 → 當作新問題。
-            """
-        return f"""
-            ## 工具使用檢索清單（Tool Use Index）
-            以下每筆是過去某次工具回傳的存檔（可能是很早之前、甚至上次啟動的）跟當時問題的關聯描述，最上面最新；開頭標〔附圖分析〕的
-            是使用者附圖時系統的影像分析（原圖沒有保存，只有這份文字，追問一樣用 result_recall）。只是線索，原文不在這裡：
-            {rows_text}
-
-            每次回答前依序判斷:
-            1. 對話裡最近的工具回傳已經寫了使用者要的那個具體名稱或數值（不是概括描述）→ 直接回答，不用 recall
-            2. 使用者這句話在接續、追問或延伸其中一筆（「剛剛那些腳本」「之前查的那個馬達」；「那個」「隨便選一個」這類指涉
-               在對話裡找不到對象時，多半指最上面那筆）→ 直接執行 EXECUTE: scripts/result_recall_cmd.py <編號> "<使用者這句話的原文>"
-               （編號＝上面的 #數字，要一起看好幾筆時用逗號隔開；第二個參數抄使用者說的話、不是清單上的描述；
-               不用先載入規格、不要先 result_list 或 result_grep），
-               系統把那份存檔的完整原文連同使用者的問題交給獨立 session 提煉後回給你，再據此回答或做下一步——不要憑印象回答
-            3. 問的是「現在」「目前」「最新」的狀態 → 舊存檔只是參考，重新執行當時的工具查最新狀態
-            4. 都不像 → 當作新問題，不要牽強附會，也不要反問使用者「你指的是哪一筆」
-            result_recall 回報「找不到結果」＝原始檔已超過保留上限被清掉：誠實告訴使用者這筆資料已經不在，不要用猜的。
-            """
+            return _i("index_claude_code", rows=rows_text)
+        return _i("index_harness", rows=rows_text)
 
     def _conversation_index_block(self):
         """system prompt「過去的對話片段」一節：被壓縮的對話原文存檔，每筆附 segment_hint（這一段談了什麼、決定了什麼）。
@@ -94,12 +75,8 @@ class ToolUseIndexMixin:
         extra = extra[:max(0, CONVERSATION_ARCHIVES_SHOW - len(rows))]
         if not rows and not extra:
             return ""
-        lines = [f"- #{rid}（{ts}）：{hint}" for rid, ts, hint in rows] + [f"- #{rid}：（沒有描述）" for rid in extra]
-        return ("## 過去的對話片段（被壓縮的對話原文存檔，最上面最新）\n"
-                "以下每筆是一段已經被壓縮掉的對話（使用者說的話、你當時的回覆與當時的工具回傳），描述是那一段談了什麼、"
-                "決定了什麼；原文不在這裡：\n" + "\n".join(lines) + "\n"
-                "使用者問的是之前「討論過／說過／決定過」什麼，而上面的摘要與「使用者說過的話」沒有寫到那個細節時，"
-                "執行 result_recall <編號> \"<使用者這句話的原文>\" 取回那一段；問的是之前查到的資料，看工具使用檢索清單。")
+        lines = [f"- #{rid}（{ts}）：{hint}" for rid, ts, hint in rows] + [f"- #{rid}：" + _i("conversation_no_hint") for rid in extra]
+        return _i("conversation_index", rows="\n".join(lines))
 
     def tool_use_index_pointer(self):
         """送出內容最尾端（動態區）的一行：檢索清單最新一筆。完整清單留在 system prompt（一千多 tokens、很少變，放那裡
@@ -108,8 +85,7 @@ class ToolUseIndexMixin:
         if not rows:
             return ""
         rid, ts, hint = rows[0]
-        return (f"工具使用檢索清單（完整的在 system prompt 尾端，共 {len(rows)} 筆）最新一筆：#{rid}（{ts}）：{hint}。"
-                f"使用者這句話若在接續清單裡的某一筆，照清單的規則取回原文再回答。")
+        return _i("index_pointer", count=len(rows), rid=rid, ts=ts, hint=hint)
 
     def _index_entries(self, exclude=(), kinds=("tool", "vision"), limit=None):
         """tools_use_index.md 最近 limit 筆（預設 TOOL_USE_INDEX_SHOW；新→舊）→ [{"id", "ts", "hint", "kind"}]，同一編號只留

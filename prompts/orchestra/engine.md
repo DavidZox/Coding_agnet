@@ -1,0 +1,276 @@
+任務引擎給模型的字（agent_core/task_engine.py）：規劃與重排 session 的 user 訊息、程式檢查計畫發現的問題（交回規劃修）、worker 的 system 與
+任務說明、worker 執行中的提醒、對照目標的兩個問題、事實核對交回改的說明、重試的原因。規劃與 worker 的通則在 planner.md、worker.md，
+類型的知識在 profiles/<類型>.md；這裡是程式組進去的部分。{名稱} 是程式填的值，每一則上面的註記寫了是哪裡用的。
+不在這裡的：task_run 回給主對話的報告與 [ERROR]、worker 的工具結果（[DENIED]／[ERROR]）、檢查的證據——那些是程式的輸出。
+
+<!-- @issue_unknown_skills -->
+第 {n} 步的技能 {skills} 不在技能清單裡（只能用清單裡的名稱）
+
+<!-- @issue_no_workflow -->
+第 {n} 步的工作流 {workflow} 不存在（只能用工作流清單裡的名稱，或改用技能）
+
+<!-- @issue_workflow_confirm -->
+第 {n} 步的工作流 {workflow} 有【確認】、會停下來等使用者，不能放進計畫：改用技能
+
+<!-- @issue_workflow_args -->
+第 {n} 步的工作流 {workflow}：{error}
+
+<!-- @issue_workflow_in_goal -->
+第 {n} 步的目標寫了工作流 {workflows}，但沒有填 workflow：要用工作流就填 workflow 與 workflow_args（skills 給空的），不用的話目標不要寫工作流的名稱
+
+<!-- @issue_no_skills -->
+第 {n} 步沒有列出要用的技能（或工作流）
+
+<!-- @issue_write_needs_file_ops -->
+第 {n} 步要寫進 {path}，skills 要列 file_ops（不然執行時不能寫）
+
+<!-- @issue_unknown_check_skill -->
+第 {n} 步的檢查技能「{skill}」不在技能清單裡
+
+<!-- @issue_too_many_steps -->
+步驟太多（{count} 步）：合併成最多 {max} 步
+
+<!-- @issue_container_started_later -->
+第 {n} 步要在 {container} 裡面做，但 {container} 現在沒有在跑（{status}），第 {later} 步才啟動它：把啟動排在前面
+
+<!-- @issue_container_stopped -->
+第 {n} 步要在 {container} 裡面做，但 {container} 現在沒有在跑（{status}）：容器停著時只能看狀態與 log（docker_ctl status／logs）；要進容器得先啟動（使用者要求才可以）
+
+<!-- @issue_read_document_first -->
+使用者提到「{doc}」：先排一步找到並讀那份文件（find_file／search_text／view_file），後面要改的步驟照文件寫的做（不要先假設文件的內容）
+
+<!-- @plan_user -->
+【技能清單】
+{skills}
+
+【工作流清單】（整件事或其中一段正好是其中一個時，那一步寫 workflow）
+{workflows}
+
+【目前狀態】
+{ENV}
+
+【任務】
+{task}
+
+（計畫的每個欄位都用繁體中文寫）
+
+<!-- @env_time -->
+現在時間：{now}
+
+<!-- @env_cwd -->
+工作目錄：{cwd}（{count} 項：{entries}）
+
+<!-- @env_target -->
+目標容器：{target}
+
+<!-- @env_target_none -->
+（未設定）
+
+<!-- @env_containers -->
+容器（名稱：狀態）：{containers}
+
+<!-- @env_containers_more -->
+；…共 {count} 個
+
+<!-- @env_containers_unknown -->
+容器：查不到（{why}）
+
+<!-- @plan_fix -->
+{plan}
+
+【上一版計畫】
+{previous}
+
+【程式檢查發現的問題：修正後輸出完整的計畫】
+{issues}
+
+<!-- @replan_user -->
+【技能清單】
+{skills}
+
+【工作流清單】
+{workflows}
+
+【目前狀態】
+{ENV}
+
+【任務】
+{task}
+
+【已經做完的步驟與查到的事實】
+{done}
+
+【原本剩下的步驟】
+{rest}
+
+【為什麼重排】{why}
+
+只排還沒做的部分（已經查到的不要再查一次）：照上面查到的事實決定要改什麼、怎麼改；不需要再改變任何狀態時，只排確認或整理的步驟，或 items 給空的。（計畫的每個欄位都用繁體中文寫）
+
+<!-- @replan_rest_item -->
+- {title}：{goal}
+
+<!-- @replan_rest_none -->
+（沒有）
+
+<!-- @facts_step -->
+第 {n} 步「{title}」{status}：{summary}
+
+<!-- @facts_item -->
+  - {text}（#{ref}）
+
+<!-- @facts_check -->
+  - 檢查：{evidence}
+
+<!-- @facts_none -->
+（還沒有）
+
+<!-- @wf_catalog_item -->
+- {name}：{description}
+  workflow_args：
+{inputs}
+
+<!-- @wf_catalog_input -->
+    {name}=…{optional}：{description}
+
+<!-- @wf_catalog_optional -->
+（選填）
+
+<!-- @wf_catalog_no_inputs -->
+    （不用）
+
+<!-- @wf_catalog_none -->
+（沒有）
+
+<!-- @check_error_ask -->
+【使用者的任務】{task}
+【這一步】第 {n} 步：{title}
+目標：{goal}
+【worker 的回報】{report}
+【這一步實際執行的動作與結果（系統紀錄）】
+{actions}
+【做完之後系統的檢查】{skill} {args}（要看到「{expect}」）→ 出錯了：
+{output}
+
+檢查出錯，程式沒辦法用它確認。依實際執行的動作與檢查的輸出（不是 worker 說的）判斷這一步的目標做到了沒有：
+- 沒做到：檢查的錯誤表示目標要的結果不存在、沒有改成（例如要寫的檔案找不到、要建立或送出的東西不在清單裡），或執行的動作裡沒有做到目標的那一個（例如只建了目錄、沒有寫檔；只查了、沒有改）。
+- 做到了：執行的動作已經做到目標（成功的輸出看得到），檢查出錯是因為檢查本身寫錯（參數的順序、選項、名稱或編號不對）、環境裡沒有它要用的指令，或目標本來就會讓它查不到（例如刪除之後查不到）。
+goal_met 填 true／false；summary 寫判斷的根據：哪一個動作的輸出、檢查的錯誤代表什麼。
+
+<!-- @check_error_system -->
+你核對任務裡的一步做到了沒有：只依系統記下的動作、輸出與檢查判斷，照實回答。
+
+<!-- @check_error_action -->
+- {skill} {args} → {head}
+
+<!-- @check_error_no_actions -->
+（沒有執行任何技能）
+
+<!-- @retry_check_error -->
+你回報完成了，但做完之後的檢查：{evidence}。先查清楚現在的狀態：沒做好就修正；確定已經完成、是檢查的條件不適用，就照實回報並說明。
+
+<!-- @retry_check_miss -->
+你回報完成了，但做完之後的檢查沒有通過：{evidence}。先查清楚現在的狀態：沒做好就修正；確定已經完成、是檢查的條件不適用，就照實回報並說明。
+
+<!-- @replan_why_surveyed -->
+查詢的步驟做完了
+
+<!-- @replan_why_finding -->
+第 {n} 步「{title}」做完了，查到的狀況：{summary}
+
+<!-- @replan_why_failed -->
+第 {n} 步「{title}」沒有完成：{summary}
+
+<!-- @continue_plan_thought -->
+使用者在 Plan 模式核准了計畫，交給任務引擎照計畫做
+
+<!-- @continue_plan_reply -->
+照核准的計畫執行。
+
+<!-- @continue_survey_thought -->
+任務引擎查完、重排了要改的步驟，等使用者確認
+
+<!-- @continue_survey_reply -->
+查完了，接下來要改變狀態的步驟請你確認。
+
+<!-- @worker_truncated -->
+[系統] 你的回覆太長被截斷，不是完整的 JSON，這一輪沒有執行。請縮短：thought 一兩句、reply 寫重點，一次只做一個動作。
+
+<!-- @worker_no_tool_yet -->
+[系統] 你還沒有用任何技能。這一步的目標要實際查詢或操作才知道結果：action 填技能的腳本路徑去做，做完再回報。
+
+<!-- @worker_wrapup -->
+[系統] 已經用完 {max_steps} 輪，不能再用技能了。依上面的執行結果判斷：這一步的目標做完了沒有？done 填 true／false；summary 寫做了什麼、看到的關鍵事實；facts 列出關鍵事實（路徑、名稱、數值、修改前→後），ref 填出處的工具結果編號。
+
+<!-- @goal_check_ask -->
+[系統] 你回報這一步沒有完成。對照這一步的目標判斷做到了沒有：
+目標：{goal}
+- 做到了：目標要查的查到了、要確認的確認清楚了（結果是有問題——卡住、被拒、離線、沒成功、設定不對——也是做到了；問題還在、修不了，不算沒做到：修好問題不在這一步的目標裡，除非目標寫了要修好）；要改的改好了。
+- 沒做到：要查的查不到（找不到對象、技能一直錯誤）、要改的沒改成（技能被擋、檢查不過）、目標要等的結果沒有發生（例如要等它跑完，它卻卡住了）。
+goal_met 填 true／false；summary 照實寫這一步最後的結果：做了什麼、現在是什麼狀態（問題還在就寫問題是什麼，不要寫「沒有完成」）。
+
+<!-- @facts_bad_ref -->
+出處 #{ref} 不是這個任務執行過的工具結果（這一步的是 {mine}；前面各步的是 {before}）
+
+<!-- @facts_not_found -->
+「{tokens}」在 #{ref} 的輸出裡找不到
+
+<!-- @facts_fix_head -->
+[系統] 你列的事實有幾條在引用的工具輸出裡找不到（系統核對名稱與數值）：
+
+<!-- @facts_fix_item -->
+- 「{text}」（#{ref}）：{problem}
+
+<!-- @facts_fix_tail -->
+照輸出的原文改正（或換成正確的出處），找不到根據的就拿掉；facts 輸出完整的清單，summary 照改正後的寫。
+
+<!-- @worker_profile_header -->
+## 這一類任務（{title}）
+
+<!-- @worker_specs_header -->
+## 這一步的技能規格
+
+<!-- @worker_others_header -->
+## 其他可以用的技能（查詢用；action.command 填技能名稱會拿到規格）
+
+<!-- @brief_mine -->
+　← 你負責這一步
+
+<!-- @brief_later -->
+（之後別人負責，不要做）
+
+<!-- @brief_status -->
+（{status}）
+
+<!-- @brief_perm_write -->
+這一步可以改變狀態（使用者已經核准），可以用來改變狀態的技能：{skills}
+
+<!-- @brief_perm_read -->
+這一步只查詢，不能改變任何狀態
+
+<!-- @brief_task -->
+【使用者的任務】{task}
+
+<!-- @brief_plan -->
+【整份計畫】
+{overview}
+
+<!-- @brief_step -->
+【你負責的這一步】第 {n} 步：{title}
+目標：{goal}
+{permission}
+
+<!-- @brief_check -->
+【做完之後系統會檢查】{skill} {args}，輸出要有「{expect}」
+
+<!-- @brief_before -->
+【前面各步的結果與事實】（#編號是那一次工具輸出的存檔）
+{facts}
+
+<!-- @brief_retry -->
+【上一次做這一步沒有成功】{failure}
+先查清楚現在的狀態再做，不要重複同樣的做法。
+
+<!-- @brief_env -->
+【目前狀態】
+{env}

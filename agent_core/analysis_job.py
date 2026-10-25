@@ -36,7 +36,10 @@ from .config import (
     ANALYSIS_SAME_TIME_SEC,
     ANALYSIS_SETTINGS_NAME,
 )
+from . import prompt_files
 from .jobstore import JobStore
+
+_STATE = "harness/state_tail.md"   # 動態區的「目前的數據」兩行
 
 DEFAULT_QUESTION = "這段錄製期間發生了哪些狀態變化？"
 _LEVEL_RANK = {"DEBUG": 0, "INFO": 1, "UNKNOWN": 1, "WARN": 2, "ERROR": 3, "FATAL": 4}
@@ -174,11 +177,11 @@ class AnalysisMixin:
 
     def analysis_state_line(self):
         """動態區的一行：目前分析的數據、最近一次 analysis_run。"""
-        parts = [f"- CURRENT_ANALYSIS_DATA: {self.analysis_data or '（未設定：數據技能第一次指定數據後會記住；也可以給實驗名稱或 latest）'}"]
+        parts = [prompt_files.load(_STATE, "analysis_data", data=self.analysis_data or prompt_files.load(_STATE, "analysis_data_none"))]
         last = getattr(self, "analysis_last", None)
         if last:
-            parts.append(f"- LAST_ANALYSIS_JOB: {last['id']}（{_STATUS_TEXT.get(last['status'], last['status'])}；"
-                         f"報告 logs/{ANALYSIS_JOBS_DIRNAME}/{last['id']}/report.md）")
+            parts.append(prompt_files.load(_STATE, "analysis_last_job", id=last["id"], status=_STATUS_TEXT.get(last["status"], last["status"]),
+                                           dirname=ANALYSIS_JOBS_DIRNAME))
         return "\n".join(parts)
 
     # ---------------------------------------------------------------- job 的檔案與進度（JobStore，跟工具回傳的提煉同一套）
@@ -502,10 +505,7 @@ class AnalysisMixin:
         if facts["unreadable"]:
             lines.append("沒有量的 Topic：" + "；".join(f"{k}：{'、'.join(v[:8])}" for k, v in facts["unreadable"].items()))
         lines.append(f"完整報告：logs/{ANALYSIS_JOBS_DIRNAME}/{job['id']}/report.md")
-        lines.append(ANALYSIS_ANSWER_NOTE + "：只陳述報告裡的事實——時間、數值、狀態、Log 的原文，可以引用編號。報告沒有判斷原因："
-                     "「前後 1 秒內」「同時」只是時間上的先後，不要寫成誰導致、造成、觸發誰；使用者問「為什麼」時，照事實說明發生了什麼、"
-                     "先後順序，並說明原因要對照源碼另外分析；要細看某個 Topic、某一段時間或某則 Log，用數據技能"
-                     "（mcap_feature_measure、mcap_analyzer、rosout_parser、mcap_slicer）查）")
+        lines.append(ANALYSIS_ANSWER_NOTE + prompt_files.load("harness/direct_commands.md", "analysis_answer_rules"))
         return "\n".join(lines)
 
 

@@ -12,8 +12,11 @@
 import re
 import time
 
+from . import prompt_files
 from .config import TASK_MAX_ITEMS
 from .schemas import PLAN_OPS_SCHEMA
+
+_PLAN_EDIT = "orchestra/plan_edit.md"   # 用說的改草稿的 prompt
 
 PLAN_HELP = ("y＝核准並執行｜n＝取消｜/plan add <技能>：<要做什麼>｜/plan insert <N> <技能>：<要做什麼>｜"
              "/plan edit <N> <技能>：<要做什麼>｜/plan del <N>｜/plan move <N> <M>｜/plan show｜其他文字＝用說的改（AI 只提出要改哪幾條）")
@@ -172,13 +175,9 @@ class PlanMixin:
 
     def _plan_revise(self, feedback):
         """自然語言的修改意見：規劃 session 只輸出操作（add／insert／edit／delete／move），harness 套用。"""
-        system = ("你會收到一份計畫草稿（有編號）與使用者的修改意見。只輸出要套用在草稿上的操作，不要重寫整份，使用者沒提到的步驟不要動。\n"
-                  "操作：add（加在最後）、insert（插在第 step 步之前）、edit（改第 step 步）、delete（刪第 step 步）、move（把第 step 步移到第 to 步）。"
-                  "step／to 一律用下面草稿上原本的編號（從 1 開始，不用考慮前面的操作造成的位移），用不到的欄位給 0 或空字串；"
-                  "skill 是技能清單或工作流清單裡的名稱，或空字串（不指定技能）；goal 寫這一步要做什麼（工作流寫 名稱=值 …）；"
-                  "edit 時沒有要改的欄位照抄原本的內容。只輸出 JSON。")
-        user = (f"【技能清單】\n{self._task_catalog()}\n\n【工作流清單】\n{self._task_workflow_catalog()}\n\n【目前的草稿】\n{self.plan_text()}\n\n"
-                f"【使用者的修改意見】\n{feedback}")
+        system = prompt_files.load(_PLAN_EDIT, "system")   # 文字在 prompts/orchestra/plan_edit.md
+        user = prompt_files.load(_PLAN_EDIT, "user", skills=self._task_catalog(), workflows=self._task_workflow_catalog(),
+                                 draft=self.plan_text(), feedback=feedback)
         _, data = self._task_call(self.plan, "plan_edit", [{"role": "system", "content": system}, {"role": "user", "content": user}],
                                   PLAN_OPS_SCHEMA, num_predict=2048)
         ops = [o for o in (data or {}).get("ops") or [] if isinstance(o, dict)]

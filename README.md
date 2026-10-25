@@ -145,13 +145,17 @@ Coding_agnet/            （資料夾名稱沿用；原本的 coding agent 已�
 ├── agent_core/          核心：SkillAgent（由各 mixin 組成）、回覆協議、常數；analysis_job.py＝數據解析、extract.py＝工具回傳的提煉、
 │                        workflow*.py＝工作流、task_engine.py＝任務引擎（task_run、Plan 模式）
 ├── web_app/             Web 介面（純標準庫）：回合流程、slash 指令、HTTP、static/index.html；analysis.py＝📊 面板的後端
-├── prompts/             給模型的文字（可以直接改）
+├── prompts/             給模型的文字，全部在這裡（可以直接改，不用改程式；README.md＝每個檔案給誰、範本的寫法）
 │   ├── AGENT.md         主對話的 system prompt
 │   ├── Memory.md        長期記憶（modify_memory 寫入，每輪常駐）
 │   ├── context_modes/   兩種上下文模式的規則
-│   ├── extract/         工具回傳的提煉：worker 與整合
-│   ├── orchestra/       任務引擎的規劃與 worker；profiles/＝任務的類型（ops＝維運）
-│   └── workflow/        工作流的判斷點（填值、選分支）
+│   ├── harness/         程式組進主對話的字：system prompt 各節、檢索清單、動態區、工具結果的包裝、提醒、下一步建議…
+│   ├── summary/         滾動摘要
+│   ├── extract/         工具回傳的提煉：worker、整合、user 訊息的標籤
+│   ├── orchestra/       任務引擎：規劃、worker、引擎組進去的字（engine.md）、Plan 模式的修改；profiles/＝任務的類型（ops＝維運）
+│   ├── workflow/        工作流的判斷點（填值、選分支）
+│   ├── make_skill/      /make_skill 草擬工作流
+│   └── vision/          附圖的影像提取
 ├── skills_system/       技能：SKILLS.md（索引）、tools/（規格）、scripts/（腳本與共用模組）、workflows/（工作流）
 ├── vision/              視覺模態：擷取、推論、提取、Web 的框選（web/）、sniper.py（獨立的框選小工具）
 ├── evals/               評測：chat/、skills/、analysis/、datagen/、ops/、task/、workflow/、extract/、integrity/、phase_check.py、baselines/；

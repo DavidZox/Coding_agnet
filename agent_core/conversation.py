@@ -2,6 +2,7 @@
 import hashlib
 import time
 import ollama
+from . import prompt_files
 from .config import NUM_CTX, TASK_HISTORY_KEEP
 from .model_caps import think_arg, thinking_text
 from .protocol import action_text, parse_agent_reply
@@ -84,13 +85,9 @@ class ConversationMixin:
             parsed = parse_agent_reply(raw_content)
             if parsed["valid"] and not parsed["reply"] and not parsed["action"]:
                 tail = parsed["thought"][-30:].replace("\n", " ")
-                nudge = {'role': 'user', 'content': (
-                    "[harness] 你剛才的回覆 reply 是空字串、action 是 null"
-                    + (f"，thought 在「{tail}」處中斷" if tail else "")
-                    + "——很可能是文字裡的英文雙引號 \" 提前結束了 JSON 字串。請針對同一個問題重新回覆："
-                    "thought 一到兩句、不要使用英文雙引號（引用名稱用「」或反引號），reply 必須有內容；"
-                    "若需要執行技能就填 action。"
-                )}
+                nudge = {'role': 'user', 'content': prompt_files.load(
+                    "harness/reminders.md", "empty_reply",
+                    cut=prompt_files.load("harness/reminders.md", "empty_reply_cut", tail=tail) if tail else "")}
                 raw_retry, eval_retry = self._chat_once(snapshot + [nudge])
                 parsed_retry = parse_agent_reply(raw_retry)
                 self.last_eval_tokens = (eval_tokens or 0) + (eval_retry or 0)  # 兩次呼叫的產出都算這一輪的 AI tokens

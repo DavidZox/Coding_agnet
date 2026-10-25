@@ -5,13 +5,13 @@ import subprocess
 import sys
 from .config import SKILL_DOC_PREFIX, SKILL_LOADED_MARKER, TOOL_EXEC_TIMEOUT, WORKFLOWS_ENABLED
 
+from . import prompt_files
 from .protocol import action_text, doc_type, is_procedure_doc, parse_agent_reply
 
 # 流程技能（/make_skill 依對話整理的規格，沒有自己的腳本）載入後，下一步怎麼做：照步驟一步一步來
-PROCEDURE_NEXT_STEP = ("這是流程技能，沒有自己的腳本：照規格的「步驟」從第 1 步開始，一輪只做一步——要執行的步驟，"
-                       "action.command 填該步寫的腳本路徑（scripts/...）、args 照該步填（{名稱} 換成實際的值）；"
-                       "要向使用者確認或詢問的步驟，在 reply 問、action 填 null，等使用者回答再做下一步；"
-                       "檢查、告知的步驟依前面步驟的回傳做。")
+def _d(key, /, **fields):
+    """prompts/harness/skill_docs.md 的一則：載入規格時系統加在前面的那句話。"""
+    return prompt_files.load("harness/skill_docs.md", key, **fields)
 
 
 # 腳本輸出最後幾行的狀態標記（見 _trailing_markers；規範見 doc/技能撰寫規範.md）：跟腳本共用同一份清單（_shell_common.protect_tail 也用它）
@@ -32,10 +32,8 @@ def workflow_next_step(name, doc):
         ln = ln.strip()
         if ln.startswith("* `{") and "}`" in ln:
             key = ln[4:ln.index("}`")]
-            need.append(f"{key}=<值>" + ("（選填）" if "選填" in ln else ""))
-    return (f"這是工作流（程式照步驟做，不是一個技能）：下一輪 action.command 填 scripts/workflow_run_cmd.py、args 填「{name} "
-            f"{' '.join(need)}」（值從使用者的話取得，拿不到的先問使用者），不要自己照步驟一個技能一個技能做；"
-            f"會改變狀態的步驟系統會在開始時請使用者確認，不用先問。")
+            need.append(_d("workflow_input", key=key) + (_d("workflow_input_optional") if "選填" in ln else ""))
+    return _d("workflow_next", name=name, inputs=" ".join(need))
 
 
 class DispatchMixin:
@@ -71,13 +69,8 @@ class DispatchMixin:
         if doc is None:
             return None
         name = skill_name[:-3] if skill_name.endswith(".md") else skill_name
-        how = (PROCEDURE_NEXT_STEP if is_procedure_doc(doc)
-               else "依此內容才可執行：action.command 填其中標明的實際腳本路徑、args 填參數")
-        return (
-            f"{SKILL_LOADED_MARKER}\n"
-            f"{SKILL_DOC_PREFIX} '{name}' 的規格文件（使用者從選單手動載入，等同你以 action.command 填技能名稱後"
-            f"系統回傳的規格；{how}）：\n{doc.rstrip()}"
-        )
+        how = _d("procedure_next") if is_procedure_doc(doc) else _d("manual_how")
+        return _d("manual", marker=SKILL_LOADED_MARKER, prefix=SKILL_DOC_PREFIX, name=name, how=how, doc=doc.rstrip())
 
     def _load_skill_doc(self, skill_name):
         """若 skill_name 對應到 tools/<skill_name>.md，回傳其內容；否則回傳 None。
@@ -217,8 +210,7 @@ class DispatchMixin:
             if skill_doc is not None and doc_type(skill_doc) == "Workflow":
                 name = raw_token[:-3] if raw_token.endswith(".md") else raw_token
                 print(f"📖 Agent 選擇工作流: {name}（載入工作流的規格，尚未執行）")
-                return (f"{SKILL_DOC_PREFIX} '{name}' 的規格文件（由系統提供）。這一輪只是載入規格、還沒有執行任何東西："
-                        f"{workflow_next_step(name, skill_doc)}\n{skill_doc}")
+                return _d("loaded_workflow", prefix=SKILL_DOC_PREFIX, name=name, next=workflow_next_step(name, skill_doc), doc=skill_doc)
             if skill_doc is not None:
                 procedure = is_procedure_doc(skill_doc)
                 print(f"📖 Agent 選擇技能索引: {raw_token}（載入{'流程技能的' if procedure else ''}規格文件，尚未執行）")
@@ -228,15 +220,12 @@ class DispatchMixin:
                 # 實測（2026-09-25 情境稽核）：只寫「繼續使用者原本的任務」時，模型會跳過這一步直接做下一步（載完 change_dir
                 # 規格就去 ls），所以要明說「下一輪先把這一個技能真正執行一次，之後才做下一步」。
                 if procedure:
-                    next_step = (f"你附的參數「{remainder.strip()}」沒有被執行。" if remainder.strip() else "") + PROCEDURE_NEXT_STEP
+                    next_step = (_d("args_not_run_procedure", args=remainder.strip()) if remainder.strip() else "") + _d("procedure_next")
                 elif remainder.strip():
-                    next_step = (f"你附的參數「{remainder.strip()}」也沒有被執行、狀態沒有改變。下一輪請先把這個技能真正執行一次："
-                                 f"action.command 填規格標明的實際腳本路徑（scripts/...）、args 填同樣的參數，執行完看到結果後才做下一步；")
+                    next_step = _d("args_not_run", args=remainder.strip())
                 else:
-                    next_step = ("下一輪請先把這個技能真正執行一次——action.command 填規格標明的實際腳本路徑（scripts/...）、"
-                                 "args 填參數，執行完看到結果後才做使用者任務的下一步；")
-                return (f"{SKILL_DOC_PREFIX} '{raw_token}' 的規格文件（由系統提供）。這一輪只是載入規格、還沒有執行任何東西：{next_step}"
-                        f"不要向使用者解釋規格內容，也不要詢問是否要執行。\n{skill_doc}")
+                    next_step = _d("run_next")
+                return _d("loaded_skill", prefix=SKILL_DOC_PREFIX, name=raw_token, next=next_step, doc=skill_doc)
 
             script_name = self._normalize_script_name(raw_token)
             if script_name == "result_recall_cmd.py":

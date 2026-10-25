@@ -5,8 +5,10 @@ import re
 
 # 專案根目錄（prompts/、skills_system/、logs/ 所在）：agent_core/ 的上一層
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-# 給模型的文字都在 prompts/（可以直接改）：AGENT.md（主對話的 system prompt）、Memory.md（長期記憶）、
-# context_modes/（兩種上下文模式的規則）、extract/（工具回傳的提煉：分段 worker 與整合）、ops/（多步驟維運的規劃與 worker）
+# 給模型的文字都在 prompts/（可以直接改，不用改程式；讀法見 agent_core/prompt_files.py，各檔案給誰見 prompts/README.md）：
+# AGENT.md（主對話的 system prompt）、Memory.md（長期記憶）、context_modes/（兩種上下文模式的規則）、harness/（主對話的 system prompt
+# 與動態區裡程式組的部分、程式核對後的提醒、工具結果的包裝）、summary/（滾動摘要）、extract/（工具回傳的提煉）、orchestra/（任務引擎：
+# 規劃、worker、類型）、workflow/（工作流的判斷點）、make_skill/（草擬工作流）、vision/（附圖的影像提取）
 PROMPTS_DIR = os.path.join(PROJECT_ROOT, "prompts")
 
 

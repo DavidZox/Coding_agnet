@@ -5,6 +5,7 @@ import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from vision import VisionError
 from vision.web import static_file as vision_static_file
+from agent_core import prompt_files
 from agent_core.protocol import attach_skill_docs
 from agent_core.turn import after_turn_compression
 from .commands import handle_slash_command, SLASH_COMMANDS
@@ -359,7 +360,7 @@ class ConsoleHandler(BaseHTTPRequestHandler):
             stream.append({"channel": "chat", "role": "user", "text": message, "tokens": agent.count_tokens(message)})
             clear_plan_for_new_task(stream)
             agent.set_current_task(question or message)
-            agent.messages.append({'role': 'user', 'content': question or "這段錄製期間發生了哪些狀態變化？"})
+            agent.messages.append({'role': 'user', 'content': question or prompt_files.load("harness/direct_commands.md", "analyze_default_question")})
             self._finish_turn(stream, run_analysis_turn(question, stream))
             return
 

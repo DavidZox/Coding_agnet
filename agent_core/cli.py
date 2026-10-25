@@ -1,6 +1,7 @@
 """CLI 介面（python3 Agent_Runner.py）：互動迴圈、slash 指令、Plan 模式與 /make_skill 的終端機流程。"""
 import os
 
+from . import prompt_files
 from .agent import SkillAgent
 from .config import (
     NUM_CTX,
@@ -14,6 +15,8 @@ from .config import (
 from .context_mode import CONTEXT_MODE_DESCRIPTIONS
 from .protocol import attach_skill_docs, is_exempt_result, tool_result_message
 from .turn import _append_discarded_tool_result, _content_for_context, after_turn_compression, context_kind, oversized_notice
+
+_DIRECT = "harness/direct_commands.md"   # /analyze 替使用者與 AI 放進主對話的那兩則
 
 
 def _run_plan_flow(agent, user_task=None):
@@ -270,11 +273,12 @@ def main():
                 question = user_msg.strip()[len("/analyze"):].strip()
                 agent.set_current_task(question or user_msg.strip())
                 agent.end_plan_for_new_task()
-                agent.messages.append({'role': 'user', 'content': question or "這段錄製期間發生了哪些狀態變化？"})
+                agent.messages.append({'role': 'user', 'content': question or prompt_files.load(_DIRECT, "analyze_default_question")})
                 # 「/analyze --data exp_x 問題」的選項照原樣交給 analysis_run（跟 Web 共用 analyze_command_args）
                 action = {"command": "scripts/analysis_run_cmd.py", "args": agent.analyze_command_args(question)}
                 agent.messages.append({'role': 'assistant', 'content': _json.dumps(
-                    {"thought": "使用者要求數據分析，直接交給 analysis_run", "reply": "交給數據分析。", "action": action}, ensure_ascii=False)})
+                    {"thought": prompt_files.load(_DIRECT, "analyze_thought"), "reply": prompt_files.load(_DIRECT, "analyze_reply_cli"),
+                     "action": action}, ensure_ascii=False)})
                 result = agent.run_tool({"action": action}, approved=True)
                 print(f"\n🚀 系統回傳:\n{'-'*30}\n{result}\n{'-'*30}")
                 tokens = agent.count_tokens(result)

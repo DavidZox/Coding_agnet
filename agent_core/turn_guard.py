@@ -19,7 +19,7 @@ import json
 import os
 import re
 
-from . import claims
+from . import claims, prompt_files
 from .config import ANALYSIS_ANSWER_NOTE, ANALYSIS_REPORT_HEAD
 from .protocol import action_text
 
@@ -46,6 +46,11 @@ _REPORT_REF = re.compile(r"(?<![A-Za-z0-9_])[ELT]\d+(?![0-9])|(?<![A-Za-z0-9_/])
 # 同一個子句裡在它前面有這些字＝否定或條件的說法（「時間上的先後不代表誰造成誰」「如果是…造成的」「是否…導致」），不算
 _CAUSAL_HEDGE = re.compile(r"(不代表|不表示|不等於|不能說|不能確定|無法判斷|無法確定|看不出|不是|並非|沒有|未|是否|有沒有|如果|若|假如|"
                            r"要對照|需要對照|另外分析|源碼)")
+
+
+def _g(key, /, **fields):
+    """prompts/harness/reminders.md 的一則：程式核對後給主對話的提醒。"""
+    return prompt_files.load("harness/reminders.md", key, **fields)
 
 
 class TurnGuardMixin:
@@ -91,17 +96,13 @@ class TurnGuardMixin:
             self.stuck = f"「{key[0][:80]}」已經 {times} 次得到同樣的結果"
             self._add_notice(f"⛔ AI 用同樣的動作 {times} 次都得到同樣的結果（{key[0][:60]}），這一回合先停在這裡，避免一直重試；"
                              "可以補充說明、指出正確的路徑或參數，或換個方式要求。")
-            return output + ("\n（系統：同樣的動作已經 {0} 次得到同樣的結果，這一回合停在這裡；使用者看得到上面的結果。"
-                             "等使用者的下一句話，不要再執行同一個動作。）").format(times)
+            return output + "\n" + _g("repeat_stop", times=times)
         times = max(self._rep_count, errors)
         if not v4 and times >= REPEAT_HINT_AT + 1:
-            return output + (f"\n（系統提醒：同樣的動作已經 {times} 次得到同樣的結果，這個做法行不通。現在就換：用另一個技能"
-                             "（例如在主機上操作 docker 用 host_runcmd、找檔案用 find_file）、換參數或路徑，"
-                             "或直接回覆使用者目前的狀況與你的建議。" + ("再重複一次，這一回合就會停下來。）" if times >= stop_at - 1 else "）"))
+            return output + "\n" + _g("repeat_strong", times=times, warn=_g("repeat_last_warning") if times >= stop_at - 1 else "")
         if self._rep_count >= REPEAT_HINT_AT or (not v4 and errors >= REPEAT_HINT_AT):
-            warn = "再重複一次，這一回合就會停下來。" if times >= stop_at - 1 else ""
-            return output + ("\n（系統提醒：你已經用同樣的動作得到同樣的結果了，不要再重複——換一個做法（例如先確認路徑、名稱或參數），"
-                             f"或直接回覆使用者目前的狀況。{warn}）")
+            warn = _g("repeat_last_warning") if times >= stop_at - 1 else ""
+            return output + "\n" + _g("repeat_hint", warn=warn)
         return output
 
     def claim_without_action(self, parsed):
@@ -123,12 +124,10 @@ class TurnGuardMixin:
                 return None
             self._claim_nudged = True
             self._add_notice(f"⚠️ AI 說要「{p.group(0)}」卻沒有執行任何工具：已提醒它直接做（或把要問的問清楚）。")
-            return ("[harness] 你說要「" + p.group(0) + "」，但這一回合沒有執行任何工具（action 是 null），使用者看到的是還沒有結果的承諾。"
-                    "要做就現在在 action 填要執行的技能（不用先問使用者）；需要使用者先回答的，直接在 reply 問清楚。")
+            return _g("claim_promise", said=p.group(0))
         self._claim_nudged = True
         self._add_notice(f"⚠️ AI 的回覆說「{m.group(0)}」，但這一回合沒有執行任何工具：已提醒它確認（要做就實際執行，沒做就照實說）。")
-        return ("[harness] 你在這一回合沒有執行任何工具（action 都是 null），但回覆說「" + m.group(0) + "」。系統沒有執行過任何動作，"
-                "使用者要求的事其實還沒有發生。如果要做，現在就在 action 填要執行的技能；如果只是說明或建議，請改口，不要說已經做了。")
+        return _g("claim_done", said=m.group(0))
 
     def analysis_reply_check(self, parsed):
         """依數據分析的報告回答：回覆把報告的事實寫成因果（導致、造成、觸發…），或寫的變化、值跟報告的事實對不上 → 回傳要接在對話
@@ -164,14 +163,11 @@ class TurnGuardMixin:
         parts = []
         if hits:
             self._add_notice(f"⚠️ AI 依數據分析的報告回答時寫了「{'、'.join(hits)}」（把先後寫成因果），報告只有事實：已請它改寫。")
-            parts.append("你的回答寫了「" + "、".join(hits) + "」，把報告裡的事件寫成誰造成誰。數據分析的報告只有事實與先後順序"
-                         "（「前後 1 秒內」「同時」只是時間上的對照），沒有判斷原因。請改寫：照報告說明發生了什麼、時間與先後順序，可以引用編號"
-                         "（E#、L#）；不要用「導致、造成、引起、觸發」把先後寫成因果。使用者想知道原因時，說明原因要對照源碼另外分析。")
+            parts.append(_g("analysis_causal", words="、".join(hits)))
         if wrong:
             self._add_notice("⚠️ AI 的回答有 " + str(len(wrong)) + " 處跟報告的事實對不上（" + "；".join(wrong)[:200] + "）：已請它改正。")
-            parts.append("你的回答有幾句跟報告的事實對不上（程式跟量到的事實逐句核對）：\n" + "\n".join(f"- {w}" for w in wrong)
-                         + "\n請照報告改正這幾句（每則重點下面列了引用的事件的完整內容：從什麼變成什麼、到最後的值），其他照舊。")
-        return "[harness] " + "\n\n".join(parts)
+            parts.append(_g("analysis_wrong", problems="\n".join(f"- {w}" for w in wrong)))
+        return _g("analysis_wrapper", parts="\n\n".join(parts))
 
     def _analysis_report_facts(self, jid=None):
         """數據分析報告的事實（logs/analysis_jobs/<job>/job.json 的 facts）；讀不到就是 None（只核對因果的用詞）。"""
