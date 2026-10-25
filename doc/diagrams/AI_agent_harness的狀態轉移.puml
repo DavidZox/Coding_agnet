@@ -12,7 +12,7 @@ rectangle State1 #D1E5F0 [
   **1. Input（收到使用者訊息）**
   * slash 指令由 harness 直接處理，不進模型
   * 文字任務：set_current_task 記任務線（最近 3 句）與說話時間；
-    上一個已核准的計畫自動清除
+    停下來等確認的任務不再自動接著問（任務留著）
   * 附圖（Web）：只有新任務會取出影像清單，先做視覺提取（1b）；
     只附圖沒打字時，使用者訊息用預設的描述提示詞
   * /skill：規格以 [skill loaded] 附在訊息後
@@ -39,7 +39,7 @@ rectangle State2 #F5F5F5 [
   → prompts/Memory.md（整份）→ 滾動摘要 → 使用者原話
   → SKILLS.md → **工具使用檢索清單（最近 30 筆，含〔附圖分析〕）**
   動態區（接在最後一則訊息後、不寫進歷史）：
-  Current Agent State → Objective → 核准的計畫 → 清單最新一筆
+  Current Agent State（含目前的數據）→ Objective → 清單最新一筆
   ----
   超過硬水位（NUM_CTX×75%）→ claude_code 先清除舊回傳，
   不夠再同步壓縮，然後才呼叫模型
@@ -58,7 +58,8 @@ rectangle StateGuard #F4CCCC [
     容器與主機的非唯讀指令、重啟容器、改 ROS 2 參數、發布…）
     → CLI 問 y／n；Web 暫停，顯示「同意執行／拒絕」
     （同一個技能查詢的用法放行，參數照腳本自己的解析判斷）
-  * ops_run、workflow_run：列出計畫或步驟裡會改變狀態的，核准一次
+  * task_run、workflow_run：列出計畫或步驟裡會改變狀態的，核准一次
+    （task_run 開頭只查詢的，查完再確認要改的步驟與查到的事實）
   * auto 模式也一樣會停；其他動作直接往下
   * 拒絕 → [DENIED] 加入主對話，回合結束（7）
 ]
@@ -72,11 +73,11 @@ rectangle State4 #FFF2CC [
     workflow_run → 工作流：程式照步驟執行技能，
       模型只在判斷點填值、選分支；成功判準程式跑
     analysis_run → 數據分析：全部由程式做，回事實報告
-    ops_plan → 規劃 session 拆步驟（唯讀）；
-    ops_run → 每一步一個 worker 做、程式檢查
+    task_run → 任務引擎：規劃、先查、依事實重排、每一步
+      一個 worker（或工作流）、程式檢查、程式寫報告
+      （見「任務引擎的流程」圖）
   * 腳本路徑 → 執行（5）；找不到 → [ERROR] 指引先載規格；
-    被擋的技能沒有 approved → [DENIED]；
-    計畫外會改狀態（/plan_exec_guard on）→ [PLAN_BLOCKED]
+    被擋的技能沒有 approved → [DENIED]
 ]
 
 rectangle State5 #D5E8D4 [
@@ -87,8 +88,9 @@ rectangle State5 #D5E8D4 [
     vision.analyze()，結果照一般工具回傳處理
   * result_recall：讀出存檔原文 → 獨立 session 依
     使用者的問題提煉（見「工具回傳管線」圖）
-  * 偽技能：工作流的每一步照樣走 run_tool（每一步的輸出
-    各自存 #編號）；數據分析見「數據分析的流程」圖
+  * 偽技能：工作流的每一步、任務引擎 worker 的每個動作
+    照樣走 _run_tool_once（輸出各自存 #編號）；
+    數據分析見「數據分析的流程」圖
 ]
 
 rectangle State6a #FFE0B2 [
@@ -97,7 +99,6 @@ rectangle State6a #FFE0B2 [
   * 記軌跡 trajectory.jsonl
   * 完整原文存成 #編號（編號跨 session 唯一）
   * 完整原文顯示給使用者（#編號）
-  * 計畫執行中：這一步的技能成功 → 換下一步
 ]
 
 rectangle State6b #FFD580 [
@@ -111,7 +112,7 @@ rectangle State6c #FFCC80 [
   **6c. 決定進主對話的內容（只在「加入」時算）**
   harness 模式：
   * (A) 規格文件、≤500 tokens、本身已是提煉結果、
-    或程式整理好的報告（數據分析、工作流）→ 原文
+    或程式整理好的報告（數據分析、工作流、任務）→ 原文
   * (B) >500 tokens → 工具摘要 session：重點 + 下一步建議，
     並把一句話描述寫進工具使用檢索清單；提煉沒成功照實說、
     附下一步；重點不比原文短改給原文
@@ -144,12 +145,11 @@ rectangle State8 #DDEBF7 [
 
 rectangle StatePlan #F8CECC [
   **Plan 模式（/plan on、Plan 鈕，或直接 /plan add）**
-  * 規劃 session 產生草稿（不進主對話），系統保存
+  * 任務引擎規劃草稿（不進主對話；存在 task_jobs/）
   * /plan add／edit／del／move 直接改；用說的改＝AI 只給操作
   * 有附圖時先做 1b：規劃 session 拿到的是併好提取文字的訊息
-  * y 核准 → 任務＋計畫進主對話、進度在動態區、自動推進
-  * /plan_exec_guard on：計畫外會改狀態的技能不執行、
-    停下來自動提醒；連續失敗 3 次退出計畫
+  * y 核准＝整份計畫的狀態變更都核准：任務進主對話，
+    harness 直接 task_run --continue（不再確認、不重排）
 ]
 
 rectangle StateSkill #ECECEC [
@@ -176,13 +176,14 @@ State5 -down-> State6a
 State6a -down-> State6b
 State6b -down-> State6c : 加入
 State6c -[#009933,bold]up-> State3 : **結果加入上下文，續推**
+State6c -[#9933CC,bold]up-> StateGuard : **任務停下來等確認：**\nharness 直接 task_run --continue\n（take_task_continuation，不問模型）
 State4 -[#CC0000,bold]left-> State7 : **action null**
 State6b -[#CC0000]left-> State7 : manual 的 n／stop
 State7 -[#6A5ACD,dashed]down-> State8 : 使用者再說一句
 State8 -[#6A5ACD,dashed]up-> State1
-State1 -right-> StatePlan : /plan on
+State1 -down-> StatePlan : /plan on
 State1 -[#999999,dashed]right-> StateGuard : /analyze、/workflow\n（直接指定）
-StatePlan -[#009933,bold]down-> State2 : **核准**
+StatePlan -[#009933,bold]-> StateGuard : **核准** → harness 直接\ntask_run --continue（不再確認）
 State7 -[#999999]down-> StateSkill : 做對之後 /make_skill
 
 note right of State4

@@ -21,7 +21,7 @@ end note
 if (結果要加入主對話？
 auto 直接加入；manual／hybrid 等使用者按 y) then (加入)
   if (規格文件、已經提煉過的（recall）、
-程式整理好的報告（analysis_run、workflow_run）？) then (是)
+程式整理好的報告（analysis_run、workflow_run、task_run）？) then (是)
     :原文直接給 main session;
     note right
       報告本身就是程式整理好、有編號的事實

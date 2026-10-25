@@ -756,16 +756,26 @@ class TaskRun:
                 it["status"] = "failed"
                 prev_failure = res["summary"]
                 continue
-            ok, evidence = self.check(it)
+            result, evidence, out = self.check(it)
             it["evidence"] = evidence
-            if ok:
+            if result == "pass":
                 it["status"] = "done"
                 return
-            # 檢查沒過：換一個 worker 帶著檢查的輸出再做一次；第二次還是沒過，多半是計畫寫的檢查條件不適用（例如要「看到 0」
-            # 卻是「找不到」）——不擋下後面的步驟，標成「檢查沒過」交給主對話與使用者確認
+            if result == "error":
+                # 檢查出錯：多半是計畫寫的檢查不對，也可能正是沒做到的證據——對照目標問一次，做到了才算完成（標明程式沒有驗證）
+                met, why = self.check_error_goal(it, res, out)
+                if met:
+                    it["status"] = "done"
+                    it["evidence"] = f"{evidence}；程式沒有驗證，對照目標判斷做到了：{why}"
+                    return
+                it["evidence"] = evidence = f"{evidence}；對照目標判斷還沒做到" + (f"：{why}" if why else "")
+                failure = f"你回報完成了，但做完之後的檢查：{evidence}"
+            else:
+                failure = f"你回報完成了，但做完之後的檢查沒有通過：{evidence}"
+            # 換一個 worker 帶著檢查的輸出再做一次；第二次還是不過，多半是計畫寫的檢查條件不適用（例如要「看到 0」卻是「找不到」）——
+            # 不擋下後面的步驟，標成「檢查沒過」交給主對話與使用者確認
             it["status"] = "unverified"
-            prev_failure = (f"你回報完成了，但做完之後的檢查沒有通過：{evidence}。先查清楚現在的狀態：沒做好就修正；"
-                            f"確定已經完成、是檢查的條件不適用，就照實回報並說明。")
+            prev_failure = f"{failure}。先查清楚現在的狀態：沒做好就修正；確定已經完成、是檢查的條件不適用，就照實回報並說明。"
 
     def do_workflow(self, it):
         """工作流的步驟：交給工作流的執行器（它自己推進、檢查、存檔），報告的每一步當這一步的事實（#編號是那一步的輸出）。"""
@@ -795,28 +805,55 @@ class TaskRun:
 
     def check(self, it):
         """worker 回報完成後由程式跑 check（唯讀技能）：輸出要找得到 expect（正規表示式，不合法就當字串；不分大小寫）。
-        檢查本身執行失敗（[ERROR]，多半是計畫寫的參數不對）不算這一步失敗，標明「沒有驗證」交給主對話判斷。"""
+        回傳 (結果, 證據, 輸出)：pass＝找得到（沒有檢查、檢查跑不了的也算，證據寫「沒有驗證」）；miss＝找不到；error＝檢查回 [ERROR]
+        （程式分不出是計畫寫的檢查不對、還是這一步沒做到，do_item 對照目標問一次）。"""
         a = self.a
         chk = it.get("check")
         if not chk:
-            return True, ""
+            return "pass", "", ""
         script = next((s for s, name in a._script_skill_map().items() if name == chk["skill"]), None)
         if not script:
-            return True, f"（檢查技能 {chk['skill']} 找不到腳本，沒有驗證）"
+            return "pass", f"（檢查技能 {chk['skill']} 找不到腳本，沒有驗證）", ""
         parsed = {"action": {"command": f"scripts/{script}", "args": chk["args"]}}
         if a.state_change_info(parsed):
-            return True, "（檢查用的動作會改變狀態，沒有執行、沒有驗證）"
+            return "pass", "（檢查用的動作會改變狀態，沒有執行、沒有驗證）", ""
         out = a._run_tool_once(parsed, approved=False) or ""
         first = out.strip().splitlines()[0][:200] if out.strip() else "（沒有輸出）"
+        rid = getattr(a, "last_result_id", None)
+        ref = f"（#{rid}）" if rid else ""
         if out.lstrip().startswith("[ERROR]"):
-            return True, f"（檢查 {chk['skill']} {chk['args']} 執行失敗，沒有驗證：{first}）"
+            return "error", f"{chk['skill']} {chk['args']} → 檢查出錯（{first}）{ref}", out
         try:
             hit = re.search(chk["expect"], out, re.I)
         except re.error:
             hit = chk["expect"].lower() in out.lower()
-        rid = getattr(a, "last_result_id", None)
-        return bool(hit), (f"{chk['skill']} {chk['args']} → {'有' if hit else '沒有'}「{chk['expect']}」（{first}）"
-                           + (f"（#{rid}）" if rid else ""))
+        return ("pass" if hit else "miss"), f"{chk['skill']} {chk['args']} → {'有' if hit else '沒有'}「{chk['expect']}」（{first}）{ref}", out
+
+    def check_error_goal(self, it, res, out):
+        """檢查回 [ERROR]：對照這一步的目標問一次做到了沒有（TASK_GOAL_CHECK_SCHEMA）。只看系統記下的動作與檢查的輸出，不是 worker 說的。
+        檢查出錯多半是計畫寫的檢查不對（2026-10-24～25 維運評測 15 次：17 次出錯裡 13 次是參數寫反、選項不存在、用了還不知道的編號，
+        2 次是刪除之後本來就查不到，1 次是容器裡沒有那個指令），但也可能正是沒做到的證據（cx_incident_timeline：worker 只建了目錄
+        就說報告寫好了，檢查讀不到報告——以前一律算完成、標「沒有驗證」，任務報 [PASS]）。一律當成沒過的話，計畫寫錯的檢查每次都多一個
+        worker、還報「檢查沒過」。回傳 (做到了沒, 判斷的根據)；問不出來當成沒做到（換 worker 重試，不會報錯的完成）。"""
+        chk = it["check"]
+        acts = "\n".join(f"- {c['skill']} {_one_line(c['args'], 160)} → {c['head']}" for c in res.get("calls") or []) or "（沒有執行任何技能）"
+        ask = (f"【使用者的任務】{self.job['task']}\n"
+               f"【這一步】第 {it['n']} 步：{it['title']}\n目標：{it['goal']}\n"
+               f"【worker 的回報】{_one_line(res.get('summary'), 600)}\n"
+               f"【這一步實際執行的動作與結果（系統紀錄）】\n{acts}\n"
+               f"【做完之後系統的檢查】{chk['skill']} {chk['args']}（要看到「{chk['expect']}」）→ 出錯了：\n{_clip(out, 1500)}\n\n"
+               "檢查出錯，程式沒辦法用它確認。依實際執行的動作與檢查的輸出（不是 worker 說的）判斷這一步的目標做到了沒有：\n"
+               "- 沒做到：檢查的錯誤表示目標要的結果不存在、沒有改成（例如要寫的檔案找不到、要建立或送出的東西不在清單裡），"
+               "或執行的動作裡沒有做到目標的那一個（例如只建了目錄、沒有寫檔；只查了、沒有改）。\n"
+               "- 做到了：執行的動作已經做到目標（成功的輸出看得到），檢查出錯是因為檢查本身寫錯（參數的順序、選項、名稱或編號不對）、"
+               "環境裡沒有它要用的指令，或目標本來就會讓它查不到（例如刪除之後查不到）。\n"
+               "goal_met 填 true／false；summary 寫判斷的根據：哪一個動作的輸出、檢查的錯誤代表什麼。")
+        msgs = [{"role": "system", "content": "你核對任務裡的一步做到了沒有：只依系統記下的動作、輸出與檢查判斷，照實回答。"},
+                {"role": "user", "content": ask}]
+        raw, data = self.a._task_call(self.job, "check_error", msgs, TASK_GOAL_CHECK_SCHEMA, num_predict=2048,
+                                      extra={"item": it["n"], "attempt": it["attempts"]})
+        why = _one_line((data or {}).get("summary"), 400)
+        return bool(data) and data.get("goal_met") is True and bool(why), why
 
     # ------------------------------------------------ 報告
     def report(self):

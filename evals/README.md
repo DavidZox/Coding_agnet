@@ -10,7 +10,7 @@
 | `analysis/` 數據解析 | `selftest.py`（數據技能用錄下的真實輸出 `fixtures/`） | `regression.py`（回歸評分；數據分析全部由程式做，不需要 Ollama，要測試容器）、`tools_live.py`（在真的容器裡跑數據技能） | 事實的整理、重點、報告、主對話回答的核對；回歸評分只評事實 |
 | `datagen/` 隨機情境的錄製產生器 | `check_facts.py`（只驗程式那一層，需要容器） | 產生的錄製交給 `analysis/regression.py` | 六個開發中套件的模擬，評分標準由注入的事件自動產生（見 [`datagen/README.md`](datagen/README.md)） |
 | `ops/` 多步驟維運 | `selftest.py`（file_ops、維運技能的確認關卡） | `run.py`（情境在 `dataset/`，在 Docker-in-Docker 沙盒裡真的執行；`worker.py` 跑一個情境） | 主對話用技能、工作流、任務引擎做完維運任務；狀態、回覆、禁止動作由程式計分 |
-| `task/` 任務引擎 | `selftest.py`（假模型、真的本機檔案技能） | —（真模型用 `ops/run.py`） | task_run 與 Plan 模式：規劃的程式檢查、先查再確認、worker 的權限、事實的核對、失敗後重排、工作流的步驟、存檔 |
+| `task/` 任務引擎 | `selftest.py`（假模型、真的本機檔案技能） | —（真模型用 `ops/run.py`） | task_run 與 Plan 模式：規劃的程式檢查、先查再確認、worker 的權限、事實的核對、對照目標（worker 說沒完成、檢查出錯）、失敗後重排、工作流的步驟、存檔 |
 | `integrity/` 評測的完整性 | `selftest.py` | — | 模型會讀的文字（prompt、技能說明、工作流、程式回給模型的字）沒有評測世界的名稱（從評測的來源自動取） |
 | `extract/` 提煉 | —（不用模型的在 `chat/extract_selftest.py`） | `run.py`（情境在 `cases.py`：程式產生已知答案的長輸出；`worker.py` 跑一個情境） | 工具回傳的提煉與 result_recall：找到幾個、多列幾個、數量的說法、切幾段讀幾段、程式拿掉幾條 |
 | `workflow/` 工作流 | `selftest.py`（規格驗證、跟 SKILLS.md 對得上、引號規則、推進、分支、【確認】、不用互動的入口、/make_skill） | `sandbox.py`（沙盒裡直接執行工作流，用維運情境計分；`sandbox_worker.py` 跑一個案例） | 程式照步驟推進、判斷點只填值與選分支、做完了沒由程式判斷 |
@@ -187,7 +187,7 @@ python3 evals/task/selftest.py      # 離線（約 10 秒）：假模型照劇�
 測 harness 的程式把關（模型能力用 `ops/run.py` 量）：規劃的程式檢查與修正（技能不存在、會改變狀態的標記、查詢的步驟不用檢查、
 停著的容器排在啟動之前、使用者提到手冊卻沒有先讀、要寫檔卻沒列 file_ops）；做不了的計畫不執行；第一步就要改時確認關卡是整份計畫；**先查再確認**（開頭的查詢直接做 → 照事實重排 →
 停下來 → harness 用 `take_task_continuation` 接著問）；worker 的權限（沒核准的 [DENIED]、這一步不能用的技能）與重試；**事實的核對**
-（名稱與數值要在引用的 #編號 的輸出裡——這一步的、或這個任務前面各步的（讀回存檔），對不上的交回改一次、還是不行就拿掉）；失敗後重排（Plan 模式不重排）；工作流的步驟；Plan 模式的
+（名稱與數值要在引用的 #編號 的輸出裡——這一步的、或這個任務前面各步的（讀回存檔），對不上的交回改一次、還是不行就拿掉）；**對照目標**（worker 說沒有完成、做完之後的檢查回 [ERROR] 時問一次做到了沒有：做到了不重試，沒做到照舊重試——檢查出錯時只看系統記下的動作，worker 只建了目錄就說報告寫好了會被重做，計畫寫錯的檢查不會多跑 worker）；失敗後重排（Plan 模式不重排）；工作流的步驟；Plan 模式的
 草稿、指令、用說的改、核准後照計畫做；存檔與保留上限。CLI 與 Web 的回合（確認卡片、y/n）在 `chat/selftest.py`。
 
 ## 評測的完整性（`integrity/`）
@@ -264,4 +264,4 @@ python3 evals/phase_check.py --save-baseline <結果目錄…> --label "第 N �
 - 近期加進來的案例：第 2 階段——提煉的真模型評測（〈提煉〉一節）、交握 status 連續幾次的判斷（`skills/rmf_test.py` 的 `t_sandbox_status_stable`）、
   數據技能的「不是錄製數據」判斷不擋任何一份真的錄製（`skills/data_test.py` 的 `t_not_recording_real_data`）、維運評測的 `logs/<情境>/`
   （每一步的紀錄）；第 3 階段——工作流的自我測試（`workflow_selftest`）與沙盒測試（`workflow:<模型>`）；第 4 階段——評測的完整性（`integrity`）、
-  任務引擎與 Plan 模式（`task_selftest`；CLI／Web 的回合在 `chat_selftest`）、數據分析的存檔只留最近幾次（`analysis_selftest`）；第 4 階段之後——`--until-done` 看得出卡住就提早結束、`--until-confirmed` 等授權有結果（`skills/rmf_test.py` 的 `t_until_done_stuck`、`t_until_confirmed`、`t_until_done_stuck_rules`）、任務引擎的 worker 說沒有完成時對照目標問一次（`task/selftest.py` 的 `t_goal_check`）。
+  任務引擎與 Plan 模式（`task_selftest`；CLI／Web 的回合在 `chat_selftest`）、數據分析的存檔只留最近幾次（`analysis_selftest`）；第 4 階段之後——`--until-done` 看得出卡住就提早結束、`--until-confirmed` 等授權有結果（`skills/rmf_test.py` 的 `t_until_done_stuck`、`t_until_confirmed`、`t_until_done_stuck_rules`）、任務引擎的 worker 說沒有完成時對照目標問一次（`task/selftest.py` 的 `t_goal_check`）、做完之後的檢查回 [ERROR] 時對照目標問一次（`t_check_error`）。

@@ -11,6 +11,7 @@
 - worker：沒核准的狀態變更 [DENIED]、沒用技能就說做完推回去一次、這一步不能用的技能、檢查沒過換一個 worker 重試、再沒過標成「檢查沒過」繼續；
 - 事實的核對：每條附出處（#編號：這一步或前面各步的工具結果，前面的讀回存檔），名稱與數值要在那份輸出裡；對不上的交回改一次，還是不行就拿掉；
 - worker 說「沒有完成」：對照這一步的目標問一次做到了沒有（查到的結果有問題也算做到），做到了不重試；
+- 檢查出錯（[ERROR]）：對照目標問一次做到了沒有（只看系統記下的動作與檢查的輸出）——沒做到跟檢查沒過一樣重試，做到了算完成、標明沒有驗證；
 - 失敗：自動模式重排剩下的步驟（那一步標成「重排了」）；Plan 模式不重排、停下來；
 - 程式看得出的前提：在停著的容器裡做事排在啟動它之前、使用者提到手冊卻沒有先讀；規劃看得到每個容器的狀態；
 - 做不了的計畫（要改變狀態卻沒有技能、列的技能都不存在、工作流的參數不對）修一次還是這樣就不執行；要寫檔卻沒列 file_ops 交回修；
@@ -440,6 +441,61 @@ def t_goal_check(agent, ollama, tmp, home):
     assert not fake.goal_msgs and agent.task_last["items"][0]["attempts"] == 2, agent.task_last["items"][0]
 
 
+def t_check_error(agent, ollama, tmp, home):
+    """做完之後的檢查回 [ERROR]（程式沒辦法用它確認）：對照目標問一次做到了沒有（只看系統記下的動作與檢查的輸出）——沒做到（worker 只建了
+    目錄就說報告寫好了，檢查讀不到報告）跟檢查沒過一樣換 worker 帶著檢查的輸出重試；做到了（檢查自己寫錯：參數寫反）算完成、標明程式沒有
+    驗證、不多跑 worker；問不出來當成沒做到，重試後還是沒做到就標成「檢查沒過」。以前檢查出錯一律算完成，任務報 [PASS]"""
+    agent.guard_enabled = False
+    look = item("看設定", "看 config/cam.yaml 的 exposure", ["view_file"])
+    seen = [step("scripts/cat_cmd.py", "config/cam.yaml"), done("exposure 是 10", [fact("exposure: 10")])]
+    write = item("寫報告", "把看到的 exposure 寫進 reports/cam.md", ["file_ops"], True,
+                 {"skill": "view_file", "args": "reports/cam.md", "expect": "exposure"})
+    fake = FakeTask([plan(look, write)],
+                    seen + [step("scripts/file_ops_cmd.py", "mkdir reports"), done("報告寫好了"),
+                            step("scripts/file_ops_cmd.py", 'write reports/cam.md --text "exposure: 10"'), done("寫好了")],
+                    goals=[{"goal_met": False, "summary": "只建了 reports 目錄，沒有寫 reports/cam.md"}])
+    ollama.chat = fake
+    rep = agent.run_tool(task("看相機的 exposure，寫成報告"))
+    it = agent.task_last["items"][1]
+    assert rep.startswith("[PASS] 任務完成（2/2 步") and it["status"] == "done" and it["attempts"] == 2, (rep[:300], it)
+    assert "exposure: 10" in read(os.path.join(home, "reports", "cam.md"))
+    ask = fake.goal_msgs[0][-1]["content"]
+    assert "目標：把看到的 exposure 寫進 reports/cam.md" in ask and "- file_ops mkdir reports → [PASS]" in ask, ask
+    assert "view_file reports/cam.md（要看到「exposure」）→ 出錯了：\n[ERROR] 找不到檔案" in ask and "不是 worker 說的" in ask, ask
+    retry = fake.worker_msgs[4][1]["content"]
+    assert "【上一次做這一步沒有成功】你回報完成了，但做完之後的檢查：view_file reports/cam.md → 檢查出錯（[ERROR] 找不到檔案" in retry, retry
+    assert "對照目標判斷還沒做到：只建了 reports 目錄" in retry, retry
+    calls = [json.loads(l) for l in open(os.path.join(job_dir(agent, agent.task_last), "calls.jsonl"), encoding="utf-8")]
+    judged = [c for c in calls if c.get("kind") == "check_error"]
+    assert len(judged) == 1 and judged[0]["messages"][-1]["content"] == ask and judged[0]["item"] == 2, "問的與回答整份存檔"
+    # 檢查自己寫錯（search_text 的關鍵字與路徑寫反）：做到了就算完成，不多跑 worker；報告寫明檢查出錯、程式沒有驗證
+    note = item("寫紀錄", "在 notes/out.txt 寫入 hello", ["file_ops"], True, {"skill": "search_text", "args": "notes/out.txt hello", "expect": "hello"})
+    fake = FakeTask([plan(look, note)],
+                    seen + [step("scripts/file_ops_cmd.py", 'write notes/out.txt --text "hello"'), done("寫好了")],
+                    goals=[{"goal_met": True, "summary": "write 的輸出顯示已寫入 notes/out.txt；檢查把關鍵字與路徑寫反了"}])
+    ollama.chat = fake
+    rep = agent.run_tool(task("看相機的 exposure，再寫一行紀錄"))
+    it = agent.task_last["items"][1]
+    assert rep.startswith("[PASS] 任務完成（2/2 步") and it["status"] == "done" and it["attempts"] == 1, (rep[:300], it)
+    assert len(fake.goal_msgs) == 1 and len(fake.worker_msgs) == 4, "做到了：不多跑一個 worker"
+    assert "檢查：search_text notes/out.txt hello → 檢查出錯（[ERROR] 找不到路徑：hello" in rep, rep
+    assert "程式沒有驗證，對照目標判斷做到了：write 的輸出顯示已寫入" in rep, rep
+    # 問不出來（回答是空的）當成沒做到：重試；第二次檢查還是出錯、還是沒做到 → 標成「檢查沒過」，不是完成
+    lost = item("寫報告", "把看到的 exposure 寫進 reports/lost.md", ["file_ops"], True,
+                {"skill": "view_file", "args": "reports/lost.md", "expect": "exposure"})
+    fake = FakeTask([plan(look, lost)],
+                    seen + [step("scripts/file_ops_cmd.py", "mkdir reports/tmp"), done("報告寫好了"),
+                            step("scripts/ls_cmd.py", "reports"), done("報告已經寫好了")],
+                    goals=[{}, {"goal_met": False, "summary": "reports/lost.md 還是不存在"}])
+    ollama.chat = fake
+    rep = agent.run_tool(task("看相機的 exposure，寫成另一份報告"))
+    it = agent.task_last["items"][1]
+    assert it["status"] == "unverified" and it["attempts"] == 2 and len(fake.goal_msgs) == 2, it
+    assert rep.startswith("[PASS] 任務的步驟都做了") and "第 2 步做完之後的檢查沒有通過" in rep and "2. ⚠️ 檢查沒過 寫報告" in rep, rep
+    assert "對照目標判斷還沒做到：reports/lost.md 還是不存在" in rep, rep
+    assert "對照目標判斷還沒做到。先查清楚現在的狀態" in fake.worker_msgs[4][1]["content"], fake.worker_msgs[4][1]["content"]
+
+
 # ---------------------------------------------------------------- 失敗：自動模式重排、Plan 模式不重排
 def t_failure_replan(agent, ollama, tmp, home):
     agent.guard_enabled = False
@@ -644,6 +700,7 @@ def main():
                      ("事實的核對：名稱與數值要在引用的輸出裡；出處要是這個任務的；交回改一次，還是不行就拿掉", t_fact_check),
                      ("事實引用前面各步的工具結果：讀回存檔核對（只整理前面結果的步驟不會被當成找不到）", t_fact_refs_before),
                      ("worker 說沒有完成：對照目標問一次做到了沒有（查到的結果有問題也算做到，照它重排剩下的）；沒做到才重試、重排", t_goal_check),
+                     ("檢查出錯：對照目標問一次（只看系統記下的動作）；沒做到換 worker 重試，做到了算完成、標明沒有驗證；問不出來當成沒做到", t_check_error),
                      ("失敗：自動模式重排剩下的步驟（那一步標成重排了）；Plan 模式不重排", t_failure_replan),
                      ("前提：停著的容器排在啟動之前、容器停著卻要進去、使用者提到手冊卻沒先讀；規劃看得到容器的狀態", t_preconditions),
                      ("做不了的計畫不執行（要改卻沒有技能、技能都不存在）；要寫檔卻沒列 file_ops 交回修；Plan 模式擋核准", t_broken_plans),

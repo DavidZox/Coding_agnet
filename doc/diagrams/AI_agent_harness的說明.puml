@@ -40,7 +40,7 @@ rectangle NodeAgent #D1E5F0 [
   **SkillAgent（agent_core/，唯一核心）**
   ----
   * system prompt 只放不常變的（尾端附工具使用檢索清單）；
-    工作目錄、目標容器、核准的計畫每次接在最後一則訊息後（動態區）
+    工作目錄、目標容器、目前的數據每次接在最後一則訊息後（動態區）
   * 呼叫主 session，**只看 action** 派發；
     會改變實體狀態的動作先由程式請使用者確認
   * 執行腳本 → 記軌跡 → 原文存檔 #編號；
@@ -48,7 +48,8 @@ rectangle NodeAgent #D1E5F0 [
   * 依上下文模式決定工具回傳怎麼進主對話：
     harness＝獨立 session 提煉重點（長的切段、每段一個 worker、再整合）；
     claude_code＝原文（太大保留頭尾，註明中間有哪幾節）
-  * 替模型維護狀態：工作目錄、目標容器、任務線、計畫
+  * 替模型維護狀態：工作目錄、目標容器、任務線；
+    任務停下來等確認時，harness 直接接著問（不經過模型）
   * 上下文超過水位就壓成滾動摘要（使用者原話逐字保留、
     被壓掉的對話存檔）
   * 附圖：主對話只收到 [vision result] 文字（附存檔編號），
@@ -77,10 +78,12 @@ rectangle NodeSub #FCE5CD [
   * /make_skill 草擬：整段對話＋工具回傳＋操作軌跡 → 工作流的規格
     （步驟：執行既有技能／檢查／確認／告知；不產生腳本）
   * 工作流的判斷點：只填這一步要的值、或選分支（其他由程式推進）
-  * ops_plan：規劃 session 把任務拆成 2～6 步（目標、技能、
-    會不會改變狀態、做完怎麼檢查），程式檢查計畫
-  * ops_run：每一步一個乾淨的 worker（只看這一步的目標、前面各步的
-    結果、這一步技能的規格），做完由程式跑檢查，沒過換一個重試一次
+  * 任務引擎 task_run（Plan 模式的草稿也是它）：規劃 session 拆成
+    2～6 步（技能或一個工作流、會不會改變狀態、怎麼檢查），程式檢查
+    計畫；先查的做完照事實重排，要改的停下來確認
+  * 任務引擎的 worker：每一步一個乾淨的 session，事實附 #編號
+    （程式核對）；做完由程式跑檢查，沒過換一個重試；
+    worker 說沒完成、檢查出錯時，對照目標問一次（只填兩個欄位）
 ]
 
 rectangle NodeSkills #D5E8D4 [
@@ -93,7 +96,7 @@ rectangle NodeSkills #D5E8D4 [
     Agent_Runner.py --workflow；/make_skill 產生的也是）
   * 偽技能（規格在 tools/，在本程式內執行）：result_recall、
     workflow_run、analysis_run（數據分析，全部由程式做）、
-    ops_plan／ops_run（多步驟的維運任務）
+    task_run（多步驟的任務：任務引擎）
   * scripts/<name>_cmd.py：真正執行的腳本
   * 檔案系統／容器與 ROS2／調度系統／多模態／存檔回查／記憶
   * image_inspect：對影像檔路徑呼叫 vision.analyze()，
@@ -125,8 +128,10 @@ rectangle NodeStore #E1D5E7 [
   * workflow_jobs/<編號>/：每一次工作流的步驟、判斷點的模型呼叫
     （每一步的輸出照常存成 #編號；留最近 300 次）
   * analysis_jobs/<編號>/：每一次數據分析的事實、重點、報告與進度
-  * ops_jobs/<編號>.json：ops_run 的計畫、每一步 worker 用的技能、
-    結果摘要與程式檢查
+    （留最近 300 次）
+  * task_jobs/<編號>/：每一次任務的每一版計畫、每一步的狀態與
+    核對過的事實、檢查、每次模型呼叫的 prompt 與回覆、報告
+    （Plan 模式的草稿也在這裡；留最近 300 次）
   * trajectory.jsonl（操作軌跡）、summary_*.md／.json（滾動摘要＋
     使用者原話）、perf.jsonl（每次模型呼叫的耗時）
   * prompts/Memory.md（長期記憶，整份常駐；記憶只寫這裡）
@@ -165,10 +170,11 @@ note bottom of NodeWorld
   容器與主機的非唯讀指令、重啟容器、
   改 ROS 2 參數、發布 Topic…）執行前一律
   由程式請使用者確認（run_tool 沒有
-  approved 就不執行）；ops_run、workflow_run
-  開始時列出會改變狀態的步驟、核准一次；
-  Plan 模式的核准關卡靠「規劃階段不呼叫
-  run_tool」保證。
+  approved 就不執行）；task_run、workflow_run
+  列出會改變狀態的步驟、核准一次（task_run
+  先查完再確認要改的；worker 只能做核准的）；
+  Plan 模式：規劃階段不呼叫 run_tool，
+  核准＝整份計畫的狀態變更都核准。
 end note
 
 @enduml

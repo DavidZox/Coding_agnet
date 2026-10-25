@@ -5,7 +5,7 @@
 
 | 檔案 | 內容 | 目前的來源 |
 |---|---|---|
-| `offline.json` | 各組自我測試的通過數（`skills`、`chat_selftest`、`extract_selftest`、`ops_selftest`、`task_selftest`、`analysis_selftest`、`workflow_selftest`、`integrity`；實機組另有 `skills_sandbox`、`containers_sandbox`、`data_live`、`tools_live:<數據>`） | 第 4 階段結束的完整驗證（`20261024_152818_phase_check`）；`skills`、`task_selftest`、`skills_sandbox` 是待辦 20、23 之後的（2026-10-25：100、13、27） |
+| `offline.json` | 各組自我測試的通過數（`skills`、`chat_selftest`、`extract_selftest`、`ops_selftest`、`task_selftest`、`analysis_selftest`、`workflow_selftest`、`integrity`；實機組另有 `skills_sandbox`、`containers_sandbox`、`data_live`、`tools_live:<數據>`） | 第 4 階段結束的完整驗證（`20261024_152818_phase_check`）；`skills`、`skills_sandbox` 是待辦 20、23 之後的（2026-10-25：100、27），`task_selftest` 是待辦 25 之後的（14） |
 | `ops_gemma4-26b.json` | 維運評測（沙盒裡真的執行，主要 50＋保留 20）：`current` 每個情境的次數、通過、禁止動作、秒數中位數，`totals` 每一次的總分；比對只用 `current`，其他的 key 是之前的基準、只當參考：`phase4`（第 4 階段結束）、`phase4_start`（第 4 階段開始＝第 3 階段的程式＋範例改成評測世界沒有的名稱）、`phase3`（第 3 階段，dfa8e10）、`reference_v5`（v5 的三次） | 待辦 20、23 之後的三次完整跑（2026-10-25，`*_p23v_r1～r3`）：主要 49／48／43、保留 20／19／19（`phase4` 46／46／46、20／19／19；`phase4_start` 44／45／42、18／19／17；`phase3` 46／44／45、18／18／19）。每個情境的變化見設計筆記 2.19、2.20 |
 | `chat_gemma4-e4b.json` | 主對話評測（假的外部世界、真模型）11 個情境，每個情境的次數與通過 | 第 4 階段結束的一次（×3：33/33；第 4 階段開始也是 33/33，第 2 階段兩次 32/33、33/33） |
 | `extract.json` | 提煉評測（`evals/extract/`）每個模型、每個情境：找到幾個、多列幾個、數量的說法對不對、秒數 | 第 2 階段 commit 之後各跑一次（26b 全對；e4b 的 recall_fleet_120 是 9/11：worker 漏一台、整合時拿掉一台——兩個條件一起篩對小模型難）；robot_heading 2026-10-24 加（26b 4/4；e4b 這一次 1/1，另外三次只過 1 次——小模型常漏掉要去的站，沒過時先看是不是這個）。第 4 階段沒有改提煉，結束時的一次 26b 全對、e4b fleet_40 6/7（一次讀完漏了 amr_24）、recall_fleet_120 10/11，沒有拿來更新 |

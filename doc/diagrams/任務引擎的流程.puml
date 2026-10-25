@@ -1,0 +1,100 @@
+@startuml
+' --- 樣式精準控制 ---
+skinparam shadowing false
+skinparam defaultFontName "Microsoft JhengHei"
+skinparam ActivityBackgroundColor #FFF8E7
+skinparam ActivityBorderColor #996633
+skinparam NoteBackgroundColor #FFFFE0
+skinparam PartitionBorderColor #996633
+
+title 任務引擎（task_run）：規劃 → 程式檢查 → 先查 → 依事實重排 → 確認 → 每一步一個 worker（或工作流）→ 程式判斷做完了沒 → 程式寫報告\n藍＝程式（不呼叫模型）；橘＝模型；綠＝程式核對；紅＝使用者確認。做完了沒由程式判斷，模型只在規劃、worker、對照目標出手。產物都在 logs/task_jobs/<編號>/
+
+partition "收到任務" {
+start
+:主對話的 AI 呼叫 task_run "<任務>"（使用者的原話；偽技能，在本程式內執行）
+／Plan 模式：/plan on 之後的新任務（草稿給使用者看、改，核准後照計畫做）; <<#DDEBF7>>
+}
+
+partition "① 規劃（確認關卡時就做，同一份交給 task_run）" {
+:規劃 session（planner.md＋類型的〈規劃〉）
+看得到：技能與工作流的清單（工作流附每個參數的說明）、工作目錄、
+目標容器、每個容器現在的狀態 → 2～6 步：目標、技能或一個工作流、
+會不會改變狀態、做完怎麼檢查（唯讀技能＋參數＋輸出要有的字）; <<#FCE5CD>>
+:程式檢查計畫：技能與工作流存在、工作流沒有【確認】、參數齊全；
+會改變狀態的標記（file_ops、workpackage_send 一定會改）；要寫檔卻沒列 file_ops；
+在停著的容器裡做事、使用者提到手冊卻沒有先讀; <<#E2EFDA>>
+if (有問題？) then (有)
+  :帶著具體的問題交回規劃 session 修一次; <<#FCE5CD>>
+endif
+if (還有做不了的步驟、一步就做得完、
+整件事正好是一個工作流？) then (是)
+  :回 [ERROR] 交回主對話（不執行任何步驟）; <<#DDEBF7>>
+  stop
+else (否)
+endif
+if (第一步就要改變狀態？) then (是)
+  :確認整份計畫（CLI y／n、Web 卡片）; <<#F4CCCC>>
+endif
+}
+
+partition "② 一步一步做（TaskRun）" {
+repeat
+  if (這一步要改變狀態、還沒核准？) then (是)
+    if (前面查過、還沒依事實重排？) then (是)
+      :核對過的事實交回規劃 session 重排剩下的步驟
+（「查詢的步驟做完了」）; <<#FCE5CD>>
+    endif
+    :停下來，報告「任務查完了，要改的步驟等使用者確認」→
+harness 在下一次問模型之前直接 task_run ~--continue
+（take_task_continuation，不經過模型）; <<#DDEBF7>>
+    :使用者確認要改的步驟（說明列出已經查到的事實）; <<#F4CCCC>>
+  endif
+  if (這一步是工作流？) then (是)
+    :WorkflowRun 照工作流的步驟做（它自己檢查、存檔）
+→ 它每一步的輸出當這一步的事實; <<#DDEBF7>>
+  else (技能)
+    :worker（乾淨的 session：worker.md＋類型的〈執行〉＋這一步技能的規格；
+看得到任務、整份計畫、這一步的目標與權限、前面各步核對過的事實）
+跟主對話一樣的 JSON 協議，一次一個動作 → 輸出存成 #編號；
+沒核准的狀態變更 [DENIED]、同一個動作第 3 次就停; <<#FCE5CD>>
+    :事實核對：每條事實附 #編號，名稱與數值要在那份輸出裡
+（前面步驟的讀回存檔）；對不上的交回改一次，還是不行就拿掉; <<#E2EFDA>>
+    if (worker 說「沒有完成」？) then (是)
+      :對照這一步的目標問一次（只填 goal_met、summary）：
+查到了、確認清楚了（結果有問題、修不了也算）＝做到了; <<#FCE5CD>>
+    endif
+    :程式跑這一步的檢查（唯讀技能，輸出要有 expect）; <<#E2EFDA>>
+    if (檢查回 [ERROR]？) then (是)
+      :對照目標問一次（只看系統記下的動作與檢查的輸出）：
+檢查寫錯、刪除後本來就查不到 → 做到了（標明程式沒有驗證）；
+要寫的檔案找不到、只建了目錄 → 沒做到; <<#FCE5CD>>
+    endif
+    :沒過、沒做到 → 換一個 worker 帶著原因重試一次；
+還是沒過 → 檢查沒過（不擋後面的步驟）；還是沒做完 → 失敗; <<#DDEBF7>>
+  endif
+  if (失敗，或做到了但查到問題？) then (是)
+    :事實與原因交回規劃 session 重排剩下的步驟（一個任務最多 2 次）；
+重排出新的要改的步驟 → 再停下來確認；重排不出來 → 任務沒做完; <<#FCE5CD>>
+  endif
+repeat while (還有步驟？) is (有) not (沒有)
+}
+
+partition "③ 報告（程式寫）" {
+:報告：任務完成／步驟都做了但第 N 步的檢查沒有通過／任務沒有做完；
+每一步的狀態（完成、檢查沒過、沒有完成、重排了）、核對過的事實（#編號）、
+檢查的證據、計畫改過幾版與為什麼; <<#DDEBF7>>
+note right
+  logs/task_jobs/<編號>/：job.json（每一版計畫、每一步的狀態與事實）、
+  calls.jsonl（每一次模型呼叫的 prompt 與原文回覆）、events.jsonl、report.md
+end note
+:主對話依報告回答（報告不再提煉）; <<#FCE5CD>>
+stop
+}
+
+legend bottom
+  **程式做的與模型做的**
+  ・程式：計畫的檢查、權限（沒核准的 [DENIED]）、確認關卡與接著問、事實核對、做完之後的檢查、重試與重排的時機、狀態、報告、存檔
+  ・模型：規劃與重排、每一步的 worker、兩個窄的判斷（worker 說沒完成時、檢查出錯時，對照目標：只填 goal_met、summary）
+  Plan 模式：草稿就是這份計畫；使用者核准＝整份計畫的狀態變更都核准，照計畫做、不重排（設計筆記 2.8、2.19；架構說明第 15 節）
+endlegend
+@enduml
