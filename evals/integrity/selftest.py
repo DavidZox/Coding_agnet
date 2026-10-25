@@ -31,7 +31,8 @@ import traceback
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROJECT = os.path.dirname(os.path.dirname(HERE))
 DATASET = os.path.join(PROJECT, "evals", "ops", "dataset")
-SOURCES = ["evals/ops/dataset/scenarios.py", "evals/ops/dataset/scenarios_holdout.py", "evals/ops/dataset/fs_world.py",
+SOURCES = ["evals/ops/dataset/scenarios.py", "evals/ops/dataset/scenarios_holdout.py", "evals/ops/dataset/scenarios_inv.py",
+           "evals/ops/dataset/fs_world.py",
            "evals/ops/dataset/sandbox/sandbox.py", "evals/ops/dataset/sandbox/rmf_sim/rmf_sim.py",
            "evals/chat/scenarios.py", "evals/workflow/sandbox.py"]
 # 調度系統與 ROS 2 本身的名稱：評測沙盒照真的系統做，技能規格要描述它們

@@ -1,5 +1,5 @@
-"""多步驟維運情境（ops suite）的評測：目錄與文件、Docker、ROS 2、調度交握、複合任務。情境、沙盒與計分在
-evals/ops/dataset/（scenarios.py、scenarios_holdout.py、sandbox/、checks.py、fs_world.py）。
+"""多步驟維運情境（ops suite）的評測：目錄與文件、Docker、ROS 2、調度交握、複合任務，加上調查與整理報告（第 5 階段）。情境、沙盒與計分在
+evals/ops/dataset/（scenarios.py、scenarios_holdout.py、scenarios_inv.py、sandbox/、checks.py、fs_world.py）。
 
     python3 evals/ops/run.py --model gemma4:26b
     python3 evals/ops/run.py --model gemma4:e4b --domain handshake,complex
@@ -32,6 +32,7 @@ import fs_world    # noqa: E402
 import sandbox     # noqa: E402
 import scenarios   # noqa: E402
 import scenarios_holdout   # noqa: E402
+import scenarios_inv   # noqa: E402
 
 
 def make_copy():
@@ -95,7 +96,7 @@ def run_one(sc, args, urls, out_dir):
 
 
 def write_report(path, results, args):
-    doms = ["fs", "docker", "ros2", "handshake", "complex"]
+    doms = ["fs", "docker", "ros2", "handshake", "complex", "investigate", "report"]
     lines = [f"# 多步驟維運情境：{args.model}", "", f"- 時間：{time.strftime('%Y-%m-%d %H:%M')}；{len(results)} 個情境", ""]
     for d in doms:
         rs = [r for r in results if r["domain"] == d]
@@ -118,15 +119,15 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default="gemma4:26b")
     ap.add_argument("--only", default="")
-    ap.add_argument("--set", default="main", choices=["main", "holdout", "all"],
-                    help="main：50 個情境；holdout：開發 v5 時沒有看過的 20 個保留情境；all：全部")
+    ap.add_argument("--set", default="main", choices=["main", "holdout", "inv", "all"],
+                    help="main：50 個情境；holdout：開發 v5 時沒有看過的 20 個保留情境；inv：調查與整理報告（第 5 階段）；all：全部")
     ap.add_argument("--domain", default="")
     ap.add_argument("--timeout", type=int, default=1800)
     ap.add_argument("--tag", default="")
     ap.add_argument("--keep", action="store_true")
     args = ap.parse_args()
-    pool = {"main": scenarios.SCENARIOS, "holdout": scenarios_holdout.HOLDOUT,
-            "all": scenarios.SCENARIOS + scenarios_holdout.HOLDOUT}[args.set]
+    pool = {"main": scenarios.SCENARIOS, "holdout": scenarios_holdout.HOLDOUT, "inv": scenarios_inv.INVESTIGATE,
+            "all": scenarios.SCENARIOS + scenarios_holdout.HOLDOUT + scenarios_inv.INVESTIGATE}[args.set]
     scs = [s for s in pool if (not args.only or s["id"] in args.only.split(","))
            and (not args.domain or s["domain"] in args.domain.split(","))]
     urls = sandbox.up()

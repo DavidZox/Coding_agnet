@@ -26,9 +26,9 @@ harness 送給模型的字都在這裡：改字不用改程式，存檔之後下
 | `summary/rolling.md` | 滾動摘要 session | `compression._summary_prompts` |
 | `extract/worker.md`、`synthesizer.md` | 工具回傳的提煉：分段的 worker、整合（規則） | `extract.py` |
 | `extract/inputs.md` | 提煉的 user 訊息裡程式組的標籤、程式的說明、修一次的說明 | `extract.py` |
-| `orchestra/planner.md`、`worker.md` | 任務引擎：規劃、每一步的 worker（通則） | `task_engine.py` |
-| `orchestra/profiles/<類型>.md` | 任務的類型（第一個是 ops 維運）：「# 規劃」給規劃、「# 執行」給 worker | `task_engine.parse_profile` |
-| `orchestra/engine.md` | 任務引擎組進去的部分：規劃與重排的 user 訊息、程式檢查計畫的問題、worker 的說明與提醒、對照目標的兩個問題、事實核對交回改、重試的原因 | `task_engine.py` |
+| `orchestra/planner.md`、`worker.md`、`synthesizer.md` | 任務引擎：規劃、每一步的 worker、最後的整合（通則） | `task_engine.py` |
+| `orchestra/profiles/<類型>.md` | 任務的類型：ops 維運、investigate 調查（只查不改）、report 整理報告。「# 規劃」給規劃、「# 執行」給 worker、「# 整合」給整合；frontmatter 的 `changes_state`、`synthesis`、`knowledge`（另外附上哪個類型的〈規劃〉〈執行〉當領域知識） | `task_engine.parse_profile` |
+| `orchestra/engine.md` | 任務引擎組進去的部分：選類型、規劃與重排的 user 訊息、程式檢查計畫的問題、worker 的說明與提醒、對照目標的兩個問題、事實核對交回改、重試的原因、整合的 user 訊息與核對交回改 | `task_engine.py` |
 | `orchestra/plan_edit.md` | Plan 模式用說的改草稿（只輸出要套用的操作） | `plan._plan_revise` |
 | `workflow/fill.md`、`check.md`、`inputs.md` | 工作流的判斷點：填值、選分支（規則）；user 訊息的標籤與選項 | `workflow.py` |
 | `make_skill/draft.md` | `/make_skill` 草擬工作流 | `make_skill._make_skill_prompts` |

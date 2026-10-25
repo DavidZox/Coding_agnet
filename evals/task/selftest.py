@@ -62,14 +62,16 @@ CONFIRM_WF = NOTE_WF.replace("title: 附加一行紀錄", "title: 有確認的")
 
 class FakeTask:
     """規劃（第一版、修正、重排）依序回 plans；worker 依序回 steps；收尾回 wrapups；事實的修正回 fixes；「沒有完成」時對照目標的問題回 goals；
-    Plan 模式的修改回 ops；
+    Plan 模式的修改回 ops；選類型回 picks（沒有就回 ops）；整合回 synths、整合的修正回 synth_fixes；
     主對話回 mains；其他 session 回固定文字。事實的 ref 寫 LAST＝這個 worker 最近一次工具結果的編號、FIRST＝這個任務第一次工具結果的編號
-    （前面的步驟執行的；執行時才知道）。"""
+    （前面的步驟執行的；執行時才知道）；整合的 refs 寫 R1、R2…＝這個任務第 1、2…次工具結果的編號。"""
 
-    def __init__(self, plans=(), steps=(), wrapups=(), fixes=(), ops=(), mains=(), goals=()):
+    def __init__(self, plans=(), steps=(), wrapups=(), fixes=(), ops=(), mains=(), goals=(), picks=(), synths=(), synth_fixes=()):
         self.plans, self.steps, self.wrapups, self.fixes, self.ops, self.mains, self.goals = (
             list(x) for x in (plans, steps, wrapups, fixes, ops, mains, goals))
+        self.picks, self.synths, self.synth_fixes = list(picks), list(synths), list(synth_fixes)
         self.plan_msgs, self.worker_msgs, self.fix_msgs, self.goal_msgs = [], [], [], []
+        self.pick_msgs, self.synth_msgs, self.synth_fix_msgs = [], [], []
 
     @staticmethod
     def _last_rid(messages):
@@ -95,6 +97,29 @@ class FakeTask:
                 f["ref"] = self._first_rid()
         return data
 
+    def rids(self):
+        """這個任務的工具結果編號（worker 看到的順序）。"""
+        out = []
+        for msgs in self.worker_msgs:
+            for m in msgs:
+                hit = re.match(r"\[tool result #(\d+)\]", m.get("content") or "")
+                if hit and hit.group(1) not in out:
+                    out.append(hit.group(1))
+        return out
+
+    def _synth_refs(self, data):
+        data = json.loads(json.dumps(data))
+        rids = self.rids()
+        fix = lambda refs: [rids[int(r[1:]) - 1] if re.fullmatch(r"R\d+", str(r)) and int(r[1:]) <= len(rids) else r for r in refs]   # noqa: E731
+        text = lambda t: re.sub(r"\{R(\d+)\}", lambda m: rids[int(m.group(1)) - 1] if int(m.group(1)) <= len(rids) else "?", t or "")   # noqa: E731
+        for sec in data.get("sections") or []:
+            for x in sec.get("items") or []:
+                x["refs"] = fix(x.get("refs") or [])
+                x["text"] = text(x.get("text"))
+        for x in data.get("fixes") or []:
+            x["refs"] = fix(x.get("refs") or [])
+        return data
+
     def __call__(self, model=None, messages=None, format=None, **kw):
         props = sorted((format or {}).get("properties", {})) if isinstance(format, dict) else []
         if "understanding" in props and "items" in props:
@@ -113,6 +138,15 @@ class FakeTask:
             data = self._refs(self.fixes.pop(0) if self.fixes else {"facts": [], "summary": ""}, messages)
         elif props == ["ops"]:
             data = self.ops.pop(0) if self.ops else {"ops": []}
+        elif props == ["profile", "reason"]:
+            self.pick_msgs.append(list(messages or []))
+            data = self.picks.pop(0) if self.picks else {"profile": "ops", "reason": "測試"}
+        elif props == ["sections", "title", "unknowns"]:
+            self.synth_msgs.append(list(messages or []))
+            data = self._synth_refs(self.synths.pop(0)) if self.synths else {"title": "", "sections": [], "unknowns": ""}
+        elif props == ["fixes"]:
+            self.synth_fix_msgs.append(list(messages or []))
+            data = self._synth_refs(self.synth_fixes.pop(0)) if self.synth_fixes else {"fixes": []}
         elif "action" in props:
             data = self.mains.pop(0) if self.mains else {"thought": "", "reply": "好的。", "action": None}
         else:
@@ -235,7 +269,7 @@ def t_first_step_changes(agent, ollama, tmp, home):
     saved = json.load(open(os.path.join(d, "job.json"), encoding="utf-8"))
     assert saved["status"] == "done" and saved["items"][0]["facts"], saved["items"][0]
     kinds = [json.loads(ln)["kind"] for ln in open(os.path.join(d, "calls.jsonl"), encoding="utf-8")]
-    assert kinds[:2] == ["plan", "plan_fix"] and kinds.count("worker_start") == 2 and kinds.count("worker") == 4, kinds
+    assert kinds[:3] == ["profile", "plan", "plan_fix"] and kinds.count("worker_start") == 2 and kinds.count("worker") == 4, kinds
     start = next(json.loads(ln) for ln in open(os.path.join(d, "calls.jsonl"), encoding="utf-8") if '"worker_start"' in ln)
     assert "## 這一步的技能規格" in start["messages"][0]["content"], "worker 的 system 與任務說明整份存檔"
     assert os.path.exists(os.path.join(d, "events.jsonl")) and read(os.path.join(d, "report.md")).startswith("[PASS] 任務完成")
@@ -348,6 +382,18 @@ def t_step_cap_wrapup(agent, ollama, tmp, home):
     rep = agent.run_tool(task("看設定再看目錄"))
     assert rep.startswith("[PASS] 任務完成（2/2 步") and "exposure 是 10" in rep, rep
     assert agent.task_last["items"][0]["steps"] == TASK_WORKER_MAX_STEPS + 1, agent.task_last["items"][0]["steps"]
+    # 沒做完：核對過的事實照樣留著，重排看得到（以前整個丟掉——2026-10-25 試跑 inv_fleet_report 讀到的電量沒進報告）
+    fake = FakeTask([p, plan(item("再看目錄", "看 config 底下的檔案", ["list_dir"]))],
+                    busy + busy + [step("scripts/ls_cmd.py", "config"), done("一個檔案")],
+                    wrapups=[{"done": False, "summary": "fps 還沒查到", "facts": [fact("exposure: 10")]},
+                             {"done": False, "summary": "fps 還沒查到", "facts": []}])
+    ollama.chat = fake
+    rep = agent.run_tool(task("看設定再看目錄（第二次）"))
+    first = agent.task_last["items"][0]
+    assert first["status"] == "replaced" and first["attempts"] == 2 and [f["text"] for f in first["facts"]] == ["exposure: 10"], \
+        "用完步數沒做完：核對過的事實留著；重試也沒做完時，前一次的事實不會被蓋掉"
+    assert re.search(r"exposure: 10（#\d+）", fake.plan_msgs[1][1]["content"]), "重排看得到沒做完那一步核對過的事實"
+    assert re.search(r"exposure: 10（#\d+）", rep) and "做了 10 輪還沒做完。fps 還沒查到" in rep, rep
 
 
 # ---------------------------------------------------------------- 事實的核對
@@ -469,7 +515,8 @@ def t_check_error(agent, ollama, tmp, home):
     judged = [c for c in calls if c.get("kind") == "check_error"]
     assert len(judged) == 1 and judged[0]["messages"][-1]["content"] == ask and judged[0]["item"] == 2, "問的與回答整份存檔"
     # 檢查自己寫錯（search_text 的關鍵字與路徑寫反）：做到了就算完成，不多跑 worker；報告寫明檢查出錯、程式沒有驗證
-    note = item("寫紀錄", "在 notes/out.txt 寫入 hello", ["file_ops"], True, {"skill": "search_text", "args": "notes/out.txt hello", "expect": "hello"})
+    note = item("寫紀錄", "在 notes/out.txt 寫入 hello", ["file_ops"], True,
+                {"skill": "search_text", "args": "notes/out.txt hello", "expect": r"out\.txt:\d+"})
     fake = FakeTask([plan(look, note)],
                     seen + [step("scripts/file_ops_cmd.py", 'write notes/out.txt --text "hello"'), done("寫好了")],
                     goals=[{"goal_met": True, "summary": "write 的輸出顯示已寫入 notes/out.txt；檢查把關鍵字與路徑寫反了"}])
@@ -600,6 +647,18 @@ def t_workflow_items(agent, ollama, tmp, home):
     assert "1. ✅ 附加紀錄：[PASS] 工作流 note_append（附加一行紀錄）完成" in rep and re.search(r"附加到 notes/a\.md：\[PASS\] 已附加.*（#\d+）", rep), rep
     assert "text=…：要附加的字" in fake.plan_msgs[0][1]["content"], "規劃看得到工作流每個參數的說明（格式、例子）"
     assert agent.task_last["items"][0]["workflow_job"], "工作流的紀錄在 workflow_jobs"
+    facts = agent.task_last["items"][0]["facts"]
+    assert any("讀回來" in f["text"] and "hello" in f["text"] for f in facts), "工作流每一步的事實有輸出開頭的幾行（不只「執行完成」那一行）"
+    # 工作流自己會寫 output 的檔：交回修；修一次還是這樣就不另外寫報告（以前同一個檔寫兩次——2026-10-25 cx_restart_verify）
+    both = dict(plan(item("附加紀錄", "在 notes/e.md 附加 hello", [], workflow="note_append", wargs="file=notes/e.md text=hello"),
+                     item("看目錄", "看 notes", ["list_dir"])), output={"path": "notes/e.md", "mode": "append"})
+    fake = FakeTask([both, both], [step("scripts/ls_cmd.py", "notes"), done("notes 有 e.md", [fact("e.md")])])
+    ollama.chat = fake
+    rep = agent.run_tool(task("在 notes/e.md 記一行 hello，再看 notes"), approved=True)
+    job = agent.task_last
+    assert "第 1 步要自己寫 notes/e.md" in fake.plan_msgs[1][1]["content"] and job["output"] is None, job.get("issues")
+    assert any("系統不另外寫報告" in x for x in job["issues"]) and not [x for x in job["items"] if x.get("kind") == "report"], job["issues"]
+    assert read(os.path.join(home, "notes", "e.md")).count("hello") == 1 and rep.startswith("[PASS] 任務完成（2/2 步"), rep
     # 不能放進計畫的：有【確認】、不存在、參數不對；整件事就是一個工作流 → 直接用 workflow_run
     bad = plan(item("有確認", "x", [], workflow="confirm_test", wargs="file=notes/a.md text=x"),
                item("沒有這個", "x", [], workflow="no_such_wf"), item("少參數", "x", [], workflow="note_append", wargs="file=notes/a.md"))
@@ -688,7 +747,230 @@ def t_keep_and_clear(agent, ollama, tmp, home):
     assert agent.run_tool({"action": {"command": "scripts/task_run_cmd.py", "args": ""}}).startswith("[ERROR] task_run 需要任務描述")
     assert agent.run_tool(task("ab")).startswith("[ERROR] task_run 需要任務描述")
     out = agent.run_tool({"action": {"command": "scripts/task_run_cmd.py", "args": '--profile nope "看設定再看目錄"'}})
-    assert out.startswith("[ERROR] 沒有任務類型 nope：現有的是 ops"), out
+    assert out.startswith("[ERROR] 沒有任務類型 nope：現有的是 investigate、ops、report。"), out
+
+
+# ---------------------------------------------------------------- 第 5 階段：類型、整合、程式寫報告、檢查的字在參數裡
+CAM_LOG = "08:00:01 WARN cam_driver frame drop rate 12.5%\n08:00:09 ERROR cam_driver exposure clamp at 10\n"
+
+
+def calls_kinds(agent, job):
+    return [json.loads(ln)["kind"] for ln in open(os.path.join(job_dir(agent, job), "calls.jsonl"), encoding="utf-8")]
+
+
+def t_profiles(agent, ollama, tmp, home):
+    """任務的類型：沒有指定時選一個（只填類型與理由，記在 calls.jsonl 的第一筆）；調查、整理報告附上維運的領域知識（規劃與 worker 都看得到）；
+    只查不改的類型裡要改變狀態的步驟：交回修一次，還是這樣就不執行、[ERROR] 寫明改用 --profile ops；指定了類型就不再選。"""
+    agent.guard_enabled = False
+    look = item("看設定", "看 config/cam.yaml 的 exposure", ["view_file"])
+    look2 = item("看目錄", "看 notes 底下有哪些檔案", ["list_dir"])
+    # 兩用的技能（docker_ctl）只因為目標的字（「啟動失敗」）被判成要改：調查照只查詢做，不擋整份計畫（2026-10-25 試跑時調查的計畫全被擋）
+    status = item("看容器", "用 docker_ctl status 看 cam_driver 啟動失敗的結束碼", ["docker_ctl"])
+    fake = FakeTask([plan(look, look2, status)], [step("scripts/cat_cmd.py", "config/cam.yaml"), done("exposure 是 10", [fact("exposure: 10")]),
+                                                  step("scripts/ls_cmd.py", "notes"), done("notes 是空的"),
+                                                  done("沒有 docker，查不到")],
+                    picks=[{"profile": "investigate", "reason": "只要查原因"}],
+                    synths=[{"title": "相機的設定", "sections": [{"heading": "結論", "items": [{"text": "exposure 是 10", "refs": ["R1"]}]}],
+                             "unknowns": ""}])
+    ollama.chat = fake
+    act = task("相機為什麼太暗？先不要改，查一下設定")
+    agent.guard_enabled = True                       # 確認關卡會先規劃一次（開頭只查詢：不用確認）
+    assert agent.guard_check(act) is None and fake.plan_calls == 1 and len(fake.pick_msgs) == 1
+    job0 = agent.task_job
+    assert job0["items"][2]["changes_state"] is False and not job0["items"][2].get("broken"), job0["items"][2]
+    rep = agent.run_tool(act)
+    agent.guard_enabled = False
+    job = agent.task_last
+    assert job is job0 and fake.plan_calls == 1 and len(fake.pick_msgs) == 1, "沒指定類型：確認關卡規劃好的那一份接著用，不再規劃、不再選"
+    assert job["profile"] == "investigate" and job["profile_reason"] == "只要查原因", job
+    assert "- investigate（調查）" in fake.pick_msgs[0][1]["content"] and "- report（整理報告）" in fake.pick_msgs[0][1]["content"]
+    system = fake.plan_msgs[0][0]["content"]
+    assert "## 這一類任務（調查）" in system and "## 領域知識（取自「維運」類型" in system and "**調度系統**" in system, system[-1500:]
+    wsys = fake.worker_msgs[0][0]["content"]
+    assert "## 這一類任務（調查）" in wsys and "## 領域知識（取自「維運」類型" in wsys and "不知道名稱、路徑或現況就先查" in wsys
+    kinds = calls_kinds(agent, job)
+    assert kinds[0] == "profile" and kinds.count("synth") == 1, kinds
+    assert rep.startswith("[PASS] 任務完成（3/3 步") and "## 結論" in rep and "- exposure 是 10（#" in rep, rep
+    # 只查不改的類型裡要改變狀態：交回修一次，還是這樣就不執行
+    change = item("改成 20", "把 config/cam.yaml 的 exposure 從 10 改成 20", ["file_ops"], True, CHECK20)
+    fake = FakeTask([plan(look, change), plan(look, change)], picks=[{"profile": "investigate", "reason": "查原因"}])
+    ollama.chat = fake
+    rep = agent.run_tool(task("查一下相機太暗的原因，順便把 exposure 改成 20"))
+    assert rep.startswith("[ERROR] 這個任務要改變狀態（第 2 步）") and "task_run --profile ops" in rep, rep
+    assert fake.plan_calls == 2 and "只查不改" in fake.plan_msgs[1][1]["content"] and not fake.worker_msgs
+    assert "exposure: 10" in read(os.path.join(home, "config", "cam.yaml"))
+    # 指定了類型：不再選
+    fake = FakeTask([plan(look, change)], [step("scripts/cat_cmd.py", "config/cam.yaml"), done("exposure 是 10", [fact("exposure: 10")]),
+                                           step("scripts/file_ops_cmd.py", "set config/cam.yaml exposure 20"), done("改好了")])
+    ollama.chat = fake
+    rep = agent.run_tool({"action": {"command": "scripts/task_run_cmd.py", "args": '--profile ops "把 exposure 改成 20"'}}, approved=True)
+    assert not fake.pick_msgs and agent.task_last["profile"] == "ops" and rep.startswith("[PASS] 任務完成（2/2 步"), rep
+    assert "## 結論" not in rep and "synth" not in calls_kinds(agent, agent.task_last), "維運、沒有報告檔：程式的報告就夠，不整合"
+
+
+def t_synth_findings(agent, ollama, tmp, home):
+    """調查：所有步驟做完之後整合（Synthesizer）。程式核對每一則：要有出處、出處是這個任務的工具輸出、名稱與數值在引用的輸出裡——對不上的
+    只把那幾則交回改一次（附引用的輸出裡相關的行），改好的換上、還是不行的拿掉並註明；unknowns 也核對（對不上就不留）。整合存在 job.json
+    與 calls.jsonl；給主對話的報告有〈結論〉。整合不出核對過的內容：任務標成「整合不出結論」（不是完成）。"""
+    agent.guard_enabled = False
+    with open(os.path.join(home, "notes", "cam.log"), "w", encoding="utf-8") as f:
+        f.write(CAM_LOG)
+    look = item("看設定", "看 config/cam.yaml 的 exposure", ["view_file"])
+    logs = item("看 log", "看 notes/cam.log 的警告與錯誤", ["view_file"])
+    steps = [step("scripts/cat_cmd.py", "config/cam.yaml"), done("exposure 是 10", [fact("exposure: 10")]),
+             step("scripts/cat_cmd.py", "notes/cam.log"), done("看到兩則，現在正在查詢還有沒有別的錯誤"),
+             done("有掉幀與 clamp 的錯誤", [fact("ERROR cam_driver exposure clamp at 10")])]
+    synth = {"title": "相機太暗的原因", "sections": [
+        {"heading": "結論", "items": [{"text": "exposure 設成 10 #{R1}，log 有 exposure clamp at 10 的錯誤", "refs": ["R2"]},
+                                     {"text": "cam_driver 的掉幀率 99.5%", "refs": ["R2"]}]},
+        {"heading": "根據", "items": [{"text": "cam_driver 在 08:00:01 出現 frame drop rate 12.5%", "refs": ["#99999"]},
+                                     {"text": "fps 是 30", "refs": []}, {"text": "無", "refs": []}]}],
+        "unknowns": "還不知道 gain 的設定"}
+    fixes = {"fixes": [{"n": 2, "text": "cam_driver 的掉幀率 12.5%", "refs": ["R2"]},
+                       {"n": 3, "text": "cam_driver 在 08:00:01 出現 frame drop rate 12.5%", "refs": ["R2"]},
+                       {"n": 4, "text": "", "refs": []}]}
+    fake = FakeTask([plan(look, logs, report="太暗的原因")], steps, synths=[synth], synth_fixes=[fixes])
+    ollama.chat = fake
+    rep = agent.run_tool({"action": {"command": "scripts/task_run_cmd.py", "args": '--profile investigate "相機太暗，查原因，不要改"'}})
+    job = agent.task_last
+    syn = job["synthesis"]
+    r1, r2 = fake.rids()[:2]
+    assert rep.startswith("[PASS] 任務完成（2/2 步") and "## 結論（整合各步查到的事實；每一則都核對過出處）" in rep, rep
+    assert f"- exposure 設成 10，log 有 exposure clamp at 10 的錯誤（#{r2}、#{r1}）" in rep, "句子裡夾的 #編號拿出來併進出處：" + rep
+    nudge = fake.worker_msgs[4][-1]["content"]
+    assert "你寫「正在查詢」，但這一輪沒有動作" in nudge and job["items"][1]["status"] == "done", nudge
+    assert f"- cam_driver 的掉幀率 12.5%（#{r2}）" in rep and f"- cam_driver 在 08:00:01 出現 frame drop rate 12.5%（#{r2}）" in rep, rep
+    assert "fps 是 30" not in rep and "（另外 1 則在引用的輸出裡找不到，拿掉了）" in rep, rep
+    assert "**還不確定、沒查到的**：還不知道 gain 的設定" in rep and "依〈結論〉回答使用者" in rep, rep
+    ask = fake.synth_fix_msgs[0][-1]["content"]
+    assert "第 2 則「cam_driver 的掉幀率 99.5%」" in ask and "「99.5」在" in ask and "引用的輸出裡相關的一行" in ask, ask
+    assert "第 3 則" in ask and "不是這個任務的工具輸出" in ask and "第 4 則「fps 是 30」（—）：沒有附出處" in ask, ask
+    assert syn["fixed"] == 2 and [d["text"] for d in syn["dropped"]] == ["fps 是 30"], syn
+    synth_in = fake.synth_msgs[0][1]["content"]
+    assert "【各步驟做了什麼、查到的】" in synth_in and f"- 執行：view_file config/cam.yaml → [PASS]" in synth_in and f"（#{r1}）" in synth_in, synth_in
+    assert "【規劃時說要回報的重點】太暗的原因" in synth_in and "## 這一類任務（調查）" in fake.synth_msgs[0][0]["content"]
+    saved = json.load(open(os.path.join(job_dir(agent, job), "job.json"), encoding="utf-8"))
+    assert saved["synthesis"]["sections"][0]["heading"] == "結論" and saved["status"] == "done"
+    kinds = calls_kinds(agent, job)
+    assert kinds.count("synth") == 1 and kinds.count("synth_fix") == 1, kinds
+    # 整合不出核對過的內容：不算完成；unknowns 裡對不上的名稱不留
+    bad = {"title": "x", "sections": [{"heading": "結論", "items": [{"text": "exposure 是 77", "refs": ["R1"]}]}], "unknowns": "amr_99 沒查"}
+    fake = FakeTask([plan(look, logs)], steps, synths=[bad], synth_fixes=[{"fixes": []}])
+    ollama.chat = fake
+    rep = agent.run_tool({"action": {"command": "scripts/task_run_cmd.py", "args": '--profile investigate "相機太暗，再查一次原因"'}})
+    assert rep.startswith("[PASS] 任務的步驟都做了") and "整合不出核對過出處的結論" in rep and agent.task_last["status"] == "unverified", rep
+    assert "amr_99" not in rep and "## 結論" not in rep, rep
+
+
+def t_report_file(agent, ollama, tmp, home):
+    """整理報告寫成檔案（計畫的 output）：計畫最後加一步「程式寫報告」（不派 worker）；查詢的步驟做完 → 整合、核對 → 停下來請使用者確認
+    （說明附上要寫進去的內容；只剩寫報告時不重排）→ 核准才寫：用 file_ops 寫（軌跡標了任務）、讀回來比對；報告的開頭寫報告在哪裡。
+    output 的檢查：路徑不是檔案、只查不改的類型卻排了寫檔的步驟、已經有的檔案卻是 write → 交回修。附加（append）保留原本的內容。
+    整合不出核對過的內容：不寫、不用問，那一步沒有完成。"""
+    with open(os.path.join(home, "notes", "cam.log"), "w", encoding="utf-8") as f:
+        f.write(CAM_LOG)
+    look = item("看設定", "看 config/cam.yaml 的 exposure 與 fps", ["view_file"])
+    logs = item("看 log", "看 notes/cam.log 的警告與錯誤", ["view_file"])
+    writer = item("寫報告", "把結果寫進 reports/cam.md", ["file_ops"], True)
+    bad = dict(plan(look, logs, writer), output={"path": "reports/", "mode": "write"})
+    good = dict(plan(look, logs), output={"path": "reports/cam.md", "mode": "write"})
+    synth = {"title": "相機現況", "sections": [{"heading": "設定", "items": [{"text": "exposure 是 10、fps 是 30", "refs": ["R1"]}]},
+                                               {"heading": "log", "items": [{"text": "08:00:09 ERROR exposure clamp at 10", "refs": ["R2"]}]}],
+             "unknowns": ""}
+    steps = [step("scripts/cat_cmd.py", "config/cam.yaml"), done("exposure 10、fps 30", [fact("exposure: 10")]),
+             step("scripts/cat_cmd.py", "notes/cam.log"), done("有一則錯誤", [fact("ERROR cam_driver exposure clamp at 10")])]
+    fake = FakeTask([bad, good], steps, synths=[synth])
+    ollama.chat = fake
+    act = {"action": {"command": "scripts/task_run_cmd.py", "args": '--profile report "整理相機的現況（設定與 log 的錯誤），寫成 reports/cam.md"'}}
+    assert agent.guard_check(act) is None, "開頭只查詢：開始時不用確認"
+    fix = fake.plan_msgs[1][1]["content"]
+    assert "不是檔案的路徑" in fix and "只查不改" in fix, fix
+    job = agent.task_job
+    assert [it.get("kind") for it in job["items"]] == [None, None, "report"] and job["output"] == {"path": "reports/cam.md", "mode": "write"}
+    assert "3. 把報告寫成 reports/cam.md（⚠️ 會改變狀態；系統依核對過的事實寫" in agent.task_plan_text(job)
+    out = agent.run_tool(act)
+    assert out.startswith("[PASS] ⏸️ 任務") and fake.plan_calls == 2, "只剩寫報告：不重排"
+    assert not os.path.exists(os.path.join(home, "reports", "cam.md")), "確認之前不寫"
+    cont = agent.take_task_continuation()
+    guard = agent.guard_check(cont)
+    assert guard and "會改變狀態的是 第 3 步 把報告寫成 reports/cam.md" in guard["reason"], guard
+    assert "要寫進 reports/cam.md 的內容：" in guard["reason"] and "- exposure 是 10、fps 是 30（#" in guard["reason"], guard["reason"]
+    rep = agent.run_tool(cont, approved=True)
+    assert rep.startswith("[PASS] 任務完成（3/3 步") and "：報告寫在 reports/cam.md" in rep.splitlines()[0], rep
+    text = read(os.path.join(home, "reports", "cam.md"))
+    r1, r2 = fake.rids()[:2]
+    assert text.startswith("# 相機現況\n") and f"## 設定\n- exposure 是 10、fps 是 30（#{r1}）" in text, text
+    assert f"## log\n- 08:00:09 ERROR exposure clamp at 10（#{r2}）" in text, text
+    assert "程式讀回 reports/cam.md：內容跟核對過的報告一樣" in rep and "## 報告（整合各步查到的事實" in rep, rep
+    assert len(fake.synth_msgs) == 1, "確認前整合過一次，寫的時候不再整合"
+    rec = [r for r in agent.trajectory if r.get("script") == "file_ops_cmd.py"]
+    assert rec and rec[-1]["task_job"] == job["id"], "程式寫報告也在軌跡上標了任務"
+    # 附加：原本的內容保留；已經有的檔案寫 write → 交回修。維運的任務（第一步就要改）開始時確認整份，含寫報告
+    with open(os.path.join(home, "notes", "ops.md"), "w", encoding="utf-8") as f:
+        f.write("# 紀錄\n- 舊的一筆\n")
+    change = item("改成 20", "把 config/cam.yaml 的 exposure 從 10 改成 20", ["file_ops"], True, CHECK20)
+    p1 = dict(plan(change), output={"path": "notes/ops.md", "mode": "write"})
+    p2 = dict(plan(change), output={"path": "notes/ops.md", "mode": "append"})
+    fake = FakeTask([p1, p2], [step("scripts/file_ops_cmd.py", "set config/cam.yaml exposure 20"), done("改好了", [fact("exposure: 10 → 20")])],
+                    synths=[{"title": "改相機的 exposure", "sections": [{"heading": "處理", "items": [{"text": "exposure 從 10 改成 20", "refs": ["R1"]}]}],
+                             "unknowns": ""}])
+    ollama.chat = fake
+    act = {"action": {"command": "scripts/task_run_cmd.py", "args": '--profile ops "把 exposure 改成 20，在 notes/ops.md 記一筆"'}}
+    guard = agent.guard_check(act)
+    assert guard and "第 2 步 把報告附加到 notes/ops.md" in guard["reason"] and "已經存在" in fake.plan_msgs[1][1]["content"], guard
+    rep = agent.run_tool(act, approved=True)
+    text = read(os.path.join(home, "notes", "ops.md"))
+    assert rep.startswith("[PASS] 任務完成（2/2 步") and text.startswith("# 紀錄\n- 舊的一筆\n## 改相機的 exposure\n"), (rep, text)
+    assert "### 處理\n- exposure 從 10 改成 20（#" in text and "內容跟核對過的報告一樣" in rep, text
+    # 整合不出核對過的內容：不寫、不用問
+    fake = FakeTask([dict(plan(look, logs), output={"path": "reports/empty.md", "mode": "write"})], steps,
+                    synths=[{"title": "x", "sections": [{"heading": "y", "items": [{"text": "exposure 是 77", "refs": ["R1"]}]}], "unknowns": ""}])
+    ollama.chat = fake
+    rep = agent.run_tool({"action": {"command": "scripts/task_run_cmd.py", "args": '--profile report "整理相機的現況，寫成 reports/empty.md"'}})
+    assert rep.startswith("[ERROR] 任務沒有做完：第 3 步沒有完成") and "整合不出核對過的內容，報告檔沒有寫" in rep, rep
+    assert not os.path.exists(os.path.join(home, "reports", "empty.md")) and agent.take_task_continuation() is None
+    # 讀回來跟要寫的不一樣（寫完之後被改了）：不算完成，標成檢查沒過
+    original = agent._run_tool_once
+
+    def tamper(parsed, approved=False):
+        res = original(parsed, approved)
+        if "reports/cam2.md" in str((parsed.get("action") or {}).get("args")):
+            with open(os.path.join(home, "reports", "cam2.md"), "a", encoding="utf-8") as f:
+                f.write("（被別人改過）\n")
+        return res
+    agent._run_tool_once = tamper
+    fake = FakeTask([dict(plan(look, logs), output={"path": "reports/cam2.md", "mode": "write"})], steps, synths=[synth])
+    ollama.chat = fake
+    agent.guard_enabled = False
+    rep = agent.run_tool({"action": {"command": "scripts/task_run_cmd.py", "args": '--profile report "整理相機的現況，寫成 reports/cam2.md"'}})
+    agent._run_tool_once = original
+    assert rep.startswith("[PASS] 任務的步驟都做了") and "第 3 步做完之後的檢查沒有通過" in rep, rep
+    assert "程式讀回 reports/cam2.md：內容跟要寫的不一樣" in rep and agent.task_last["items"][2]["status"] == "unverified", rep
+
+
+def t_expect_in_args(agent, ollama, tmp, home):
+    """待辦 26：計畫的檢查要看到的字就在檢查的參數裡（輸出的開頭照列參數，一定找得到）→ 交回規劃改；改好了照新的檢查，修一次還是這樣
+    就不用那個檢查、報告寫明沒有驗證（以前照樣「檢查通過」：2026-10-25 cx_incident_timeline 的 expect「timeline」落在檔名上）。"""
+    agent.guard_enabled = False
+    look = item("看設定", "看 config/cam.yaml 的 exposure", ["view_file"])
+    weak = {"skill": "view_file", "args": "notes/cam_timeline.md", "expect": "timeline"}
+    good = {"skill": "view_file", "args": "notes/cam_timeline.md", "expect": "exposure: 10"}
+    w1 = item("寫時間線", "把 exposure 寫進 notes/cam_timeline.md", ["file_ops"], True, weak)
+    w2 = item("寫時間線", "把 exposure 寫進 notes/cam_timeline.md", ["file_ops"], True, good)
+    steps = [step("scripts/cat_cmd.py", "config/cam.yaml"), done("exposure 是 10", [fact("exposure: 10")]),
+             step("scripts/file_ops_cmd.py", 'write notes/cam_timeline.md --text "exposure: 10"'), done("寫好了")]
+    fake = FakeTask([plan(look, w1), plan(look, w2)], steps)
+    ollama.chat = fake
+    rep = agent.run_tool(task("看 exposure，寫一行到 notes/cam_timeline.md"))
+    assert "要看到的「timeline」就在檢查的參數（notes/cam_timeline.md）裡" in fake.plan_msgs[1][1]["content"], fake.plan_msgs[1][1]["content"]
+    it = agent.task_last["items"][1]
+    assert it["check"] == good and "→ 有「exposure: 10」" in rep and rep.startswith("[PASS] 任務完成"), rep
+    fake = FakeTask([plan(look, w1), plan(look, w1)], steps)
+    ollama.chat = fake
+    rep = agent.run_tool(task("看 exposure，再寫一次 notes/cam_timeline.md"))
+    it = agent.task_last["items"][1]
+    assert it["check"] is None and "要找的字就在參數裡，看不出做完了沒，沒有驗證" in rep, rep
+
 
 
 def main():
@@ -706,7 +988,11 @@ def main():
                      ("做不了的計畫不執行（要改卻沒有技能、技能都不存在）；要寫檔卻沒列 file_ops 交回修；Plan 模式擋核准", t_broken_plans),
                      ("工作流的步驟：交給工作流的執行器；有【確認】、不存在、參數不對的不能放；整件事就是一個工作流時交回主對話；名稱寫在 skills、參數用逗號的照整理", t_workflow_items),
                      ("Plan 模式：任務引擎規劃草稿、/plan 指令、用說的改、核准後照計畫做（不再確認、不重排）、取消、自己列", t_plan_mode),
-                     ("存檔只留最近幾次；/clear 清掉等確認的任務；參數錯誤、沒有這個類型", t_keep_and_clear)]:
+                     ("存檔只留最近幾次；/clear 清掉等確認的任務；參數錯誤、沒有這個類型", t_keep_and_clear),
+                     ("類型：沒指定時選一個（記在 calls.jsonl）；調查、整理報告附維運的領域知識；只查不改的類型要改狀態就不執行；指定了不再選", t_profiles),
+                     ("整合（調查）：每一則附出處、程式核對；對不上的只交回那幾則改一次，還是不行就拿掉；unknowns 也核對；整合不出內容不算完成", t_synth_findings),
+                     ("報告檔由程式寫（output）：查完整合 → 確認附內容 → file_ops 寫、讀回比對；output 的檢查；附加保留原本的；沒有內容不寫", t_report_file),
+                     ("檢查的字就在檢查的參數裡（待辦 26）：交回規劃改；修一次還是這樣就不用那個檢查、報告寫沒有驗證", t_expect_in_args)]:
         scenario(name, fn, results)
     failed = [r for r in results if not r[1]]
     for name, _, tb in failed:

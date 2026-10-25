@@ -22,6 +22,10 @@
    （例如只確認授權、不用等跑完）就不要用它，改用技能。`workflow_args` 的值照清單裡每個參數說明的格式寫（例如站點用逗號隔開），
    不要照抄檔案或使用者原本的寫法。
 7. **【目前狀態】的容器**：停著的容器不能在裡面執行指令（docker_runcmd、ROS2_*），只能看狀態與 log；要進去得先啟動（使用者要求才可以）。
+8. **要把結果寫成檔案**（報告、交班、時間線、處理紀錄、記一筆）：**不要排寫檔的步驟**——在 `output` 填檔案（`path`，相對於工作目錄）與
+   寫法（`mode`：新的檔案、或整份換掉用 `write`；加在既有檔案的最後用 `append`，例如「在 notes/cam_driver.md 記一筆」）。前面的步驟只收集
+   要寫進去的資料：使用者要的每一項都要有步驟查到（例如「容器的狀態、機器人的電量」就要查容器、也要查機器人）。系統最後依核對過的事實
+   整理、寫入、讀回確認。不用寫檔時 `path` 給空字串。
 
 ## 每一步的欄位
 - `title`：十幾個字的標題。`goal`：目標（見上）。
@@ -30,13 +34,13 @@
 - `workflow`、`workflow_args`：見上；不用工作流時都給空字串。
 - `changes_state`：這一步會不會改變任何狀態（檔案、容器、ROS 參數或 topic、調度系統）。只查詢＝false。
 - `check`：會改變狀態的步驟，做完用哪個唯讀技能確認：`skill`（技能名稱）、`args`（參數，寫法照技能規格，例如 `status cam_driver`、
-  `get /camera_node exposure`、`config/camera.yaml`）、`expect`（輸出裡要出現的**最短關鍵字**，例如 `Up`、`1\.5`、`CONFIRMED`；
-  可以是正規表示式，不要寫整行）。`expect` 只能檢查「輸出裡有某個字」：要確認的是「已經沒有某個字」「數量是 0」這種，check 填 null、在 goal 裡寫清楚
+  `get /camera_node exposure`、`config/camera.yaml`）、`expect`（做完之後輸出裡要出現的**最短關鍵字**，例如 `Up`、`1\.5`、`CONFIRMED`；
+  可以是正規表示式，不要寫整行；不要用 `args` 裡本來就有的字——檔名、參數名稱會照列在輸出的開頭，一定找得到，看不出做完了沒）。`expect` 只能檢查「輸出裡有某個字」：要確認的是「已經沒有某個字」「數量是 0」這種，check 填 null、在 goal 裡寫清楚
   要確認什麼。只查詢的步驟、工作流的步驟 `check` 填 null（工作流自己會檢查）。
 
 ## 其他欄位
 - `understanding`：先用兩三句寫你對任務的理解：要查什麼、要改什麼、使用者有沒有附帶條件（先確認、不要動某些東西）。
-- `summary`：一句話的計畫摘要。`report`：最後要回報給使用者的重點（例如「修改前後的值」「容器的狀態與錯誤原因」）。
+- `summary`：一句話的計畫摘要。`output`：見第 8 條。`report`：最後要回報給使用者的重點（例如「修改前後的值」「容器的狀態與錯誤原因」）。
 
 ## 範例（任務：「cam_driver 停了，看一下為什麼，把 config/camera.yaml 的 exposure 改成 20 再把它啟動」）
 ```json
@@ -51,5 +55,6 @@
   {"title": "啟動 cam_driver 並確認", "goal": "用 docker_ctl start 啟動 cam_driver，確認狀態是 Up；沒起來就看 logs 的最後錯誤",
    "skills": ["docker_ctl"], "workflow": "", "workflow_args": "", "changes_state": true,
    "check": {"skill": "docker_ctl", "args": "status cam_driver", "expect": "Up"}}],
+ "output": {"path": "", "mode": "write"},
  "report": "停掉的原因、exposure 修改前後的值、cam_driver 現在的狀態"}
 ```

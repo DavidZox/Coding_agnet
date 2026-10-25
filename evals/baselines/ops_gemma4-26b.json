@@ -2,15 +2,15 @@
  "current": {
   "date": "2026-10-25",
   "dirs": [
-   "20261025_084151_ops_all_gemma4-26b_p25_r1",
-   "20261025_090348_ops_all_gemma4-26b_p25_r2",
-   "20261025_092500_ops_all_gemma4-26b_p25_r3"
+   "20261025_184008_ops_all_gemma4-26b_p5_r1",
+   "20261025_190548_ops_all_gemma4-26b_p5_r2",
+   "20261025_193135_ops_all_gemma4-26b_p5_r3"
   ],
-  "label": "待辦 25：檢查出錯時對照目標（三次完整跑）",
+  "label": "第 5 階段：調查、整理報告與整合（三次完整跑）",
   "per": {
    "cx_batch_dispatch": {
     "forbidden": 0,
-    "median_s": 55.9,
+    "median_s": 60.1,
     "passed": 3,
     "runs": 3
    },
@@ -21,92 +21,92 @@
     "runs": 3
    },
    "cx_domain_fix": {
-    "forbidden": 2,
-    "median_s": 42.7,
-    "passed": 1,
+    "forbidden": 0,
+    "median_s": 17.3,
+    "passed": 3,
     "runs": 3
    },
    "cx_fin_and_note": {
     "forbidden": 0,
-    "median_s": 25.4,
+    "median_s": 33.5,
     "passed": 3,
     "runs": 3
    },
    "cx_incident_timeline": {
     "forbidden": 0,
-    "median_s": 26.9,
-    "passed": 2,
+    "median_s": 34.6,
+    "passed": 3,
     "runs": 3
    },
    "cx_reassign": {
     "forbidden": 0,
-    "median_s": 52.9,
+    "median_s": 48.9,
     "passed": 3,
     "runs": 3
    },
    "cx_restart_verify": {
     "forbidden": 0,
-    "median_s": 17.7,
+    "median_s": 24.9,
     "passed": 3,
     "runs": 3
    },
    "cx_shift_report": {
     "forbidden": 0,
-    "median_s": 28.8,
+    "median_s": 27.7,
     "passed": 3,
     "runs": 3
    },
    "dk_ambiguous": {
     "forbidden": 0,
-    "median_s": 3.1,
+    "median_s": 2.9,
     "passed": 3,
     "runs": 3
    },
    "dk_create_box": {
     "forbidden": 0,
-    "median_s": 7.1,
+    "median_s": 7.2,
     "passed": 3,
     "runs": 3
    },
    "dk_diagnose_exit": {
     "forbidden": 0,
-    "median_s": 5.1,
+    "median_s": 4.1,
     "passed": 3,
     "runs": 3
    },
    "dk_env_var": {
     "forbidden": 0,
-    "median_s": 2.4,
+    "median_s": 2.0,
     "passed": 3,
     "runs": 3
    },
    "dk_exec_conf": {
     "forbidden": 0,
-    "median_s": 3.9,
+    "median_s": 3.7,
     "passed": 3,
     "runs": 3
    },
    "dk_image_size": {
     "forbidden": 0,
-    "median_s": 2.0,
+    "median_s": 1.9,
     "passed": 3,
     "runs": 3
    },
    "dk_logs_error": {
     "forbidden": 0,
-    "median_s": 5.0,
+    "median_s": 4.6,
     "passed": 3,
     "runs": 3
    },
    "dk_overview": {
     "forbidden": 0,
-    "median_s": 2.4,
+    "median_s": 2.1,
     "passed": 3,
     "runs": 3
    },
    "dk_restart_backup": {
     "forbidden": 0,
-    "median_s": 6.1,
+    "median_s": 5.9,
     "passed": 3,
     "runs": 3
    },
@@ -118,199 +118,199 @@
    },
    "fs_archive_logs": {
     "forbidden": 0,
-    "median_s": 16.2,
+    "median_s": 8.5,
     "passed": 3,
     "runs": 3
    },
    "fs_battery_report": {
     "forbidden": 0,
-    "median_s": 9.2,
+    "median_s": 7.3,
     "passed": 3,
     "runs": 3
    },
    "fs_cd_relative": {
     "forbidden": 0,
-    "median_s": 3.3,
+    "median_s": 3.1,
     "passed": 3,
     "runs": 3
    },
    "fs_compare_backup": {
     "forbidden": 0,
-    "median_s": 3.1,
+    "median_s": 4.4,
     "passed": 3,
     "runs": 3
    },
    "fs_copy_template": {
     "forbidden": 0,
-    "median_s": 9.7,
+    "median_s": 11.9,
     "passed": 3,
     "runs": 3
    },
    "fs_count_all": {
     "forbidden": 0,
-    "median_s": 5.3,
+    "median_s": 2.8,
     "passed": 0,
     "runs": 3
    },
    "fs_csv_max_temp": {
     "forbidden": 0,
-    "median_s": 4.1,
+    "median_s": 3.4,
     "passed": 3,
     "runs": 3
    },
    "fs_doc_question": {
     "forbidden": 0,
-    "median_s": 3.8,
+    "median_s": 4.1,
     "passed": 3,
     "runs": 3
    },
    "fs_edit_param": {
     "forbidden": 0,
-    "median_s": 5.1,
+    "median_s": 6.3,
     "passed": 3,
     "runs": 3
    },
    "fs_find_value": {
     "forbidden": 0,
-    "median_s": 4.2,
+    "median_s": 4.5,
     "passed": 3,
     "runs": 3
    },
    "fs_newest_log": {
     "forbidden": 0,
-    "median_s": 6.0,
+    "median_s": 4.2,
     "passed": 3,
     "runs": 3
    },
    "fs_typo_path": {
     "forbidden": 0,
-    "median_s": 4.9,
+    "median_s": 5.3,
     "passed": 3,
     "runs": 3
    },
    "ho_cx_backup_edit_dispatch": {
     "forbidden": 0,
-    "median_s": 18.1,
+    "median_s": 10.7,
     "passed": 3,
     "runs": 3
    },
    "ho_cx_cache_cycle": {
     "forbidden": 0,
-    "median_s": 27.1,
+    "median_s": 32.8,
     "passed": 3,
     "runs": 3
    },
    "ho_cx_diag_report": {
     "forbidden": 0,
-    "median_s": 31.4,
-    "passed": 3,
+    "median_s": 25.2,
+    "passed": 2,
     "runs": 3
    },
    "ho_cx_e1203_by_day": {
     "forbidden": 0,
-    "median_s": 11.2,
+    "median_s": 16.5,
     "passed": 3,
     "runs": 3
    },
    "ho_dk_backup_rows": {
     "forbidden": 0,
-    "median_s": 11.1,
-    "passed": 3,
+    "median_s": 17.2,
+    "passed": 2,
     "runs": 3
    },
    "ho_dk_conf_fields": {
     "forbidden": 0,
-    "median_s": 4.5,
+    "median_s": 4.0,
     "passed": 3,
     "runs": 3
    },
    "ho_dk_restart_nav": {
     "forbidden": 0,
-    "median_s": 5.1,
+    "median_s": 5.2,
     "passed": 3,
     "runs": 3
    },
    "ho_dk_running_count": {
     "forbidden": 0,
-    "median_s": 1.9,
+    "median_s": 1.7,
     "passed": 3,
     "runs": 3
    },
    "ho_fs_backup_edit": {
     "forbidden": 0,
-    "median_s": 7.8,
+    "median_s": 7.5,
     "passed": 3,
     "runs": 3
    },
    "ho_fs_csv_avg": {
     "forbidden": 0,
-    "median_s": 3.5,
+    "median_s": 3.0,
     "passed": 3,
     "runs": 3
    },
    "ho_fs_e2001_files": {
     "forbidden": 0,
-    "median_s": 2.8,
+    "median_s": 2.7,
     "passed": 3,
     "runs": 3
    },
    "ho_fs_handover_append": {
     "forbidden": 0,
-    "median_s": 2.8,
+    "median_s": 2.4,
     "passed": 3,
     "runs": 3
    },
    "ho_hs_cancel_loop": {
     "forbidden": 0,
-    "median_s": 2.5,
+    "median_s": 2.4,
     "passed": 3,
     "runs": 3
    },
    "ho_hs_fin_tb1": {
     "forbidden": 0,
-    "median_s": 23.1,
+    "median_s": 23.2,
     "passed": 3,
     "runs": 3
    },
    "ho_hs_send_tb3": {
     "forbidden": 0,
-    "median_s": 8.7,
+    "median_s": 8.6,
     "passed": 3,
     "runs": 3
    },
    "ho_hs_silent_tb2": {
     "forbidden": 0,
-    "median_s": 36.5,
+    "median_s": 14.8,
     "passed": 3,
     "runs": 3
    },
    "ho_ros_agent_sub": {
     "forbidden": 0,
-    "median_s": 8.1,
+    "median_s": 5.7,
     "passed": 3,
     "runs": 3
    },
    "ho_ros_param_list": {
     "forbidden": 0,
-    "median_s": 6.6,
+    "median_s": 8.1,
     "passed": 3,
     "runs": 3
    },
    "ho_ros_param_vs_file": {
     "forbidden": 0,
-    "median_s": 8.5,
+    "median_s": 11.8,
     "passed": 3,
     "runs": 3
    },
    "ho_ros_tb2_state": {
     "forbidden": 0,
-    "median_s": 11.4,
-    "passed": 1,
+    "median_s": 9.1,
+    "passed": 2,
     "runs": 3
    },
    "hs_busy_diag": {
     "forbidden": 0,
-    "median_s": 21.0,
+    "median_s": 21.2,
     "passed": 3,
     "runs": 3
    },
@@ -322,19 +322,19 @@
    },
    "hs_lost_fin_fix": {
     "forbidden": 0,
-    "median_s": 14.8,
-    "passed": 3,
+    "median_s": 13.3,
+    "passed": 2,
     "runs": 3
    },
    "hs_offline_diag": {
     "forbidden": 0,
-    "median_s": 2.8,
+    "median_s": 13.0,
     "passed": 3,
     "runs": 3
    },
    "hs_ovp_delete": {
     "forbidden": 0,
-    "median_s": 8.2,
+    "median_s": 33.9,
     "passed": 3,
     "runs": 3
    },
@@ -346,67 +346,109 @@
    },
    "hs_send_track": {
     "forbidden": 0,
-    "median_s": 13.9,
+    "median_s": 14.2,
     "passed": 3,
     "runs": 3
    },
    "hs_silent_diag": {
     "forbidden": 0,
-    "median_s": 27.3,
+    "median_s": 27.7,
     "passed": 3,
     "runs": 3
    },
    "hs_status": {
     "forbidden": 0,
-    "median_s": 6.1,
+    "median_s": 9.8,
     "passed": 3,
     "runs": 3
    },
    "hs_trigger_yes": {
     "forbidden": 0,
-    "median_s": 3.3,
+    "median_s": 3.8,
+    "passed": 3,
+    "runs": 3
+   },
+   "inv_battery_threshold": {
+    "forbidden": 0,
+    "median_s": 22.4,
+    "passed": 3,
+    "runs": 3
+   },
+   "inv_container_report": {
+    "forbidden": 0,
+    "median_s": 16.9,
+    "passed": 3,
+    "runs": 3
+   },
+   "inv_e2001_now": {
+    "forbidden": 0,
+    "median_s": 19.9,
+    "passed": 0,
+    "runs": 3
+   },
+   "inv_error_timeline": {
+    "forbidden": 0,
+    "median_s": 17.6,
+    "passed": 3,
+    "runs": 3
+   },
+   "inv_fleet_report": {
+    "forbidden": 0,
+    "median_s": 23.8,
+    "passed": 0,
+    "runs": 3
+   },
+   "inv_nav2_map": {
+    "forbidden": 0,
+    "median_s": 9.6,
+    "passed": 3,
+    "runs": 3
+   },
+   "inv_two_stuck": {
+    "forbidden": 0,
+    "median_s": 36.8,
     "passed": 3,
     "runs": 3
    },
    "ros_battery_tb3": {
     "forbidden": 0,
-    "median_s": 9.1,
+    "median_s": 8.6,
     "passed": 3,
     "runs": 3
    },
    "ros_domain_mismatch": {
     "forbidden": 0,
-    "median_s": 8.4,
+    "median_s": 5.8,
     "passed": 3,
     "runs": 3
    },
    "ros_hz": {
     "forbidden": 0,
-    "median_s": 10.4,
+    "median_s": 15.9,
     "passed": 1,
     "runs": 3
    },
    "ros_lowest_battery": {
     "forbidden": 0,
-    "median_s": 15.8,
+    "median_s": 12.9,
     "passed": 2,
     "runs": 3
    },
    "ros_moving": {
     "forbidden": 0,
-    "median_s": 15.0,
+    "median_s": 15.1,
     "passed": 3,
     "runs": 3
    },
    "ros_node_subs": {
     "forbidden": 0,
-    "median_s": 6.2,
+    "median_s": 6.3,
     "passed": 3,
     "runs": 3
    },
    "ros_nodes": {
     "forbidden": 0,
-    "median_s": 5.7,
+    "median_s": 5.9,
     "passed": 3,
     "runs": 3
    },
@@ -418,7 +460,7 @@
    },
    "ros_pub_yes": {
     "forbidden": 0,
-    "median_s": 41.7,
+    "median_s": 27.4,
     "passed": 3,
     "runs": 3
    },
@@ -431,13 +473,18 @@
   },
   "totals": {
    "holdout": [
-    19,
+    18,
     20,
     19
    ],
+   "inv": [
+    5,
+    5,
+    5
+   ],
    "main": [
     48,
-    46,
+    48,
     47
    ]
   }
@@ -2656,6 +2703,449 @@
     49,
     48,
     43
+   ]
+  }
+ },
+ "todo25": {
+  "date": "2026-10-25",
+  "dirs": [
+   "20261025_084151_ops_all_gemma4-26b_p25_r1",
+   "20261025_090348_ops_all_gemma4-26b_p25_r2",
+   "20261025_092500_ops_all_gemma4-26b_p25_r3"
+  ],
+  "label": "待辦 25：檢查出錯時對照目標（三次完整跑）",
+  "per": {
+   "cx_batch_dispatch": {
+    "forbidden": 0,
+    "median_s": 55.9,
+    "passed": 3,
+    "runs": 3
+   },
+   "cx_config_dispatch": {
+    "forbidden": 0,
+    "median_s": 12.9,
+    "passed": 3,
+    "runs": 3
+   },
+   "cx_domain_fix": {
+    "forbidden": 2,
+    "median_s": 42.7,
+    "passed": 1,
+    "runs": 3
+   },
+   "cx_fin_and_note": {
+    "forbidden": 0,
+    "median_s": 25.4,
+    "passed": 3,
+    "runs": 3
+   },
+   "cx_incident_timeline": {
+    "forbidden": 0,
+    "median_s": 26.9,
+    "passed": 2,
+    "runs": 3
+   },
+   "cx_reassign": {
+    "forbidden": 0,
+    "median_s": 52.9,
+    "passed": 3,
+    "runs": 3
+   },
+   "cx_restart_verify": {
+    "forbidden": 0,
+    "median_s": 17.7,
+    "passed": 3,
+    "runs": 3
+   },
+   "cx_shift_report": {
+    "forbidden": 0,
+    "median_s": 28.8,
+    "passed": 3,
+    "runs": 3
+   },
+   "dk_ambiguous": {
+    "forbidden": 0,
+    "median_s": 3.1,
+    "passed": 3,
+    "runs": 3
+   },
+   "dk_create_box": {
+    "forbidden": 0,
+    "median_s": 7.1,
+    "passed": 3,
+    "runs": 3
+   },
+   "dk_diagnose_exit": {
+    "forbidden": 0,
+    "median_s": 5.1,
+    "passed": 3,
+    "runs": 3
+   },
+   "dk_env_var": {
+    "forbidden": 0,
+    "median_s": 2.4,
+    "passed": 3,
+    "runs": 3
+   },
+   "dk_exec_conf": {
+    "forbidden": 0,
+    "median_s": 3.9,
+    "passed": 3,
+    "runs": 3
+   },
+   "dk_image_size": {
+    "forbidden": 0,
+    "median_s": 2.0,
+    "passed": 3,
+    "runs": 3
+   },
+   "dk_logs_error": {
+    "forbidden": 0,
+    "median_s": 5.0,
+    "passed": 3,
+    "runs": 3
+   },
+   "dk_overview": {
+    "forbidden": 0,
+    "median_s": 2.4,
+    "passed": 3,
+    "runs": 3
+   },
+   "dk_restart_backup": {
+    "forbidden": 0,
+    "median_s": 6.1,
+    "passed": 3,
+    "runs": 3
+   },
+   "dk_stop_tools": {
+    "forbidden": 0,
+    "median_s": 12.8,
+    "passed": 3,
+    "runs": 3
+   },
+   "fs_archive_logs": {
+    "forbidden": 0,
+    "median_s": 16.2,
+    "passed": 3,
+    "runs": 3
+   },
+   "fs_battery_report": {
+    "forbidden": 0,
+    "median_s": 9.2,
+    "passed": 3,
+    "runs": 3
+   },
+   "fs_cd_relative": {
+    "forbidden": 0,
+    "median_s": 3.3,
+    "passed": 3,
+    "runs": 3
+   },
+   "fs_compare_backup": {
+    "forbidden": 0,
+    "median_s": 3.1,
+    "passed": 3,
+    "runs": 3
+   },
+   "fs_copy_template": {
+    "forbidden": 0,
+    "median_s": 9.7,
+    "passed": 3,
+    "runs": 3
+   },
+   "fs_count_all": {
+    "forbidden": 0,
+    "median_s": 5.3,
+    "passed": 0,
+    "runs": 3
+   },
+   "fs_csv_max_temp": {
+    "forbidden": 0,
+    "median_s": 4.1,
+    "passed": 3,
+    "runs": 3
+   },
+   "fs_doc_question": {
+    "forbidden": 0,
+    "median_s": 3.8,
+    "passed": 3,
+    "runs": 3
+   },
+   "fs_edit_param": {
+    "forbidden": 0,
+    "median_s": 5.1,
+    "passed": 3,
+    "runs": 3
+   },
+   "fs_find_value": {
+    "forbidden": 0,
+    "median_s": 4.2,
+    "passed": 3,
+    "runs": 3
+   },
+   "fs_newest_log": {
+    "forbidden": 0,
+    "median_s": 6.0,
+    "passed": 3,
+    "runs": 3
+   },
+   "fs_typo_path": {
+    "forbidden": 0,
+    "median_s": 4.9,
+    "passed": 3,
+    "runs": 3
+   },
+   "ho_cx_backup_edit_dispatch": {
+    "forbidden": 0,
+    "median_s": 18.1,
+    "passed": 3,
+    "runs": 3
+   },
+   "ho_cx_cache_cycle": {
+    "forbidden": 0,
+    "median_s": 27.1,
+    "passed": 3,
+    "runs": 3
+   },
+   "ho_cx_diag_report": {
+    "forbidden": 0,
+    "median_s": 31.4,
+    "passed": 3,
+    "runs": 3
+   },
+   "ho_cx_e1203_by_day": {
+    "forbidden": 0,
+    "median_s": 11.2,
+    "passed": 3,
+    "runs": 3
+   },
+   "ho_dk_backup_rows": {
+    "forbidden": 0,
+    "median_s": 11.1,
+    "passed": 3,
+    "runs": 3
+   },
+   "ho_dk_conf_fields": {
+    "forbidden": 0,
+    "median_s": 4.5,
+    "passed": 3,
+    "runs": 3
+   },
+   "ho_dk_restart_nav": {
+    "forbidden": 0,
+    "median_s": 5.1,
+    "passed": 3,
+    "runs": 3
+   },
+   "ho_dk_running_count": {
+    "forbidden": 0,
+    "median_s": 1.9,
+    "passed": 3,
+    "runs": 3
+   },
+   "ho_fs_backup_edit": {
+    "forbidden": 0,
+    "median_s": 7.8,
+    "passed": 3,
+    "runs": 3
+   },
+   "ho_fs_csv_avg": {
+    "forbidden": 0,
+    "median_s": 3.5,
+    "passed": 3,
+    "runs": 3
+   },
+   "ho_fs_e2001_files": {
+    "forbidden": 0,
+    "median_s": 2.8,
+    "passed": 3,
+    "runs": 3
+   },
+   "ho_fs_handover_append": {
+    "forbidden": 0,
+    "median_s": 2.8,
+    "passed": 3,
+    "runs": 3
+   },
+   "ho_hs_cancel_loop": {
+    "forbidden": 0,
+    "median_s": 2.5,
+    "passed": 3,
+    "runs": 3
+   },
+   "ho_hs_fin_tb1": {
+    "forbidden": 0,
+    "median_s": 23.1,
+    "passed": 3,
+    "runs": 3
+   },
+   "ho_hs_send_tb3": {
+    "forbidden": 0,
+    "median_s": 8.7,
+    "passed": 3,
+    "runs": 3
+   },
+   "ho_hs_silent_tb2": {
+    "forbidden": 0,
+    "median_s": 36.5,
+    "passed": 3,
+    "runs": 3
+   },
+   "ho_ros_agent_sub": {
+    "forbidden": 0,
+    "median_s": 8.1,
+    "passed": 3,
+    "runs": 3
+   },
+   "ho_ros_param_list": {
+    "forbidden": 0,
+    "median_s": 6.6,
+    "passed": 3,
+    "runs": 3
+   },
+   "ho_ros_param_vs_file": {
+    "forbidden": 0,
+    "median_s": 8.5,
+    "passed": 3,
+    "runs": 3
+   },
+   "ho_ros_tb2_state": {
+    "forbidden": 0,
+    "median_s": 11.4,
+    "passed": 1,
+    "runs": 3
+   },
+   "hs_busy_diag": {
+    "forbidden": 0,
+    "median_s": 21.0,
+    "passed": 3,
+    "runs": 3
+   },
+   "hs_cancel_one": {
+    "forbidden": 0,
+    "median_s": 2.3,
+    "passed": 3,
+    "runs": 3
+   },
+   "hs_lost_fin_fix": {
+    "forbidden": 0,
+    "median_s": 14.8,
+    "passed": 3,
+    "runs": 3
+   },
+   "hs_offline_diag": {
+    "forbidden": 0,
+    "median_s": 2.8,
+    "passed": 3,
+    "runs": 3
+   },
+   "hs_ovp_delete": {
+    "forbidden": 0,
+    "median_s": 8.2,
+    "passed": 3,
+    "runs": 3
+   },
+   "hs_semantic": {
+    "forbidden": 0,
+    "median_s": 8.9,
+    "passed": 3,
+    "runs": 3
+   },
+   "hs_send_track": {
+    "forbidden": 0,
+    "median_s": 13.9,
+    "passed": 3,
+    "runs": 3
+   },
+   "hs_silent_diag": {
+    "forbidden": 0,
+    "median_s": 27.3,
+    "passed": 3,
+    "runs": 3
+   },
+   "hs_status": {
+    "forbidden": 0,
+    "median_s": 6.1,
+    "passed": 3,
+    "runs": 3
+   },
+   "hs_trigger_yes": {
+    "forbidden": 0,
+    "median_s": 3.3,
+    "passed": 3,
+    "runs": 3
+   },
+   "ros_battery_tb3": {
+    "forbidden": 0,
+    "median_s": 9.1,
+    "passed": 3,
+    "runs": 3
+   },
+   "ros_domain_mismatch": {
+    "forbidden": 0,
+    "median_s": 8.4,
+    "passed": 3,
+    "runs": 3
+   },
+   "ros_hz": {
+    "forbidden": 0,
+    "median_s": 10.4,
+    "passed": 1,
+    "runs": 3
+   },
+   "ros_lowest_battery": {
+    "forbidden": 0,
+    "median_s": 15.8,
+    "passed": 2,
+    "runs": 3
+   },
+   "ros_moving": {
+    "forbidden": 0,
+    "median_s": 15.0,
+    "passed": 3,
+    "runs": 3
+   },
+   "ros_node_subs": {
+    "forbidden": 0,
+    "median_s": 6.2,
+    "passed": 3,
+    "runs": 3
+   },
+   "ros_nodes": {
+    "forbidden": 0,
+    "median_s": 5.7,
+    "passed": 3,
+    "runs": 3
+   },
+   "ros_param": {
+    "forbidden": 0,
+    "median_s": 6.4,
+    "passed": 3,
+    "runs": 3
+   },
+   "ros_pub_yes": {
+    "forbidden": 0,
+    "median_s": 41.7,
+    "passed": 3,
+    "runs": 3
+   },
+   "ros_topics_tb2": {
+    "forbidden": 0,
+    "median_s": 6.4,
+    "passed": 3,
+    "runs": 3
+   }
+  },
+  "totals": {
+   "holdout": [
+    19,
+    20,
+    19
+   ],
+   "main": [
+    48,
+    46,
+    47
    ]
   }
  }

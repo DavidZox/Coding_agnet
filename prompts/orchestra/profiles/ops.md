@@ -2,8 +2,10 @@
 type: Profile
 name: ops
 title: 維運
-description: 檔案、容器、ROS 2、調度系統的多步驟維運任務：查原因、改設定、重新啟動、派工作包、處理交握、寫紀錄
-version: 0.2.0
+description: 要改變狀態的多步驟維運任務（檔案、容器、ROS 2、調度系統）：改設定、重新啟動、派工作包、處理交握（可以先查原因再處理）、處理完寫紀錄
+changes_state: true
+synthesis: none
+version: 0.3.0
 ---
 
 # 規劃
@@ -18,3 +20,8 @@ version: 0.2.0
 # 執行
 - 檔案先在目前的工作目錄找，不要假設在容器裡；路徑相對於目前的工作目錄。
 - 不知道名稱、路徑或現況就先查（list_dir、find_file、view_file、docker_ctl status、ROS2_param get、workpackage_status…）。
+
+# 整合
+（要寫處理紀錄、報告檔時才用到。）
+- 處理紀錄（記一筆、處理經過）：原因（查到的）、做了什麼（哪一個動作、改了什麼、前後的值）、結果（做完之後檢查看到的），使用者指定的
+  每一個欄位都要有；一則寫一件事。時間由系統寫在開頭，不用另外寫一則。

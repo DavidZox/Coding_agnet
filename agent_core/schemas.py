@@ -201,15 +201,57 @@ _TASK_ITEM = {
     "required": ["title", "goal", "skills", "workflow", "workflow_args", "changes_state", "check"],
 }
 
+# 使用者要把結果寫成檔案（報告、紀錄、交班）時的檔案與寫法：不排寫檔的步驟，系統最後依核對過的內容寫（path 空的＝不用寫檔）
+_TASK_OUTPUT = {
+    "type": "object",
+    "properties": {"path": _text(200), "mode": {"type": "string", "enum": ["write", "append"]}},
+    "required": ["path", "mode"],
+}
+
 TASK_PLAN_SCHEMA = {
     "type": "object",
     "properties": {
         "understanding": _text(400),
         "summary": _text(200),
         "items": {"type": "array", "maxItems": 6, "items": _TASK_ITEM},
+        "output": _TASK_OUTPUT,
         "report": _text(300),
     },
-    "required": ["understanding", "summary", "items", "report"],
+    "required": ["understanding", "summary", "items", "output", "report"],
+}
+
+
+def task_profile_schema(names):
+    """沒有指定任務類型時選一個（只填類型與一句理由）：enum 是現有的類型。"""
+    return {"type": "object", "properties": {"profile": {"type": "string", "enum": list(names)}, "reason": _text(200)},
+            "required": ["profile", "reason"]}
+
+
+# 整合（Synthesizer）：所有步驟做完之後依核對過的事實寫結論或報告。每一則附出處（工具輸出的 #編號），程式核對名稱與數值在引用的
+# 輸出裡；unknowns 是還不確定、沒查到的（也核對）。欄位順序＝生成順序：先分節寫每一則，最後寫不確定的
+_TASK_SYNTH_ITEM = {"type": "object", "properties": {"text": _text(300), "refs": {"type": "array", "maxItems": 4, "items": _text(12)}},
+                    "required": ["text", "refs"]}
+TASK_SYNTH_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "title": _text(80),
+        "sections": {"type": "array", "maxItems": 6, "items": {
+            "type": "object",
+            "properties": {"heading": _text(40), "items": {"type": "array", "maxItems": 12, "items": _TASK_SYNTH_ITEM}},
+            "required": ["heading", "items"]}},
+        "unknowns": _text(600),
+    },
+    "required": ["title", "sections", "unknowns"],
+}
+
+# 整合的核對不過時交回改一次：只輸出那幾則（n＝交回時的編號）改正後的內容，找不到根據的 text 給空字串（拿掉）
+TASK_SYNTH_FIX_SCHEMA = {
+    "type": "object",
+    "properties": {"fixes": {"type": "array", "maxItems": 20, "items": {
+        "type": "object",
+        "properties": {"n": {"type": "integer"}, "text": _text(300), "refs": {"type": "array", "maxItems": 4, "items": _text(12)}},
+        "required": ["n", "text", "refs"]}}},
+    "required": ["fixes"],
 }
 
 # worker 回報的事實：每條附出處（這一步執行過的工具結果 #編號），程式核對名稱與數值在那份輸出裡找得到

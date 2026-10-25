@@ -39,11 +39,14 @@ from .config import (GUARDED_SKILLS, NUM_CTX, PROMPTS_DIR, SKILL_DOC_PREFIX, TAS
 from .extract import missing_tokens
 from .jobstore import JobStore
 from .protocol import action_text, parse_agent_reply
-from .schemas import (TASK_FACTS_FIX_SCHEMA, TASK_GOAL_CHECK_SCHEMA, TASK_PLAN_SCHEMA, TASK_WORKER_REPLY_SCHEMA,
-                      TASK_WORKER_WRAPUP_SCHEMA)
+from .turn_guard import _PROMISE_RE
+from .schemas import (TASK_FACTS_FIX_SCHEMA, TASK_GOAL_CHECK_SCHEMA, TASK_PLAN_SCHEMA, TASK_SYNTH_FIX_SCHEMA, TASK_SYNTH_SCHEMA,
+                      TASK_WORKER_REPLY_SCHEMA, TASK_WORKER_WRAPUP_SCHEMA, task_profile_schema)
 
 _DIR = os.path.join(PROMPTS_DIR, "orchestra")
 DEFAULT_PROFILE = "ops"
+REPORT_KIND = "report"                 # 程式加在計畫最後的一步：依核對過的內容寫報告檔（計畫的 output），不派 worker
+SYNTH_MAX_ITEMS = 30                   # 整合最多留幾則（給主對話與寫進檔案的）
 TASK_SCRIPT = "scripts/task_run_cmd.py"
 _ENGINE = "orchestra/engine.md"   # 程式組進給模型的字：標籤、程式檢查的問題、提醒、對照目標的問題（_t 取一則）
 # 每一步都可以用的技能（查詢、找名稱、切換目錄或目標容器）；其中有些也能改變狀態（docker_ctl restart、ROS2_param set…），
@@ -72,6 +75,8 @@ _START_WORDS = re.compile(r"重新啟動|重啟|啟動|開起來|restart|start",
 # 使用者提到這些文件時，要先讀那份文件再排要改的步驟（不替使用者假設文件寫了什麼）
 _DOC_WORDS = re.compile(r"手冊|規定|規範|守則|規則|說明書|SOP|README", re.I)
 _FAILED_RE = re.compile(r"^\s*(❌|沒有完成|未完成|無法完成|做不到)")
+# worker 說還在做、接著要做（「現在正在查詢…」「接下來我會讀…」）卻沒有動作：不是做完了（主對話的同一種提醒在 turn_guard._PROMISE_RE）
+_STILL_WORKING = re.compile(_PROMISE_RE.pattern + r"|(?:正在|開始|準備)\s*(?:幫你|為你)?\s*(?:查詢|查看|查|檢查|確認|讀取|讀|看|搜尋|尋找|找|列出|分析|整理)")
 _RID = re.compile(r"#?\s*(\d+)")
 _STATUS_TEXT = {"done": "完成", "unverified": "做完了但檢查沒過", "failed": "沒有完成", "pending": "沒有執行", "skipped": "沒有做",
                 "replaced": "沒有做成，重排了剩下的步驟"}
@@ -136,9 +141,74 @@ def _mentions_change(text):
     return False
 
 
+def _writes_path(it, path, definite=False):
+    """這一步自己會寫這個檔。definite＝一定會寫：工作流的參數裡有這個路徑（工作流照規格寫，規劃拿不掉）；
+    不是 definite 時也算用寫檔的技能、目標裡寫了這個路徑的（可能是備份、讀，只當成交回規劃的提醒）。"""
+    if it.get("workflow"):
+        return path in " ".join([it.get("workflow_args") or ""] + [str(v) for v in (it.get("inputs") or {}).values()])
+    return not definite and bool(set(it["skills"]) & _WRITE_SKILLS) and path in f"{it['title']} {it['goal']}"
+
+
+def _expect_in_args(check):
+    """檢查要看到的字（正規表示式；不合法就當字串，不分大小寫，同 TaskRun.check）在檢查的參數裡就找得到。"""
+    expect, args = check.get("expect") or "", check.get("args") or ""
+    try:
+        return bool(re.search(expect, args, re.I))
+    except re.error:
+        return expect.lower() in args.lower()
+
+
+_PLACEHOLDER = re.compile(r"[（(]?\s*(無|沒有|不適用|未知|n/?a|none|unknown|—+|-+)\s*[)）]?[。.]?", re.I)
+_INLINE_RID = re.compile(r"\s*[（(]?\s*#(\d+)(?:\s*[、,，]\s*#(\d+))*\s*[)）]?")
+
+
+def _synth_item(text, refs):
+    """整合的一則 → (句子, 出處)：句子裡夾的 #編號（「…Up #3」「…（#4、#6）」）拿出來併進出處，排版時出處另外附在最後。"""
+    refs = [str(r).strip() for r in refs or [] if str(r).strip()][:4]
+    text = " ".join(str(text or "").split())
+    inline = [m for m in re.findall(r"#(\d+)", "".join(x.group(0) for x in _INLINE_RID.finditer(text)))]
+    have = {m.group(1) for m in (_RID.search(r) for r in refs) if m}
+    refs += [r for r in dict.fromkeys(inline) if r not in have][:max(0, 4 - len(refs))]
+    text = _INLINE_RID.sub("", text).strip(" ，,；;")
+    if _PLACEHOLDER.fullmatch(text):
+        return "", refs                              # 「無」「unknown」這種佔位的一則：不是內容，不算拿掉
+    return text, refs
+
+
+def synth_count(syn):
+    """整合裡核對過的則數（沒有整合是 0）。"""
+    return sum(len(s["items"]) for s in (syn or {}).get("sections") or [])
+
+
+def _refs_text(refs):
+    out = []
+    for r in refs or []:
+        m = _RID.search(str(r))
+        if m and f"#{m.group(1)}" not in out:
+            out.append(f"#{m.group(1)}")
+    return "、".join(out)
+
+
+def synth_markdown(job, syn, append=False):
+    """整合的結果 → 報告檔的 Markdown（程式排版；每一則後面附出處）。append＝附加到既有的檔案（標題降一級）。"""
+    h1, h2 = ("##", "###") if append else ("#", "##")
+    lines = [f"{h1} {syn.get('title') or job['task'][:60]}", "",
+             f"（{time.strftime('%Y-%m-%d %H:%M')} 由任務 {job['id']} 整理；每一則都核對過出處，括號裡的 #編號是工具輸出的存檔）", ""]
+    for sec in syn.get("sections") or []:
+        lines.append(f"{h2} {sec['heading'] or '內容'}")
+        lines += [f"- {x['text']}（{_refs_text(x['refs'])}）" for x in sec["items"]]
+        lines.append("")
+    if syn.get("unknowns"):
+        lines += [f"{h2} 還不確定、沒查到的", syn["unknowns"], ""]
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def parse_profile(text, name):
-    """prompts/orchestra/profiles/<名稱>.md → {name, title, description, plan, work}。frontmatter 照 OKF（type: Profile）；
-    「# 規劃」一節給規劃 session，「# 執行」一節給 worker。"""
+    """prompts/orchestra/profiles/<名稱>.md → {name, title, description, changes_state, synthesis, plan, work, synth}。frontmatter 照 OKF
+    （type: Profile）：knowledge＝另外附上哪幾個類型的〈規劃〉〈執行〉當領域知識（調查、整理報告用維運的：在哪裡找、用哪個技能查）；
+    changes_state: false＝只查不改（計畫裡要改變狀態的步驟由程式擋下；寫報告檔例外，見 output）；synthesis：最後要不要
+    整合——findings＝依查到的事實寫結論、report＝寫成報告、none（預設）＝程式的報告就夠（要寫報告檔時照樣整合）。
+    「# 規劃」一節給規劃 session，「# 執行」一節給 worker，「# 整合」一節給整合的 session。"""
     meta, body = {}, text or ""
     if body.startswith("---"):
         parts = body.split("---", 2)
@@ -153,8 +223,12 @@ def parse_profile(text, name):
         head, _, content = sec.partition("\n")
         if head.strip():
             sections[head.strip()] = content.strip()
+    synthesis = meta.get("synthesis", "none").strip().lower()
     return {"name": meta.get("name") or name, "title": meta.get("title") or name, "description": meta.get("description", ""),
-            "type": meta.get("type", ""), "plan": sections.get("規劃", ""), "work": sections.get("執行", "")}
+            "type": meta.get("type", ""), "changes_state": meta.get("changes_state", "true").strip().lower() != "false",
+            "synthesis": synthesis if synthesis in ("findings", "report") else "none",
+            "knowledge": [k.strip() for k in re.split(r"[,，、\s]+", meta.get("knowledge", "")) if k.strip() and k.strip() != name],
+            "plan": sections.get("規劃", ""), "work": sections.get("執行", ""), "synth": sections.get("整合", "")}
 
 
 class TaskMixin:
@@ -176,6 +250,32 @@ class TaskMixin:
             return None
         text = _read(os.path.join("profiles", f"{name}.md"))
         return parse_profile(text, name) if text else None
+
+    def _task_pick_profile(self, task):
+        """沒有指定類型（--profile）時選一個：只有一種就是它；有好幾種時問一次（task_profile_schema：enum 只有現有的類型、一句理由）。
+        回傳 (類型, {"reason", "record"} 或 None)；問不出來用 DEFAULT_PROFILE。record 等工作有編號之後記進 calls.jsonl。"""
+        profiles = self.task_profiles()
+        default = self.load_task_profile(DEFAULT_PROFILE) or (profiles[0] if profiles else
+                                                             {"name": DEFAULT_PROFILE, "title": DEFAULT_PROFILE, "description": "",
+                                                              "changes_state": True, "synthesis": "none", "plan": "", "work": "", "synth": ""})
+        if len(profiles) < 2:
+            return default, None
+        listing = "\n".join(_t("profile_pick_item", name=p["name"], title=p["title"], description=p["description"]) for p in profiles)
+        messages = [{"role": "system", "content": _t("profile_pick_system")},
+                    {"role": "user", "content": _t("profile_pick_user", profiles=listing, task=task)}]
+        raw, data, err = "", None, None
+        t0 = time.time()
+        try:
+            res = self._timed_chat("task_profile", model=self.model, messages=messages, format=task_profile_schema([p["name"] for p in profiles]),
+                                   options={"temperature": 0.0, "num_ctx": NUM_CTX, "num_predict": 512}, think=False)
+            raw = res["message"]["content"]
+            data = json.loads(raw)
+        except Exception as e:   # noqa: BLE001  問不出來：用預設的類型
+            err = f"{type(e).__name__}: {e}"
+        chosen = next((p for p in profiles if isinstance(data, dict) and p["name"] == data.get("profile")), None)
+        record = {"kind": "profile", "seconds": round(time.time() - t0, 1), "response": raw, "error": err, "messages": messages}
+        return chosen or default, {"reason": _one_line((data or {}).get("reason") if isinstance(data, dict) else "", 200)
+                                   if chosen else f"沒有選出類型，用預設的 {default['name']}", "record": record}
 
     def _task_store(self):
         return JobStore(os.path.join(self.script_dir, "logs", TASK_JOBS_DIRNAME))
@@ -279,9 +379,21 @@ class TaskMixin:
         return raw, (data if isinstance(data, dict) else None)
 
     # ---------------------------------------------------------------- 計畫：清理與程式檢查
-    def _task_item(self, raw, n):
+    def _task_item(self, raw, n, profile=None):
         """模型（或使用者）給的一步 → 清理過的 item 與問題清單。做不了的一步標 broken（工作流不存在、有【確認】、參數不對；
-        要改變狀態卻沒有可以用的技能；列的技能全都不存在）：修一次還是這樣，整份計畫不執行（_task_broken）。"""
+        要改變狀態卻沒有可以用的技能；列的技能全都不存在；只查不改的類型裡要改變狀態）：修一次還是這樣，整份計畫不執行（_task_broken）。"""
+        it, issues = self._task_item_raw(raw, n)
+        if profile and not profile.get("changes_state", True) and it["changes_state"]:
+            if it.get("changes_by") == "words":
+                # 兩用的技能（docker_ctl、rmf_handshake…）只因為目標的字（「啟動失敗」「是否一直回 no」）被判成要改：調查的目標常這樣寫
+                # （2026-10-25 試跑：inv_two_stuck、inv_nav2_map 的計畫全被擋）。只查不改的類型照只查詢做——worker 本來就改不了
+                it["changes_state"] = False
+            else:
+                it["broken"] = it["readonly_blocked"] = True
+                issues.append(_t("issue_readonly_profile", n=n, title=profile["title"]))
+        return it, issues
+
+    def _task_item_raw(self, raw, n):
         issues = []
         names = set(self.task_skill_names())
         workflows = {w["name"] for w in self.list_workflows()}
@@ -335,10 +447,13 @@ class TaskMixin:
         if write and not set(skills) & _WRITE_SKILLS:
             issues.append(_t("issue_write_needs_file_ops", n=n, path=_PATH.search(goal).group(0)))
         changes = it["changes_state"]
+        it["changes_by"] = "plan" if changes else ""
         if any(s in GUARDED_SKILLS and s not in TASK_ALWAYS_READ for s in skills):
             changes = True                           # file_ops、ROS2_topic_pub、workpackage_send…：一定會改變狀態
+            it["changes_by"] = it["changes_by"] or "skill"
         elif not changes and _mentions_change(f"{title} {goal}") and any(s in GUARDED_SKILLS for s in skills):
             changes = True                           # 兩用的技能（docker_ctl restart、ROS2_param set…）而目標寫了要改
+            it["changes_by"] = "words"
         it["changes_state"] = changes
         check = raw.get("check") if isinstance(raw.get("check"), dict) else None
         if check and changes:
@@ -346,21 +461,62 @@ class TaskMixin:
             check = {"skill": cs, "args": str(check.get("args") or "").strip(), "expect": str(check.get("expect") or "").strip()}
             if cs not in names:
                 issues.append(_t("issue_unknown_check_skill", n=n, skill=cs))
+            elif check["expect"] and _expect_in_args(check):
+                # 要看到的字就在檢查的參數裡：輸出的開頭本來就照列參數（view_file 的檔名、ROS2_param 的名稱），一定找得到，
+                # 檢查不出做完了沒（待辦 26，2026-10-25 cx_incident_timeline：expect「timeline」落在 reports/<報告> 的檔名上）。
+                # 交回規劃改；修一次還是這樣就不用這個檢查，報告寫「沒有驗證」
+                issues.append(_t("issue_expect_in_args", n=n, expect=check["expect"], args=check["args"]))
+                it["check_note"] = f"計畫寫的檢查（{cs} {check['args']} 要看到「{check['expect']}」）要找的字就在參數裡，看不出做完了沒，沒有驗證"
             elif check["expect"]:
                 it["check"] = check
         return it, issues
 
-    def _task_clean(self, data, start=1):
+    def _task_clean(self, data, start=1, profile=None):
         items, issues = [], []
         for raw in (data or {}).get("items") or []:
             if not isinstance(raw, dict) or not (raw.get("title") or raw.get("goal") or raw.get("workflow")):
                 continue
-            it, problems = self._task_item(raw, start + len(items))
+            it, problems = self._task_item(raw, start + len(items), profile)
             items.append(it)
             issues += problems
         if len(items) > TASK_MAX_ITEMS:
             issues.append(_t("issue_too_many_steps", count=len(items), max=TASK_MAX_ITEMS))
         return items[:TASK_MAX_ITEMS], issues
+
+    def _task_output(self, data, items, done=(), accepted=None):
+        """計畫的 output（要寫的報告檔）→ ({path, mode} 或 None, 問題清單)。報告檔由程式最後依核對過的內容寫（REPORT_KIND 那一步），
+        所以：路徑要是工作目錄裡的檔案、已經有的檔案要說清楚是附加還是整份換掉；不能另外排一步自己寫同一個檔；要先有收集資料的步驟。"""
+        out = (data or {}).get("output") if isinstance((data or {}).get("output"), dict) else {}
+        path = str(out.get("path") or "").strip().strip("\"'`")
+        if not path:
+            return None, []
+        mode = "append" if str(out.get("mode") or "").strip() == "append" else "write"
+        issues = []
+        full = os.path.join(self.current_cwd, os.path.expanduser(path))
+        if path.endswith(("/", "\\")) or os.path.isdir(full) or not re.search(r"[^/\\]\.[A-Za-z0-9]{1,6}$", path):
+            issues.append(_t("issue_output_not_file", path=path))
+            return None, issues
+        if mode == "write" and os.path.isfile(full) and accepted != {"path": path, "mode": mode}:
+            issues.append(_t("issue_output_exists", path=path))   # 重排時照原本接受過的寫法就不再問
+        for it in items:
+            if _writes_path(it, path):
+                issues.append(_t("issue_output_written_by_step", n=it["n"], path=path))
+        if not items and not list(done):
+            issues.append(_t("issue_output_needs_steps", path=path))
+        return {"path": path, "mode": mode}, issues
+
+    def _task_place_report(self, job):
+        """計畫有 output 時，最後一步是程式寫報告（每次規劃、重排之後重新接在最後；已經寫過的不再加）。"""
+        items = [it for it in job["items"] if not (it.get("kind") == REPORT_KIND and it["status"] == "pending")]
+        out = job.get("output")
+        if out and not any(it.get("kind") == REPORT_KIND for it in items):
+            verb = "附加到" if out["mode"] == "append" else "寫成"
+            items.append({"n": len(items) + 1, "kind": REPORT_KIND, "title": f"把報告{verb} {out['path']}"[:60],
+                          "goal": f"系統依前面各步核對過的事實整理報告，{verb} {out['path']}（每一則附出處，程式核對）",
+                          "skills": ["file_ops"], "workflow": "", "workflow_args": "", "inputs": {}, "changes_state": True,
+                          "check": None, "approved": False, "status": "pending", "summary": "", "facts": [], "dropped": [],
+                          "attempts": 0, "steps": 0, "evidence": "", "calls": [], "output": dict(out)})
+        job["items"] = items
 
     def _task_issues(self, job, items, containers, done=()):
         """程式看得出來的前提問題（交回規劃 session 修）：在停著的容器裡做事、使用者提到的文件沒有先讀。"""
@@ -390,54 +546,90 @@ class TaskMixin:
         return issues
 
     # ---------------------------------------------------------------- 規劃（第一版）與重排
+    def _task_knowledge(self, profile, part):
+        """類型的 knowledge：別的類型的〈規劃〉或〈執行〉（part＝plan／work）當領域知識附在後面。"""
+        out = []
+        for name in profile.get("knowledge") or []:
+            base = self.load_task_profile(name)
+            if base and base.get(part):
+                out.append("\n\n" + _t("knowledge_header", title=base["title"]) + "\n" + base[part])
+        return "".join(out)
+
     def _task_planner_system(self, profile):
-        return _read("planner.md") + (f"\n\n## 這一類任務（{profile['title']}）\n{profile['plan']}" if profile.get("plan") else "")
+        return (_read("planner.md") + ("\n\n" + _t("worker_profile_header", title=profile["title"]) + "\n" + profile["plan"]
+                                       if profile.get("plan") else "") + self._task_knowledge(profile, "plan"))
 
     def _task_plan_call(self, job, profile, user, kind):
-        """規劃（或重排）一次；有程式檢查出的問題就帶著問題交回修一次。回傳 (data, items, issues)。"""
+        """規劃（或重排）一次；有程式檢查出的問題就帶著問題交回修一次。回傳 (data, items, issues, output)。"""
         system = self._task_planner_system(profile)
         containers, why = self._task_containers()
-        start = sum(1 for it in job["items"] if it["status"] != "pending") + 1
         done = [it for it in job["items"] if it["status"] != "pending"]
+        start = len(done) + 1
         user = user.replace("{ENV}", self._task_env_text(containers, why))
+
+        def clean(d):
+            its, iss = self._task_clean(d, start, profile)
+            iss += self._task_issues(job, its, containers, done)
+            out, iss2 = self._task_output(d, its, done, job.get("output"))
+            return its, iss + iss2, out
+
         _, data = self._task_call(job, kind, [{"role": "system", "content": system}, {"role": "user", "content": user}], TASK_PLAN_SCHEMA)
         job["plan_calls"] = job.get("plan_calls", 0) + 1
-        items, issues = self._task_clean(data, start)
-        issues += self._task_issues(job, items, containers, done)
+        items, issues, output = clean(data)
         if issues and data is not None:
-            fix = _t("plan_fix", plan=user, previous=json.dumps({"items": data.get("items")}, ensure_ascii=False)[:4000],
+            fix = _t("plan_fix", plan=user, previous=json.dumps({"items": data.get("items"), "output": data.get("output")},
+                                                                 ensure_ascii=False)[:4000],
                      issues="\n".join(f"- {x}" for x in issues))
             _, data2 = self._task_call(job, kind + "_fix", [{"role": "system", "content": system}, {"role": "user", "content": fix}],
                                        TASK_PLAN_SCHEMA)
             job["plan_calls"] += 1
-            items2, issues2 = self._task_clean(data2, start)
-            issues2 += self._task_issues(job, items2, containers, done)
+            items2, issues2, output2 = clean(data2)
             score = lambda its, iss: (len(_task_broken(its)), len(iss))   # noqa: E731  做不了的步驟少的優先，再看問題的數量
             if items2 and score(items2, issues2) <= score(items, issues):
-                data, items, issues = data2, items2, issues2
-        return data, items, issues
+                data, items, issues, output = data2, items2, issues2, output2
+        writers = [it for it in items if output and _writes_path(it, output["path"], definite=True)]
+        if writers:
+            # 修一次之後還是有步驟自己寫這個檔（多半是工作流自己會寫紀錄，規劃拿不掉）：不另外寫報告，不然同一個檔寫兩次
+            # （2026-10-25 階段驗證 cx_restart_verify：container_restart_verify 工作流記了一筆，程式又附加了一份）
+            issues.append(_t("issue_output_dropped", n=writers[0]["n"], path=output["path"]))
+            output = None
+        return data, items, issues, output
 
     def task_plan(self, task, profile_name=None, mode="auto"):
         """第一版計畫 → (job, 錯誤)。mode：auto＝task_run（只有一步的任務不用規劃，回錯誤）；plan＝Plan 模式的草稿（使用者自己看、改）。"""
         task = " ".join((task or "").strip().strip('"').strip("'").split())
         if len(task) < 4:
             return None, "[ERROR] task_run 需要任務描述：args 填使用者的原話。"
-        profile = self.load_task_profile(profile_name or DEFAULT_PROFILE)
-        if not profile:
-            names = "、".join(p["name"] for p in self.task_profiles()) or "（沒有）"
-            return None, f"[ERROR] 沒有任務類型 {profile_name}：現有的是 {names}。下一步：不帶 --profile，或照這幾個名稱寫。"
+        t0 = time.time()
+        picked = None
+        if profile_name:
+            profile = self.load_task_profile(profile_name)
+            if not profile:
+                names = "、".join(p["name"] for p in self.task_profiles()) or "（沒有）"
+                return None, f"[ERROR] 沒有任務類型 {profile_name}：現有的是 {names}。下一步：不帶 --profile（系統會選），或照這幾個名稱寫。"
+        else:
+            profile, picked = self._task_pick_profile(task)
         store = self._task_store()
         job = {"id": store.new_id(profile["name"]), "profile": profile["name"], "task": task, "mode": mode, "status": "planning",
                "items": [], "plans": [], "replans": 0, "plan_calls": 0, "model_calls": 0, "seconds": 0.0,
                "created": time.strftime("%Y-%m-%d %H:%M:%S"), "model": self.model}
+        if picked:                                   # 選類型的那一次呼叫：有了工作編號才記得進 calls.jsonl
+            job["profile_reason"] = picked.get("reason", "")
+            job["model_calls"] += 1
+            try:
+                store.append(job["id"], "calls.jsonl", picked["record"])
+            except OSError:
+                pass
         self._task_note(job, f"🧭 任務（{profile['title']}）：規劃中…")
-        t0 = time.time()
         user = _t("plan_user", skills=self._task_catalog(), workflows=self._task_workflow_catalog(), task=task)   # {ENV}：_task_plan_call 換
-        data, items, issues = self._task_plan_call(job, profile, user, "plan")
+        data, items, issues, output = self._task_plan_call(job, profile, user, "plan")
         job["seconds"] += round(time.time() - t0, 1)
-        job.update(items=items, issues=issues, status="draft" if mode == "plan" else "planned",
+        job.update(items=items, issues=issues, status="draft" if mode == "plan" else "planned", output=output,
                    understanding=_one_line((data or {}).get("understanding"), 400), summary=_one_line((data or {}).get("summary"), 200),
                    report_focus=_one_line((data or {}).get("report"), 300))
+        if items:
+            self._task_place_report(job)
+            items = job["items"]
         job["plans"].append({"version": 1, "why": "第一版", "items": [it["title"] for it in items], "issues": issues})
         self._task_save(job)
         if not items:
@@ -446,6 +638,10 @@ class TaskMixin:
         broken = _task_broken(items)
         if broken and mode == "auto":
             # 修一次還是有做不了的步驟：不照著做（以前照做，worker 找不到工具、做滿 10 輪才失敗——2026-10-24 cx_batch_dispatch）
+            if any(it.get("readonly_blocked") for it in broken):
+                return None, (f"[ERROR] 這個任務要改變狀態（第 {'、'.join(str(it['n']) for it in broken if it.get('readonly_blocked'))} 步），"
+                              f"但選的類型是{profile['title']}（只查不改），這次沒有執行任何步驟。下一步：要改的話用 "
+                              f"task_run --profile {DEFAULT_PROFILE} \"<任務>\"；只要查的話照原話再交給 task_run（說清楚只查不改）。")
             return None, (f"[ERROR] 規劃出來的計畫有做不了的步驟（第 {'、'.join(str(it['n']) for it in broken)} 步：{'；'.join(issues)[:600]}），"
                           f"這次沒有執行任何步驟。下一步：這個任務直接用技能一步一步做，或把要做的事說得更具體再交給 task_run。")
         if mode == "auto" and len(items) == 1:
@@ -463,15 +659,17 @@ class TaskMixin:
         """剩下的步驟交回規劃 session 重排（先查完、或某一步失敗之後）：看得到前面核對過的事實。重排出步驟就取代剩下的；
         規劃不出來就保留原本的。allow_empty：查完之後可以「不用再做什麼」（items 空的）；失敗之後重排出空的＝沒有辦法，不算換了計畫。
         回傳是否換了計畫。"""
-        profile = self.load_task_profile(job["profile"]) or {"title": job["profile"], "plan": ""}
+        profile = self.load_task_profile(job["profile"]) or {"title": job["profile"], "plan": "", "changes_state": True}
         done = [it for it in job["items"] if it["status"] != "pending"]
-        rest = [it for it in job["items"] if it["status"] == "pending"]
+        rest = [it for it in job["items"] if it["status"] == "pending" and it.get("kind") != REPORT_KIND]
         self._task_note(job, f"🧭 {why}：照前面查到的事實重排剩下的步驟…")
+        out = job.get("output")
         user = _t("replan_user", skills=self._task_catalog(), workflows=self._task_workflow_catalog(), task=job["task"],
                   done=self._task_facts_text(done), why=why,
-                  rest="\n".join(_t("replan_rest_item", title=it["title"], goal=it["goal"]) for it in rest) or _t("replan_rest_none"))
+                  rest="\n".join(_t("replan_rest_item", title=it["title"], goal=it["goal"]) for it in rest) or _t("replan_rest_none"),
+                  output=_t("replan_output", path=out["path"], mode=out["mode"]) if out else _t("replan_output_none"))
         t0 = time.time()
-        data, items, issues = self._task_plan_call(job, profile, user, "replan")
+        data, items, issues, output = self._task_plan_call(job, profile, user, "replan")
         job["seconds"] += round(time.time() - t0, 1)
         job["replans"] += 1
         if data is None or (not items and not allow_empty) or _task_broken(items):
@@ -479,6 +677,9 @@ class TaskMixin:
                                  "issues": ["規劃 session 沒有給出可以執行的新步驟，保留原本的"] + issues})
             return False
         job["items"] = done + items
+        if output:                                   # 重排可以改報告檔；沒寫就照原本的（使用者要的檔案不因為重排就不寫）
+            job["output"] = output
+        self._task_place_report(job)
         if data.get("report"):
             job["report_focus"] = _one_line(data["report"], 300)
         job["plans"].append({"version": len(job["plans"]) + 1, "why": why, "items": [it["title"] for it in items], "issues": issues})
@@ -488,6 +689,8 @@ class TaskMixin:
     # ---------------------------------------------------------------- 給人看的計畫、事實
     @staticmethod
     def task_item_text(it):
+        if it.get("kind") == REPORT_KIND:
+            return f"{it['n']}. {it['title']}（⚠️ 會改變狀態；系統依核對過的事實寫，寫完讀回來比對）\n   {it['goal']}"
         mark = "⚠️ 會改變狀態" if it["changes_state"] else "只查詢"
         if it["workflow"]:
             how = f"工作流 {it['workflow']} {it['workflow_args']}".strip()
@@ -556,7 +759,7 @@ class TaskMixin:
         """確認關卡剛規劃好、還沒開始的同一個任務（guard 規劃一次，task_run 接著用同一份）。"""
         cur = getattr(self, "task_job", None)
         task = " ".join((task or "").split())
-        if cur and cur.get("status") == "planned" and cur["task"] == task and cur["profile"] == (profile or DEFAULT_PROFILE):
+        if cur and cur.get("status") == "planned" and cur["task"] == task and (not profile or cur["profile"] == profile):
             return cur
         return None
 
@@ -578,9 +781,13 @@ class TaskMixin:
             if not changing:
                 return None                          # Plan 模式核准過的計畫：不再問一次
             done = [it for it in job["items"] if it["status"] != "pending"]
+            preview = ""
+            if any(it.get("kind") == REPORT_KIND for it in changing) and job.get("synthesis"):
+                body = synth_markdown(job, job["synthesis"], append=job["output"]["mode"] == "append")
+                preview = f"\n要寫進 {job['output']['path']} 的內容：\n{_clip(body, 2500)}"
             return (f"任務接著做：會改變狀態的是 {_steps_text(changing)}"
                     + (f"\n已經查到的：\n{self._task_facts_text(done, 300)}" if done else "")
-                    + "\n" + self.task_plan_text(job, pending_only=True))
+                    + "\n" + self.task_plan_text(job, pending_only=True) + preview)
         job = self._task_planned(target, profile)
         if job is None:
             failed = getattr(self, "_task_plan_failed", None)
@@ -681,10 +888,21 @@ class TaskRun:
                 break
             if it["changes_state"] and not it["approved"]:
                 done = [x for x in job["items"] if x["status"] != "pending"]
-                if (job["mode"] == "auto" and done and not job.get("surveyed") and job["replans"] < TASK_MAX_REPLANS):
+                only_report = all(x.get("kind") == REPORT_KIND for x in job["items"] if x["status"] == "pending")
+                if (job["mode"] == "auto" and done and not job.get("surveyed") and job["replans"] < TASK_MAX_REPLANS
+                        and not only_report):
                     job["surveyed"] = True           # 先查的步驟做完了：照查到的事實重排要改的部分（只重排一次）
                     a._task_replan(job, _t("replan_why_surveyed"))
                     continue
+                if it.get("kind") == REPORT_KIND:
+                    # 寫報告檔之前先整合、核對：確認時使用者看得到要寫進去的內容；沒有核對過的內容就不寫、不用問
+                    if not job.get("synthesis"):
+                        self.synthesize()
+                    if not synth_count(job["synthesis"]):
+                        it.update(status="failed", attempts=it["attempts"] + 1,
+                                  summary="整合不出核對過的內容，報告檔沒有寫（" + (job["synthesis"].get("note") or "每一則都對不上引用的輸出") + "）")
+                        self.save()
+                        break
                 job["status"] = "awaiting_approval"
                 job["seconds"] += round(time.time() - t0, 1)
                 self.save()
@@ -693,6 +911,12 @@ class TaskRun:
                 return self.report()
             n_items = len(job["items"])
             self.note(f"🧭 任務第 {it['n']}/{n_items} 步：{it['title']}")
+            if it.get("kind") == REPORT_KIND:
+                self.do_report(it)
+                self.save()
+                if it["status"] == "failed":
+                    break                            # 程式寫的報告沒寫成：重排也幫不上（內容就是前面查到的）
+                continue
             self.do_item(it)
             self.save()
             if it["status"] in ("done", "unverified") and it.get("finding") and job["mode"] == "auto" and job["replans"] < TASK_MAX_REPLANS:
@@ -710,9 +934,13 @@ class TaskRun:
                         continue
                     it["status"] = "failed"
                 break
+        if self.profile.get("synthesis") in ("findings", "report") and not job.get("synthesis"):
+            self.synthesize()                        # 調查、整理報告：最後依核對過的事實整合（沒有報告檔時放在給主對話的報告裡）
         failed = next((x for x in job["items"] if x["status"] == "failed"), None)
         unverified = [x for x in job["items"] if x["status"] == "unverified"]
         job["status"] = "failed" if failed else ("unverified" if unverified else "done")
+        if job["status"] == "done" and job.get("synthesis") is not None and not synth_count(job["synthesis"]):
+            job["status"] = "unverified"             # 整份的成功判準：要的是結論或報告，卻整合不出核對過的內容
         job["seconds"] += round(time.time() - t0, 1)
         job["finished"] = time.strftime("%Y-%m-%d %H:%M:%S")
         report = self.report()
@@ -750,7 +978,10 @@ class TaskRun:
             res = TaskWorker(self, it, prev_failure).run()
             it["steps"] += res["steps"]
             it["calls"] += res["calls"]
-            it["summary"], it["facts"], it["dropped"] = res["summary"], res["facts"], res["dropped"]
+            # 前一次（重試之前）核對過的事實也留著：都是那個時候在輸出裡看得到的（以前重試的結果整個蓋掉）
+            seen = {f["text"] for f in res["facts"]}
+            it["facts"] = res["facts"] + [f for f in it["facts"] if f["text"] not in seen]
+            it["summary"], it["dropped"] = res["summary"], res["dropped"]
             it["finding"] = bool(res.get("finding"))
             if res["status"] != "done":
                 it["status"] = "failed"
@@ -798,7 +1029,10 @@ class TaskRun:
         for s in wf["steps"]:
             st = wjob["steps"][str(s["n"])]
             if s["kind"] == "執行" and st.get("rid") and st.get("status") == "done":
-                facts.append({"text": f"{ws.show(s['title'], it['inputs'])}：{_one_line(st.get('head'), 160)}", "ref": str(st["rid"])})
+                # 輸出的開頭幾行（第一行常只是「執行完成」，值在下一行：2026-10-25 container_restart_verify 的 grep max_size）
+                lines = [ln.strip() for ln in (a.result_text(st["rid"]) or "").splitlines() if ln.strip()]
+                head = " ".join(lines[:3]) if lines else st.get("head")
+                facts.append({"text": f"{ws.show(s['title'], it['inputs'])}：{_one_line(head, 240)}", "ref": str(st["rid"])})
         it["facts"] = facts[:8]
         it["summary"] = _one_line(report.splitlines()[0] if report else "", 400)
         it["status"] = {"done": "done", "ended": "done", "unverified": "unverified"}.get(wjob["status"], "failed")
@@ -810,7 +1044,7 @@ class TaskRun:
         a = self.a
         chk = it.get("check")
         if not chk:
-            return "pass", "", ""
+            return "pass", (f"（{it['check_note']}）" if it.get("check_note") else ""), ""
         script = next((s for s, name in a._script_skill_map().items() if name == chk["skill"]), None)
         if not script:
             return "pass", f"（檢查技能 {chk['skill']} 找不到腳本，沒有驗證）", ""
@@ -848,6 +1082,197 @@ class TaskRun:
         why = _one_line((data or {}).get("summary"), 400)
         return bool(data) and data.get("goal_met") is True and bool(why), why
 
+    # ------------------------------------------------ 整合（Synthesizer）：依核對過的事實寫結論或報告，每一則附出處、程式核對
+    def job_rids(self):
+        """這個任務做過的工具結果編號（worker 與工作流每一步的輸出、程式跑的檢查）：整合只能引用這些。"""
+        rids = set()
+        for x in self.job["items"]:
+            rids |= {str(c["rid"]) for c in x.get("calls") or [] if c.get("rid")}
+            rids |= {str(f["ref"]) for f in x.get("facts") or [] if f.get("ref")}
+            rids |= set(re.findall(r"#(\d+)", x.get("evidence") or ""))
+        return rids
+
+    def _output(self, rid):
+        cache = self.__dict__.setdefault("_outputs", {})
+        if rid not in cache:
+            cache[rid] = self.a.result_text(rid)
+        return cache[rid]
+
+    def _synth_steps_text(self, items):
+        out = []
+        for it in items:
+            lines = [_t("synth_step", n=it["n"], title=it["title"], status=_STATUS_TEXT.get(it["status"], it["status"]),
+                        summary=_clip(it["summary"], 1500))]
+            lines += [_t("synth_action", skill=c["skill"], args=_one_line(c["args"], 160), head=c["head"], rid=c["rid"])
+                      for c in it.get("calls") or [] if c.get("rid")]
+            lines += [_t("facts_item", text=f["text"], ref=f["ref"]) for f in it.get("facts") or []]
+            if it.get("evidence"):
+                lines.append(_t("facts_check", evidence=it["evidence"]))
+            out.append("\n".join(lines))
+        return "\n".join(out)
+
+    def _synth_check(self, text, refs, rids, allowed):
+        """一則 → 問題（None＝核對過）：要有出處、出處是這個任務的工具結果、名稱與數值在引用的輸出裡（extract.missing_tokens）。"""
+        cited = []
+        for r in refs or []:
+            m = _RID.search(str(r))
+            if m and m.group(1) not in cited:
+                cited.append(m.group(1))
+        if not cited:
+            return _t("synth_no_ref")
+        bad = [r for r in cited if r not in rids]
+        if bad:
+            return _t("synth_bad_ref", refs="、".join("#" + r for r in bad),
+                      rids="、".join("#" + r for r in sorted(rids, key=lambda r: int(r) if r.isdigit() else 0)))
+        texts = [self._output(r) for r in cited]
+        if any(t is None for t in texts):
+            return _t("synth_unreadable", refs="、".join("#" + r for r, t in zip(cited, texts) if t is None))
+        ev = "\n".join(texts)
+        missing = missing_tokens(text, ev, ev, allowed)
+        return _t("synth_not_found", tokens="、".join(missing), refs="、".join("#" + r for r in cited)) if missing else None
+
+    @staticmethod
+    def _excerpt(text, sources, n=6):
+        """交回改的時候附上引用的輸出裡跟這一則相關的幾行（有同樣的英數字的行），讓它照原文改。"""
+        toks = {w.lower() for w in re.findall(r"[A-Za-z0-9_/.\-:]{2,}", text or "")}
+        out = []
+        for src in sources:
+            for ln in (src or "").splitlines():
+                if toks and any(w in ln.lower() for w in toks) and ln.strip() not in out:
+                    out.append(ln.strip()[:200])
+                    if len(out) >= n:
+                        return out
+        return out
+
+    def synthesize(self):
+        """所有步驟做完（或要寫報告檔之前）：整合的 session 依各步核對過的事實寫結論或報告（TASK_SYNTH_SCHEMA）。程式核對每一則
+        （_synth_check），對不上的只把那幾則交回改一次（TASK_SYNTH_FIX_SCHEMA），還是不行就拿掉、註明；unknowns 也核對（對不上就不留）。
+        結果存在 job["synthesis"]（給主對話的報告與報告檔都從這裡排版）；prompt 與原文在 calls.jsonl（kind＝synth、synth_fix）。"""
+        job, a = self.job, self.a
+        kind = "report" if (job.get("output") or self.profile.get("synthesis") == "report") else "findings"
+        items = [x for x in job["items"] if x["status"] != "pending" and x.get("kind") != REPORT_KIND]
+        rids = self.job_rids()
+        syn = {"kind": kind, "title": "", "sections": [], "unknowns": "", "dropped": [], "fixed": 0, "note": ""}
+        job["synthesis"] = syn
+        if not items or not rids:
+            syn["note"] = "沒有查到可以整理的事實"
+            return syn
+        self.note("🧭 任務：整合查到的事實…")
+        t0 = time.time()
+        out = job.get("output")
+        now = time.strftime("%Y-%m-%d %H:%M")
+        allowed = " ".join([job["task"], out["path"] if out else "", now])
+        system = _read("synthesizer.md") + (("\n\n" + _t("worker_profile_header", title=self.profile["title"]) + "\n" + self.profile["synth"])
+                                            if self.profile.get("synth") else "")
+        user = _t("synth_user", task=job["task"],
+                  goal=_t("synth_goal_file", path=out["path"], mode=_t("synth_mode_append") if out["mode"] == "append" else _t("synth_mode_write"))
+                  if out else _t("synth_goal_report") if kind == "report" else _t("synth_goal_findings"),
+                  focus=job.get("report_focus") or _t("synth_focus_none"), now=now, steps=self._synth_steps_text(items))
+        msgs = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+        raw, data = a._task_call(job, "synth", msgs, TASK_SYNTH_SCHEMA, num_predict=6144)
+        if not data:
+            syn["note"] = "整合的 session 沒有回應（見 calls.jsonl）"
+            job["seconds"] += round(time.time() - t0, 1)
+            return syn
+        syn["title"] = _one_line(data.get("title"), 80) or _one_line(job["task"], 80)
+        flat = []                                    # [(節, 一則)]：交回改時的編號＝這裡的順序（1 起算）
+        for sec in data.get("sections") or []:
+            if not isinstance(sec, dict):
+                continue
+            entry = {"heading": _one_line(sec.get("heading"), 40), "items": []}
+            for x in sec.get("items") or []:
+                if not isinstance(x, dict):
+                    continue
+                text, refs = _synth_item(_one_line(x.get("text"), 300), x.get("refs"))
+                if text:
+                    flat.append((entry, {"text": text, "refs": refs}))
+            syn["sections"].append(entry)
+        problems = {i: self._synth_check(x["text"], x["refs"], rids, allowed) for i, (_, x) in enumerate(flat, 1)}
+        bad = {i: p for i, p in problems.items() if p}
+        if bad:
+            lines = []
+            for i, p in bad.items():
+                x = flat[i - 1][1]
+                srcs = [self._output(m.group(1)) for m in (_RID.search(r) for r in x["refs"]) if m and m.group(1) in rids]
+                ex = self._excerpt(x["text"], srcs)
+                lines.append(_t("synth_fix_item", n=i, text=x["text"], refs="、".join(x["refs"]) or "—", problem=p)
+                             + ("".join("\n" + _t("synth_fix_line", line=ln) for ln in ex)))
+            ask = _t("synth_fix", items="\n".join(lines))
+            raw2, fixed = a._task_call(job, "synth_fix", msgs + [{"role": "assistant", "content": raw[:6000]},
+                                                                 {"role": "user", "content": ask}], TASK_SYNTH_FIX_SCHEMA, num_predict=3072)
+            for f in (fixed or {}).get("fixes") or []:
+                try:
+                    i = int(f.get("n"))
+                except (TypeError, ValueError):
+                    continue
+                if i not in bad:
+                    continue
+                text, refs = _synth_item(_one_line(f.get("text"), 300), f.get("refs"))
+                if text and not self._synth_check(text, refs, rids, allowed):
+                    flat[i - 1][1].update(text=text, refs=refs)
+                    bad.pop(i)
+                    syn["fixed"] += 1
+            for i, p in bad.items():
+                syn["dropped"].append({"text": flat[i - 1][1]["text"], "refs": flat[i - 1][1]["refs"], "problem": p})
+        kept = 0
+        for i, (entry, x) in enumerate(flat, 1):
+            if i not in bad and kept < SYNTH_MAX_ITEMS:
+                entry["items"].append(x)
+                kept += 1
+        syn["sections"] = [s for s in syn["sections"] if s["items"]]
+        unknowns = _one_line(data.get("unknowns"), 600)
+        if unknowns and unknowns.rstrip("。.") not in ("無", "沒有", "（無）"):
+            alltext = "\n".join(t for t in (self._output(r) for r in rids) if t)
+            missing = missing_tokens(unknowns, alltext, alltext, allowed)
+            if missing:
+                syn["dropped"].append({"text": unknowns, "refs": [], "problem": _t("synth_not_found", tokens="、".join(missing), refs="（全部）")})
+            else:
+                syn["unknowns"] = unknowns
+        job["seconds"] += round(time.time() - t0, 1)
+        self.save()
+        return syn
+
+    def do_report(self, it):
+        """程式寫報告檔（計畫的 output）：整合過的內容排成 Markdown，用 file_ops 寫（或附加）——經過技能、有存檔編號、原檔自動備份；
+        寫完讀回來比對（寫入＝整份一樣、附加＝檔尾是這一段）。核准在確認關卡（這一步標了會改變狀態）。"""
+        a, job = self.a, self.job
+        it["attempts"] += 1
+        if not job.get("synthesis"):
+            self.synthesize()
+        syn = job["synthesis"]
+        n = synth_count(syn)
+        if not n:
+            it.update(status="failed", summary="整合不出核對過的內容，報告檔沒有寫（" + (syn.get("note") or "每一則都對不上引用的輸出") + "）")
+            return
+        out = it["output"]
+        body = synth_markdown(job, syn, append=out["mode"] == "append")
+        body = body if body.endswith("\n") else body + "\n"
+        quoted = body.replace('"', '\\"')            # file_ops：內容裡有真正的換行時只把 \" 換回 "（其他照原樣寫入）
+        import shlex
+        action = {"command": "scripts/file_ops_cmd.py", "args": f"{out['mode']} {shlex.quote(out['path'])} --text \"{quoted}\""}
+        res = a._run_tool_once({"action": action}, approved=True) or "[ERROR] 沒有執行"
+        rid = getattr(a, "last_result_id", None)
+        head = res.strip().splitlines()[0][:200] if res.strip() else ""
+        it["steps"] += 1
+        it["calls"].append({"skill": "file_ops", "args": f"{out['mode']} {out['path']} --text …（{n} 則）", "head": head, "rid": rid,
+                            "status": "ERROR" if res.lstrip().startswith(("[ERROR]", "[DENIED]")) else "PASS"})
+        if res.lstrip().startswith(("[ERROR]", "[DENIED]")):
+            it.update(status="failed", summary=f"報告檔沒有寫成：{head}")
+            return
+        full = os.path.join(a.current_cwd, os.path.expanduser(out["path"]))
+        try:
+            with open(full, encoding="utf-8") as f:
+                text = f.read()
+        except OSError:
+            text = None
+        same = text is not None and (text.endswith(body) if out["mode"] == "append" else text == body)
+        verb = "附加到" if out["mode"] == "append" else "寫入"
+        it["summary"] = f"{verb} {out['path']}：{n} 則核對過出處的內容" + (f"（另外 {len(syn['dropped'])} 則對不上引用的輸出，沒有寫）" if syn["dropped"] else "")
+        it["facts"] = [{"text": f"{head}", "ref": str(rid)}] if rid else []
+        it["evidence"] = (f"程式讀回 {out['path']}：" + ("內容跟核對過的報告一樣" if same else "內容跟要寫的不一樣（讀不到或被改過）")
+                          + (f"（#{rid}）" if rid else ""))
+        it["status"] = "done" if same else "unverified"
+
     # ------------------------------------------------ 報告
     def report(self):
         job = self.job
@@ -864,16 +1289,33 @@ class TaskRun:
             lines += ["## 接下來的計畫"] + [self.a.task_item_text(it) for it in rest]
             return "\n".join(lines)
         n_done = sum(1 for it in items if it["status"] in ("done", "unverified"))
+        syn = job.get("synthesis")
+        written = next((it for it in items if it.get("kind") == REPORT_KIND and it["status"] in ("done", "unverified")), None)
         if job["status"] == "done":
-            head = f"[PASS] 任務完成（{n_done}/{len(items)} 步，{took}）"
+            head = f"[PASS] 任務完成（{n_done}/{len(items)} 步，{took}）" + (f"：報告寫在 {written['output']['path']}" if written else "")
         elif job["status"] == "unverified":
             bad = "、".join(str(it["n"]) for it in items if it["status"] == "unverified")
-            head = f"[PASS] 任務的步驟都做了（{took}），但第 {bad} 步做完之後的檢查沒有通過：回答時說明檢查的結果，請使用者確認"
+            if bad:
+                head = f"[PASS] 任務的步驟都做了（{took}），但第 {bad} 步做完之後的檢查沒有通過：回答時說明檢查的結果，請使用者確認"
+            else:
+                head = (f"[PASS] 任務的步驟都做了（{took}），但整合不出核對過出處的結論（{(syn or {}).get('note') or '每一則都對不上引用的輸出'}）："
+                        f"回答時照下面各步核對過的事實說，說明沒有整合出結論")
         else:
             bad = next((it for it in items if it["status"] == "failed"), None)
             head = (f"[ERROR] 任務沒有做完：第 {bad['n'] if bad else '?'} 步沒有完成（試了 {bad['attempts'] if bad else 0} 次），"
                     f"後面的步驟沒有做（{n_done}/{len(items)} 步做完，{took}）")
-        lines = [head, "## 步驟"]
+        lines = [head]
+        if syn and synth_count(syn):
+            lines.append(f"## {'報告' if syn['kind'] == 'report' else '結論'}（整合各步查到的事實；每一則都核對過出處）")
+            lines.append(f"### {syn['title']}")
+            for sec in syn["sections"]:
+                lines.append(f"**{sec['heading'] or '內容'}**")
+                lines += [f"- {x['text']}（{_refs_text(x['refs'])}）" for x in sec["items"]]
+            if syn.get("unknowns"):
+                lines.append(f"**還不確定、沒查到的**：{syn['unknowns']}")
+            if syn.get("dropped"):
+                lines.append(f"（另外 {len(syn['dropped'])} 則在引用的輸出裡找不到，拿掉了）")
+        lines.append("## 步驟")
         for it in items:
             lines.append(f"{it['n']}. {_MARK.get(it['status'], '⬜ 沒有執行')} {it['title']}" + (f"：{it['summary']}" if it["summary"] else ""))
             for f in it.get("facts") or []:
@@ -887,7 +1329,8 @@ class TaskRun:
             lines += [f"- 第 {p['version']} 版：{p['why']}" for p in job["plans"][1:]]
         if job.get("report_focus"):
             lines.append(f"要回報給使用者的重點：{job['report_focus']}")
-        lines.append(f"（工作 {job['id']}，紀錄在 logs/{TASK_JOBS_DIRNAME}/{job['id']}/；依上面的結果回答使用者：引用具體的值、名稱與前後變化"
+        basis = "〈結論〉" if syn and synth_count(syn) and syn["kind"] == "findings" else "上面的結果"
+        lines.append(f"（工作 {job['id']}，紀錄在 logs/{TASK_JOBS_DIRNAME}/{job['id']}/；依{basis}回答使用者：引用具體的值、名稱與前後變化"
                      f"（#編號是那一次工具輸出的存檔，要看完整的用 result_recall）；沒做完的說明卡在哪裡、原因與建議）")
         return "\n".join(lines)
 
@@ -915,6 +1358,7 @@ class TaskWorker:
         others = sorted(self.allowed - set(self.item["skills"]))
         work = self.run_.profile.get("work")
         return (_read("worker.md") + ("\n\n" + _t("worker_profile_header", title=self.run_.profile["title"]) + "\n" + work if work else "")
+                + self.a._task_knowledge(self.run_.profile, "work")
                 + "\n\n" + _t("worker_specs_header") + "\n" + "\n\n".join(docs)
                 + "\n\n" + _t("worker_others_header") + "\n" + "、".join(others))
 
@@ -950,7 +1394,7 @@ class TaskWorker:
                                                                    "attempt": self.item["attempts"], "messages": msgs})
         except OSError:
             pass
-        steps, executed, nudged, last_reply, calls = 0, 0, False, "", []
+        steps, executed, nudged, still_nudged, last_reply, calls = 0, 0, False, False, "", []
         while steps < TASK_WORKER_MAX_STEPS:
             steps += 1
             raw, data = self._call(msgs, TASK_WORKER_REPLY_SCHEMA, steps)
@@ -968,6 +1412,11 @@ class TaskWorker:
                 if executed == 0 and not nudged and self.item["skills"]:
                     nudged = True                    # 一個技能都沒用就說做完了：先推回去一次
                     msgs.append({"role": "user", "content": _t("worker_no_tool_yet")})
+                    continue
+                still = _STILL_WORKING.search(parsed.get("reply") or "")
+                if still and not still_nudged and not _FAILED_RE.match(parsed.get("reply") or ""):
+                    still_nudged = True              # 說還在做卻沒有動作：推回去一次（要繼續就做，做完了就回報結果）
+                    msgs.append({"role": "user", "content": _t("worker_still_working", said=still.group(0))})
                     continue
                 failed = bool(_FAILED_RE.match(last_reply))
                 if failed and executed:              # 「沒有完成」常混了「問題還在」：對照這一步的目標問一次做到了沒有
@@ -997,7 +1446,9 @@ class TaskWorker:
         summary = str(data.get("summary") or "").strip() or last_reply
         if data.get("done") is True and executed:
             return self._finish(msgs, "done", summary, data.get("facts"), steps + 1, calls)
-        return self._result("failed", f"做了 {TASK_WORKER_MAX_STEPS} 輪還沒做完。{summary}", [], steps + 1, calls)
+        # 沒做完：查到的事實照樣核對、留著（重排與整合看得到；以前整個丟掉——2026-10-25 試跑 inv_fleet_report：三台的電量都讀到了，
+        # 卻因為對不出站名用完步數，電量也沒進報告）
+        return self._finish(msgs, "failed", f"做了 {TASK_WORKER_MAX_STEPS} 輪還沒做完。{summary}", data.get("facts"), steps + 1, calls)
 
     def _goal_check(self, msgs, reply, steps):
         """worker 回報「沒有完成」時，對照這一步的目標問一次做到了沒有（TASK_GOAL_CHECK_SCHEMA，只有兩個欄位）。目標要查的查到了、

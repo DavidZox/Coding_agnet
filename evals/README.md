@@ -10,7 +10,7 @@
 | `analysis/` 數據解析 | `selftest.py`（數據技能用錄下的真實輸出 `fixtures/`） | `regression.py`（回歸評分；數據分析全部由程式做，不需要 Ollama，要測試容器）、`tools_live.py`（在真的容器裡跑數據技能） | 事實的整理、重點、報告、主對話回答的核對；回歸評分只評事實 |
 | `datagen/` 隨機情境的錄製產生器 | `check_facts.py`（只驗程式那一層，需要容器） | 產生的錄製交給 `analysis/regression.py` | 六個開發中套件的模擬，評分標準由注入的事件自動產生（見 [`datagen/README.md`](datagen/README.md)） |
 | `ops/` 多步驟維運 | `selftest.py`（file_ops、維運技能的確認關卡） | `run.py`（情境在 `dataset/`，在 Docker-in-Docker 沙盒裡真的執行；`worker.py` 跑一個情境） | 主對話用技能、工作流、任務引擎做完維運任務；狀態、回覆、禁止動作由程式計分 |
-| `task/` 任務引擎 | `selftest.py`（假模型、真的本機檔案技能） | —（真模型用 `ops/run.py`） | task_run 與 Plan 模式：規劃的程式檢查、先查再確認、worker 的權限、事實的核對、對照目標（worker 說沒完成、檢查出錯）、失敗後重排、工作流的步驟、存檔 |
+| `task/` 任務引擎 | `selftest.py`（假模型、真的本機檔案技能） | —（真模型用 `ops/run.py`，調查與整理報告是 `--set inv`） | task_run 與 Plan 模式：類型、規劃的程式檢查、先查再確認、worker 的權限、事實的核對、對照目標（worker 說沒完成、檢查出錯）、失敗後重排、工作流的步驟、整合與出處的核對、程式寫報告檔、存檔 |
 | `integrity/` 評測的完整性 | `selftest.py` | — | 模型會讀的文字（prompt、技能說明、工作流、程式回給模型的字）沒有評測世界的名稱（從評測的來源自動取）；`prompts/` 的範本跟程式對得上 |
 | `extract/` 提煉 | —（不用模型的在 `chat/extract_selftest.py`） | `run.py`（情境在 `cases.py`：程式產生已知答案的長輸出；`worker.py` 跑一個情境） | 工具回傳的提煉與 result_recall：找到幾個、多列幾個、數量的說法、切幾段讀幾段、程式拿掉幾條 |
 | `workflow/` 工作流 | `selftest.py`（規格驗證、跟 SKILLS.md 對得上、引號規則、推進、分支、【確認】、不用互動的入口、/make_skill） | `sandbox.py`（沙盒裡直接執行工作流，用維運情境計分；`sandbox_worker.py` 跑一個案例） | 程式照步驟推進、判斷點只填值與選分支、做完了沒由程式判斷 |
@@ -164,18 +164,22 @@ python3 evals/datagen/check_facts.py test_data/recordings/gen/s2/cases.json   # 
 ```bash
 python3 evals/ops/selftest.py                                   # 離線：file_ops、維運技能的確認關卡（任務引擎在 evals/task/selftest.py）
 python3 evals/ops/run.py --model gemma4:26b                     # 真模型：50 個情境（fs 12、docker 10、ros2 10、handshake 10、complex 8）
-python3 evals/ops/run.py --set holdout --model gemma4:26b       # 20 個保留情境（開發時沒有看過）；--set all＝兩者 70 個（phase_check 用這個）
+python3 evals/ops/run.py --set holdout --model gemma4:26b       # 20 個保留情境（開發時沒有看過）
+python3 evals/ops/run.py --set inv --model gemma4:26b           # 調查與整理報告 7 個（第 5 階段）；--set all＝三組 77 個（phase_check 用這個）
 python3 evals/ops/run.py --only hs_lost_fin_fix --tag try1      # 只跑一個情境（--domain handshake,complex 只跑某幾類）
 ```
 
-- 情境、沙盒與計分在 `ops/dataset/`（`scenarios.py`、`scenarios_holdout.py`、`checks.py`、`fs_world.py`、`sandbox/`）。
+- 情境、沙盒與計分在 `ops/dataset/`（`scenarios.py`、`scenarios_holdout.py`、`scenarios_inv.py`、`checks.py`、`fs_world.py`、`sandbox/`）。
+- **調查與整理報告**（`scenarios_inv.py`，名稱開頭 `inv_`）：要查好幾個地方才答得出來的調查（兩個工作包各自的原因、容器的 log 對照工作區的地圖、
+  即時的電量對照設定的門檻、log 對照調度系統的現況）與寫成檔案的報告（機隊現況、一天的錯誤時間線、容器的狀態）；報告的檢查看檔案裡要有使用者要的
+  每一項（每台、每個容器、每一則錯誤的時間）。`phase_check` 的總分分三組算（主要、保留、調查與報告），主要 50、保留 20 照舊可以跟以前的基準比。
 - 每個情境：沙盒重建（Docker-in-Docker 容器 `cah_ops_dind`，`127.0.0.1:23750`；裡面跑 `rmf_sim` 的機器人行為與預設工作包、新的檔案沙盒）
   → 記下開始時的狀態 → 在臨時的 harness 副本裡跑主對話（工具都真的執行；`DOCKER_HOST` 指到沙盒，碰不到主機上真的容器）→ 讀回最後的狀態
   → `checks.py` 計分（狀態＋回覆＋禁止動作）。第一次跑會建沙盒的映像檔；跑完沙盒容器留著，不用時 `docker stop cah_ops_dind`。
 - 回覆裡的量測值用 `reply_num_any` 計分：數字加單位、在容許範圍內就算對（例如 2 Hz ±0.05、0.5 秒 ±0.02），技能量得比較精確
   （1.997 Hz）不會被當錯；目前只有 `ros_hz` 用。沙盒的 `rmf_sim` 2026-10-23 改得跟真系統一樣（訊息型別、distribute 的快照沒有電量、
   電量在 `/<機器人>/robot_state`），`sandbox.py` 依整個 `rmf_sim/` 目錄的內容判斷要不要重建映像檔。
-- 結果在 `evals/results/<時間>_ops[_holdout|_all]_<模型>[_<tag>]/`：`runs.jsonl`、`report.md`，以及每個情境 harness 副本的 `logs/<情境>/`（`task_jobs/`：任務引擎每一版計畫、每一步與每一次模型呼叫；提煉的切段與模型呼叫、工具的完整原文、`perf.jsonl`——事後查得到每一步做了什麼）。
+- 結果在 `evals/results/<時間>_ops[_holdout|_inv|_all]_<模型>[_<tag>]/`：`runs.jsonl`、`report.md`，以及每個情境 harness 副本的 `logs/<情境>/`（`task_jobs/`：任務引擎每一版計畫、每一步與每一次模型呼叫；提煉的切段與模型呼叫、工具的完整原文、`perf.jsonl`——事後查得到每一步做了什麼）。
   `runs.jsonl` 每一回合的 `task_jobs` 記這一回合的任務（每一版計畫、每一步的狀態、worker 的工具呼叫與核對過的事實）。2026-10-10 建立這組評測時的報告與統計（基準的 `reference_v5`）在 `~/Coding_agent_harness/benchmark_study_3/`。
 
 ## 任務引擎（`task/`）
@@ -188,7 +192,9 @@ python3 evals/task/selftest.py      # 離線（約 10 秒）：假模型照劇�
 停著的容器排在啟動之前、使用者提到手冊卻沒有先讀、要寫檔卻沒列 file_ops）；做不了的計畫不執行；第一步就要改時確認關卡是整份計畫；**先查再確認**（開頭的查詢直接做 → 照事實重排 →
 停下來 → harness 用 `take_task_continuation` 接著問）；worker 的權限（沒核准的 [DENIED]、這一步不能用的技能）與重試；**事實的核對**
 （名稱與數值要在引用的 #編號 的輸出裡——這一步的、或這個任務前面各步的（讀回存檔），對不上的交回改一次、還是不行就拿掉）；**對照目標**（worker 說沒有完成、做完之後的檢查回 [ERROR] 時問一次做到了沒有：做到了不重試，沒做到照舊重試——檢查出錯時只看系統記下的動作，worker 只建了目錄就說報告寫好了會被重做，計畫寫錯的檢查不會多跑 worker）；失敗後重排（Plan 模式不重排）；工作流的步驟；Plan 模式的
-草稿、指令、用說的改、核准後照計畫做；存檔與保留上限。CLI 與 Web 的回合（確認卡片、y/n）在 `chat/selftest.py`。
+草稿、指令、用說的改、核准後照計畫做；存檔與保留上限；**類型**（沒指定時選一個、調查與整理報告附維運的領域知識、只查不改的類型要改狀態就不執行）；
+**整合**（每一則附出處、程式核對，對不上的只交回那幾則改一次；整合不出內容不算完成）；**報告檔由程式寫**（查完整合 → 確認時附上內容 →
+file_ops 寫、讀回比對；附加保留原本的）；檢查要找的字就在檢查的參數裡（待辦 26）。CLI 與 Web 的回合（確認卡片、y/n）在 `chat/selftest.py`。
 
 ## 評測的完整性（`integrity/`）
 

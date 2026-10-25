@@ -15,6 +15,7 @@ import time
 from . import prompt_files
 from .config import TASK_MAX_ITEMS
 from .schemas import PLAN_OPS_SCHEMA
+from .task_engine import REPORT_KIND
 
 _PLAN_EDIT = "orchestra/plan_edit.md"   # 用說的改草稿的 prompt
 
@@ -76,6 +77,8 @@ class PlanMixin:
         for i, it in enumerate(self.plan["items"], 1):
             it["n"] = i
         for it in self.plan["items"]:
+            if it.get("kind") == REPORT_KIND:
+                continue                                 # 程式寫報告的那一步（計畫的 output）：不是技能的步驟
             _, problems = self._task_item(dict(it, check=it.get("check")), it["n"])
             issues += problems
         self.plan["issues"] = issues

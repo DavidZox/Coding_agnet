@@ -45,9 +45,9 @@
   "total": 27
  },
  "task_selftest": {
-  "label": "待辦 25：檢查出錯時對照目標（t_check_error）（2026-10-25）",
-  "passed": 14,
-  "total": 14
+  "label": "第 5 階段（2026-10-25）",
+  "passed": 18,
+  "total": 18
  },
  "tools_live:exp_5090_overheat": {
   "label": "第 4 階段（任務引擎，三次完整跑）（2026-10-24）",

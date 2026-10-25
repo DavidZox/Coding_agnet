@@ -3,7 +3,7 @@
     python3 evals/phase_check.py                  # 離線（約 2 分鐘）：技能、主對話、提煉、維運、任務引擎、數據分析、工作流的自我測試，評測的完整性
     python3 evals/phase_check.py --live           # 再加上要容器／沙盒、不呼叫模型的（約 10 分鐘）：技能接沙盒、數據技能實機、數據分析回歸
     python3 evals/phase_check.py --model          # 再加上真模型（約 1 小時）：提煉（26b、e4b）、主對話（e4b 11 個情境 ×3）、
-                                                  #   工作流沙盒（26b、e4b 各 7 個案例 ×2）、維運（26b 70 個）
+                                                  #   工作流沙盒（26b、e4b 各 7 個案例 ×2）、維運（26b 77 個：主要 50、保留 20、調查與報告 7）
     python3 evals/phase_check.py --live --model   # 全部
     python3 evals/phase_check.py --only ops,extract --model     # 只跑某幾項（名稱見 summary.md 的第一欄括號）
     python3 evals/phase_check.py --compare <結果目錄> [...]      # 不跑，只拿已經跑好的結果跟基準比（維運、主對話、提煉、數據分析回歸）
@@ -216,8 +216,13 @@ def ops_stats(dirs):
     return per
 
 
+def ops_group(scenario):
+    """維運評測的情境分三組算總分：inv_＝調查與整理報告（第 5 階段加的）、ho_＝保留、其他＝主要。"""
+    return "inv" if scenario.startswith("inv_") else "holdout" if scenario.startswith("ho_") else "main"
+
+
 def ops_result(dirs):
-    return {"key": "ops", "title": f"維運（{OPS_MODEL}，主要 50＋保留 20）", "kind": "ops", "dirs": dirs, "per": ops_stats(dirs)}
+    return {"key": "ops", "title": f"維運（{OPS_MODEL}，主要 50＋保留 20＋調查與報告）", "kind": "ops", "dirs": dirs, "per": ops_stats(dirs)}
 
 
 def chat_result(dirs):
@@ -397,18 +402,23 @@ def compare_ops(r):
                 notes.append(f"{sc}：變慢 {s['median_s']} 秒（基準中位數 {b['median_s']} 秒）")
         else:
             notes.append(f"{sc}：基準裡沒有這個情境（新情境）")
-    def tot(p, holdout):
-        rs = [s for k, s in p.items() if k.startswith("ho_") == holdout]
+    def tot(p, group):
+        rs = [s for k, s in p.items() if ops_group(k) == group]
         return sum(s["passed"] for s in rs), sum(s["runs"] for s in rs)
-    mp, mr = tot(per, False)
-    hp, hr = tot(per, True)
-    text = f"主要 {mp}/{mr}、保留 {hp}/{hr}；禁止動作 {sum(s['forbidden'] for s in per.values())} 次"
+    mp, mr = tot(per, "main")
+    hp, hr = tot(per, "holdout")
+    ip, ir = tot(per, "inv")
+    text = (f"主要 {mp}/{mr}、保留 {hp}/{hr}" + (f"、調查與報告 {ip}/{ir}" if ir else "")
+            + f"；禁止動作 {sum(s['forbidden'] for s in per.values())} 次")
     bt = base.get("current", {}).get("totals")
-    btxt = (f"主要 {'、'.join(map(str, bt['main']))}／50、保留 {'、'.join(map(str, bt['holdout']))}／20（{base['current'].get('label', '')}）"
-            if bt else "（沒有基準）")
+    n_inv = len([k for k in (base.get("current", {}).get("per") or {}) if ops_group(k) == "inv"])
+    btxt = (f"主要 {'、'.join(map(str, bt['main']))}／50、保留 {'、'.join(map(str, bt['holdout']))}／20"
+            + (f"、調查與報告 {'、'.join(map(str, bt['inv']))}／{n_inv}" if bt.get("inv") else "")
+            + f"（{base['current'].get('label', '')}）" if bt else "（沒有基準）")
     single_run = all(s["runs"] == 1 for s in per.values())
-    if bt and single_run and (mp < min(bt["main"]) or hp < min(bt["holdout"])):
-        notes.insert(0, f"總分低於基準的最低分（主要 {min(bt['main'])}、保留 {min(bt['holdout'])}）")
+    if bt and single_run and (mp < min(bt["main"]) or hp < min(bt["holdout"]) or (bt.get("inv") and ir and ip < min(bt["inv"]))):
+        notes.insert(0, f"總分低於基準的最低分（主要 {min(bt['main'])}、保留 {min(bt['holdout'])}"
+                        + (f"、調查與報告 {min(bt['inv'])}" if bt.get("inv") else "") + "）")
     return text, btxt, ("⚠️" if notes else "✅"), notes
 
 
@@ -507,15 +517,13 @@ def save_baseline(results, label):
             continue
         if r["kind"] == "ops":
             old = load_baseline(f"ops_{OPS_MODEL.replace(':', '-')}") or {}
-            totals = {"main": [], "holdout": []}
+            totals = {"main": [], "holdout": [], "inv": []}
             for d in r["dirs"]:
                 rows = _jsonl(os.path.join(d, "runs.jsonl"))
-                m = [x for x in rows if not x["scenario"].startswith("ho_")]
-                h = [x for x in rows if x["scenario"].startswith("ho_")]
-                if m:
-                    totals["main"].append(sum(1 for x in m if x["score"]["passed"]))
-                if h:
-                    totals["holdout"].append(sum(1 for x in h if x["score"]["passed"]))
+                for group in totals:
+                    g = [x for x in rows if ops_group(x["scenario"]) == group]
+                    if g:
+                        totals[group].append(sum(1 for x in g if x["score"]["passed"]))
             old["current"] = {"label": label, "date": stamp, "dirs": [os.path.basename(d) for d in r["dirs"]], "totals": totals, "per": r["per"]}
             write(f"ops_{OPS_MODEL.replace(':', '-')}", old)
         elif r["kind"] == "chat":
