@@ -129,8 +129,22 @@ def _write_slice(data, idx, t_ns, start_ns, end_ns, trigger, out_dir, topics=Non
                                                                    schema_id=sid, metadata=dict(ch.metadata or {}))
                         counts.setdefault(ch.topic, 0)
                     local[ch.id] = channel_map[key]
+                
+                # 【效能優化】檢查並利用 summary.chunks 進行區塊級時間過濾，大幅加速長 bag 檔案讀取
+                chunk_indices = None
+                if summ and hasattr(summ, "chunks") and summ.chunks:
+                    valid_chunk_indexes = []
+                    for c_idx, chunk in enumerate(summ.chunks):
+                        # 如果 chunk 的訊息結束時間早於區段起點，或是開始時間晚於區段終點，則略過
+                        if chunk.message_end_time < start_ns or chunk.message_start_time > (end_ns + 1):
+                            continue
+                        valid_chunk_indexes.append(c_idx)
+                    if len(valid_chunk_indexes) < len(summ.chunks):
+                        chunk_indices = valid_chunk_indexes
+
                 for schema, ch, m in reader.iter_messages(topics=sorted(wanted) if wanted else None, start_time=start_ns,
-                                                          end_time=end_ns + 1, log_time_order=True):
+                                                          end_time=end_ns + 1, log_time_order=True,
+                                                          chunk_indexes=chunk_indices):
                     cid = local.get(ch.id)
                     if cid is None:
                         key = (ch.topic, ch.message_encoding)
