@@ -143,8 +143,7 @@ def _write_slice(data, idx, t_ns, start_ns, end_ns, trigger, out_dir, topics=Non
                         chunk_indices = valid_chunk_indexes
 
                 for schema, ch, m in reader.iter_messages(topics=sorted(wanted) if wanted else None, start_time=start_ns,
-                                                          end_time=end_ns + 1, log_time_order=True,
-                                                          chunk_indexes=chunk_indices):
+                                                          end_time=end_ns + 1, log_time_order=True):
                     cid = local.get(ch.id)
                     if cid is None:
                         key = (ch.topic, ch.message_encoding)
