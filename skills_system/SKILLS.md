@@ -38,6 +38,7 @@
   - `dispatch_and_confirm` — 派工作包給指定的機器人並等它跑完再回報｜`workflow_run dispatch_and_confirm robot=<機器人> stops=<站點1,站點2,…（照順序；「從 A 到 B」的 A 也要寫）> [wp_id=<編號>]`
   - `container_restart_verify` — 重新啟動一直在跑的服務容器並確認 Up（跑完就結束的備份、批次容器不適用，直接 docker_ctl restart）；可以在容器裡跑唯讀指令確認設定、寫紀錄｜`workflow_run container_restart_verify container=<容器> [check_command="<唯讀指令>"] [expect=<要看到的字>] [note_file=<檔案>]`
   - `reassign_package` — 工作包派不出去：是原本那台的問題才取消、用同樣的站點改派給指定的機器人並等它跑完｜`workflow_run reassign_package wp_id=<工作包> robot=<機器人>`
+  - `check_ros2_mqtt_connect` — 切換至指定容器發送 ROS 2 訊息，並檢查 MQTT Broker 日誌確認是否有 PUBLISH 紀錄。｜`workflow_run check_ros2_mqtt_connect target_container=<要執行 ROS 2 發送> topic_name=<要發布的 ROS 2 t> msg_type=<ROS 2 訊息型別> msg_content=<要發布的 YAML 格式> broker_container=<要檢查 log 的 MQ>`
 
 ## 多步驟任務
 - [task_run](tools/task_run.md) — 沒有對應的工作流、又是複雜的任務（4 步以上、跨檔案／容器／ROS 2／調度系統：要改好幾個狀態的維運、要查好幾個地方的調查、交班報告或事件時間線這種整理報告）用這個：args 填使用者的原話；系統選類型、先規劃、先查清楚，要改變狀態的步驟（含寫報告檔）系統會請使用者確認（不用先問），再一步一步執行並檢查，回報每一步的結果與核對過的事實（調查與報告附核對過出處的結論）
