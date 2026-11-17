@@ -10,7 +10,6 @@
   前後的值、占比）、數值的極值（與時間）／均值／標準差／斜率／尖峰／切換、字串裡的 JSON 欄位、依名稱展開的項目（DiagnosticArray）；
   --where 條件由程式判斷（幾則符合、第一則符合 #k 與它的前一則、符合的時段）；最後附前後幾則原始訊息（--- #序號 +秒）。
 主機不需要 ROS 2 與 PyYAML（以前在主機解析 ros2 topic echo 的 YAML，主機沒有 PyYAML 時欄位統計整個不見、還回 [PASS]）。"""
-import json
 import os
 import sys
 import time

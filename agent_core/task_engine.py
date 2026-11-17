@@ -1019,7 +1019,9 @@ class TaskRun:
         store = a._workflow_store()
         wjob = {"id": store.new_id(wf["name"]), "spec": wf, "inputs": it["inputs"], "given": {}, "status": "running", "cursor": 1,
                 "steps": {str(s["n"]): {"status": "pending"} for s in wf["steps"]}, "notes": [], "created": time.strftime("%Y-%m-%d %H:%M:%S"),
-                "model": a.model, "seconds": 0.0, "model_calls": 0, "task_job": self.job["id"]}
+                "model": a.model, "seconds": 0.0, "model_calls": 0, "task_job": self.job["id"],
+                # 任務的確認核准了這一步＝核准規劃時看到的那幾個會改變狀態的步驟；執行時才看得出要改的，工作流會停下來（這一步算沒做成）
+                "approved": [s["n"] for s in a._wf_segment(wf, 1, it["inputs"])] if it.get("approved") else []}
         from .workflow import WorkflowRun
         report = WorkflowRun(a, wjob).run()
         it["workflow_job"] = wjob["id"]

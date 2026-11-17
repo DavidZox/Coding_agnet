@@ -26,7 +26,9 @@ def _installed_models():
 
 
 # 🧠 上次在「🧠 模型」設定的主對話模型與 thinking（logs/model_settings.json；比 WEB_CONSOLE_MODEL 優先）
-MODEL_SETTINGS_NOTE = agent.load_model_settings(_installed_models())
+_model_note = agent.load_model_settings(_installed_models())
+if _model_note:
+    print(f"🧠 {_model_note}")
 agent.reset_conversation()
 
 state = {

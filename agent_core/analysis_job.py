@@ -45,10 +45,8 @@ DEFAULT_QUESTION = "這段錄製期間發生了哪些狀態變化？"
 _LEVEL_RANK = {"DEBUG": 0, "INFO": 1, "UNKNOWN": 1, "WARN": 2, "ERROR": 3, "FATAL": 4}
 _MARKERS = ("[ANALYSIS_DATA]", "[TARGET_CONTAINER]", "[CWD_CHANGED]", "[ROS2_WORKSPACE]")
 _RECORDER_NODE = re.compile(r"^(rosbag2(_\w+)?|ros2_bag\w*)$")
-# 以前的 job 還有規劃、workers、Synthesizer、檢查的狀態（2026-10-22 以前），面板與清單照樣看得懂
-_STATUS_TEXT = {"preparing": "資料預備", "planning": "Orchestrator 規劃", "working": "Workers 說明", "synthesizing": "Synthesizer 整理重點",
-                "checking": "Orchestrator 檢查", "reasoning": "因果推論", "done": "完成", "failed": "失敗"}
-_ACTIVE = ("preparing", "planning", "working", "synthesizing", "checking", "reasoning")
+_STATUS_TEXT = {"preparing": "資料預備", "done": "完成", "failed": "失敗"}
+_ACTIVE = ("preparing",)
 # 拿掉的選項：源碼脈絡、時間窗（第九輪以前）；worker 上限、最多幾輪（2026-10-23 改成全部由程式做）——收到就說清楚，不要默默變成問題的一部分
 _REMOVED_OPTIONS = {"--source": "source", "--no-source": "source", "--before": "window", "--after": "window",
                     "--workers": "program", "--rounds": "program"}
@@ -84,8 +82,6 @@ def split_json_output(output):
     except ValueError:
         return None, tail
 
-def _slug(topic):
-    return re.sub(r"[^A-Za-z0-9]+", "_", topic).strip("_")[:40] or "topic"
 
 def _rel(ns, base_ns):
     if ns is None or base_ns is None:
@@ -663,11 +659,6 @@ def _note_line(h, n=None, bold=True, max_lines=None):
 
 
 # ---------------------------------------------------------------- 事實（程式）
-def _short_block(text, n):
-    """多行文字截短（保留換行）。"""
-    text = str(text or "").strip()
-    return text if len(text) <= n else text[: n - 1] + "…"
-
 def _path(name, it, base, limit=3):
     """一個項目的變化：「mode：NORMAL → LIMITED（+21.76s）→ NORMAL（+30.10s）」；超過 limit 次只列前幾次與總次數。"""
     chs = it.get("changes") or []
@@ -1061,6 +1052,3 @@ def _moments(facts):
     keep = [g for g in groups if not all(r in facts["events"] and facts["events"][r]["topic"] in noisy for r in g["refs"])]
     return [dict(g, id=f"M{i}") for i, g in enumerate(keep, 1)], flap
 
-def _key_moments(facts):
-    """重要的時間點有幾個（反覆切換的 Topic 不算）。"""
-    return len(_moments(facts)[0])

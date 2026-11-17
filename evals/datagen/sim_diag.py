@@ -3,7 +3,7 @@
 
 情境只設定時間線（故障、指令、凍結、重啟、復位…），build() 依時間一步一步算出每一則訊息與 Log，跟真的節點一樣互相影響：
 故障 → /diagnostics（元件的 producer）→ aggregator 的下一個 tick → MON 的反應（矩陣、閂鎖）→ GATE 的模式與 /cmd_vel。"""
-from sim_core import INF, Alive, Signal, fmt_val, header, stamp, twist
+from sim_core import INF, Alive, Signal, fmt_val, header, twist
 
 MON_FILE = "/workspace/ws/src/diagnostics_package/src/system_health_monitor_node.cpp"
 GATE_FILE = "/workspace/ws/install/diagnostics_package/lib/diagnostics_package/safety_motion_controller.py"

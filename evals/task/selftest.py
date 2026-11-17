@@ -376,8 +376,10 @@ def t_step_cap_wrapup(agent, ollama, tmp, home):
     acts = [("scripts/cat_cmd.py", "config/cam.yaml"), ("scripts/ls_cmd.py", "config"), ("scripts/ls_cmd.py", "."),
             ("scripts/cat_cmd.py", "./config/cam.yaml"), ("scripts/ls_cmd.py", "./config")]
     busy = [step(*acts[k % len(acts)]) for k in range(TASK_WORKER_MAX_STEPS)]   # 每個動作最多兩次（第三次會被當成卡住）
+    # 事實引用第一個工具結果（view_file config/cam.yaml）：最後一個是目錄列表，裡面的修改日期在 10 月剛好有「10」——
+    # 以前引用最後一個，10 月跑會過、11 月就不過（2026-11-17 發現）
     fake = FakeTask([p], busy + [step("scripts/ls_cmd.py", "config"), done("一個檔案")],
-                    wrapups=[{"done": True, "summary": "exposure 是 10", "facts": [fact("exposure: 10")]}])
+                    wrapups=[{"done": True, "summary": "exposure 是 10", "facts": [fact("exposure: 10", "FIRST")]}])
     ollama.chat = fake
     rep = agent.run_tool(task("看設定再看目錄"))
     assert rep.startswith("[PASS] 任務完成（2/2 步") and "exposure 是 10" in rep, rep
@@ -385,7 +387,7 @@ def t_step_cap_wrapup(agent, ollama, tmp, home):
     # 沒做完：核對過的事實照樣留著，重排看得到（以前整個丟掉——2026-10-25 試跑 inv_fleet_report 讀到的電量沒進報告）
     fake = FakeTask([p, plan(item("再看目錄", "看 config 底下的檔案", ["list_dir"]))],
                     busy + busy + [step("scripts/ls_cmd.py", "config"), done("一個檔案")],
-                    wrapups=[{"done": False, "summary": "fps 還沒查到", "facts": [fact("exposure: 10")]},
+                    wrapups=[{"done": False, "summary": "fps 還沒查到", "facts": [fact("exposure: 10", "FIRST")]},
                              {"done": False, "summary": "fps 還沒查到", "facts": []}])
     ollama.chat = fake
     rep = agent.run_tool(task("看設定再看目錄（第二次）"))

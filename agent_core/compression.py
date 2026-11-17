@@ -417,12 +417,6 @@ class CompressionMixin:
             to_compress, _ = self._split_for_compression(keep_tokens=keep_tokens)
         return sum(self.count_tokens(m['content']) for m in to_compress)
 
-    def has_compressible_history(self, keep_tokens=None):
-        """保留區以外是否還有可壓的舊訊息。上下文超過水位但全部訊息都在保留預算內時（例如
-        system prompt 本身就很大），壓縮什麼都做不了，呼叫端可據此不必宣告「壓縮中」。"""
-        with self.messages_lock:
-            return bool(self._split_for_compression(keep_tokens=keep_tokens)[0])
-
     def compression_in_progress(self):
         t = self._compress_thread
         return bool(t and t.is_alive())

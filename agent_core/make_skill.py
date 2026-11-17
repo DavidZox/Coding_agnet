@@ -15,7 +15,6 @@ import os
 import re
 import time
 from .config import (
-    DEFAULT_SKILL_CATEGORY,
     MAKE_SKILL_MAX_PREDICT,
     MAKE_SKILL_TRANSCRIPT_TOKENS,
     NON_READONLY_SKILLS,
@@ -39,17 +38,6 @@ def _s(key, /, **fields):
 
 class MakeSkillMixin:
 
-    def _skill_categories(self):
-        """SKILLS.md 裡的分類（## 標題），依出現順序。"""
-        cats = []
-        try:
-            with open(self.index_file, "r", encoding="utf-8") as f:
-                for line in f:
-                    if line.startswith("## "):
-                        cats.append(line[3:].strip())
-        except OSError:
-            pass
-        return cats
 
     def validate_new_skill_name(self, name):
         """新技能名稱的規則：英數底線、字母開頭、不與現有技能或腳本衝突。合法回傳 None，否則回傳原因。"""
@@ -328,8 +316,10 @@ class MakeSkillMixin:
         return "\n".join(lines) + "\n"
 
     def skill_index_line(self, draft):
-        """SKILLS.md〈工作流〉的一行（子項目：list_skills 不當成技能）：名稱、描述、呼叫語法。"""
-        args = " ".join(f"{p['name']}=<{p['description'][:12]}>" for p in draft["inputs"])
+        """SKILLS.md〈工作流〉的一行（子項目：list_skills 不當成技能）：名稱、描述、呼叫語法。值的提示是說明的第一段（到第一個
+        「（，：；。」為止）——以前取前 12 個字，切在字的中間（「<要執行 ROS 2 發送>」，2026-10-31 check_ros2_mqtt_connect）。"""
+        args = " ".join(f"{p['name']}=<{re.split(r'[（(，,：:；;。]', p['description'], maxsplit=1)[0].strip() or p['name']}>"
+                        for p in draft["inputs"])
         return f"  - `{draft['name']}` — {draft['description']}｜`workflow_run {draft['name']} {args}`".rstrip("`").rstrip() + "`"
 
     def skill_draft_preview(self, draft):
@@ -385,24 +375,6 @@ class MakeSkillMixin:
             while insert_at > start + 1 and not lines[insert_at - 1].strip():
                 insert_at -= 1
             lines.insert(insert_at, line)
-        with open(self.index_file, "w", encoding="utf-8") as f:
-            f.write("\n".join(lines).rstrip("\n") + "\n")
-
-    def _insert_skill_index_line(self, category, line):
-        with open(self.index_file, "r", encoding="utf-8") as f:
-            lines = f.read().splitlines()
-        header = f"## {category}"
-        if header in lines:
-            start = lines.index(header)
-            end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith("## ")), len(lines))
-            insert_at = end
-            while insert_at > start + 1 and not lines[insert_at - 1].strip():
-                insert_at -= 1
-            lines.insert(insert_at, line)
-        else:
-            if lines and lines[-1].strip():
-                lines.append("")
-            lines += [header, line]
         with open(self.index_file, "w", encoding="utf-8") as f:
             f.write("\n".join(lines).rstrip("\n") + "\n")
 

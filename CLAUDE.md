@@ -56,7 +56,8 @@
 - 技能說明、prompt、程式回給模型的字（用法、[ERROR] 的例子）不要用評測情境裡的檔案、名稱與數值（用 `<檔案>`、`<名稱>`，或評測世界沒有的
   名稱：amr_07、p0、WP_0815、cam_driver、config/camera.yaml…）——不然評測量到的是會不會抄範例。`evals/integrity/selftest.py` 會擋（評測世界的
   名稱從評測的來源自動取）；新增情境時名稱不要跟範例撞。
-- 會改變狀態的動作一律經過確認關卡（`agent_core/guard.py`）。
+- 會改變狀態的動作一律經過確認關卡（`agent_core/guard.py`）；看不出會不會改的（值還不知道、解析不過）當成會改，寧可多問一次。
+- 不用的程式直接刪掉，不留「相容舊的」分支（git 歷史裡有）：`evals/integrity/selftest.py` 會擋定義了沒人用的函式、常數與沒用到的 import。
 - 技能：第一行 `[PASS]`／`[ERROR]`，`[ERROR]` 附下一步（`doc/技能撰寫規範.md`）；工作流照 `doc/工作流撰寫規範.md`。
 
 ## 文件

@@ -245,9 +245,6 @@ class _Item:
             out += [self.rows[f"T{i}"] for i in range(a, min(b, a + 60) + 1) if f"T{i}" in self.rows]
         return list({id(r): r for r in out}.values())
 
-    def subjects(self, clause):
-        return self.named(clause) or self.cited
-
     def changes(self, row, key):
         """這一則看得到的這個 Key 的變化：引用了 T#、或只在句子裡寫了 Topic 名稱＝全部；引用了事件＝那幾則訊息的變化。
         Topic 的第一則訊息在錄製中途時，那一則的值算一次「出現」（之前沒有值，None）。"""

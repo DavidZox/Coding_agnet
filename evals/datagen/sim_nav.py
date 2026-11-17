@@ -5,7 +5,7 @@ RobotStateBroadcaster、Diagnostics 監看），照目錄的 Topic、Log 原文�
 import json
 import math
 
-from sim_core import Alive, Motion, Signal, header, quat_yaw, twist
+from sim_core import Motion, Signal, header, quat_yaw, twist
 
 ROOT = "/workspaces/amr_base/install/amr_base_sw/lib/python3.12/site-packages/amr_base_sw"
 F = {"TA": f"{ROOT}/TaskAgent/task_agent.py", "GP": f"{ROOT}/GlobalPlanner/GlobalPlannerNode.py", "MG": f"{ROOT}/GlobalPlanner/MapGraph.py",

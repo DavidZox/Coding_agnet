@@ -13,11 +13,9 @@
 結果在 evals/results/<時間>_phase_check/：summary.md（每一項一行：結果、基準、判定；要注意的逐項列出）、summary.json。
 容器與沙盒用完就關；logs/analysis_settings.json 測試前後比對，有變就還原。基準的格式與來源見 evals/baselines/README.md。"""
 import argparse
-import glob
 import json
 import os
 import re
-import shutil
 import statistics
 import subprocess
 import sys

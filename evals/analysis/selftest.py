@@ -18,7 +18,6 @@
 import json
 import os
 import random
-import re
 import shutil
 import sys
 import tempfile
@@ -454,9 +453,10 @@ def main():
             handle_analysis_command("/analysis_mode on", ev)
             assert state["analysis_mode"] and "分析模式" in ev[-1]["text"]
             handle_analysis_command("/analysis_mode off", ev)
-            for cmd in ("/analysis_workers 9", "/analysis_model all gemma4:26b", "/analysis_source ~/ws/src"):
+            before = dict(agent.analysis_cfg)
+            for cmd in ("/analysis_workers 9", "/analysis_model all gemma4:26b", "/analysis_source ~/ws/src"):   # 以前的指令（第 6 階段拿掉提示）
                 handle_analysis_command(cmd, ev)
-                assert "已經拿掉" in ev[-1]["text"], (cmd, ev[-1])
+                assert "/analyze [問題]" in ev[-1]["text"] and agent.analysis_cfg == before, ("不認識的 /analysis 指令：列出現有的、不改設定", cmd, ev[-1])
             stats = flows.build_stats()
             assert stats["analysis"]["status"] == "done" and "analysis_mode" in stats
             seen = []
@@ -554,8 +554,8 @@ def main():
 
         def t_mark_interrupted():
             made = []
-            for jid, status, old in (("20200101_000000", "working", True), ("20200101_000002", "reasoning", True),
-                                     ("20200101_000001", "working", False)):
+            for jid, status, old in (("20200101_000000", "preparing", True), ("20200101_000002", "preparing", True),
+                                     ("20200101_000001", "preparing", False)):
                 d = os.path.join(agent.analysis_jobs_dir(), jid)
                 os.makedirs(d, exist_ok=True)
                 made.append(d)
@@ -564,10 +564,10 @@ def main():
                         json.dump(body, f)
                     if old:
                         os.utime(os.path.join(d, name), (1, 1))
-            assert agent.analysis_mark_interrupted() == 2, "只標進度很久沒更新的（第九輪以前的 reasoning 也算）"
+            assert agent.analysis_mark_interrupted() == 2, "只標進度很久沒更新的"
             job = json.load(open(os.path.join(made[0], "job.json"), encoding="utf-8"))
-            assert job["status"] == "failed" and "Workers 說明" in job["error"], job
-            assert json.load(open(os.path.join(made[2], "job.json"), encoding="utf-8"))["status"] == "working"
+            assert job["status"] == "failed" and "資料預備" in job["error"], job
+            assert json.load(open(os.path.join(made[2], "job.json"), encoding="utf-8"))["status"] == "preparing"
             for d in made:
                 shutil.rmtree(d)
 
@@ -611,7 +611,7 @@ def main():
                          ("句子的意思：變化、某一刻與到最後的值、沒有變化、回到初始（中途才出現的不算）跟事實核對；中文主詞、部分、疑問不核對", t_claims),
                          ("主對話：依報告回答卻寫成因果、或寫錯事實 → 提醒一次（之後的回合核對寫到報告的那幾行）；否定、條件、Log 原文不算", t_main_reply_check),
                          ("dispatch：analysis_run 偽技能存檔與軌跡、[ANALYSIS_DATA] 同步、省略 --data、腳本拿得到環境變數", t_dispatch_and_state),
-                         ("Web：/analyze 的回合（進度、報告進主對話、寫成因果時改寫）、面板 state 與設定、拿掉的指令、分析模式", t_web),
+                         ("Web：/analyze 的回合（進度、報告進主對話、寫成因果時改寫）、面板 state 與設定、不認識的指令列出現有的、分析模式", t_web),
                          ("CLI：/analyze 的選項照原樣交給 analysis_run、沒有 --data 時補目前的數據（跟 Web 共用 analyze_command_args）", t_cli_analyze),
                          ("限制與設定：一次最多 3 分鐘（以整秒算）、只有 Log 的錄製、拿掉的選項、設定檔只存改過的值", t_limits_and_settings),
                          ("程式重新啟動：沒做完的 job（進度很久沒更新）標成中斷，剛更新的不動", t_mark_interrupted),

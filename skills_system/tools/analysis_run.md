@@ -39,4 +39,3 @@ dependencies: []
 # 異常
 * 數據超過 3 分鐘：回 `[ERROR]`，先用 mcap_slicer 切。
 * Topic 都無法解碼：回 `[ERROR]`，先用 ROS2_workspace_env 確認 Workspace（自訂訊息要有建好、載入的套件）。
-* `--workers`、`--rounds`、`--source`、`--before` 這些舊選項已經拿掉：回 `[ERROR]` 說明，不要再用。

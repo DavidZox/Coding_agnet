@@ -13,6 +13,9 @@ file_ops 的範例正好是那一題的答案；設計筆記 2.19）。這裡把
 或模組裡的 _t、_x… 這種取一則的小函式）都在、程式填的每個名稱範本裡都有 {名稱}、範本裡沒有沒人用的一則；讀範本的 agent_core/prompt_files.py
 本身（取一則、一次填完、讀不到回空字串）。
 
+還有沒人用的程式（2026-11 第 6 階段清掉舊路徑之後，不要再累積）：agent_core、web_app、vision、技能腳本裡定義了卻沒有人用的函式、方法、
+類別、模組層的常數，與各檔 import 了卻沒用到的名稱。
+
 評測世界的名稱：機器人（tb1…）、工作包（WP_…）、站點（a0…）與語意名稱（組裝線區-2…）、容器、映像、檔案沙盒的路徑、
 設定檔裡的設定名稱、錯誤碼、數據的編號（exp_…）。調度系統本身的協定名稱（distribute、handshake_states、threshold_recovery_sec…）
 是技能要描述的領域知識，評測沙盒照真的系統做，所以不算（ALLOWED）。範例要用 `<檔案>`、`<名稱>` 或評測世界沒有的名稱
@@ -209,6 +212,81 @@ def template_uses():
     return uses, unresolved
 
 
+# ---------------------------------------------------------------- 沒人用的程式
+DEAD_SCAN_DIRS = ("agent_core", "web_app", "vision", "skills_system/scripts")    # 找「定義了沒人用」的範圍
+REF_DIRS = DEAD_SCAN_DIRS + ("evals", "test_data/tools")                         # 找引用的範圍（測試、評測工具用到的也算）
+REF_FILES = ("Agent_Runner.py", "web_console.py", "web_app/static/index.html")
+# 框架照名稱呼叫的（ast.NodeVisitor 的 visit_*、http.server 的 do_GET…）、檔案的進入點：不算沒人用
+_CALLED_BY_NAME = re.compile(r"^(visit_\w+|do_(GET|POST|HEAD|PUT|DELETE)|log_message|setUp|tearDown|main|__\w+__)$")
+_SKIP_DIRS = {"__pycache__", "results", "archive", "fixtures"}
+
+
+def _py_files(root, dirs):
+    out = []
+    for d in dirs:
+        for dp, dn, fn in os.walk(os.path.join(root, d)):
+            dn[:] = [x for x in dn if x not in _SKIP_DIRS]
+            out += [os.path.join(dp, f) for f in fn if f.endswith(".py")]
+    return sorted(out)
+
+
+def dead_definitions(root=PROJECT):
+    """[(相對路徑, 行號, 名稱)]：函式、方法、類別、模組層的大寫常數，名稱在引用的範圍裡只出現一次（就是定義的那一次）。
+    靜態的粗略比對：名稱出現在字串、註解裡也算有人用（寧可漏也不誤報）；同名的定義互相算引用。"""
+    words = {}
+    for path in _py_files(root, REF_DIRS) + [os.path.join(root, f) for f in REF_FILES]:
+        if os.path.isfile(path):
+            with open(path, encoding="utf-8") as f:
+                text = f.read()
+            for w in re.findall(r"[A-Za-z_][A-Za-z0-9_]*", text):
+                words[w] = words.get(w, 0) + 1
+    out = []
+    for path in _py_files(root, DEAD_SCAN_DIRS):
+        tree = ast.parse(open(path, encoding="utf-8").read())
+        found = [(n.lineno, n.name) for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))]
+        found += [(n.lineno, t.id) for n in tree.body if isinstance(n, ast.Assign) for t in n.targets
+                  if isinstance(t, ast.Name) and t.id.isupper()]
+        out += [(os.path.relpath(path, root), ln, name) for ln, name in found
+                if not _CALLED_BY_NAME.match(name) and words.get(name, 0) <= 1]
+    return sorted(out)
+
+
+def unused_imports(root=PROJECT):
+    """[(相對路徑, 行號, 名稱)]：import 了卻沒用到的（名稱在那個檔案裡只出現在 import 那裡）；__init__.py、__future__、標了 noqa 的不算。"""
+    out = []
+    for path in _py_files(root, REF_DIRS):
+        if os.path.basename(path) == "__init__.py":
+            continue
+        src = open(path, encoding="utf-8").read()
+        lines = src.splitlines()
+        for node in ast.walk(ast.parse(src)):
+            if isinstance(node, ast.Import):
+                names = [(a.asname or a.name).split(".")[0] for a in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.module != "__future__":
+                names = [a.asname or a.name for a in node.names if a.name != "*"]
+            else:
+                continue
+            if "noqa" in lines[node.lineno - 1]:
+                continue
+            out += [(os.path.relpath(path, root), node.lineno, n) for n in names
+                    if len(re.findall(rf"(?<![\w.]){re.escape(n)}(?!\w)", src)) <= 1]
+    return sorted(out)
+
+
+def t_dead_code():
+    dead = dead_definitions()
+    assert not dead, "定義了卻沒有人用（清掉；真的是框架照名稱呼叫的，加進 _CALLED_BY_NAME）：\n" + "\n".join(f"{p}:{ln} {n}" for p, ln, n in dead)
+    unused = unused_imports()
+    assert not unused, "import 了卻沒用到：\n" + "\n".join(f"{p}:{ln} {n}" for p, ln, n in unused)
+    with tempfile.TemporaryDirectory() as d:                     # 抓得到：放一個有沒人用的函式、多餘的 import 的檔案
+        os.makedirs(os.path.join(d, "agent_core"))
+        with open(os.path.join(d, "agent_core", "x.py"), "w", encoding="utf-8") as f:
+            f.write("import json\nimport os\n\n\nclass V:\n    def visit_Name(self, node):\n        return node\n\n\n"
+                    "def used():\n    return os.sep\n\n\ndef _never_called():\n    return used()\n")
+        assert [n for _, _, n in dead_definitions(d)] == ["V", "_never_called"], dead_definitions(d)
+        assert [n for _, _, n in unused_imports(d)] == ["json"], unused_imports(d)
+
+
 def main():
     results = []
 
@@ -319,7 +397,8 @@ def main():
                      ("prompts、SKILLS.md、技能規格、工作流沒有評測世界的名稱", t_docs),
                      ("agent_core、vision、web_app 與技能腳本回給模型的字串沒有評測世界的名稱", t_code),
                      ("prompts/ 的範本跟程式對得上：用到的每一則都在、填的名稱範本裡都有、沒有沒人用的一則", t_templates),
-                     ("讀範本（agent_core/prompt_files.py）：取一則、一次填完、讀不到回空字串、檔案改了就重讀", t_loader)]:
+                     ("讀範本（agent_core/prompt_files.py）：取一則、一次填完、讀不到回空字串、檔案改了就重讀", t_loader),
+                     ("沒人用的程式：定義了卻沒有人用的函式、類別、常數，import 了卻沒用到的（清掉的舊路徑不要再累積）", t_dead_code)]:
         check(name, fn)
     failed = [r for r in results if not r[1]]
     for name, _, tb in failed:

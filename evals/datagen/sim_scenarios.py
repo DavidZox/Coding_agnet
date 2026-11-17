@@ -9,7 +9,7 @@ import random
 
 from sim_base import Base
 from sim_bridge import Bridge
-from sim_core import INF, Sim, Signal, twist
+from sim_core import INF, Sim, twist
 from sim_diag import FAULTS, Diagnostics
 from sim_nav import Nav
 from sim_rmf import Rmf

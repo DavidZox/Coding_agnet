@@ -6,7 +6,7 @@ import sys
 from .config import SKILL_DOC_PREFIX, SKILL_LOADED_MARKER, TOOL_EXEC_TIMEOUT, WORKFLOWS_ENABLED
 
 from . import prompt_files
-from .protocol import action_text, doc_type, is_procedure_doc, parse_agent_reply
+from .protocol import action_text, doc_type, parse_agent_reply
 
 # 流程技能（/make_skill 依對話整理的規格，沒有自己的腳本）載入後，下一步怎麼做：照步驟一步一步來
 def _d(key, /, **fields):
@@ -69,7 +69,7 @@ class DispatchMixin:
         if doc is None:
             return None
         name = skill_name[:-3] if skill_name.endswith(".md") else skill_name
-        how = _d("procedure_next") if is_procedure_doc(doc) else _d("manual_how")
+        how = workflow_next_step(name, doc) if doc_type(doc) == "Workflow" else _d("manual_how")   # 工作流：用 workflow_run，不是照腳本
         return _d("manual", marker=SKILL_LOADED_MARKER, prefix=SKILL_DOC_PREFIX, name=name, how=how, doc=doc.rstrip())
 
     def _load_skill_doc(self, skill_name):
@@ -212,16 +212,13 @@ class DispatchMixin:
                 print(f"📖 Agent 選擇工作流: {name}（載入工作流的規格，尚未執行）")
                 return _d("loaded_workflow", prefix=SKILL_DOC_PREFIX, name=name, next=workflow_next_step(name, skill_doc), doc=skill_doc)
             if skill_doc is not None:
-                procedure = is_procedure_doc(skill_doc)
-                print(f"📖 Agent 選擇技能索引: {raw_token}（載入{'流程技能的' if procedure else ''}規格文件，尚未執行）")
+                print(f"📖 Agent 選擇技能索引: {raw_token}（載入規格文件，尚未執行）")
                 # 回給模型的這段話是兩階段流程裡最關鍵的一句：實測 JSON 協議下小模型載完規格容易停下來解釋規格或
                 # 反問使用者（reply 欄位本身就在邀請它聊天），所以這裡直接下達下一輪該做的事。帶了參數時再明說那些參數
                 # 沒有被執行——實測模型用「docker_open <容器>」載完規格就當作容器已切換，直接做下一步。
                 # 實測（2026-09-25 情境稽核）：只寫「繼續使用者原本的任務」時，模型會跳過這一步直接做下一步（載完 change_dir
                 # 規格就去 ls），所以要明說「下一輪先把這一個技能真正執行一次，之後才做下一步」。
-                if procedure:
-                    next_step = (_d("args_not_run_procedure", args=remainder.strip()) if remainder.strip() else "") + _d("procedure_next")
-                elif remainder.strip():
+                if remainder.strip():
                     next_step = _d("args_not_run", args=remainder.strip())
                 else:
                     next_step = _d("run_next")

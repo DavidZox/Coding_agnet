@@ -72,9 +72,6 @@ DOMAIN_COPY = (
 ROS_ENV_TAG = "@@CAH_ROS_ENV@@"
 ENV_REPORT = f'printf "%s|%s|%s|%s|%s\\n" "{ROS_ENV_TAG}" "${{ROS_DOMAIN_ID-}}" "$_cah_dsrc" "${{ROS_DISTRO-}}" "${{_cah_ws-}}"; '
 
-# 舊的組合（_ros2_data_common 等直接拼接的呼叫端還在用）：/opt/ros → 第一個找到的 Workspace → domain
-ROS2_ENV_FALLBACK = ROS_SOURCE + WS_GLOB + DOMAIN_COPY
-
 
 def workspace_source(container):
     """harness 記錄的 ROS 2 Workspace（ROS2_workspace_env 確認過、而且屬於這個容器）→ 載入它的 setup.bash 的指令片段；
@@ -646,13 +643,6 @@ def grouped_lines(items):
     return out
 
 
-def pass_or_empty(stdout, empty_hint):
-    """成功但沒有輸出時，給 Agent 一個明確的 [PASS] 訊息。
-    空字串會被 Agent_Runner 誤判成「沒有工具需要執行」，絕對不能回傳空字串。"""
-    text = (stdout or "").strip()
-    return text if text else f"[PASS] 指令執行成功，但沒有任何輸出（{empty_hint}）。"
-
-
 def parse_timeout(value, default, max_seconds, name="timeout"):
     """解析使用者傳入的逾時秒數；回傳 (seconds, error_message_or_None)。"""
     if value is None or str(value).strip() == "":
@@ -690,14 +680,6 @@ def list_container_names(timeout=LIST_TIMEOUT_SECONDS):
     if not ok:
         return None, err
     return [n.strip() for n in out.splitlines() if n.strip()], None
-
-
-def match_container(name, names):
-    """名稱比對：完全相同 > 唯一的子字串符合；對不到或多個符合回 None（相容舊的呼叫端；新的用 lookup_container）。"""
-    if name in names:
-        return name
-    matches = [n for n in names if name in n]
-    return matches[0] if len(matches) == 1 else None
 
 
 def exact_container(name, names):

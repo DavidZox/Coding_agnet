@@ -729,14 +729,6 @@ def queue_text(label, t):
     return label
 
 
-def _locate_task(data, task_id):
-    """舊介面：回傳 (佇列名稱, 補充說明)。"""
-    label, t = queue_of(data, task_id)
-    if not label:
-        return None, ""
-    return label, "，" + queue_text(label, t)
-
-
 def item_package(data, item_id):
     """目前工作項是 item_id 的 work package。"""
     return next((p for p in packages(data) if (p.get("current_item") or {}).get("item_id") == item_id), None)

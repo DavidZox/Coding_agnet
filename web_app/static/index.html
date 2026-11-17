@@ -851,9 +851,9 @@ msgBox.addEventListener('keydown', (e) => {
 // 📊 數據分析面板：analysis_run 的 job（全部由程式做；2026-10-22 以前的 job 另有 Orchestrator 的計畫與 Workers）。分析在主對話的回合裡同步執行，進度同時推到
 // 右欄的系統卡片；面板讀 job 資料夾的檔案，分析進行中或面板打開時每 1.5 秒輪詢 /api/analysis/state。
 // =====================================================================
-const AN_STATUS = { preparing: '資料預備', planning: 'Orchestrator 規劃', working: 'Workers 分析', synthesizing: 'Synthesizer 整合事實', checking: 'Orchestrator 檢查', done: '完成', failed: '失敗' };
+const AN_STATUS = { preparing: '資料預備', done: '完成', failed: '失敗' };
 const AN_STEPS = ['preparing'];   // 2026-10-23 起全部由程式做：資料預備（Log 去重、量全部 Topic 的事實）之後直接出報告
-const AN_ACTIVE = new Set(['preparing', 'planning', 'working', 'synthesizing', 'checking']);
+const AN_ACTIVE = new Set(['preparing']);
 const an = { jobId: null, data: null, timer: null, lastKey: '', settingsOpen: false, open: new Set() };
 
 function esc(t) { return String(t == null ? '' : t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }

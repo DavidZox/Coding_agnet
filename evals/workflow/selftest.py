@@ -52,6 +52,31 @@ changes_state: true
 * 第 1 步的輸出有「RUNNING」
 """
 
+# 會改變狀態的步驟一定要經過確認（2026-11-17：check_ros2_mqtt_connect 的發布步驟用假的值判斷時被當成「參數錯、不會改」，不用確認就會執行）。
+# 訊息型別由第 1 步的輸出決定（判斷點）；PUB_INPUT 是型別由使用者給的版本
+PUB_WF = """---
+type: Workflow
+title: 測試用的發布
+description: 測試會改變狀態的步驟一定經過確認
+version: 0.1.0
+dependencies: ["ROS2_topic_list", "ROS2_topic_pub"]
+changes_state: true
+---
+# 用途
+測試。
+# 需要的資訊
+* `{container}`：容器
+* `{topic}`：topic
+* `{content}`：內容
+# 步驟
+1. 【執行】看 topic 的型別：`EXECUTE: scripts/ROS2_topic_list_cmd.py {container}`
+2. 【執行】發布一次（型別照第 1 步）：`EXECUTE: scripts/ROS2_topic_pub_cmd.py {container} {topic} {msg_type} '{content}' --times 1`
+3. 【告知】回報
+# 成功判準
+* 第 2 步的輸出有「已發布」
+"""
+PUB_INPUT = PUB_WF.replace("* `{content}`：內容", "* `{content}`：內容\n* `{msg_type}`：訊息型別")
+
 
 class FakeTools:
     """假的技能：依命令（腳本＋參數）回照真實格式寫的輸出；每次執行照常記軌跡（存檔、#編號）。"""
@@ -254,6 +279,50 @@ def main():
             finally:
                 agent.load_workflow = real_load
 
+        def t_state_change_confirmed():
+            real_load, real_segment = agent.load_workflow, agent._wf_segment
+            specs = {"pub_test": PUB_WF, "pub_input": PUB_INPUT}
+            agent.load_workflow = lambda name: ws.parse(specs[name], name, os.path.join(tmp, f"{name}.md")) if name in specs else real_load(name)
+            rules = [(r"ROS2_topic_list_cmd\.py c1", "[PASS] 容器 'c1' 的 topic：共 1 個\n/x/cmd [std_msgs/msg/String]"),
+                     (r"ROS2_topic_pub_cmd\.py", "[PASS] 已發布 1 則到 /x/cmd（std_msgs/msg/String）")]
+            try:
+                # 開始時用使用者給的真的值判斷（以前一律換成假的值 x，ROS2_topic_pub 的型別 x 解析不過，被當成不會改）
+                reason = agent.workflow_guard_reason("pub_input container=c1 topic=/x/cmd content=hi msg_type=std_msgs/msg/String")
+                assert reason and "第 2 步" in reason and "ROS2_topic_pub c1 /x/cmd std_msgs/msg/String" in reason, reason
+                # 真的值是唯讀的不列（只用假的值時看不出來、當成會改）：ROS2_param 的 get／set 由使用者給
+                step = {"n": 1, "kind": "執行", "script": "ROS2_param_cmd.py", "args": "{container} {op} /cam_node exposure 20"}
+                assert agent._wf_step_changes(step) is True, "假的值看不出是唯讀的：當成會改（規格核對用）"
+                assert agent._wf_step_changes(step, {"container": "c1", "op": "get"}) is False, "真的值是唯讀的（get）：不列成會改變狀態"
+                assert agent._wf_step_changes(step, {"container": "c1", "op": "set"}) is True
+                # 規格的核對：假的值解析不過、又看不出是唯讀的步驟當成會改——宣告 changes_state: false 卻有發布的步驟要擋下
+                bad = ws.parse(PUB_INPUT.replace("changes_state: true", "changes_state: false"), "b", "b")
+                assert any("changes_state 寫 False" in e for e in agent.validate_workflow(bad)), agent.validate_workflow(bad)
+                # 執行時的防線：開始時的確認漏了這一步（模擬：確認關卡什麼都沒列），執行到那一步用真的值再判斷——沒有核准過就停下來、不執行
+                agent._wf_segment = lambda wf, start, values: []
+                tools, model = setup(rules, fills=[{"msg_type": "std_msgs/msg/String"}])
+                assert agent.workflow_guard_reason("pub_test container=c1 topic=/x/cmd content=hi") is None
+                out = agent.workflow_run("pub_test container=c1 topic=/x/cmd content=hi")
+                assert out.startswith("[PASS] ⏸️ 工作流 pub_test 停在第 2 步：這一步會改變狀態（ROS2_topic_pub c1 /x/cmd std_msgs/msg/String"), out
+                assert not [r for r in tools.ran if r[0] == "ROS2_topic_pub_cmd.py"], "沒有核准過：不執行"
+                agent._wf_segment = real_segment
+                reason = agent.workflow_guard_reason("--continue")
+                assert reason and "第 2 步會改變狀態（ROS2_topic_pub c1 /x/cmd std_msgs/msg/String" in reason, reason
+                out = agent.workflow_run("--continue")
+                pub = [r for r in tools.ran if r[0] == "ROS2_topic_pub_cmd.py"]
+                assert out.startswith("[PASS] 工作流 pub_test（測試用的發布）完成") and len(pub) == 1 and "std_msgs/msg/String" in pub[0][1], (out, pub)
+                assert [c[0] for c in model.calls] == ["fill"], "接著做用確認時列出的值，不再問一次"
+                # 取消：停在那一步之前；/guard off（使用者關掉確認）不停
+                agent._wf_segment = lambda wf, start, values: []
+                tools, model = setup(rules, fills=[{"msg_type": "std_msgs/msg/String"}])
+                agent.workflow_run("pub_test container=c1 topic=/x/cmd content=hi")
+                assert "停在第 2 步之前" in agent.workflow_run("--cancel")
+                tools, model = setup(rules, fills=[{"msg_type": "std_msgs/msg/String"}])
+                agent.guard_enabled = False
+                out = agent.workflow_run("pub_test container=c1 topic=/x/cmd content=hi")
+                assert out.startswith("[PASS] 工作流 pub_test（測試用的發布）完成"), out
+            finally:
+                agent.load_workflow, agent._wf_segment, agent.guard_enabled = real_load, real_segment, True
+
         def t_model_branch():
             real_load = agent.load_workflow
             spec = CONFIRM_WF.replace("「RUNNING」→ 第 3 步", "「PAUSED」→ 第 3 步；「IDLE」→ 結束")
@@ -392,7 +461,7 @@ def main():
         def t_make_skill():
             draft_data = {"purpose": "查 topic 有沒有在發，沒有就重啟發布的容器", "requirements": [], "category": "工作流",
                           "title": "topic 不動就重啟", "description": "某個 topic 沒在發時重啟發布它的容器並確認",
-                          "inputs": [{"name": "topic", "description": "要看的 topic", "source": "使用者提供", "example": "/odom"},
+                          "inputs": [{"name": "topic", "description": "要看的 topic 的完整名稱（例：/odom）", "source": "使用者提供", "example": "/odom"},
                                      {"name": "container", "description": "發布它的容器", "source": "第 1 步的回傳", "example": "nav2"}],
                           "steps": [{"kind": "執行", "instruction": "讀一筆", "skill": "ROS2_topic_echo",
                                      "command": "scripts/ROS2_topic_echo_cmd.py {topic}", "on_failure": "topic 名稱打錯就問使用者"},
@@ -418,7 +487,8 @@ def main():
                 index = f.read()
             sec = index[index.index("## 工作流"):]
             sec = sec[:sec.index("\n## ", 3)]
-            assert "  - `topic_restart_fix` — " in sec and "workflow_run topic_restart_fix topic=<" in sec, sec[-400:]
+            assert "  - `topic_restart_fix` — " in sec and "workflow_run topic_restart_fix topic=<要看的 topic 的完整名稱>`" in sec, \
+                "呼叫語法裡值的提示是說明的第一段，不在字的中間截斷：" + sec[-400:]
             assert "topic_restart_fix" in agent.workflow_run("--list")
             bad = dict(draft_data, steps=draft_data["steps"][:1] + [dict(draft_data["steps"][1], instruction="看第 1 步：「x」→ 第 1 步")]
                        + draft_data["steps"][2:])
@@ -433,6 +503,7 @@ def main():
                          ("技能回 [ERROR]：帶著錯誤請模型改一次值", t_retry_on_error),
                          ("【確認】停下來、--continue 接著做（前面步驟的輸出從存檔讀回）、--cancel；關卡由模型判斷", t_confirm_pause_continue),
                          ("比對不出分支、又沒有「其他」：交給模型選", t_model_branch),
+                         ("會改變狀態的步驟一定經過確認：開始時用真的值判斷、規格核對、執行時沒核准過就停下來", t_state_change_confirmed),
                          ("參數錯誤與確認關卡的說明", t_args_and_guard),
                          ("dispatch：名稱當技能載入、沒有核准不執行、可以關閉", t_dispatch),
                          ("/workflow 與不用互動的入口：列出、看步驟；沒有 --yes 不執行、結束碼、--continue；報告不再提煉；命令列參數", t_workflow_cmd),

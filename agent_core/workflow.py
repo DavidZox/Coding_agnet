@@ -25,7 +25,7 @@ import time
 
 from . import prompt_files
 from . import workflow_spec as ws
-from .config import NUM_CTX, WORKFLOW_CONTEXT_CHARS, WORKFLOW_JOBS_DIRNAME, WORKFLOW_JOBS_KEEP
+from .config import GUARDED_SKILLS, NUM_CTX, WORKFLOW_CONTEXT_CHARS, WORKFLOW_JOBS_DIRNAME, WORKFLOW_JOBS_KEEP
 from .jobstore import JobStore
 
 RAW_ARGS_SCRIPTS = {"file_ops_cmd.py"}      # 自己解析 action.args 原文的腳本（HARNESS_RAW_ARGS）：雙引號裡的換行要寫成 \n
@@ -131,13 +131,34 @@ class WorkflowMixin:
                     out.append(wf)
         return out
 
-    def _wf_step_changes(self, step):
-        """這一步會不會改變狀態：佔位符先換成假的值，交給確認關卡同一套判斷（各腳本自己的解析）。"""
+    def _wf_step_changes(self, step, values=None):
+        """這一步會不會改變狀態：佔位符換成知道的值（使用者給的、前面的判斷點決定的），還不知道的換成假的值，交給確認關卡同一套判斷
+        （各腳本自己的解析）。只用假的值會漏：腳本的解析把假的值當成用法錯（ROS2_topic_pub 的訊息型別寫成 x），就算成「不會改變狀態」
+        ——2026-11-17 發現 check_ros2_mqtt_connect 的發布步驟因此不用確認就會執行。所以確認關卡用真的值，執行時再用真的值判斷一次
+        （WorkflowRun.do_exec：沒有核准過的就停下來問）。"""
         if step["kind"] != "執行" or not step.get("script"):
             return False
-        dummy = {p: "x" for p in ws.placeholders(step.get("args", ""))}
+        known = {k: str(v) for k, v in (values or {}).items() if str(v).strip()}
+        names = ws.placeholders(step.get("args", ""))
+        dummy = {p: known.get(p, "x") for p in names}
         args = fill_template(step.get("args", ""), dummy, step["script"])
-        return bool(self.state_change_info({"action": {"command": f"scripts/{step['script']}", "args": args}}))
+        if self.state_change_info({"action": {"command": f"scripts/{step['script']}", "args": args}}):
+            return True
+        # 有假的值、技能會被擋、腳本的解析又不過也看不出是唯讀的：看不出會不會改（關卡把「參數錯」當成不會改，那是對真的執行；這裡是
+        # 假的值）→ 當成會改。解析看得出是唯讀的（docker_ctl logs／status，只是假的容器名稱不存在）照唯讀
+        skill = self._script_skill_map().get(step["script"])
+        if not any(p not in known for p in names) or skill not in GUARDED_SKILLS:
+            return False
+        parsed = self._guard_parse(skill, self._parse_script_args(step["script"], args))
+        return bool(parsed.get("error")) and not parsed.get("readonly")
+
+    @staticmethod
+    def _wf_known_values(job):
+        """使用者給的值，加上前面的判斷點已經決定的值。"""
+        values = dict(job.get("inputs") or {})
+        for st in (job.get("steps") or {}).values():
+            values.update(st.get("values") or {})
+        return values
 
     def validate_workflow(self, wf):
         skills = self._script_skill_map()
@@ -201,7 +222,7 @@ class WorkflowMixin:
         for s in wf["steps"][start - 1:]:
             if s["kind"] == "確認":
                 break
-            if self._wf_step_changes(s) and not ws.skipped_by(wf, s, values):
+            if self._wf_step_changes(s, values) and not ws.skipped_by(wf, s, values):
                 changing.append(s)
         return changing
 
@@ -219,10 +240,15 @@ class WorkflowMixin:
             job = self._wf_find_job(target)
             if not job or job.get("status") != "paused":
                 return None
-            wf, inputs = job["spec"], job.get("inputs") or {}
-            step = wf["steps"][job["cursor"] - 2] if job["cursor"] >= 2 else None
+            wf, inputs = job["spec"], self._wf_known_values(job)
             changing = self._wf_segment(wf, job["cursor"], inputs)
-            return (f"繼續工作流「{wf['title']}」（{wf['name']}）：第 {step['n'] if step else '?'} 步【確認】{ws.show(step['text'], inputs) if step else ''}"
+            pause = job.get("pause") or {}
+            if pause.get("kind") == "state":
+                where = f"第 {pause['step']} 步會改變狀態（{pause.get('command', '')}），開始時的確認沒有列到（值是執行到那裡才確定的）"
+            else:
+                step = wf["steps"][job["cursor"] - 2] if job["cursor"] >= 2 else None
+                where = f"第 {step['n'] if step else '?'} 步【確認】{ws.show(step['text'], inputs) if step else ''}"
+            return (f"繼續工作流「{wf['title']}」（{wf['name']}）：{where}"
                     + (f"\n接下來會改變狀態的步驟：{self._wf_changes_text(changing, inputs)}" if changing else "\n接下來的步驟都只查詢")
                     + "\n" + ws.outline(wf, values=inputs))
         wf = self.load_workflow(target)
@@ -260,7 +286,10 @@ class WorkflowMixin:
             if action == "cancel":
                 job["status"] = "cancelled"
                 self._wf_store_job(job)
-                return f"[PASS] 工作流 {job['spec']['name']}（{job['id']}）取消了：停在第 {job['cursor'] - 1} 步之後，後面的步驟沒有做。"
+                pause = job.get("pause") or {}
+                where = f"第 {pause['step']} 步之前" if pause.get("kind") == "state" else f"第 {job['cursor'] - 1} 步之後"
+                return f"[PASS] 工作流 {job['spec']['name']}（{job['id']}）取消了：停在{where}，後面的步驟沒有做。"
+            job["approved"] = list(job.get("approved") or []) + [s["n"] for s in self._wf_segment(job["spec"], job["cursor"], self._wf_known_values(job))]
             return WorkflowRun(self, job).run()
         wf = self.load_workflow(target)
         if not wf:
@@ -277,7 +306,8 @@ class WorkflowMixin:
         store = self._workflow_store()
         job = {"id": store.new_id(wf["name"]), "spec": wf, "inputs": inputs, "given": values, "status": "running", "cursor": 1,
                "steps": {str(s["n"]): {"status": "pending"} for s in wf["steps"]}, "notes": [], "created": time.strftime("%Y-%m-%d %H:%M:%S"),
-               "model": self.model, "seconds": 0.0, "model_calls": 0}
+               "model": self.model, "seconds": 0.0, "model_calls": 0,
+               "approved": [s["n"] for s in self._wf_segment(wf, 1, inputs)]}   # 確認關卡列給使用者看、核准的那幾步
         self.last_workflow_job = job["id"]
         return WorkflowRun(self, job).run()
 
@@ -382,11 +412,12 @@ class WorkflowRun:
         t0 = time.time()
         self.job["status"] = "running"
         steps = self.wf["steps"]
-        resumed = self.job["cursor"] > 1
+        resumed = self.job["cursor"] > 1 or bool(self.job.get("pause"))
         if resumed:
-            prev = steps[self.job["cursor"] - 2]
-            if prev["kind"] == "確認" and self.state(prev["n"])["status"] == "paused":
+            prev = steps[self.job["cursor"] - 2] if self.job["cursor"] >= 2 else None
+            if prev and prev["kind"] == "確認" and self.state(prev["n"])["status"] == "paused":
                 self.state(prev["n"]).update(status="done", why="使用者在確認關卡核准（workflow_run --continue）")
+            self.job.pop("pause", None)
         self.note(f"🧩 工作流 {self.wf['name']}（{self.wf['title']}）{'從第 ' + str(self.job['cursor']) + ' 步接著做' if resumed else '開始'}"
                   f"：共 {len(steps)} 步")
         end = None
@@ -396,6 +427,12 @@ class WorkflowRun:
             if s["kind"] == "執行":
                 ok = self.do_exec(s, st)
                 self.save()
+                if ok == "paused":                     # 會改變狀態、沒有核准過：停在這一步（--continue 核准後從這一步做）
+                    self.job["status"] = "paused"
+                    self.job["seconds"] += round(time.time() - t0, 1)
+                    self.save()
+                    self.note(f"⏸️ 工作流停在第 {s['n']} 步：{st.get('why', '')}")
+                    return self.report()
                 if not ok:
                     end = "failed"
                     break
@@ -413,6 +450,7 @@ class WorkflowRun:
                 st.update(status="paused")
                 self.job["cursor"] += 1                # 繼續時從下一步開始（這一步在 --continue 的確認關卡上核准）
                 self.job["status"] = "paused"
+                self.job["pause"] = {"step": s["n"], "kind": "confirm"}
                 self.job["seconds"] += round(time.time() - t0, 1)
                 self.save()
                 self.note(f"⏸️ 工作流停在第 {s['n']} 步【確認】：{ws.show(s['text'], self.job['inputs'])}")
@@ -435,6 +473,8 @@ class WorkflowRun:
         values = dict(self.job["inputs"])
         for x in self.wf["steps"][: s["n"] - 1]:      # 前面的判斷點決定過的值沿用：同一個名稱同一個值，不再問一次、前後一致
             values.update(self.state(x["n"]).get("values") or {})
+        if st.get("status") == "paused":              # 停在這一步、使用者核准後接著做：用確認時列出的那些值，不再問一次
+            values.update(st.get("values") or {})
         empty_optional = ws.skipped_by(self.wf, s, values)
         if empty_optional:
             st.update(status="skipped", why=f"選填的 {'、'.join(empty_optional)} 沒有給")
@@ -458,6 +498,12 @@ class WorkflowRun:
             args = fill_template(s.get("args", ""), values, s["script"])
             command = f"scripts/{s['script']} {args}".strip()
             st["command"] = command[:600]
+            info = self.a.state_change_info({"action": {"command": f"scripts/{s['script']}", "args": args}})
+            if info and getattr(self.a, "guard_enabled", True) and s["n"] not in (self.job.get("approved") or []):
+                # 用真的值才看得出會改變狀態（開始時的確認沒有列到：值是執行到這裡才確定的，或假的值讓腳本的解析不過）：不執行，停下來問
+                st.update(status="paused", why=f"這一步會改變狀態（{info['reason']}），開始時的確認沒有列到，停下來請使用者確認")
+                self.job["pause"] = {"step": s["n"], "kind": "state", "command": f"{s['script'][:-7]} {_clip(args, 160)}"}
+                return "paused"
             self.note(f"🧩 第 {s['n']}/{len(self.wf['steps'])} 步【執行】{self.title(s)}：{s['script'][:-7]} {_clip(args, 160)}")
             before = len(self.a.trajectory)
             out = self.a._run_tool_once({"action": {"command": f"scripts/{s['script']}", "args": args}}, approved=True) or ""
@@ -578,6 +624,10 @@ class WorkflowRun:
         elif status == "ended":
             last = next((self.state(s["n"]) for s in reversed(wf["steps"]) if s["kind"] == "檢查" and self.state(s["n"]).get("branch")), {})
             head = f"[PASS] 工作流 {wf['name']} 依判斷提早結束：{last.get('branch', '')}（{took}）——後面的步驟沒有做，照下面的結果回報"
+        elif status == "paused" and (job.get("pause") or {}).get("kind") == "state":
+            p = job["pause"]
+            head = (f"[PASS] ⏸️ 工作流 {wf['name']} 停在第 {p['step']} 步：這一步會改變狀態（{p.get('command', '')}），開始時的確認沒有列到"
+                    f"（工作 {job['id']}）。下一步：直接執行 workflow_run --continue（系統會請使用者確認，不用先問）；使用者不要繼續就 workflow_run --cancel")
         elif status == "paused":
             s = wf["steps"][job["cursor"] - 2]
             head = (f"[PASS] ⏸️ 工作流 {wf['name']} 停在第 {s['n']} 步【確認】：{ws.show(s['text'], job['inputs'])}（工作 {job['id']}）。下一步：直接執行 "

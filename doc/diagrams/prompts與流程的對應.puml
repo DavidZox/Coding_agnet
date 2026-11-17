@@ -45,10 +45,11 @@ package "prompts/（改字不用改程式；evals/integrity 檢查範本跟程�
       「使用者想知道什麼」與每份存檔的背景
     ]
     rectangle P_ORCH #FFE6CC [
-      **orchestra/**：planner.md、worker.md（通則）、
-      profiles/<類型>.md（〈規劃〉〈執行〉）、
-      engine.md（引擎組進去的字：規劃與重排的訊息、計畫檢查的問題、
-      worker 的說明與提醒、對照目標的兩個問題、重試的原因）、
+      **orchestra/**：planner.md、worker.md、synthesizer.md（通則）、
+      profiles/<類型>.md：ops 維運、investigate 調查、report 整理報告
+      （〈規劃〉〈執行〉〈整合〉；調查與整理報告另附維運的〈規劃〉〈執行〉）、
+      engine.md（引擎組進去的字：選類型、規劃與重排的訊息、計畫檢查的問題、
+      worker 的說明與提醒、對照目標的兩個問題、重試的原因、整合的訊息與交回改）、
       plan_edit.md（Plan 模式用說的改）
     ]
     rectangle P_WF #FFF2CC [
@@ -86,8 +87,9 @@ package "用到它們的 session" {
     每段一個 worker → 整合；EXTRACT_WORKER／TOOL_SUMMARY_SCHEMA
   ]
   rectangle S_ORCH #FFE6CC [
-    **任務引擎**：規劃與重排（TASK_PLAN_SCHEMA）、每一步的 worker
-    （TASK_WORKER_REPLY_SCHEMA）、對照目標（TASK_GOAL_CHECK_SCHEMA）、
+    **任務引擎**：選類型（task_profile_schema）、規劃與重排（TASK_PLAN_SCHEMA）、
+    每一步的 worker（TASK_WORKER_REPLY_SCHEMA）、對照目標（TASK_GOAL_CHECK_SCHEMA）、
+    整合（TASK_SYNTH_SCHEMA：每一則附出處，程式核對）、
     Plan 模式的草稿與用說的改（PLAN_OPS_SCHEMA）
   ]
   rectangle S_WF #FFF2CC [
@@ -104,7 +106,7 @@ package "用到它們的 session" {
 package "留在程式裡的（不是給模型的指示）" {
   rectangle C_LIST #ECECEC [
     * 程式的輸出：技能與工具的 [PASS]／[ERROR]／[DENIED]（附下一步）、
-      任務引擎與工作流與數據分析的報告、提煉結果的排版、檢查的證據
+      任務引擎與工作流與數據分析的報告（含程式寫的報告檔）、提煉結果的排版、檢查的證據
     * 程式認的標記：[tool result]、【系統回傳】、[vision result]、
       [skill loaded]、（完整原文存檔 #N…）、（依這份報告回答使用者——
       範本裡用 {prefix}、{marker} 由程式填
@@ -127,7 +129,7 @@ S_VISION -[hidden]-> C_LIST
 legend bottom
   **用哪個模型**（獨立 session 一律關閉 thinking）
   ・主 session：主模型（Web 的模型設定，預設 gemma4:e4b）；提煉、滾動摘要：summary_model（AGENT_SUMMARY_MODEL，沒設定時跟著主模型）
-  ・任務引擎、工作流的判斷點、Plan 模式：主模型；/make_skill：skill_model；附圖：VISION_MODEL
+  ・任務引擎（選類型、規劃、worker、整合）、工作流的判斷點、Plan 模式：主模型；/make_skill：skill_model；附圖：VISION_MODEL
   範本的寫法：一個檔案好幾則時每則用一行 <!~-- @名稱 ~--> 開頭；{名稱} 是程式填的值（prompts/README.md）。
   改這些字＝改模型會讀的文字：跑對應的真模型評測、跟基準比；範例不用評測世界的名稱
 endlegend

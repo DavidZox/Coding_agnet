@@ -17,7 +17,7 @@
 - [rosout_parser](tools/rosout_parser.md) — 錄製數據（MCAP）裡的 Log 智慧過濾：/rosout 重複的 Log 合併成唯一訊號（L#：層級、Node、次數、時間戳），找異常的時間點；主機上一般的文字 Log 用 search_text
 - [mcap_analyzer](tools/mcap_analyzer.md) — 全域 Topic Metadata（時間範圍、每個 Topic 的型別、筆數、頻率、角色）；`--topic` 看每個 Key 的型別、維度與類別；`--key --preview` 看原始值
 - [mcap_feature_measure](tools/mcap_feature_measure.md) — 量測 Key 的特徵：數值統計（極值、均值、標準差、斜率、尖峰）、向量分量、狀態跳轉、訊息中斷、字串裡的 JSON 欄位；`--where` 門檻條件（第一次是什麼時候、持續多久）
-- [mcap_slicer](tools/mcap_slicer.md) — 依 Log 訊號（L#）或時間點前後各取幾秒，切出 toolkit 格式的 sliced_bag_*
+- [mcap_slicer](tools/mcap_slicer.md) — 依 Log 訊號（L#）、時間點前後各取幾秒，或明確的時間窗（`--window +開始,+結束`），切出 toolkit 格式的 sliced_bag_*（超過 3 分鐘的數據先切出要看的那段再交給 analysis_run）
 
 ## 系統內建
 - [list_dir](tools/list_dir.md) — 查看本機某一層目錄（不含子目錄）：目錄與檔案分開列，標頭算好數量與最新修改；`--filter 關鍵字` 計數、`--newest N` 找最新修改的
@@ -38,7 +38,7 @@
   - `dispatch_and_confirm` — 派工作包給指定的機器人並等它跑完再回報｜`workflow_run dispatch_and_confirm robot=<機器人> stops=<站點1,站點2,…（照順序；「從 A 到 B」的 A 也要寫）> [wp_id=<編號>]`
   - `container_restart_verify` — 重新啟動一直在跑的服務容器並確認 Up（跑完就結束的備份、批次容器不適用，直接 docker_ctl restart）；可以在容器裡跑唯讀指令確認設定、寫紀錄｜`workflow_run container_restart_verify container=<容器> [check_command="<唯讀指令>"] [expect=<要看到的字>] [note_file=<檔案>]`
   - `reassign_package` — 工作包派不出去：是原本那台的問題才取消、用同樣的站點改派給指定的機器人並等它跑完｜`workflow_run reassign_package wp_id=<工作包> robot=<機器人>`
-  - `check_ros2_mqtt_connect` — 切換至指定容器發送 ROS 2 訊息，並檢查 MQTT Broker 日誌確認是否有 PUBLISH 紀錄。｜`workflow_run check_ros2_mqtt_connect target_container=<要執行 ROS 2 發送> topic_name=<要發布的 ROS 2 t> msg_type=<ROS 2 訊息型別> msg_content=<要發布的 YAML 格式> broker_container=<要檢查 log 的 MQ>`
+  - `check_ros2_mqtt_connect` — 切換至指定容器發送 ROS 2 訊息，並檢查 MQTT Broker 日誌確認是否有 PUBLISH 紀錄。｜`workflow_run check_ros2_mqtt_connect target_container=<要執行 ROS 2 發送指令的容器名稱> topic_name=<要發布的 ROS 2 topic 名稱> msg_type=<ROS 2 訊息型別> msg_content=<要發布的 YAML 格式訊息內容> broker_container=<要檢查 log 的 MQTT Broker 容器名稱>`
 
 ## 多步驟任務
 - [task_run](tools/task_run.md) — 沒有對應的工作流、又是複雜的任務（4 步以上、跨檔案／容器／ROS 2／調度系統：要改好幾個狀態的維運、要查好幾個地方的調查、交班報告或事件時間線這種整理報告）用這個：args 填使用者的原話；系統選類型、先規劃、先查清楚，要改變狀態的步驟（含寫報告檔）系統會請使用者確認（不用先問），再一步一步執行並檢查，回報每一步的結果與核對過的事實（調查與報告附核對過出處的結論）

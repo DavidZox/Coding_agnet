@@ -2,8 +2,8 @@
 import json
 import os
 import re
-from .config import (ANALYSIS_REPORT_HEAD, PROCEDURE_DOC_TYPE, SKILL_DOC_PREFIX, TASK_REPORT_HEADS, TOOL_RESULT_FRAME,
-                     TOOL_SUMMARY_TAG, WORKFLOW_REPORT_HEADS)
+from .config import (ANALYSIS_REPORT_HEAD, SKILL_DOC_PREFIX, TASK_REPORT_HEADS, TOOL_RESULT_FRAME, TOOL_SUMMARY_TAG,
+                     WORKFLOW_REPORT_HEADS)
 from . import prompt_files
 
 _FRAME = "harness/tool_results.md"   # 工具結果的框架句（【系統回傳】是程式認的標記，留在程式）
@@ -12,23 +12,13 @@ _DOC_TYPE_RE = re.compile(r"^type:\s*(\S+)\s*$", re.M)
 
 
 def doc_type(doc):
-    """規格文件 frontmatter 的 type（Tool／Procedure／Workflow）；沒有就空字串。"""
+    """規格文件 frontmatter 的 type（Tool／Workflow）；沒有就空字串。"""
     text = str(doc or "")
     if not text.startswith("---"):
         return ""
     end = text.find("\n---", 3)
     m = _DOC_TYPE_RE.search(text[:end if end > 0 else 400])
     return m.group(1) if m else ""
-
-
-def is_procedure_doc(doc):
-    """規格文件是不是舊的流程技能（frontmatter 的 type: Procedure；第 3 階段以前 /make_skill 產生的，第 6 階段清掉）：只看開頭的 frontmatter。"""
-    text = str(doc or "")
-    if not text.startswith("---"):
-        return False
-    end = text.find("\n---", 3)
-    m = _DOC_TYPE_RE.search(text[:end if end > 0 else 400])
-    return bool(m) and m.group(1) == PROCEDURE_DOC_TYPE
 
 
 def attach_skill_docs(message, blocks):

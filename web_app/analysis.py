@@ -123,10 +123,6 @@ def handle_analysis_command(text, events):
             events.append({"channel": "system", "text": res.get("message") or "⚠️ " + res.get("error", "")})
         else:
             events.append({"channel": "system", "text": f"📊 預設容器：{cfg.get('container') or '（沒有）'}；目前的目標容器：{agent.target_container or '（沒有）'}"})
-    elif cmd in ("/analysis_slice", "/analysis_source", "/analysis_hints", "/analysis_model", "/analysis_workers"):
-        # 第九輪以前的設定（動態時間切片、源碼脈絡、推理提示）；2026-10-23 改成全部由程式做之後，各角色的模型與 worker 上限也拿掉了
-        events.append({"channel": "system", "text": f"📊 {cmd} 已經拿掉：數據分析全部由程式做（量整段數據的全部 Topic、程式寫重點），"
-                                                     "不用源碼、不呼叫模型。只想看其中一段，先用 mcap_slicer 切出來再分析。"})
     elif cmd == "/analysis":
         jobs = agent.analysis_list_jobs(15)
         if arg.lower() == "jobs":

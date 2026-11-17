@@ -11,9 +11,9 @@
 | `datagen/` 隨機情境的錄製產生器 | `check_facts.py`（只驗程式那一層，需要容器） | 產生的錄製交給 `analysis/regression.py` | 六個開發中套件的模擬，評分標準由注入的事件自動產生（見 [`datagen/README.md`](datagen/README.md)） |
 | `ops/` 多步驟維運 | `selftest.py`（file_ops、維運技能的確認關卡） | `run.py`（情境在 `dataset/`，在 Docker-in-Docker 沙盒裡真的執行；`worker.py` 跑一個情境） | 主對話用技能、工作流、任務引擎做完維運任務；狀態、回覆、禁止動作由程式計分 |
 | `task/` 任務引擎 | `selftest.py`（假模型、真的本機檔案技能） | —（真模型用 `ops/run.py`，調查與整理報告是 `--set inv`） | task_run 與 Plan 模式：類型、規劃的程式檢查、先查再確認、worker 的權限、事實的核對、對照目標（worker 說沒完成、檢查出錯）、失敗後重排、工作流的步驟、整合與出處的核對、程式寫報告檔、存檔 |
-| `integrity/` 評測的完整性 | `selftest.py` | — | 模型會讀的文字（prompt、技能說明、工作流、程式回給模型的字）沒有評測世界的名稱（從評測的來源自動取）；`prompts/` 的範本跟程式對得上 |
+| `integrity/` 評測的完整性 | `selftest.py` | — | 模型會讀的文字（prompt、技能說明、工作流、程式回給模型的字）沒有評測世界的名稱（從評測的來源自動取）；`prompts/` 的範本跟程式對得上；沒人用的程式 |
 | `extract/` 提煉 | —（不用模型的在 `chat/extract_selftest.py`） | `run.py`（情境在 `cases.py`：程式產生已知答案的長輸出；`worker.py` 跑一個情境） | 工具回傳的提煉與 result_recall：找到幾個、多列幾個、數量的說法、切幾段讀幾段、程式拿掉幾條 |
-| `workflow/` 工作流 | `selftest.py`（規格驗證、跟 SKILLS.md 對得上、引號規則、推進、分支、【確認】、不用互動的入口、/make_skill） | `sandbox.py`（沙盒裡直接執行工作流，用維運情境計分；`sandbox_worker.py` 跑一個案例） | 程式照步驟推進、判斷點只填值與選分支、做完了沒由程式判斷 |
+| `workflow/` 工作流 | `selftest.py`（規格驗證、跟 SKILLS.md 對得上、引號規則、推進、分支、【確認】、會改變狀態的步驟一定經過確認、不用互動的入口、/make_skill） | `sandbox.py`（沙盒裡直接執行工作流，用維運情境計分；`sandbox_worker.py` 跑一個案例） | 程式照步驟推進、判斷點只填值與選分支、做完了沒由程式判斷 |
 
 改程式之後先跑不用模型的自我測試：
 
@@ -212,6 +212,10 @@ python3 evals/integrity/selftest.py   # 離線（幾秒）
 每一則範本（`prompt_files.load`、各模組取一則的小函式）都在、程式填的每個名稱範本裡都有 `{名稱}`、範本裡沒有沒人用的一則，段名看不出來的算失敗；
 **讀範本**（`agent_core/prompt_files.py`：取一則、一次填完、讀不到回空字串、填的名稱叫 key 也行、檔案改了就重讀）。
 
+第 6 階段（2026-11）清掉舊路徑之後加的一項：**沒人用的程式**——`agent_core/`、`web_app/`、`vision/`、技能腳本裡定義了卻沒有人用的函式、方法、類別、
+模組層的大寫常數（名稱在全部的程式、`evals/`、網頁裡只出現在定義那一次），與 import 了卻沒用到的名稱（`__init__.py`、`__future__`、標了 `noqa` 的不算）。
+靜態的粗略比對：名稱出現在字串、註解裡也算有人用（寧可漏也不誤報）；框架照名稱呼叫的（`ast.NodeVisitor` 的 `visit_*`、`do_GET`…）列在 `_CALLED_BY_NAME`。
+
 ## 提煉（`extract/`）
 
 ```bash
@@ -241,7 +245,8 @@ AGENT_WORKFLOWS=0 python3 evals/ops/run.py --only cx_fin_and_note --tag nowf    
 - 離線：`skills_system/workflows/` 每一份都驗證得過（腳本存在、分支往後、dependencies 與 changes_state 一致）、跟 SKILLS.md〈工作流〉對得上；
   值放進命令的引號規則（file_ops 解析回來一字不差）；完成訊號遺失的整條路（程式選分支、判斷點只填機器人與紀錄、成功判準程式跑）、
   其他原因提早結束、選填略過、判斷點填不出值就停、[ERROR] 時改一次值、【確認】停下來與 `--continue`（接著做時前面步驟的輸出從存檔讀回原文）、比不出分支時交給模型、參數與確認關卡、
-  dispatch 的接法、/make_skill 產生工作流。
+  **會改變狀態的步驟一定經過確認**（確認關卡用真的值判斷；假的值看不出來的當成會改、規格的核對擋下宣告不會改卻會發布的；確認漏了的步驟執行時停下來、
+  `--continue` 確認後用同一個值執行；2026-11-17 第 6 階段）、dispatch 的接法、/make_skill 產生工作流（呼叫語法的提示不在字的中間截斷）。
 - 離線也測 `/workflow`（`agent_core/workflow_cmd.py`）：列出、看步驟；不用互動的入口沒給 `--yes` 不執行會改變狀態的、結束碼
   （完成／提早結束 0、沒有完成 1、停在【確認】2、要核准 3、沒有執行 4）、`--continue`、命令列參數；報告不交給提煉（程式整理好的報告直接進主對話）；
   `Agent_Runner.py --workflow` 真的當成一個行程跑（`OLLAMA_HOST` 指到沒有服務的位址，證明不需要模型）。
@@ -254,11 +259,11 @@ AGENT_WORKFLOWS=0 python3 evals/ops/run.py --only cx_fin_and_note --tag nowf    
 ## 持續驗證：每個階段結束時（`phase_check.py`）
 
 ```bash
-python3 evals/phase_check.py                  # 離線（約 1～2 分鐘）：六組自我測試
+python3 evals/phase_check.py                  # 離線（約 2 分鐘）：七組自我測試與評測的完整性
 python3 evals/phase_check.py --live           # 再加上要容器／沙盒、不呼叫模型的（約 15 分鐘）：調度技能接沙盒、容器技能接開發用沙盒、
                                               #   數據技能接測試容器、數據技能實機、數據分析回歸（產生器 s1／s2／s3、實錄 ×2）
 python3 evals/phase_check.py --live --model   # 再加上真模型（約 1 小時）：提煉（26b、e4b）、主對話（e4b 11 個情境 ×3）、
-                                              #   工作流沙盒（26b、e4b 各 7 個案例 ×2）、維運（26b 70 個）
+                                              #   工作流沙盒（26b、e4b 各 7 個案例 ×2）、維運（26b 77 個：主要 50、保留 20、調查與報告 7）
 python3 evals/phase_check.py --model --only ops,extract     # 只跑某幾項（名稱見下面）；--no-offline 不跑離線的
 python3 evals/phase_check.py --compare <結果目錄…>          # 不跑，只拿已經跑好的結果跟基準比
 python3 evals/phase_check.py --save-baseline <結果目錄…> --label "第 N 階段（<commit>）" [--only <項目>]   # 階段 commit 之後更新基準

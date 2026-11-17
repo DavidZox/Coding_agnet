@@ -5,7 +5,6 @@ import os
 import re
 import time
 from .config import TRAJECTORY_LOG, TRAJECTORY_OUTPUT_HEAD
-from .protocol import is_procedure_doc
 
 
 class TrajectoryMixin:
@@ -21,7 +20,7 @@ class TrajectoryMixin:
         指令位置（腳本名稱跟技能不同的：list_dir＝ls_cmd.py、view_file＝cat_cmd.py…）→ 其餘只是提到的。每次重建（十幾個小檔案，
         成本可忽略），技能新增後不需重啟。只提到、不在指令位置的不算數：code_ast_reader 的範例把 scripts/ls_cmd.py 當成參數，
         以前 ls_cmd.py 被認成 code_ast_reader（字母排在前面），任務的 worker 用 list_dir 被擋成「這一步不能用 code_ast_reader」、
-        軌跡記錯技能（2026-10-24 發現）。流程技能（type: Procedure）的規格引用的是別的技能的腳本，也不算數。"""
+        軌跡記錯技能（2026-10-24 發現）。"""
         mapping, commands, mentions = {}, {}, {}
         if not os.path.isdir(self.tools_dir):
             return mapping
@@ -33,8 +32,6 @@ class TrajectoryMixin:
                 with open(os.path.join(self.tools_dir, fname), "r", encoding="utf-8") as f:
                     text = f.read()
             except OSError:
-                continue
-            if is_procedure_doc(text):
                 continue
             scripts = set(re.findall(r"scripts/([A-Za-z0-9_]+\.py)", text))
             if f"{skill}_cmd.py" in scripts:

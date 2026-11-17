@@ -1,5 +1,4 @@
 """CLI 介面（python3 Agent_Runner.py）：互動迴圈、slash 指令、Plan 模式與 /make_skill 的終端機流程。"""
-import os
 
 from . import prompt_files
 from .agent import SkillAgent
@@ -113,9 +112,6 @@ def _handle_analysis_command(agent, text):
             if agent.analysis_cfg["container"] and not agent.target_container:
                 agent.target_container = agent.analysis_cfg["container"]
         print(f"📊 預設容器：{agent.analysis_cfg.get('container') or '（沒有）'}；目前的目標容器：{agent.target_container or '（沒有）'}")
-    elif cmd in ("/analysis_source", "/analysis_hints", "/analysis_model", "/analysis_workers"):
-        # 第九輪以前的設定（源碼脈絡、推理提示）；2026-10-23 數據分析改成全部由程式做之後，各角色的模型與 worker 上限也拿掉了
-        print(f"📊 {cmd} 已經拿掉：數據分析全部由程式做（量全部的 Topic、程式寫重點），不用源碼、不呼叫模型。")
     elif cmd == "/analysis":
         jobs = agent.analysis_list_jobs(10)
         for j in jobs:

@@ -1,5 +1,4 @@
 """給 Ollama format= 的 JSON schema：主對話回覆、滾動摘要、工具摘要、技能草稿。"""
-import json
 
 
 # 🧷 回覆協議：模型每次回覆都是一個 JSON 物件 {thought, reply, action}。執行與否只看 action 欄位，

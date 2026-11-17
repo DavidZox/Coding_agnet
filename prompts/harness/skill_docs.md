@@ -12,12 +12,6 @@
 <!-- @args_not_run -->
 你附的參數「{args}」也沒有被執行、狀態沒有改變。下一輪請先把這個技能真正執行一次：action.command 填規格標明的實際腳本路徑（scripts/...）、args 填同樣的參數，執行完看到結果後才做下一步；
 
-<!-- @args_not_run_procedure -->
-你附的參數「{args}」沒有被執行。
-
-<!-- @procedure_next -->
-這是流程技能，沒有自己的腳本：照規格的「步驟」從第 1 步開始，一輪只做一步——要執行的步驟，action.command 填該步寫的腳本路徑（scripts/...）、args 照該步填（{名稱} 換成實際的值）；要向使用者確認或詢問的步驟，在 reply 問、action 填 null，等使用者回答再做下一步；檢查、告知的步驟依前面步驟的回傳做。
-
 <!-- @loaded_workflow -->
 {prefix} '{name}' 的規格文件（由系統提供）。這一輪只是載入規格、還沒有執行任何東西：{next}
 {doc}

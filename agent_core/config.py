@@ -138,7 +138,6 @@ TOOL_USE_INDEX_HINT_TARGET = 60   # prompt 要求的描述長度（中文字數�
 DERIVED_RESULT_SCRIPTS = {"result_grep_cmd.py", "result_view_cmd.py", "result_list_cmd.py", "result_recall_cmd.py"}
 TASK_HISTORY_KEEP = 3   # 任務線：摘要錨點帶最近幾則使用者訊息（使用者回答追問時，最新一句往往只是關鍵字，原本要做什麼在前一句）
 TRAJECTORY_OUTPUT_HEAD = 300          # 每筆軌跡保留的輸出開頭字元數（讓草擬模型知道結果長什麼樣）
-DEFAULT_SKILL_CATEGORY = "自建技能"   # 模型選的分類不在 SKILLS.md 裡時的落點（沒有這個段落會自動建立）
 SKILL_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{1,40}$")
 # 會改變狀態（建容器、送工單、寫記憶、切換目錄／容器）的技能：工作流草稿的步驟用到它們時，預覽會提醒（執行時照常確認）
 NON_READONLY_SKILLS = {"docker_est", "workpackage_send", "workpackage_cancel", "overpending_cancel", "modify_memory", "change_dir", "docker_open",
@@ -200,9 +199,6 @@ RECALL_MAX_RECORDS = 3   # result_recall 一次最多讀幾份存檔（幾份的
 # 對這類結果一律放行、不套用 TOOL_RESULT_TOKEN_THRESHOLD，Web Console 也不標記 ⚠️。
 # 規格書本身仍應維持精簡（以 400 tokens／約 800 字元以內為原則），節省每次載入的上下文成本。
 SKILL_DOC_PREFIX = "📘 已載入技能"
-# 舊的流程技能（第 3 階段以前 /make_skill 產生的；現在產生工作流，讀取的程式第 6 階段清掉）：規格 frontmatter 的 type。沒有自己的腳本，步驟是「執行既有技能／向使用者確認／檢查回傳／告知」，
-# 載入時告訴模型照步驟一步一步做（dispatch），也不拿它來對照「腳本屬於哪個技能」（trajectory._script_skill_map）。
-PROCEDURE_DOC_TYPE = "Procedure"
 
 # =========================================================
 # 🔀 上下文管理模式（/context_mode harness|claude_code；AGENT_CONTEXT_MODE 設預設值）

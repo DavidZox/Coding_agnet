@@ -4,7 +4,7 @@ title: 檢查 ROS2 與 MQTT 通訊
 description: 切換至指定容器發送 ROS 2 訊息，並檢查 MQTT Broker 日誌確認是否有 PUBLISH 紀錄。
 version: 0.1.0
 dependencies: ["docker_open", "ROS2_topic_pub", "docker_ctl"]
-changes_state: false
+changes_state: true
 source: make_skill 2026-10-31 06:36（依對話與工具回傳整理；步驟呼叫既有技能，由 workflow_run 照步驟執行；可直接編輯）
 ---
 

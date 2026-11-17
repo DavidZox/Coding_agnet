@@ -11,7 +11,6 @@ agent 的 docker 技能透過 DOCKER_HOST 只看得到這個 daemon，碰不到�
 import hashlib
 import json
 import os
-import shutil
 import subprocess
 import sys
 import time
