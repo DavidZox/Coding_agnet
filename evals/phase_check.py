@@ -36,7 +36,7 @@ OFFLINE = [("skills", "技能自我測試", ["evals/skills/selftest.py"]),
            ("analysis_selftest", "數據分析自我測試", ["evals/analysis/selftest.py"]),
            ("repo_selftest", "真實專案評測的自我測試（核對、答案跟快照一致）", ["evals/repo/selftest.py"]),
            ("edg_selftest", "低階執行器的自我測試（照圖執行、守門、第 1 級）", ["evals/edg/selftest.py"]),
-           ("mid_selftest", "中階的自我測試（挑技能、合約、排圖、第 2 級、報告、Web 的拓撲圖）", ["evals/mid/selftest.py"]),
+           ("mid_selftest", "中階的自我測試（挑技能、合約、排圖、第 2 級、判斷、換技能、報告、Web 的拓撲圖）", ["evals/mid/selftest.py"]),
            ("integrity", "評測的完整性（模型會讀的文字沒有評測世界的名稱）", ["evals/integrity/selftest.py"])]
 TEST_CONTAINER = "cah_analysis_test"
 LIVE_DATA = ["/workspace/experiment_logs/gen/s1/gen_s1_005", "/workspace/experiment_logs/exp_5090_overheat"]

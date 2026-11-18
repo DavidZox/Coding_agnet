@@ -1,7 +1,8 @@
 """view_file：看本機文字檔的內容，每行前面是行號（`  120→內容`，跟 result_view／result_grep 同一套寫法）。
 
 預設從第 1 行列到最後，最多 2000 行、60000 字（再多交給提煉也讀不完）；截掉時第一行就寫「看後面用 --from N」。
---from N --lines M 看中間一段（code_ast_reader 給的「行 120-180」、search_text 給的行號可以直接接著看），--tail N 看最後 N 行（log）。
+--from N --lines M 看中間一段（code_ast_reader 給的「行 120-180」、search_text 給的行號可以直接接著看），--tail N 看最後 N 行（log），
+--around N [-C M] 看第 N 行前後各 M 行（預設 AROUND_DEFAULT；那一行標 >，起點由程式算，中階的判斷節點挑了行號就能直接帶入）。
 大檔案逐行讀、不整份載入（以前超過 1MB 就拒絕）；二進位檔（有 NUL 位元組）不印亂碼，回 [ERROR] 並指向該用的技能。
 """
 import os
@@ -18,9 +19,10 @@ MAX_CHARS = 60000
 LINE_CHARS = 2000            # 單行超過就截斷（minified JSON）
 READ_LINE_BYTES = 1 << 20    # 一行最多讀進記憶體 1MB
 COUNT_BUDGET_SECONDS = 10    # 算總行數的時間上限（好幾 GB 的檔案）
-USAGE = ("用法: scripts/cat_cmd.py <檔案> [--from N] [--lines M] | [--tail N]\n"
+AROUND_DEFAULT = 10          # --around 沒寫 -C 時前後各看幾行
+USAGE = ("用法: scripts/cat_cmd.py <檔案> [--from N] [--lines M] | [--tail N] | [--around N [-C M]]\n"
          f"  預設從第 1 行列到最後（最多 {MAX_LINES} 行、{MAX_CHARS} 字）；--from N 從第 N 行開始、--lines M 列 M 行（上限 {MAX_LINES}）；"
-         "--tail N 只看最後 N 行。\n  每行開頭的「行號→」是顯示用的，不是檔案的內容。")
+         f"--tail N 只看最後 N 行；--around N 看第 N 行前後各 M 行（-C M，預設 {AROUND_DEFAULT}）。\n  每行開頭的「行號→」是顯示用的，不是檔案的內容。")
 _BINARY_HINTS = [
     ((".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tif", ".tiff"), "影像檔：用 image_inspect 看內容"),
     ((".mcap", ".db3", ".bag"), "ROS 2 bag：Topic 與數據用 mcap_analyzer／mcap_feature_measure，Log 用 rosout_parser"),
@@ -33,17 +35,19 @@ _BINARY_HINTS = [
 
 
 def parse_args(argv):
-    o = {"path": None, "from": None, "lines": None, "tail": None}
+    o = {"path": None, "from": None, "lines": None, "tail": None, "around": None, "context": None}
     pos, i = [], 0
     args = [a for a in argv if a != ""]
     while i < len(args):
         a = args[i]
-        key = {"--from": "from", "--lines": "lines", "--head": "lines", "--tail": "tail"}.get(a)
+        key = {"--from": "from", "--lines": "lines", "--head": "lines", "--tail": "tail", "--around": "around",
+               "-C": "context", "--context": "context"}.get(a)
         if a == "-n" and i + 1 < len(args) and args[i + 1].isdigit() and len(args) > 2:
             key = "lines"                       # head -n 50 的習慣
         if key:
-            if i + 1 >= len(args) or not args[i + 1].isdigit() or int(args[i + 1]) < 1:
-                return None, f"[ERROR] {a} 後面要是正整數（行號或行數）。\n{USAGE}"
+            low = 0 if key == "context" else 1
+            if i + 1 >= len(args) or not args[i + 1].isdigit() or int(args[i + 1]) < low:
+                return None, f"[ERROR] {a} 後面要是{'0 或正整數（前後各幾行）' if low == 0 else '正整數（行號或行數）'}。\n{USAGE}"
             o[key] = int(args[i + 1])
             i += 2
             continue
@@ -64,6 +68,11 @@ def parse_args(argv):
         pos = [joined]
     if o["tail"] and (o["from"] or o["lines"]):
         return None, f"[ERROR] --tail 不能跟 --from／--lines 一起用。下一步：看最後幾行用 --tail N，看中間一段用 --from N --lines M。\n{USAGE}"
+    if o["around"] and (o["from"] or o["lines"] or o["tail"]):
+        return None, (f"[ERROR] --around 不能跟 --from／--lines／--tail 一起用。下一步：看某一行前後用 --around N -C M，"
+                      f"看一段用 --from N --lines M。\n{USAGE}")
+    if o["context"] is not None and not o["around"]:
+        return None, f"[ERROR] -C（前後各幾行）要跟 --around N 一起用。下一步：寫成 --around N -C M。\n{USAGE}"
     o["path"] = pos[0]
     return o, None
 
@@ -148,7 +157,8 @@ def execute(argv):
     size = os.path.getsize(abs_path)
     if size == 0:
         result("empty", counts={"total_lines": 0, "from": None, "to": None, "bytes": 0},
-               items=[{"path": abs_path, "from": None, "to": None}], path=abs_path, encoding=None, tail=False, limit=None, clipped_lines=False)
+               items=[{"path": abs_path, "from": None, "to": None}], path=abs_path, encoding=None, tail=False, limit=None, clipped_lines=False,
+               around=None)
         return f"[PASS] 檔案內容 ({shown})：空檔案（0 bytes）"
     with open(abs_path, "rb") as f:
         head = f.read(8192)
@@ -159,6 +169,10 @@ def execute(argv):
         enc = "utf-8-sig"
     elif b"\0" in head:
         return fail(f"[ERROR] {shown} 是二進位檔（{size} bytes，含 NUL 位元組），view_file 只讀文字檔。下一步：{_binary_hint(abs_path)}。", "args")
+    if o["around"]:                              # 第 N 行前後各 M 行：換成 --from／--lines（起點由程式算）
+        ctx = AROUND_DEFAULT if o["context"] is None else o["context"]
+        o["from"] = max(1, o["around"] - ctx)
+        o["lines"] = o["around"] + ctx - o["from"] + 1
     if enc == "utf-16":
         return _render_utf16(o, abs_path, shown)
     if o["tail"]:
@@ -168,7 +182,7 @@ def execute(argv):
                         f"下一步：用 search_text 找關鍵字，或用 --from N --lines M 看開頭的部分。", "timeout")
         start = total - len(lines) + 1
         return _render(shown, lines, start, total, size, cut_reason=None, clipped=_clip_all(lines), tail=True,
-                       abs_path=abs_path, encoding=enc)
+                       abs_path=abs_path, encoding=enc, around=None)
     start = o["from"] or 1
     asked = o["lines"]
     limit = min(asked or MAX_LINES, MAX_LINES)
@@ -192,8 +206,9 @@ def execute(argv):
             if len(out) >= limit:
                 stop = "lines"
                 break
-        if consumed < start:
-            return fail(f"[ERROR] {shown} 只有 {consumed} 行，--from {start} 超過了。下一步：--from 1～{consumed}；看最後幾行用 --tail 50。", "args")
+        if consumed < start or (o["around"] and consumed < o["around"] and stop is None):
+            asked_line = f"--around {o['around']}" if o["around"] else f"--from {start}"
+            return fail(f"[ERROR] {shown} 只有 {consumed} 行，{asked_line} 超過了。下一步：行號用 1～{consumed}；看最後幾行用 --tail 50。", "args")
         rest = _count_rest(f, t0)
     total = None if rest is None else consumed + rest
     end = start + len(out) - 1
@@ -202,7 +217,7 @@ def execute(argv):
         cut_reason = f"{MAX_CHARS} 字"
     elif stop == "lines" and (asked is None or asked > MAX_LINES) and (total is None or end < total):
         cut_reason = f"{MAX_LINES} 行"
-    return _render(shown, out, start, total, size, cut_reason, clipped, tail=False, abs_path=abs_path, encoding=enc)
+    return _render(shown, out, start, total, size, cut_reason, clipped, tail=False, abs_path=abs_path, encoding=enc, around=o["around"])
 
 
 def _clip_all(lines):
@@ -214,15 +229,17 @@ def _clip_all(lines):
     return clipped
 
 
-def _render(shown, lines, start, total, size, cut_reason, clipped, tail, abs_path, encoding):
+def _render(shown, lines, start, total, size, cut_reason, clipped, tail, abs_path, encoding, around):
     end = start + len(lines) - 1
     more_lines = total is None or end < total
     result("pass", counts={"total_lines": total, "from": start, "to": end, "bytes": size},
            items=[{"path": abs_path, "from": start, "to": end}], truncated=more_lines or clipped,
            path=abs_path, encoding=encoding, tail=tail, limit={f"{MAX_LINES} 行": "lines", f"{MAX_CHARS} 字": "chars"}.get(cut_reason),
-           clipped_lines=clipped)
+           clipped_lines=clipped, around=around)
     tot = f"共 {total} 行" if total is not None else f"{size} bytes（總行數太多沒有算完）"
     head = f"[PASS] 檔案內容 ({shown})：{tot}，顯示第 {start}-{end} 行" if lines else f"[PASS] 檔案內容 ({shown})：{tot}"
+    if around and lines:
+        head += f"（第 {around} 行的前後，那一行標 >）"
     more = total is None or end < total
     if cut_reason:
         head += f"（上限 {cut_reason}）"
@@ -232,7 +249,7 @@ def _render(shown, lines, start, total, size, cut_reason, clipped, tail, abs_pat
         head += f"；前面的用 --from 1 或 --from <行號> 看"
     if clipped:
         head += f"；單行超過 {LINE_CHARS} 字截斷"
-    body = [numbered(start + k, t) for k, t in enumerate(lines)]
+    body = [numbered(start + k, t, ">" if start + k == around else " ") for k, t in enumerate(lines)]
     foot = []
     if more and not tail:
         left = f"還有 {total - end} 行" if total is not None else "後面還有"
@@ -250,14 +267,17 @@ def _render_utf16(o, abs_path, shown):
     if o["tail"]:
         lines = all_lines[-o["tail"]:]
         start = total - len(lines) + 1
-        return _render(shown, lines, start, total, size, None, _clip_all(lines), tail=True, abs_path=abs_path, encoding="utf-16")
+        return _render(shown, lines, start, total, size, None, _clip_all(lines), tail=True, abs_path=abs_path, encoding="utf-16",
+                       around=None)
     start = o["from"] or 1
-    if start > total:
-        return fail(f"[ERROR] {shown} 只有 {total} 行，--from {start} 超過了。下一步：--from 1～{total}；看最後幾行用 --tail 50。", "args")
+    if start > total or (o["around"] or 0) > total:
+        asked_line = f"--around {o['around']}" if o["around"] else f"--from {start}"
+        return fail(f"[ERROR] {shown} 只有 {total} 行，{asked_line} 超過了。下一步：行號用 1～{total}；看最後幾行用 --tail 50。", "args")
     limit = min(o["lines"] or MAX_LINES, MAX_LINES)
     lines = all_lines[start - 1:start - 1 + limit]
     cut = f"{MAX_LINES} 行" if o["lines"] is None and start - 1 + limit < total else None
-    return _render(shown, lines, start, total, size, cut, _clip_all(lines), tail=False, abs_path=abs_path, encoding="utf-16")
+    return _render(shown, lines, start, total, size, cut, _clip_all(lines), tail=False, abs_path=abs_path, encoding="utf-16",
+                   around=o["around"])
 
 
 if __name__ == "__main__":

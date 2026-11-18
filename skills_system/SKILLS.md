@@ -25,7 +25,7 @@
 - [find_file](tools/find_file.md) — 依「名稱關鍵字」遞迴找檔案與目錄（`"*.launch.py"` 萬用字元、含 / 比對路徑），依目錄分組並算好數量；只看一層或找最新的用 list_dir --newest
 - [code_ast_reader](tools/code_ast_reader.md) — 先看一個 Python 檔的結構（類別、函式完整簽名、docstring、每個 def 的行號範圍），再用 view_file --from 只讀需要的那段
 - [change_dir](tools/change_dir.md) — 切換本機的工作目錄（之後的本機技能與相對路徑都以這裡為準；host_runcmd 指令裡的 cd 不會保留）
-- [view_file](tools/view_file.md) — 看本機文字檔（每行附行號；--from／--lines 看一段、--tail 看最後幾行）；技能規格文件由 EXECUTE 自動載入，不用這個
+- [view_file](tools/view_file.md) — 看本機文字檔（每行附行號；--from／--lines 看一段、--tail 看最後幾行、--around 看某一行前後）；技能規格文件由 EXECUTE 自動載入，不用這個
 - [host_runcmd](tools/host_runcmd.md) — 其他技能做不到的本機 shell 指令（不能互動、不保留背景程序；唯讀的直接執行，其他的會先請使用者確認）
 - [csv_query](tools/csv_query.md) — 查 CSV／TSV 表格：欄位、篩選、整體或每一組的最大／最小／平均／筆數、排序（數字由腳本算好，可排成 Markdown 表格）；資料表的問題用這個，不要自己寫 python
 - [file_ops](tools/file_ops.md) — 改本機的文件：建目錄、複製、移動／改名、寫入或附加文字檔、取代檔案裡的一段文字；改 YAML 設定檔的一個值用 set（`--after "name: amr_07"` 只改那一台的那一行）；會先請使用者確認；不提供刪除

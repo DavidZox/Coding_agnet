@@ -1,9 +1,10 @@
 """中階的真模型評測（新架構 D10 第 3 步；標記在 evals/mid/cases.py）：真實專案評測的 30 題（evals/repo/），每一題交給中階
 （agent_core/mid.py：挑技能 → 合約 → 排圖 → 低階 → 第 2 級 → 報告），每一層分開量：
-- 挑技能：選的複合技能對不對（第一版還沒有技能做得到的題目要說 none）；
+- 挑技能：模型選的複合技能對不對（領域還沒有技能做得到的題目要說 none），與第 2 級換技能之後的對不對；
 - 合約：抽出的參數對不對（cases.py 寫的那幾個）；
+- 判斷（3b）：判斷了幾次、走了哪幾條路、挑的行有幾行通過核對、幾行沒過；
 - 最後的報告：該用的技能不是 none 的題目，用 evals/repo/checks.py 對答案；
-另外記用了哪些回退、要問使用者的、熔斷。
+另外記用了哪些回退、換技能、要問使用者的、熔斷。
 
     python3 evals/mid/run.py --model gemma4:26b               # 主要的 25 題
     python3 evals/mid/run.py --model gemma4:e4b --set all     # 加上保留組
@@ -55,8 +56,26 @@ def score(q, job):
 def summary(results, qset):
     rs = [r for r in results if r["set"] == qset]
     fin = [r for r in rs if r["score"]["final"] is not None]
-    return {"n": len(rs), "skill": sum(r["score"]["skill"] for r in rs), "params": sum(r["score"]["params"] for r in rs),
-            "final": sum(r["score"]["final"]["passed"] for r in fin), "final_n": len(fin)}
+    js = [j for r in rs for j in r.get("judgments") or [] if j["round"]]
+    return {"n": len(rs), "skill": sum(r["score"]["skill"] for r in rs), "skill_final": sum(r["score"]["skill_final_ok"] for r in rs),
+            "params": sum(r["score"]["params"] for r in rs), "final": sum(r["score"]["final"]["passed"] for r in fin), "final_n": len(fin),
+            "judged": sum(1 for r in rs if any(j["round"] for j in r.get("judgments") or [])), "judgments": len(js),
+            "lines": sum(j["lines"] for j in js), "rejected": sum(j["rejected"] for j in js)}
+
+
+def summary_text(s):
+    return (f"挑技能 {s['skill']}/{s['n']}（換技能之後 {s['skill_final']}/{s['n']}）、合約 {s['params']}/{s['n']}、"
+            f"判斷 {s['judgments']} 次（{s['judged']} 題；挑的行 {s['lines']} 行通過核對、{s['rejected']} 個沒過）、"
+            f"最後的報告 {s['final']}/{s['final_n']}")
+
+
+def judgment_text(r):
+    """一題的判斷：每一次走的路（→ 接起來）、最後的結果、挑的行。"""
+    js = [j for j in r.get("judgments") or [] if j["round"]]
+    if not js:
+        return "—" if not r.get("judgments") else "沒有輸入"
+    return ("→".join(j["branch"] or "?" for j in js) + f"（{sum(j['lines'] for j in js)} 行"
+            + (f"，{sum(j['rejected'] for j in js)} 沒過" if any(j["rejected"] for j in js) else "") + f"；{js[-1]['result']}）")
 
 
 def write_report(path, results, model, note=""):
@@ -65,9 +84,8 @@ def write_report(path, results, model, note=""):
     for qset, label in (("main", "主要"), ("holdout", "保留組")):
         s = summary(results, qset)
         if s["n"]:
-            lines.append(f"- **{label}**：挑技能 {s['skill']}/{s['n']}、合約 {s['params']}/{s['n']}、最後的報告 {s['final']}/{s['final_n']}"
-                         "（只算該用技能的題目）")
-    lines += ["", "| 題目 | 組 | 要的技能 | 選的 | 合約 | 報告 | 狀態 | 第 2 級 | 沒對的 | 秒 |", "|---|---|---|---|---|---|---|---|---|---|"]
+            lines.append(f"- **{label}**：{summary_text(s)}（報告只算該用技能的題目）")
+    lines += ["", "| 題目 | 組 | 要的技能 | 選的 | 合約 | 判斷 | 報告 | 狀態 | 第 2 級 | 沒對的 | 秒 |", "|---|---|---|---|---|---|---|---|---|---|---|"]
     for r in results:
         s = r["score"]
         fin = "—" if s["final"] is None else ("✅" if s["final"]["passed"] else f"❌ {s['final']['checks_passed']}/{s['final']['checks_total']}")
@@ -75,9 +93,11 @@ def write_report(path, results, model, note=""):
         miss += [f"🚫{x}" for x in (s["final"] or {}).get("forbidden", [])]
         if r.get("need_user"):
             miss.append(f"問使用者：{r['need_user'][:60]}")
-        lines.append(f"| {r['id']} | {r['set']} | {'／'.join(cases.wanted(cases.LABELS[r['id']]))} | {s['got']}{'' if s['skill'] else ' ❌'} | "
-                     f"{'✅' if s['params'] else '❌' if s['skill'] and s['got'] != 'none' else '—'} | {fin} | {r['status']} | "
-                     f"{'、'.join(r['fallbacks']) or '—'} | {'；'.join(miss)[:200]} | {r['seconds']} |")
+        got = f"{s['got']}{'' if s['skill'] else ' ❌'}" + (f" → {s['skill_final']}{'' if s['skill_final_ok'] else ' ❌'}"
+                                                            if s["skill_final"] != s["got"] else "")
+        lines.append(f"| {r['id']} | {r['set']} | {'／'.join(cases.wanted(cases.LABELS[r['id']]))} | {got} | "
+                     f"{'✅' if s['params'] else '❌' if s['skill_final_ok'] and s['skill_final'] != 'none' else '—'} | {judgment_text(r)} | {fin} | "
+                     f"{r['status']} | {'、'.join(r['fallbacks']) or '—'} | {'；'.join(miss)[:200]} | {r['seconds']} |")
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
 
@@ -86,8 +106,11 @@ def record(q, job, model, k, seconds):
     return {"id": q["id"], "set": q["set"], "kind": q["kind"], "run": k, "model": model, "job": job["id"], "status": job["status"],
             "skill": job.get("skill"), "selection": job.get("selection"), "params": job.get("params"), "rejected": job.get("rejected"),
             "auto_filled": job.get("auto_filled"), "fallbacks": [f["fallback"] for f in job.get("fallbacks") or []],
-            "replans": job.get("replans"), "need_user": (job.get("need_user") or {}).get("question"), "score": score(q, job),
-            "seconds": seconds}
+            "replans": job.get("replans"), "switched": [f"{x['from']}→{x['to']}" for x in job.get("switched") or []],
+            "judgments": [{"round": j["round"], "node": j["node"], "branch": j.get("branch"), "params": j.get("params"), "result": j.get("result"),
+                           "lines": len(j.get("lines") or []), "rejected": len(j.get("rejected") or []) + len(j.get("param_rejected") or [])}
+                          for j in job.get("judgments") or []],
+            "need_user": (job.get("need_user") or {}).get("question"), "score": score(q, job), "seconds": seconds}
 
 
 def rescore(out_dir):
@@ -130,7 +153,7 @@ def main():
         for qset in ("main", "holdout"):
             s = summary(results, qset)
             if s["n"]:
-                print(f"{qset}：挑技能 {s['skill']}/{s['n']}、合約 {s['params']}/{s['n']}、最後的報告 {s['final']}/{s['final_n']}")
+                print(f"{qset}：{summary_text(s)}")
         print(f"報表：{os.path.join(args.rescore, 'report.md')}")
         return
     answers = questions.load()
@@ -163,7 +186,8 @@ def main():
                 write_report(os.path.join(out_dir, "report.md"), results, args.model)
                 s = r["score"]
                 fin = "" if s["final"] is None else f"｜報告 {'✅' if s['final']['passed'] else '❌'}"
-                print(f"{'✅' if s['skill'] else '❌'} {q['id']} #{k}：選 {s['got']}｜合約 {'✅' if s['params'] else '—' if not s['skill'] else '❌'}{fin}"
+                print(f"{'✅' if s['skill'] else '❌'} {q['id']} #{k}：選 {s['got']}" + (f"→{s['skill_final']}" if s["skill_final"] != s["got"] else "")
+                      + f"｜合約 {'✅' if s['params'] else '—' if not s['skill_final_ok'] else '❌'}｜判斷 {judgment_text(r)}{fin}"
                       f"｜{job['status']}" + (f"｜{'；'.join(s['param_misses'])[:160]}" if s["param_misses"] else ""), flush=True)
     finally:
         snapshot.remove(snap_dir)
@@ -171,7 +195,7 @@ def main():
     for qset in ("main", "holdout"):
         s = summary(results, qset)
         if s["n"]:
-            print(f"{qset}：挑技能 {s['skill']}/{s['n']}、合約 {s['params']}/{s['n']}、最後的報告 {s['final']}/{s['final_n']}")
+            print(f"{qset}：{summary_text(s)}")
     print(f"報表：{os.path.join(out_dir, 'report.md')}")
 
 

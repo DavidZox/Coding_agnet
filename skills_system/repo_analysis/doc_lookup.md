@@ -1,0 +1,44 @@
+---
+type: Skill
+title: 文件裡寫的規定
+description: 照指定的一份文件（規格書、手冊、說明）回答它寫了什麼：在文件裡搜問題提到的名稱，看原文挑出回答問題的那幾行（附檔案、行號）；文件提到別的編號或名稱時在同一份文件接著找
+version: 1.0.0
+answers: ["內容", "位置"]
+topology: {"depends_on": [], "sub_skills": ["search_text", "view_file"]}
+parameters: [{"name": "doc", "type": "path", "required": true, "desc": "要讀的那一份文件：原文寫的檔名或路徑；原文寫「X 規格書」「X 的手冊」就寫 X（前面有套件或目錄的寫成 a/X）", "ask": "要查哪一份文件？", "fetch": {"tool": "find_file", "args": ["{stem}.md", "."]}}, {"name": "words", "type": "words", "required": true, "desc": "問題裡要在文件裡找的名稱：狀態、指令、事件、參數、欄位的名稱（照原文寫，好幾個用「、」分開）；問題裡沒有這種名稱時，寫文件裡會照樣出現的短詞（兩三個字的名詞），不要寫成句子或一段描述", "ask": "要在文件裡找什麼（狀態、指令或參數的名稱）？"}]
+---
+
+# 什麼時候用
+問題要照一份指定的文件（規格書、手冊、設計文件）回答：某個狀態收到某個指令會怎樣、某個參數是什麼意思或預設多少、某件事的規定、要引用文件的編號。
+答案寫在那份文件裡，要讀內容才答得出來；不是數文件有幾份、幾行（那是 count_in_scope），也不是問程式裡的名稱定義在哪（py_usage、cpp_symbol）。
+
+# 骨架
+```json
+{"nodes": [
+  {"id": "hits", "tool": "search_text", "args": ["{words}", "{doc}", "--rank"], "expect": ["pass", "empty"],
+   "why": "在文件裡找問題提到的名稱（同一行含最多個名稱的先列）"},
+  {"id": "read", "kind": "judgment", "depends_on": ["hits"],
+   "goal": "從文件裡搜到的行挑出回答問題的那幾行（規定、狀態的轉移、數值與它們的編號）",
+   "labels": ["答案", "相關"],
+   "branches": [
+     {"id": "answered", "say": "挑出來的行回答了問題", "need_lines": true},
+     {"id": "follow", "say": "這些行提到別的編號或名稱，要在同一份文件接著找才回答得了", "params": [{"name": "names", "type": "words"}],
+      "add": [{"id": "more", "tool": "search_text", "args": ["{names}", "{doc}", "--rank"], "expect": ["pass", "empty"],
+               "why": "在同一份文件找判斷要接著找的名稱"}]},
+     {"id": "wider", "say": "要看某一行前後更多內容才看得懂（例如表格的標題、條文的上下文）",
+      "params": [{"name": "file", "type": "path"}, {"name": "line", "type": "line"}],
+      "add": [{"id": "around", "tool": "view_file", "args": ["{file}", "--around", "{line}", "-C", "15"], "why": "看判斷指定的那一行前後"}]},
+     {"id": "not_found", "say": "看過的行都沒有寫這件事"}]}
+]}
+```
+
+# 回退
+```json
+[{"id": "no_hits", "when": {"node": "hits", "status": "empty"}, "change": {"ask": "words", "from": "hits"},
+  "say": "文件裡沒有一行提到這些名稱：要找什麼字（文件裡狀態、指令或參數的寫法）？"}]
+```
+
+# 策略與 SOP
+1. 先找到那一份文件（原文寫的檔名；只寫「X 規格書」時找檔名就是 X 的文件，名稱只是含 X 的測試規格、報告不算）。
+2. 在文件裡搜問題提到的名稱：同一行含最多個名稱的最可能是答案（例如狀態轉移表裡同時有狀態與指令的那一行）。
+3. 回答照原文：挑出的行附檔案與行號，文件的編號照原文寫；文件沒寫的就說沒寫，不要用常識補。

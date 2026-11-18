@@ -13,14 +13,21 @@
 4. **執行**：交給低階（agent_core/edg.py）：照圖執行、守門、第 1 級。
 5. **第 2 級**（程式）：照收據比對〈回退〉的條件（節點的狀態、收據的欄位、帶入的實例有沒有超過上限），照列的順序取第一個還沒用過的：
    - add：在圖上加節點，交給低階的 replan 接著跑同一個工作（重排只改圖：跑過的不重跑，D7）；
-   - ask：問使用者（例如範圍太大：附各子目錄的筆數），回答之後照新的參數重新排圖。
+   - ask：問使用者（例如範圍太大：附各子目錄的筆數），回答之後照新的參數重新排圖；
+   - switch：換成同一個領域的另一個複合技能（參數照寫好的對應帶過去），照它的骨架重新排圖（例：.py 裡沒有這個名稱、C++ 檔有）；
+     換過去的技能答不了問題要的每一種就不換。
    重排最多 MID_REPLAN_MAX 次，再要重排就熔斷（circuit_break）；加的節點全都跑過＝不收斂，不再重排（D5 中 4）。
-6. **報告**（程式）：照收據整理（定義、呼叫、每個檔案的數量、總數，各附 #編號）；用了哪些回退、哪裡沒做完、自己補的參數。
-   判斷節點（要看內容才能決定的）與 depends_on（硬性前置的複合技能）第一版的兩個技能用不到，跟用到的複合技能一起做（3b）。
+6. **判斷節點**（3b，模型；原文的整理與核對在 agent_core/judge.py）：低階跑到判斷節點就停（回退照舊先比），模型看原始問題、子目標、
+   節點的 goal、它依賴的節點的原文（照收據從檔案讀，附行號），挑出回答問題的行（來源 #編號、檔案、一字不改的片段、標籤）、從節點列的
+   分支選一條、填那條路的參數；程式核對片段在原文的某一行（行號與整行由程式填）、參數在原文裡，沒過的交回修一次。
+   結束的路（沒有 add）就結束；有 add 的照分支加節點（id 加上第幾次）、後面接同一個判斷，交給低階重排（跑過的不重跑）。
+   判斷每個工作最多 MID_JUDGE_MAX 次（另外算，不佔重排的次數），用完了還要接著做就熔斷；要接著找的都找過了＝不收斂，停（死路）。
+7. **報告**（程式）：照收據整理（定義、呼叫、每個檔案的數量、總數，各附 #編號）；判斷挑出的行（檔案:行號、#編號、整行）與經過；
+   用了哪些回退、哪裡沒做完、自己補的參數。depends_on（硬性前置的複合技能）目前的技能都用不到，有技能用到時再做。
 
-每一次存在 logs/mid_jobs/<編號>/：job.json（選的技能、參數與原文、每一版的圖與節點的狀態、回退、問使用者的問題與回答 asked、結果）、report.md、
-events.jsonl、calls.jsonl（挑技能與合約的模型呼叫）。低階的執行（每個節點的嘗試、收據、第 1 級）在 logs/edg_jobs/<edg_job>/。
-Web 的拓撲圖（web_app/topology.py）用這兩份。
+每一次存在 logs/mid_jobs/<編號>/：job.json（選的技能、參數與原文、每一版的圖與節點的狀態、回退、換技能 switched、判斷 judgments、
+問使用者的問題與回答 asked、結果）、report.md、events.jsonl、calls.jsonl（挑技能、合約與判斷的模型呼叫）。低階的執行（每個節點的嘗試、
+收據、第 1 級）在 logs/edg_jobs/<edg_job>/。Web 的拓撲圖（web_app/topology.py）用這兩份。
 """
 import collections
 import json
@@ -28,16 +35,22 @@ import os
 import re
 import time
 
-from . import edg, prompt_files, skill_spec
-from .config import (EDG_JOBS_DIRNAME, MID_CONTRACT_PREDICT, MID_JOBS_DIRNAME, MID_JOBS_KEEP, MID_MODEL, MID_REPLAN_MAX,
-                     MID_REPORT_LINES, MID_SELECT_PREDICT, NUM_CTX)
+from . import edg, judge, prompt_files, skill_spec
+from .config import (EDG_JOBS_DIRNAME, MID_CONTRACT_PREDICT, MID_JOBS_DIRNAME, MID_JOBS_KEEP, MID_JUDGE_LINES, MID_JUDGE_MAX,
+                     MID_JUDGE_MODEL, MID_JUDGE_PREDICT, MID_MODEL, MID_REPLAN_MAX, MID_REPORT_LINES, MID_SELECT_PREDICT, NUM_CTX)
 from .jobstore import JobStore
-from .schemas import mid_contract_schema, mid_select_schema
+from .schemas import mid_contract_schema, mid_judge_schema, mid_select_schema
 
-TYPES = ("name", "text", "path", "glob", "names")
+TYPES = ("name", "text", "path", "glob", "names", "words")
 KINDS = ("位置", "數量", "內容")       # 問題要的是哪幾種（挑技能時模型分類，複合技能的 answers 寫它答得了哪幾種）
-STATUS_TEXT = {"done": "做完", "dead_end": "死路（照〈回退〉也沒有可以換的做法）", "circuit_break": f"熔斷（重排超過 {MID_REPLAN_MAX} 次）",
+STATUS_TEXT = {"done": "做完", "dead_end": "死路（照〈回退〉或判斷都沒有可以接著做的）",
+               "circuit_break": f"熔斷（重排超過 {MID_REPLAN_MAX} 次，或判斷超過 {MID_JUDGE_MAX} 次）",
                "no_skill": "這個領域沒有適合的複合技能", "out_of_domain": "不屬於這個領域", "failed": "失敗", "need_user": "要問使用者"}
+JUDGE_RESULT = {"done": "結束", "replanned": "照這條路加了節點，接著做", "no_new_nodes": "要接著找的都找過了（不收斂），停",
+                "circuit_break": f"判斷已經 {MID_JUDGE_MAX} 次，還要接著做：停（熔斷）", "params_rejected": "這條路要填的值沒有通過核對，停",
+                "no_lines": "這條路要有挑出的行，但挑的行都沒有通過核對", "no_input": "要看的節點沒有結果（0 筆），沒有判斷",
+                "failed": "判斷的模型沒有回覆、回覆不是 JSON，或選了清單外的路"}
+SWITCH_TYPES = {("name", "names"), ("name", "words"), ("names", "words"), ("words", "names")}   # 換技能時參數的種類可以這樣換（其他要一樣）
 CANDIDATES_MAX = 10
 _PARAM = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
 _IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -101,6 +114,7 @@ def load_domain(base_path, tools_dir, name):
         out["skills"][sname] = spec
     if not out["skills"]:
         out["problems"].append("沒有複合技能")
+    out["problems"] += _switch_problems(out["skills"])
     return out
 
 
@@ -114,8 +128,120 @@ def _arg_strings(args):
                 yield x, a["if"]
 
 
+def _arg_problems(nid, n, types, always, extra=None):
+    """工具節點的參數裡用到的 {參數}：要宣告過；名稱清單放在 {"if": 名稱, "args": [...]} 裡（一項一組）；搜尋的字整個參數只寫 {名稱}
+    （程式用 | 接成一個關鍵字）；可能沒有值的要放在 if 裡（或節點寫 if）。extra：判斷節點分支的參數（選了那條路就一定有值）。"""
+    p, extra = [], extra or {}
+    for a, group in _arg_strings(n.get("args", [])):
+        for ref in _PARAM.findall(a):
+            t = extra.get(ref) or types.get(ref)
+            if t is None:
+                p.append(f"{nid}：參數 {ref} 沒有宣告")
+            elif t == "names" and group != ref:
+                p.append(f"{nid}：名稱清單 {ref} 要放在 {{\"if\": \"{ref}\", \"args\": [...]}} 裡（一項一組）")
+            elif t == "words" and (a != "{" + ref + "}" or group is not None):
+                p.append(f"{nid}：搜尋的字 {ref} 要整個參數只寫 {{{ref}}}（程式用 | 接成一個關鍵字）")
+            elif ref not in extra and ref not in always and ref not in (group, n.get("if")):
+                p.append(f"{nid}：{ref} 可能沒有值，要放在 if 裡（或節點寫 if）")
+    for a in n.get("args", []) if isinstance(n.get("args"), list) else []:
+        if isinstance(a, dict) and "if" in a and a["if"] not in types:
+            p.append(f"{nid}：if 的參數 {a['if']} 沒有宣告")
+    return p
+
+
+def _tool_problems(n, topo, types, always):
+    nid = n["id"]
+    p = []
+    if n.get("tool") not in topo["sub_skills"]:
+        p.append(f"{nid}：工具 {n.get('tool')} 不在 topology 的 sub_skills")
+    if n.get("if") is not None and n["if"] not in types:
+        p.append(f"{nid}：if 的參數 {n['if']} 沒有宣告")
+    if "report" in n and (not isinstance(n["report"], str) or n.get("tool") not in REPORTERS
+                          or (n["tool"] == "code_ast_reader" and "--refs" not in n.get("args", []))):
+        p.append(f"{nid}：report 寫報告裡的小標題；能當報告的是 {'、'.join(REPORTERS)}（code_ast_reader 要用 --refs）")
+    return p + _arg_problems(nid, n, types, always)
+
+
+def _branch_problems(jid, b, tools, topo, types, always):
+    """判斷節點的一條路：id、say、參數（搜尋的字、檔案、行號；行號前面要有一個檔案）、add（工具節點：下一次判斷讀它的結果）。"""
+    bid = b["id"]
+    where = f"{jid}.{bid}"
+    p = [] if str(b.get("say") or "").strip() else [f"{where}：要寫 say（給模型看的這條路的說明）"]
+    if not isinstance(b.get("need_lines", False), bool):
+        p.append(f"{where}：need_lines 要是 true 或 false（選這條路要有挑出的行）")
+    bp, btypes = b.get("params") or [], {}
+    for q in bp if isinstance(bp, list) else [None]:
+        qn = q.get("name") if isinstance(q, dict) else None
+        if not isinstance(qn, str) or not _IDENT.match(qn) or qn in btypes or qn in types:
+            p.append(f"{where}：參數的名稱不合法、重複，或跟技能的參數同名：{qn!r}")
+        elif q.get("type") not in judge.PARAM_TYPES:
+            p.append(f"{where}：{qn} 的 type 只能是 {'、'.join(judge.PARAM_TYPES)}")
+        else:
+            if q["type"] == "line" and "path" not in btypes.values():
+                p.append(f"{where}：行號 {qn} 前面要有一個檔案（path）的參數")
+            btypes[qn] = q["type"]
+    if list(btypes.values()).count("path") > 1:
+        p.append(f"{where}：一條路最多一個檔案（path）的參數")
+    add = b.get("add")
+    if add is None:
+        return p + ([f"{where}：沒有 add 的路（結束）不用填參數"] if btypes else [])
+    if not isinstance(add, list) or not add:
+        return p + [f"{where}：add 要是工具節點的陣列"]
+    aids, used = set(), set()
+    for n in add:
+        aid = n.get("id") if isinstance(n, dict) else None
+        if not isinstance(aid, str) or not _IDENT.match(aid) or aid in aids or aid in tools or aid == jid:
+            p.append(f"{where}：add 的節點 id 不合法，或跟其他節點重複：{aid!r}")
+            continue
+        aids.add(aid)
+        if n.get("kind", "tool") != "tool" or n.get("tool") not in judge.READERS:
+            p.append(f"{where}.{aid}：add 要是工具節點，而且是判斷讀得懂的工具（{'、'.join(judge.READERS)}）：下一次判斷讀它的結果")
+            continue
+        if n["tool"] not in topo["sub_skills"]:
+            p.append(f"{where}.{aid}：工具 {n['tool']} 不在 topology 的 sub_skills")
+        if any(d not in aids for d in n.get("depends_on") or []):
+            p.append(f"{where}.{aid}：depends_on 只能是同一條路 add 的節點")
+        if any(isinstance(a, dict) and "from" in a for a in n.get("args") or []):
+            p.append(f"{where}.{aid}：參數不能從別的節點帶入（寫字串與 if 群組）")
+        p += _arg_problems(f"{where}.{aid}", n, types, always, btypes)
+        used |= {ref for a, _ in _arg_strings(n.get("args", [])) for ref in _PARAM.findall(a)}
+    p += [f"{where}：參數 {q} 沒有用在 add 的節點" for q in btypes if q not in used]
+    return p
+
+
+def _judgment_problems(j, tools, topo, types, always):
+    """判斷節點（3b）：goal、depends_on（〈骨架〉裡判斷讀得懂的工具節點）、labels（挑出的行可以標的種類）、branches（看完之後可以選的路，
+    至少一條結束的路）。"""
+    jid = j["id"]
+    p = [] if str(j.get("goal") or "").strip() else [f"{jid}：判斷節點要寫 goal（要判斷什麼）"]
+    deps = j.get("depends_on")
+    if not isinstance(deps, list) or not deps or any(d not in tools for d in deps):
+        p.append(f"{jid}：判斷節點的 depends_on 要是〈骨架〉的工具節點")
+    else:
+        p += [f"{jid}：判斷讀不懂 {d} 的工具 {tools[d].get('tool')}（讀得懂的：{'、'.join(judge.READERS)}）"
+              for d in deps if tools[d].get("tool") not in judge.READERS]
+    labels = j.get("labels")
+    if not isinstance(labels, list) or not labels or not all(isinstance(x, str) and x.strip() for x in labels) or len(set(labels)) != len(labels):
+        p.append(f"{jid}：labels 要是不重複的字串陣列（挑出的行可以標的種類）")
+    branches = j.get("branches")
+    if not isinstance(branches, list) or not branches:
+        return p + [f"{jid}：branches 要是陣列（看完之後可以選的路）"]
+    bids = set()
+    for b in branches:
+        bid = b.get("id") if isinstance(b, dict) else None
+        if not isinstance(bid, str) or not _IDENT.match(bid) or bid in bids:
+            p.append(f"{jid}：分支的 id 不合法或重複：{bid!r}")
+            continue
+        bids.add(bid)
+        p += _branch_problems(jid, b, tools, topo, types, always)
+    if not any(isinstance(b, dict) and b.get("add") is None for b in branches):
+        p.append(f"{jid}：至少要有一條結束的路（沒有 add）")
+    return p
+
+
 def validate_skill(spec, tools_dir, domain_tools):
-    """複合技能的規格寫得對不對 → 問題的清單（空的才能用）。最後用假的參數排一次圖，交給低階的 validate 檢查。"""
+    """複合技能的規格寫得對不對 → 問題的清單（空的才能用）。最後用假的參數排一次圖（判斷節點每條路加的節點也排），交給低階的 validate 檢查。
+    換技能（switch）的對象與參數的對應在 load_domain 核對（要看同一個領域的其他技能）。"""
     p = []
     meta, topo, params = spec["meta"], spec["topology"], spec["parameters"]
     if meta.get("type") != "Skill":
@@ -124,7 +250,7 @@ def validate_skill(spec, tools_dir, domain_tools):
     if not isinstance(topo, dict) or not isinstance(topo.get("depends_on"), list) or not isinstance(topo.get("sub_skills"), list):
         return p + ["topology 要有 depends_on 與 sub_skills（陣列）"]
     if topo["depends_on"]:
-        p.append("depends_on（硬性前置的複合技能）第一版還沒接上：這個領域都是唯讀的，目前的技能用不到")
+        p.append("depends_on（硬性前置的複合技能）還沒接上：這個領域都是唯讀的，目前的技能用不到")
     p += [f"sub_skills 的 {t} 不是這個領域的工具（SKILLS.md 的〈工具〉）" for t in topo["sub_skills"] if t not in domain_tools]
     answers = spec.get("answers")
     if not isinstance(answers, list) or not answers or any(a not in KINDS for a in answers):
@@ -151,8 +277,8 @@ def validate_skill(spec, tools_dir, domain_tools):
         f = x.get("fetch")
         if f is not None and not (x.get("type") == "path" and isinstance(f, dict) and f.get("tool") in domain_tools
                                   and isinstance(f.get("args"), list) and all(isinstance(a, str) for a in f["args"])
-                                  and any("{value}" in a for a in f["args"])):
-            p.append(f"{n}：fetch 只用在路徑，寫成 {{\"tool\": 這個領域的工具, \"args\": [含 {{value}} 的參數…]}}")
+                                  and any("{value}" in a or "{stem}" in a for a in f["args"])):
+            p.append(f"{n}：fetch 只用在路徑，寫成 {{\"tool\": 這個領域的工具, \"args\": [含 {{value}} 或 {{stem}} 的參數…]}}")
     nodes = (spec["skeleton"] or {}).get("nodes") if isinstance(spec["skeleton"], dict) else None
     fallbacks = spec["fallbacks"]
     if not isinstance(nodes, list) or not nodes:
@@ -160,34 +286,27 @@ def validate_skill(spec, tools_dir, domain_tools):
     if not isinstance(fallbacks, list):
         return p + ["〈回退〉要是陣列"]
     adds = [n for fb in fallbacks if isinstance(fb, dict) for n in (fb.get("change") or {}).get("add") or []]
-    ids = set()
-    for n in list(nodes) + adds:
+    ids, tools, judgments = set(), {}, []
+    for n, added in [(x, False) for x in nodes] + [(x, True) for x in adds]:
         nid = n.get("id") if isinstance(n, dict) else None
         if not isinstance(n, dict) or nid in ids:
             p.append(f"節點要是物件、id 不能重複：{nid!r}")
             continue
         ids.add(nid)
-        if n.get("kind", "tool") != "tool":
-            p.append(f"{nid}：判斷節點第一版還沒接上（跟用到它的複合技能一起做）")
-            continue
-        if n.get("tool") not in topo["sub_skills"]:
-            p.append(f"{nid}：工具 {n.get('tool')} 不在 topology 的 sub_skills")
-        if n.get("if") is not None and n["if"] not in types:
-            p.append(f"{nid}：if 的參數 {n['if']} 沒有宣告")
-        if "report" in n and (not isinstance(n["report"], str) or n.get("tool") not in REPORTERS
-                              or (n["tool"] == "code_ast_reader" and "--refs" not in n.get("args", []))):
-            p.append(f"{nid}：report 寫報告裡的小標題；能當報告的是 {'、'.join(REPORTERS)}（code_ast_reader 要用 --refs）")
-        for a, group in _arg_strings(n.get("args", [])):
-            for ref in _PARAM.findall(a):
-                if ref not in types:
-                    p.append(f"{nid}：參數 {ref} 沒有宣告")
-                elif types[ref] == "names" and group != ref:
-                    p.append(f"{nid}：名稱清單 {ref} 要放在 {{\"if\": \"{ref}\", \"args\": [...]}} 裡（一項一組）")
-                elif ref not in always and ref not in (group, n.get("if")):
-                    p.append(f"{nid}：{ref} 可能沒有值，要放在 if 裡（或節點寫 if）")
-        for a in n.get("args", []) if isinstance(n.get("args"), list) else []:
-            if isinstance(a, dict) and "if" in a and a["if"] not in types:
-                p.append(f"{nid}：if 的參數 {a['if']} 沒有宣告")
+        kind = n.get("kind", "tool")
+        if kind == "judgment" and not added:
+            judgments.append(n)
+        elif kind == "judgment":
+            p.append(f"{nid}：判斷節點只能寫在〈骨架〉（回退加的是工具節點）")
+        elif kind != "tool":
+            p.append(f"{nid}：kind 只能是 tool 或 judgment")
+        else:
+            tools[nid] = n
+            p += _tool_problems(n, topo, types, always)
+    if len(judgments) > 1:
+        p.append("〈骨架〉最多一個判斷節點（判斷之後的步驟由分支加）")
+    for j in judgments:
+        p += _judgment_problems(j, {k: v for k, v in tools.items() if any(v is x for x in nodes)}, topo, types, always)
     fids = set()
     for fb in fallbacks:
         fid = fb.get("id") if isinstance(fb, dict) else None
@@ -200,21 +319,62 @@ def validate_skill(spec, tools_dir, domain_tools):
             p.append(f"回退 {fid}：when 要寫 node（骨架或回退加的節點）與至少一個條件")
         elif "capped" in when and not isinstance(when["capped"], bool):
             p.append(f"回退 {fid}：capped 要是 true 或 false")
-        if not isinstance(change, dict) or len(change.keys() & {"add", "ask"}) != 1:
-            p.append(f"回退 {fid}：change 要是 add（加節點）或 ask（問使用者）其中一個")
+        if not isinstance(change, dict) or len(change.keys() & {"add", "ask", "switch"}) != 1:
+            p.append(f"回退 {fid}：change 要是 add（加節點）、ask（問使用者）或 switch（換技能）其中一個")
         elif "ask" in change and (change["ask"] not in types or change.get("from") not in ids | {None}):
             p.append(f"回退 {fid}：ask 要是宣告過的參數，from 要是節點")
+        elif "switch" in change and (not isinstance(change["switch"], str) or not isinstance(change.get("params"), dict)
+                                     or any(src not in types for src in change["params"].values())):
+            p.append(f"回退 {fid}：switch 寫換過去的技能名稱，params 寫 {{換過去的參數: 這個技能的參數}}")
         if not fb.get("say"):
             p.append(f"回退 {fid}：要寫 say（給使用者與報告看的一句話）")
     if p:
         return p
-    dummy = {n: (["d"] if t == "names" else "x") for n, t in types.items()}
-    problems, _, _ = edg.validate(tools_dir, {"goal": "檢查", "nodes": expand_nodes(nodes, dummy)[0] + expand_nodes(adds, dummy)[0]})
+    dummy = {n: (["d"] if t in ("names", "words") else "x") for n, t in types.items()}
+    branch_nodes = []
+    for j in judgments:
+        for b in j["branches"]:
+            local = dict(dummy, **{q["name"]: {"words": ["d"], "path": "x", "line": "1"}[q["type"]] for q in b.get("params") or []})
+            expanded, _ = expand_nodes(b.get("add") or [], local)
+            branch_nodes += [dict(n, id=f"{n['id']}_{b['id']}", depends_on=[f"{d}_{b['id']}" for d in n.get("depends_on") or []])
+                             for n in expanded]
+    graph = expand_nodes(nodes, dummy)[0] + expand_nodes(adds, dummy)[0] + branch_nodes
+    problems, _, _ = edg.validate(tools_dir, {"goal": "檢查", "nodes": graph})
     return [f"排出的圖：{x}" for x in problems]
 
 
+def _switch_problems(skills):
+    """換技能（〈回退〉的 switch）：換過去的技能在這個領域、參數的對應存在而且種類合得來（一樣，或名稱換成清單）、換過去的必填參數都有對應。"""
+    out = []
+    for name, spec in skills.items():
+        mine = {x["name"]: x["type"] for x in spec["parameters"]}
+        for fb in spec["fallbacks"]:
+            ch = fb.get("change") or {}
+            if "switch" not in ch:
+                continue
+            target = skills.get(ch["switch"])
+            if target is None or target is spec:
+                out.append(f"{name}：回退 {fb['id']} 換過去的 {ch['switch']} 不是這個領域的其他技能")
+                continue
+            theirs = {x["name"]: x for x in target["parameters"]}
+            for dst, src in ch["params"].items():
+                if src not in mine:
+                    continue                       # 這個技能沒宣告的參數：validate_skill 已經報了
+                if dst not in theirs:
+                    out.append(f"{name}：回退 {fb['id']} 的 {dst} 不是 {ch['switch']} 的參數")
+                elif mine[src] != theirs[dst]["type"] and (mine[src], theirs[dst]["type"]) not in SWITCH_TYPES:
+                    out.append(f"{name}：回退 {fb['id']} 的 {src}（{mine[src]}）換不成 {ch['switch']} 的 {dst}（{theirs[dst]['type']}）")
+            out += [f"{name}：回退 {fb['id']} 沒有對應 {ch['switch']} 的必填參數 {x}" for x, q in theirs.items()
+                    if q.get("required") and x not in ch["params"]]
+    return out
+
+
 def _fill(text, params):
-    return _PARAM.sub(lambda m: str(params[m.group(1)]), text)
+    """{參數} 換成值；清單（搜尋的字）用 | 接起來（search_text 的同義詞寫法）。"""
+    def one(m):
+        v = params[m.group(1)]
+        return "|".join(str(x) for x in v) if isinstance(v, list) else str(v)
+    return _PARAM.sub(one, text)
 
 
 def expand_nodes(nodes, params):
@@ -254,14 +414,24 @@ def _unquote(s):
     return _norm(s).strip(_QUOTES).strip()
 
 
+def _in_source(q, source, t):
+    """抄的原文在問題或子目標裡：整段一字不改；名稱清單與搜尋的字的名稱常在原文不同的地方，可以是用「、」分開的幾段，每一段一字不改。"""
+    src = _norm(source)
+    if q in src:
+        return True
+    parts = [x.strip() for x in re.split(r"[、；;]", q) if x.strip()]
+    return t in ("names", "words") and len(parts) > 1 and all(x in src for x in parts)
+
+
 def verify_param(p, quote, value, source):
     """(值, 交回修的那一則) ：值是 None 表示沒提到或沒過（沒過時第二個是給模型的說明）。名稱清單的值是 list。
-    原文要一字不改地在問題或子目標裡；值照種類對原文：名稱與名稱清單要原樣在原文裡；路徑的每一段（/ 分開）是原文裡的名稱
-    （原文寫「a 的 b/ 底下」就是 a/b；原文沒有的上層目錄不能補）；文字與檔案名稱的寫法每一段英數字或中文都要在原文裡。"""
+    原文要一字不改地在問題或子目標裡（名稱清單與搜尋的字可以是幾段，見 _in_source）；值照種類對原文：名稱、名稱清單與搜尋的字要原樣在原文裡；
+    路徑的每一段（/ 分開）是原文裡的名稱（原文寫「a 的 b/ 底下」就是 a/b；原文沒有的上層目錄不能補）；文字與檔案名稱的寫法每一段英數字或
+    中文都要在原文裡。"""
     q, v, name = _unquote(quote), _unquote(value), p["name"]
     if not q and not v:
         return None, None
-    if not q or q not in _norm(source):
+    if not q or not _in_source(q, source, p["type"]):
         return None, _i("reject_quote", name=name, quote=q or str(quote))
     t = p["type"]
     if t == "name":
@@ -275,6 +445,10 @@ def verify_param(p, quote, value, source):
         parts = [x for x in pv.split("/") if x not in ("", "~")]
         bad = [x for x in parts if not _DIRNAME.match(x) or x not in q]
         return (pv, None) if parts and not bad else (None, _i("reject_path", name=name, value=v, quote=q, missing="、".join(bad) or v))
+    if t == "words":
+        items = judge.words_of(v)
+        miss = [x for x in items if x not in q or not judge.WORD.match(x) or x.startswith("-")]
+        return (items, None) if items and not miss else (None, _i("reject_words", name=name, missing="、".join(miss) or v, quote=q))
     items = [_unquote(x) for x in _SPLIT.split(v) if _unquote(x)]
     miss = [x for x in items if x not in q or not _DIRNAME.match(x)]
     return (items, None) if items and not miss else (None, _i("reject_names", name=name, missing="、".join(miss) or v, quote=q))
@@ -294,7 +468,19 @@ def check_answer(p, answer, cwd):
     if t == "names":
         items = [x for x in _SPLIT.split(a) if x]
         return (items, None) if all(_DIRNAME.match(x) for x in items) else (None, "每一項要是一個目錄的名稱，用「、」分開")
+    if t == "words":
+        items = judge.words_of(a)
+        ok = items and all(judge.WORD.match(x) and not x.startswith("-") for x in items)
+        return (items, None) if ok else (None, "每一個字不含空白與 |（好幾個用「、」分開）")
     return a, None
+
+
+def _named(found, value, name):
+    """找到的路徑的檔名就是查的名稱，而且原文前面的每一段（目錄）照順序都在路徑裡。"""
+    if os.path.basename(found) != name:
+        return False
+    rest = iter(found.split("/")[:-1])
+    return all(any(part == seg for seg in rest) for part in value.rstrip("/").split("/")[:-1] if part not in ("", "."))
 
 
 def _exists(cwd, path):
@@ -315,7 +501,7 @@ class ModelCaller:
         self.agent = agent
 
     def __call__(self, role, system, user, schema, predict, log):
-        model = MID_MODEL or self.agent.model
+        model = (MID_JUDGE_MODEL if role.startswith("judge") else "") or MID_MODEL or self.agent.model
         t0, raw, err = time.time(), "", None
         try:
             res = self.agent._timed_chat(
@@ -357,7 +543,8 @@ class Worker:
         job = {"id": jid, "status": "running", "created": _now(), "updated": _now(), "cwd": self.agent.current_cwd,
                "domain": self.domain_name, "question": question, "goal": (goal or question).strip(), "selection": None, "skill": None,
                "contract": None, "params": {}, "rejected": [], "auto_filled": [], "fetches": [], "graphs": [], "edg_job": None,
-               "fallbacks": [], "applied": [], "added": [], "replans": 0, "need_user": None, "asked": [], "result": None}
+               "fallbacks": [], "applied": [], "added": [], "replans": 0, "switched": [], "judgments": [], "need_user": None, "asked": [],
+               "result": None}
         self._note(jid, f"🧭 中階（{self.domain_name}）開始：{question[:80]}")
         domain = self._domain()
         if domain["problems"]:
@@ -459,7 +646,7 @@ class Worker:
 
     def _contract_call(self, job, spec, only, rejected):
         kinds = {"name": _i("type_name"), "text": _i("type_text"), "path": _i("type_path"), "glob": _i("type_glob"),
-                 "names": _i("type_names")}
+                 "names": _i("type_names"), "words": _i("type_words")}
         rows = []
         for p in spec["parameters"]:
             if only is not None and p["name"] not in only:
@@ -508,16 +695,20 @@ class Worker:
         return None
 
     def _fetch(self, job, p, value):
-        """照 fetch 查一次 → (路徑結尾跟原文一樣的候選, 全部找到的)；都是相對於工作目錄的路徑。"""
+        """照 fetch 查一次 → (候選, 全部找到的)；都是相對於工作目錄的路徑。{value} 是原文的最後一段、{stem} 是它去掉副檔名；
+        候選＝路徑結尾跟原文一樣，或檔名就是查的那個名稱、原文前面的每一段照順序都在路徑裡（「a 的 X 規格書」查 X.md：
+        a/…/X.md 算，名稱含 X.md 的 test_X.md 不算）。"""
         f = p["fetch"]
-        args = [a.replace("{value}", os.path.basename(value.rstrip("/")) or value) for a in f["args"]]
+        last = os.path.basename(value.rstrip("/")) or value
+        args = [a.replace("{value}", last).replace("{stem}", os.path.splitext(last)[0] or last) for a in f["args"]]
+        name = args[0] if args and not any(c in args[0] for c in "*?[/") else None
         ej = self._executor().start({"goal": f"找「{value}」在工作目錄的哪裡（{p['desc']}）",
                                      "nodes": [{"id": "fetch", "tool": f["tool"], "args": args, "expect": ["pass", "empty"]}]})
         found = []
         for inst in ej["nodes"].get("fetch", {}).get("instances", []):
             r = self._receipt(ej, (inst.get("attempts") or [{}])[-1]) or {}
             found += [self._rel(job, it["path"]) for it in r.get("items") or [] if it.get("path")]
-        exact = [x for x in found if x == value or x.endswith("/" + value)]
+        exact = [x for x in found if x == value or x.endswith("/" + value) or (name and _named(x, value, name))]
         job["fetches"].append({"param": p["name"], "given": value, "edg_job": ej["id"], "status": ej["status"], "found": len(found),
                                "exact": exact[:CANDIDATES_MAX]})
         return exact, found
@@ -571,6 +762,17 @@ class Worker:
                 self._note(job["id"], f"🔁 第 2 級：{fb['id']}，問使用者 {fb['change']['ask']}")
                 return self._wait(job, {"kind": "param", "param": fb["change"]["ask"], "question": fb["say"], "fallback": fb["id"],
                                         "candidates": self._subdirs(job, ej, fb["change"].get("from"))})
+            if "switch" in fb["change"]:
+                target = domain["skills"][fb["change"]["switch"]]
+                missing = [a for a in (job["selection"] or {}).get("asks") or [] if a not in target["answers"]]
+                if missing:
+                    entry["result"] = "cannot_answer"
+                    self._note(job["id"], f"🔁 第 2 級：{fb['id']} 換過去的 {target['name']} 答不了「{'、'.join(missing)}」，不換")
+                    continue
+                if job["replans"] >= MID_REPLAN_MAX:
+                    entry["result"] = "circuit_break"
+                    return self._finish(job, "circuit_break", ej, note=f"還要套用 {fb['id']}，但已經重排 {job['replans']} 次")
+                return self._switch(job, domain, fb, target, entry)
             extra, _ = expand_nodes(fb["change"]["add"], values)
             ran = {_node_key(n) for g in job["graphs"] for n in g["graph"]["nodes"]}
             if all(_node_key(n) in ran for n in extra):
@@ -586,7 +788,216 @@ class Worker:
             self._note(job["id"], f"🔁 第 2 級：{fb['id']}（{fb['say'][:60]}），加了 {'、'.join(entry['added'])}")
             graph = {"goal": job["goal"], "nodes": job["graphs"][-1]["graph"]["nodes"] + extra}
             return self._run(job, domain, graph, {"kind": "fallback", "fallback": fb["id"], "say": fb["say"], "added": entry["added"]})
+        if ej["status"] == "judgment":
+            return self._judgment(job, domain, ej)
         return self._finish(job, "done" if ej["status"] == "done" else "dead_end", ej)
+
+    def _switch(self, job, domain, fb, target, entry):
+        """換技能（回退的 switch）：參數照對應帶過去（名稱換成清單），之後照換過去的技能補參數、照它的骨架重排（算一次重排）。"""
+        old, types = job["skill"], {p["name"]: p["type"] for p in target["parameters"]}
+        params = {}
+        for dst, src in fb["change"]["params"].items():
+            cur = job["params"].get(src)
+            if cur is None or _empty(cur["value"]):
+                continue
+            v = cur["value"]
+            params[dst] = {"value": [v] if types[dst] in ("names", "words") and not isinstance(v, list) else v, "source": "switch",
+                           "from": src, "checked": bool(cur.get("checked"))}
+        job["switched"].append({"from": old, "to": target["name"], "fallback": fb["id"], "version": len(job["graphs"]), "time": _now(),
+                                "params": {k: v["value"] for k, v in params.items()}})
+        entry.update(result="switched", to=target["name"])
+        job.update(skill=target["name"], params=params, applied=[], added=[],
+                   rebuild={"kind": "switch", "fallback": fb["id"], "from": old, "to": target["name"], "say": fb["say"]})
+        self._note(job["id"], f"🔁 第 2 級：{fb['id']}（{fb['say'][:60]}），換技能 {old} → {target['name']}")
+        return self._proceed(job, domain)
+
+    # ---------------------------------------------------------------- 判斷節點（3b）
+    @staticmethod
+    def _judged(job):
+        return sum(1 for j in job.get("judgments") or [] if j["round"])
+
+    def _input_key(self, ej, node):
+        return [f"{d}:{a.get('result_id')}" for d in node.get("depends_on") or []
+                for inst in (ej["nodes"].get(d) or {}).get("instances", []) for a in (inst.get("attempts") or [])[-1:]]
+
+    def _pending(self, job, ej, graph):
+        """還沒判斷的判斷節點（照低階交回的順序第一個）：同一個節點、同樣的輸入判斷過的不算（重排之後沿用的那幾個）。"""
+        done = {(j["node"], tuple(j["input_key"])) for j in job["judgments"]}
+        for j in ej.get("judgments") or []:
+            node = graph.get(j["node"])
+            if node and (node["id"], tuple(self._input_key(ej, node))) not in done:
+                return node
+        return None
+
+    def _sources(self, job, ej, graph, node):
+        """判斷節點要看的原文：它依賴的節點每個實例最後一次嘗試一份（#編號），行照收據從檔案讀（agent_core/judge.py）。"""
+        out, cache = [], {}
+        for d in node["depends_on"]:
+            tool = graph[d].get("tool")
+            for k, (inst, a, r) in enumerate(self._instances(ej, d)):
+                rows = judge.rows(tool, r, cache)
+                for row in rows:
+                    row["file"] = self._rel(job, row["path"])
+                if tool == "search_text":
+                    what = _i("judge_what_search", pattern=(r or {}).get("pattern", ""), hits=((r or {}).get("counts") or {}).get("hits", 0),
+                              scope="、".join(self._rel(job, x) for x in (r or {}).get("paths") or []) or ".")
+                else:
+                    c = (r or {}).get("counts") or {}
+                    what = _i("judge_what_view", file=self._rel(job, (r or {}).get("path") or inst["args"][0]), start=c.get("from"), end=c.get("to"))
+                out.append({"id": f"#{a['result_id']}" if a.get("result_id") else f"#{d}.{k + 1}", "node": d, "tool": tool, "what": what,
+                            "context": int(((r or {}).get("options") or {}).get("context") or 0), "rows": rows})
+        return out
+
+    def _judgment(self, job, domain, ej):
+        """判斷節點：模型挑行、選路（_judge），程式核對；結束的路就結束，有 add 的接著排（_next_round）。"""
+        graph = {n["id"]: n for n in job["graphs"][-1]["graph"]["nodes"]}
+        node = self._pending(job, ej, graph)
+        if node is None:
+            return self._finish(job, "done", ej)
+        sources = self._sources(job, ej, graph, node)
+        base = {"node": node["id"], "version": len(job["graphs"]), "time": _now(), "input_key": self._input_key(ej, node),
+                "inputs": [{"node": x["node"], "source": x["id"]} for x in sources]}
+        if not any(x["rows"] for x in sources):
+            job["judgments"].append(dict(base, round=0, result="no_input", lines=[], rejected=[], params={}, param_rejected=[]))
+            self._note(job["id"], f"⚖️ 判斷 {node['id']}：{JUDGE_RESULT['no_input']}")
+            return self._finish(job, "done", ej, note=f"判斷節點 {node['id']}：{JUDGE_RESULT['no_input']}")
+        if self._judged(job) >= MID_JUDGE_MAX:
+            return self._finish(job, "circuit_break", ej, note=f"已經判斷 {MID_JUDGE_MAX} 次，{node['id']} 還要判斷")
+        entry = self._judge(job, domain, node, sources, base)
+        job["judgments"].append(entry)
+        branch = next((b for b in node["branches"] if b["id"] == entry["branch"]), None)
+        self._note(job["id"], f"⚖️ 判斷 {node['id']}（第 {entry['round']} 次）：{entry['branch'] or '—'}，挑了 {len(entry['lines'])} 行"
+                              + (f"（{len(entry['rejected'])} 行沒過核對）" if entry["rejected"] else ""))
+        if branch is None:
+            entry["result"] = "failed"
+            return self._finish(job, "failed", ej, note=f"判斷 {node['id']}：{JUDGE_RESULT['failed']}")
+        if branch.get("add") is None:
+            if branch.get("need_lines") and not any(j.get("lines") for j in job["judgments"]):     # 之前的判斷挑的行也算
+                entry["result"] = "no_lines"
+                return self._finish(job, "dead_end", ej, note=f"判斷 {node['id']} 選了 {branch['id']}：{JUDGE_RESULT['no_lines']}")
+            entry["result"] = "done"
+            return self._finish(job, "done", ej, note=f"判斷 {node['id']}：{branch['say']}")
+        if entry["param_rejected"]:
+            entry["result"] = "params_rejected"
+            return self._finish(job, "dead_end", ej, note=f"判斷 {node['id']} 選了 {branch['id']}：{JUDGE_RESULT['params_rejected']}")
+        return self._next_round(job, domain, ej, node, branch, entry)
+
+    def _judge(self, job, domain, node, sources, base):
+        """判斷一次：模型挑行、選路、填參數；程式核對，沒過的交回修一次（只重寫沒過的：挑的行重抄；參數沒過時可以重選路）。"""
+        used, omitted = judge.select(sources)
+        files, sids = judge.shown_files(sources), [x["id"] for x in sources if any(r["shown"] for r in x["rows"])]
+        entry = dict(base, round=self._judged(job) + 1, shown={"chars": used, "rows": sum(r["shown"] for x in sources for r in x["rows"]),
+                                                               "omitted": omitted},
+                     understanding="", lines=[], rejected=[], branch=None, say="", params={}, param_rejected=[], reason="", result=None)
+        system, user = prompt_files.load("mid/judge.md", lines=MID_JUDGE_LINES), self._judge_message(job, domain, node, sources, omitted)
+        out = self.model("judge", system, user, mid_judge_schema(sids, files, node["labels"], node["branches"], MID_JUDGE_LINES),
+                         MID_JUDGE_PREDICT, self._log(job["id"]))
+        if not out:
+            return entry
+        entry.update(understanding=str(out.get("understanding") or ""), reason=str(out.get("reason") or ""))
+        picked = [x for j in job["judgments"] for x in j.get("lines") or []]
+        bad_lines = self._take_lines(entry, out.get("lines"), sources, 1, picked)
+        branch = next((b for b in node["branches"] if b["id"] == out.get("branch")), None)
+        params, bad_params = judge.check_params(branch, out.get("params"), sources, picked) if branch else ({}, [])
+        if branch and branch.get("add") is not None and not bad_params:
+            bad_params = self._stale(job, domain, branch, params)
+        if bad_lines or bad_params:
+            fix = self.model("judge_fix", system, user + "\n\n" + _i("judge_rejected", rejected="\n".join(bad_lines + bad_params)),
+                             mid_judge_schema(sids, files, node["labels"], node["branches"], MID_JUDGE_LINES, fix_lines=bool(bad_lines),
+                                              fix_branch=bool(bad_params)), MID_JUDGE_PREDICT, self._log(job["id"])) or {}
+            if bad_lines:
+                self._take_lines(entry, fix.get("lines"), sources, 2, picked)
+            again = next((b for b in node["branches"] if b["id"] == fix.get("branch")), None) if bad_params else None
+            if again:
+                p2, bad2 = judge.check_params(again, fix.get("params"), sources, picked)
+                bad2 = bad2 or (self._stale(job, domain, again, p2) if again.get("add") is not None else [])
+                branch, params, bad_params = (again, p2, []) if not bad2 else (branch, params, bad_params + bad2)
+        entry.update(branch=branch["id"] if branch else None, say=branch["say"] if branch else "", params=params, param_rejected=bad_params)
+        return entry
+
+    @staticmethod
+    def _take_lines(entry, items, sources, rnd, picked):
+        """模型挑的行逐一核對：過的加進 entry["lines"]（同一行只留一次、之前的判斷挑過的不再加，最多 MID_JUDGE_LINES 行），沒過的記原因；
+        回傳這一輪沒過的說明。"""
+        bad, before = [], {(x["path"], x["line"]) for x in picked}
+        for item in items if isinstance(items, list) else []:
+            if not isinstance(item, dict):
+                continue
+            line, why = judge.check_line(item, sources, picked)
+            if why:
+                bad.append(why)
+                entry["rejected"].append({"round": rnd, "item": item, "why": why})
+            elif ((line["path"], line["line"]) not in {(x["path"], x["line"]) for x in entry["lines"]} | before
+                  and len(entry["lines"]) < MID_JUDGE_LINES):
+                entry["lines"].append(dict(line, round=rnd))
+        return bad
+
+    def _judge_message(self, job, domain, node, sources, omitted):
+        parts = [_i("question", question=job["question"])] + ([_i("goal", goal=job["goal"])] if job["goal"] != job["question"] else [])
+        parts.append(_i("judge_goal", goal=node["goal"]))
+        picked = [x for j in job["judgments"] for x in j.get("lines") or []]
+        if picked:
+            parts.append(_i("judge_picked", picked="\n".join(_i("judge_picked_line", file=x["file"], line=x["line"], label=x["label"], text=x["text"])
+                                                           for x in picked)))
+        searched = self._searched(job, domain)
+        if searched:
+            parts.append(_i("judge_searched", words="、".join(searched)))
+        text = judge.render(sources)
+        if omitted:
+            text += "\n" + _i("judge_omitted", omitted="；".join(f"{sid} 的 {f} {n} 行" for sid, fs in omitted.items() for f, n in fs.items()))
+        parts += [_i("judge_sources", sources=text), _i("judge_labels", labels="、".join(node["labels"])),
+                  _i("judge_branches", branches="\n".join(self._branch_text(b) for b in node["branches"]))]
+        return "\n\n".join(parts)
+
+    @staticmethod
+    def _branch_text(b):
+        if not b.get("params"):
+            return _i("judge_branch", id=b["id"], say=b["say"])
+        kinds = {"words": lambda n: _i("judge_param_words", name=n), "path": lambda n: _i("judge_param_path", name=n),
+                 "line": lambda n: _i("judge_param_line", name=n)}
+        return _i("judge_branch_params", id=b["id"], say=b["say"], params="、".join(kinds[q["type"]](q["name"]) for q in b["params"]))
+
+    @staticmethod
+    def _searched(job, domain, upto=None):
+        """這個工作找過的字（照第一次出現的寫法）：技能的搜尋的字（words），加上判斷要接著找的（upto＝只算前幾次判斷）。"""
+        out = []
+        words = [w for p in domain["skills"][job["skill"]]["parameters"] if p["type"] == "words"
+                 for w in (job["params"].get(p["name"]) or {}).get("value") or []]
+        for w in words + [w for j in job["judgments"][:upto] for w in j.get("chase") or []]:
+            if w.lower() not in {x.lower() for x in out}:
+                out.append(w)
+        return out
+
+    def _stale(self, job, domain, branch, params, upto=None):
+        """選的路照參數排出來會不會有新的結果：要接著找的字都找過了，或加的節點都跑過了 → 交回修的說明（空的＝會有新的結果）。
+        判斷的時候先核對（沒過的交回修一次，可以重選路）；排下一版時再核對一次（upto=-1：不算這一次的判斷自己）。"""
+        words = [w for q in branch.get("params") or [] if q["type"] == "words" for w in params.get(q["name"], [])]
+        if words and {w.lower() for w in words} <= {w.lower() for w in self._searched(job, domain, upto)}:
+            return [_i("reject_param_searched", words="、".join(words))]
+        add, _ = expand_nodes(branch["add"], dict({k: v["value"] for k, v in job["params"].items()}, **params))
+        ran = {_node_key(n) for g in job["graphs"] for n in g["graph"]["nodes"]}
+        return [_i("reject_branch_ran", branch=branch["id"])] if all(_node_key(n) in ran for n in add) else []
+
+    def _next_round(self, job, domain, ej, node, branch, entry):
+        """有 add 的路：加的節點（id 加上下一次判斷是第幾次）、後面接同一個判斷，交給低階重排。判斷用完了熔斷；要接著找的都找過了不收斂。"""
+        if self._judged(job) >= MID_JUDGE_MAX:
+            entry["result"] = "circuit_break"
+            return self._finish(job, "circuit_break", ej, note=f"判斷已經 {MID_JUDGE_MAX} 次，還要接著做：{branch['id']}（{branch['say']}）")
+        k = self._judged(job) + 1
+        entry["chase"] = [w for q in branch.get("params") or [] if q["type"] == "words" for w in entry["params"].get(q["name"], [])]
+        if self._stale(job, domain, branch, entry["params"], upto=-1):
+            entry["result"] = "no_new_nodes"
+            return self._finish(job, "dead_end", ej, note=f"判斷 {node['id']} 選了 {branch['id']}：{JUDGE_RESULT['no_new_nodes']}")
+        add, _ = expand_nodes(branch["add"], dict({key: v["value"] for key, v in job["params"].items()}, **entry["params"]))
+        rename = {n["id"]: f"{n['id']}_{k}" for n in add}
+        for n in add:
+            n.update(id=rename[n["id"]], **({"depends_on": [rename.get(d, d) for d in n["depends_on"]]} if n.get("depends_on") else {}))
+        template = node.get("template") or node["id"]
+        nxt = dict(node, id=f"{template}_{k}", template=template, depends_on=[n["id"] for n in add])
+        entry.update(result="replanned", added=[n["id"] for n in add] + [nxt["id"]])
+        graph = {"goal": job["goal"], "nodes": job["graphs"][-1]["graph"]["nodes"] + add + [nxt]}
+        return self._run(job, domain, graph, {"kind": "judgment", "node": node["id"], "branch": branch["id"], "say": branch["say"],
+                                              "params": entry["params"], "added": entry["added"]})
 
     def _when(self, when, ej):
         """回退的條件：node 的狀態（state）、帶入的實例超過上限（capped），其他的鍵比對那個節點某一個實例最後一次嘗試的收據。"""
@@ -675,21 +1086,47 @@ class Worker:
             body = REPORTERS[n["tool"]](self, job, ej, n, values)
             ids = job["graphs"][-1]["nodes"].get(n["id"], {}).get("results") or []
             lines += ["", f"## {n['report']}"] + body + ([f"- 出處：{'、'.join(f'#{r}' for r in ids)}"] if ids else [])
+        if job.get("judgments"):
+            lines += self._render_judgments(job)
         if job["fallbacks"]:
-            result = {"replanned": "重排", "no_new_nodes": "排出來的節點都跑過了，沒有重排", "ask": "問使用者", "circuit_break": "熔斷"}
+            result = {"replanned": "重排", "no_new_nodes": "排出來的節點都跑過了，沒有重排", "ask": "問使用者", "circuit_break": "熔斷",
+                      "switched": "換技能", "cannot_answer": "換過去的技能答不了，沒有換"}
             lines += ["", "## 第 2 級（回退）"] + [f"- {f['fallback']}：{f['say']}（{result.get(f.get('result'), '')}）" for f in job["fallbacks"]]
         stops = [(nid, st) for nid, st in ej["nodes"].items() if st["state"] in edg.BAD]
         if stops:
             lines += ["", "## 沒有做完的節點"] + [f"- {nid}：{st['state']}（{st.get('reason', '')}）" for nid, st in stops]
         return "\n".join(lines)
 
+    def _render_judgments(self, job):
+        """判斷挑出的行（每一次的合起來，同一行只列一次）與每一次判斷的經過。"""
+        picked, seen = [], set()
+        for j in job["judgments"]:
+            for x in j.get("lines") or []:
+                if (x["path"], x["line"]) not in seen:
+                    seen.add((x["path"], x["line"]))
+                    picked.append(x)
+        out = ["", "## 判斷挑出的行（模型挑的；檔案、行號與內容由程式從原文取）"]
+        out += [f"- {x['file']}:{x['line']}（{x['label']}，{x['source']}）：{x['text']}" for x in picked] or ["- 沒有挑出通過核對的行"]
+        out += ["", "## 判斷的經過"]
+        for j in job["judgments"]:
+            if not j["round"]:
+                out.append(f"- {j['node']}：{JUDGE_RESULT[j['result']]}")
+                continue
+            ps = "；".join(f"{k}＝{self._show(v)}" for k, v in (j.get("params") or {}).items())
+            rej = len(j.get("rejected") or []) + len(j.get("param_rejected") or [])
+            out.append(f"- 第 {j['round']} 次（{j['node']}）：" + (f"{j['branch']}（{j['say']}）" if j.get("branch") else "沒有選")
+                       + (f"：{ps}" if ps else "") + f"；挑了 {len(j.get('lines') or [])} 行" + (f"（{rej} 個沒有通過核對）" if rej else "")
+                       + f"；{JUDGE_RESULT.get(j.get('result'), '')}" + (f"；理由：{j['reason']}" if j.get("reason") else ""))
+        return out
+
     @staticmethod
     def _show(v):
-        return "、".join(v) if isinstance(v, list) else str(v)
+        return "、".join(str(x) for x in v) if isinstance(v, list) else str(v)
 
     @staticmethod
     def _source(v):
-        return {"question": f"原文「{v.get('quote', '')}」", "default": "預設", "fetch": "自己查到的", "user": "使用者回答"}.get(v["source"], v["source"])
+        return {"question": f"原文「{v.get('quote', '')}」", "default": "預設", "fetch": "自己查到的", "user": "使用者回答",
+                "switch": f"換技能時從 {v.get('from', '')} 帶過來"}.get(v["source"], v["source"])
 
     # ---------------------------------------------------------------- 報告：每一種工具怎麼整理
     def _instances(self, ej, nid):

@@ -16,7 +16,7 @@
 7. **重排**（replan，中階的第 2 級用）：照新的圖接著跑同一個工作——定義沒變、依賴也沒重跑的節點保留狀態（不重跑）；新的、改了的重新跑；
    圖上拿掉的與重跑的節點，原本的狀態記在 replans（收據檔都還在）。同一個工具＋同樣的參數之前跑過的，直接用之前的收據（D5 中 4）。
 
-每一次執行存在 logs/edg_jobs/<編號>/：job.json（圖、每個節點與實例的狀態、嘗試、修正）、receipts/（每次嘗試的收據全文）、
+每一次執行存在 logs/edg_jobs/<編號>/：job.json（圖、每個節點與實例的狀態、嘗試、修正）、receipts/（每次嘗試的收據全文；重排之後重跑的檔名加上第幾版）、
 events.jsonl（進度）、calls.jsonl（修正的模型呼叫）。確認關卡的決定記在實例的 decisions。Web 的拓撲圖（web_app/topology.py）用 job.json。
 """
 import importlib
@@ -638,7 +638,9 @@ class Executor:
         return json.dumps([tool, list(args)], ensure_ascii=False)
 
     def _save_receipt(self, job, nid, i, k, receipt):
-        rel = f"receipts/{nid}_{i + 1}_{k + 1}.json"
+        """receipts/<節點>_<實例>_<嘗試>.json；重排之後重跑的加上第幾版（_v2…），不蓋掉之前那一版的收據（拓撲圖照版本看、中階讀的是這一版的）。"""
+        v = len(job.get("replans") or [])
+        rel = f"receipts/{nid}_{i + 1}_{k + 1}" + (f"_v{v + 1}" if v else "") + ".json"
         self.store.write(job["id"], rel, json.dumps(receipt, ensure_ascii=False))
         return rel
 

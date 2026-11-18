@@ -14,7 +14,7 @@
 | `extract/` 提煉 | —（不用模型的在 `chat/extract_selftest.py`） | `run.py`（情境在 `cases.py`：程式產生已知答案的長輸出；`worker.py` 跑一個情境） | 工具回傳的提煉與 result_recall：找到幾個、多列幾個、數量的說法、切幾段讀幾段、程式拿掉幾條 |
 | `repo/` 真實專案（新架構的評測） | `selftest.py`（核對、每一題答得出來、答案跟快照一致、碰不到真的容器） | `run.py`（題目在 `questions.py`，答案 `answers.json` 由程式從固定版本的快照算；借用 `ops/worker.py` 跑一題） | 在真實專案（amr_base_sw、amr_base_hw、fih_rmf_system）裡找檔案與計數、讀長文件、Python 的定義與呼叫、C++、跨檔案的調查；最後的回覆由程式核對 |
 | `edg/` 低階執行器（新架構 D10 第 2 步） | `selftest.py`（寫好的圖、假的修正模型） | `run.py`（題目在 `cases.py`：一個工具節點故意錯一個參數，工作目錄是真實專案評測的快照） | 照決策圖執行、照收據守門、從收據帶入參數、重排；第 1 級修正：修得好的有沒有修好（收據的欄位與範圍由程式核對）、修不好的有沒有往上交 |
-| `mid/` 中階（新架構 D10 第 3 步） | `selftest.py`（假的模型、真的工具與低階執行器） | `run.py`（題目沿用真實專案評測的 30 題，`cases.py` 標每一題該用的複合技能與參數） | 每一層分開量：挑技能（沒有技能做得到的要說 none）、合約（參數與原文的核對）、最後的報告（`repo/checks.py`）；第 2 級（回退、問使用者、熔斷） |
+| `mid/` 中階（新架構 D10 第 3 步） | `selftest.py`（假的模型、真的工具與低階執行器） | `run.py`（題目沿用真實專案評測的 30 題，`cases.py` 標每一題該用的複合技能與參數） | 每一層分開量：挑技能（模型挑的、換技能之後的）、合約（參數與原文的核對）、判斷（幾次、走的路、挑的行過不過核對）、最後的報告（`repo/checks.py`）；第 2 級（回退、換技能、問使用者、熔斷） |
 
 改程式之後先跑不用模型的自我測試：
 
@@ -247,18 +247,22 @@ python3 evals/mid/run.py --only py_fleet_msg,cnt_hw_params --tag try1   # 只跑
 python3 evals/mid/run.py --rescore evals/results/<結果目錄>   # 不跑模型：標記或核對改了之後，用存下來的 job 重新計分
 ```
 
-- **離線**（`selftest.py`，18 項）：領域與複合技能的規格（解析、給模型時拿掉給程式看的部分、SKILLS.md 的一句話跟規格一樣、寫錯的擋下來）、
+- **離線**（`selftest.py`，26 項）：領域與複合技能的規格（解析、給模型時拿掉給程式看的部分、SKILLS.md 的一句話跟規格一樣、寫錯的擋下來）、
   合約的核對（原文要在問題裡、值照參數的種類對原文；沒過的與漏了的必填參數交回修一次）、排圖（if 群組、節點的 if）、補參數（預設值、
   路徑找不到時自己查、剛好一個就補、好幾個或沒有就問、必填的問、接回）、報告（定義、呼叫、每個檔案的數量、總數、只在註解裡提到的檔案）、
   第 2 級（加節點重排、不收斂、問範圍附各子目錄的筆數、熔斷）、挑技能的結果（沒有適合的、不屬於這個領域、答不了問題要的那一種）、
   確認關卡、模型呼叫、這個評測自己的核對與階段驗證的比對；問使用者的問題與回答（中階的 `asked`、低階實例的 `decisions`）；
   Web 的決策圖（`web_app/topology.py`）：每一版的圖與當時的狀態（重排換掉的從低階的 `replans` 找回）、跟上一版比、回退與問使用者、
   自己查路徑、清單、評測結果的來源、不合規則的路徑擋下來，`/topology` 與 `/api/topology/*` 的路由（真的起一個伺服器）。
+  3b：判斷節點的規格（goal、labels、每條路的參數與加的節點、至少一條結束的路、只寫在〈骨架〉；換技能的對象與參數）、原文（照收據從檔案讀、
+  預算、片段的比對與行號、之前挑過的行）、判斷的流程（回答、接著找、看前後、沒寫、交回修、重選路、找過的字、次數用完、沒有輸入、模型沒回、
+  一樣的行用行號選；判斷的假回覆看 schema 決定來源）、換技能（.py 沒有、C++ 檔有 → cpp_symbol；答不了不換）、拓撲圖的判斷與換技能。
 - **真模型評測**（`run.py`、`cases.py`）：真實專案評測的 30 題交給中階（工作目錄是快照，唯讀），每一層分開量：
-  - 挑技能：`cases.py` 每一題標該用的複合技能（可以好幾個都算對）；第一版（3a）還沒有技能做得到的（讀長文件、C++、跨檔案的調查）要說 none；
+  - 挑技能：`cases.py` 每一題標該用的複合技能（可以好幾個都算對；領域還沒有技能做得到的要說 none）；分開記模型挑的與第 2 級換技能之後的；
   - 合約：抽出的參數對不對（`cases.py` 寫的那幾個；路徑可以有幾種都算對的寫法）；
+  - 判斷（3b）：每一題判斷了幾次、每一次走的路（例：`follow→answered`）、挑的行通過核對幾行、沒過幾個、最後怎麼結束；
   - 最後的報告：該用的技能不是 none 的題目，用 `repo/checks.py` 對答案（中階要做完，問使用者、死路、熔斷都算沒過）。
-  另外記用了哪些回退、問了使用者什麼。
+  另外記用了哪些回退、換技能、問了使用者什麼。
 - **保留組**（`set` 是 `holdout` 的 5 題）：不拿來調 `prompts/mid/`、複合技能與程式的核對。
 - **基準**：`evals/baselines/mid.json`（每個模型每一題每一層過了幾次）；`phase_check --model` 每個模型 30 題各跑 3 次跟它比。
 - 結果在 `evals/results/<時間>_mid_<模型>[_holdout|_all][_<tag>]/`：`runs.jsonl`（選的技能與理解、參數與原文、沒過核對的、回退、每一層的結果）、
@@ -328,4 +332,4 @@ python3 evals/phase_check.py --save-baseline <結果目錄…> --label "第 N �
 - 近期加進來的案例：第 2 階段——提煉的真模型評測（〈提煉〉一節）、交握 status 連續幾次的判斷（`skills/rmf_test.py` 的 `t_sandbox_status_stable`）、
   數據技能的「不是錄製數據」判斷不擋任何一份真的錄製（`skills/data_test.py` 的 `t_not_recording_real_data`）、維運評測的 `logs/<情境>/`
   （每一步的紀錄）；第 4 階段——評測的完整性（`integrity`）、
-  數據分析的存檔只留最近幾次（`analysis_selftest`）；第 4 階段之後——`--until-done` 看得出卡住就提早結束、`--until-confirmed` 等授權有結果（`skills/rmf_test.py` 的 `t_until_done_stuck`、`t_until_confirmed`、`t_until_done_stuck_rules`）；2026-11-18——任務引擎與 Plan 模式拿掉（`task_selftest` 跟著拿掉），CLI 主迴圈的確認關卡改在 `chat_selftest` 測（`t_cli_guard`），範本的檢查改成每個 import 了 `prompt_files` 的模組各自核對（`integrity`，取代「至少 200 處」）；同一天——真實專案評測的自我測試（`repo_selftest`），完整性檢查也收它答案裡的名稱；收據（D10 第 1 步）——`skills/receipt_test.py` 8 項、`chat_selftest` 的 `t_receipts`；低階執行器（D10 第 2 步）——`edg_selftest` 12 項、`skills/receipt_test.py` 的 `t_parse_args_contract`（寫收據的腳本都有純函式 `parse_args`、規格的 `narrow`），`--model` 加上第 1 級修正的真模型評測（`edg`）。中階（D10 第 3 步的 3a）——`mid_selftest` 16 項、`edg_selftest` 的重排（13 項）、`skills/fs_test.py` 與 `receipt_test.py` 的 code_ast_reader `--refs`（技能 109 → 111），`--model` 加上中階的真模型評測（`mid`）；完整性檢查也掃各領域的 `skills_system/<領域>/*.md`、收中階評測標的參數。
+  數據分析的存檔只留最近幾次（`analysis_selftest`）；第 4 階段之後——`--until-done` 看得出卡住就提早結束、`--until-confirmed` 等授權有結果（`skills/rmf_test.py` 的 `t_until_done_stuck`、`t_until_confirmed`、`t_until_done_stuck_rules`）；2026-11-18——任務引擎與 Plan 模式拿掉（`task_selftest` 跟著拿掉），CLI 主迴圈的確認關卡改在 `chat_selftest` 測（`t_cli_guard`），範本的檢查改成每個 import 了 `prompt_files` 的模組各自核對（`integrity`，取代「至少 200 處」）；同一天——真實專案評測的自我測試（`repo_selftest`），完整性檢查也收它答案裡的名稱；收據（D10 第 1 步）——`skills/receipt_test.py` 8 項、`chat_selftest` 的 `t_receipts`；低階執行器（D10 第 2 步）——`edg_selftest` 12 項、`skills/receipt_test.py` 的 `t_parse_args_contract`（寫收據的腳本都有純函式 `parse_args`、規格的 `narrow`），`--model` 加上第 1 級修正的真模型評測（`edg`）。中階（D10 第 3 步的 3a）——`mid_selftest` 16 項、`edg_selftest` 的重排（13 項）、`skills/fs_test.py` 與 `receipt_test.py` 的 code_ast_reader `--refs`（技能 109 → 111），`--model` 加上中階的真模型評測（`mid`）；完整性檢查也掃各領域的 `skills_system/<領域>/*.md`、收中階評測標的參數。第 3 步的 3b——`mid_selftest` 26 項（判斷節點、換技能、拓撲圖的判斷）、`skills/fs_test.py` 與 `receipt_test.py` 的 view_file `--around`、search_text `--rank`（技能 111 → 113）、`edg_selftest` 的重排多核對重跑的收據不蓋掉前一版。

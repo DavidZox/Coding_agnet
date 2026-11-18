@@ -133,3 +133,37 @@ def mid_contract_schema(params, only=None):
         if only is None or p["name"] in only:
             props[p["name"]] = {"type": "object", "properties": {"quote": _text(200), "value": _text(200)}, "required": ["quote", "value"]}
     return {"type": "object", "properties": props, "required": list(props)}
+
+
+# 判斷節點（agent_core/judge.py、mid.Worker._judgment）：先寫理解，再挑行（來源是原文的 #編號、檔案是原文裡的檔案、行號、片段一字不改、
+# 標籤照技能列的；片段對到好幾行時用行號選），再從技能列的分支選一條、填那條路要的參數（每條路的參數合在一起，沒有要填的留空），最後寫理由。
+# fix＝交回修一次：只重寫沒過的（挑的行重抄；分支的參數沒過時可以重選分支）。
+def _judge_param(p, files):
+    if p["type"] == "words":
+        return {"type": "array", "items": _text(80), "maxItems": 8}
+    if p["type"] == "path":
+        return {"type": "string", "enum": list(files) + [""]}
+    return {"type": "integer"}
+
+
+def mid_judge_schema(sources, files, labels, branches, max_lines, fix_lines=False, fix_branch=False):
+    line = {"type": "object", "properties": {"source": {"type": "string", "enum": list(sources)}, "file": {"type": "string", "enum": list(files)},
+                                             "line": {"type": "integer"}, "quote": _text(300), "label": {"type": "string", "enum": list(labels)}},
+            "required": ["source", "file", "line", "quote", "label"]}
+    params = {}
+    for b in branches:
+        for p in b.get("params") or []:
+            params.setdefault(p["name"], _judge_param(p, files))
+    props = {}
+    if not (fix_lines or fix_branch):
+        props["understanding"] = _text(400)
+    if fix_lines or not fix_branch:
+        props["lines"] = {"type": "array", "items": line, "maxItems": max_lines}
+    if fix_branch or not fix_lines:
+        props["branch"] = {"type": "string", "enum": [b["id"] for b in branches]}
+        if params:
+            props["params"] = {"type": "object", "properties": params, "required": list(params)}
+    if not (fix_lines or fix_branch):
+        props["reason"] = _text(300)
+    return {"type": "object", "properties": props, "required": list(props)}
+

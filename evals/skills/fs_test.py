@@ -215,6 +215,28 @@ def t_search_files_mode_and_context():
     assert ">    3→fail two" in out and "     2→ok" in out, out
 
 
+def t_search_rank():
+    """search_text --rank：命中超過上限時先列同一行含最多個不同的字的行（照檔案順序會截掉檔尾的答案）；檔案照最多的那一行排；
+    只有一個字時照檔案順序並說明；沒挑到的命中在前後行的範圍裡當前後行列（不標 >）"""
+    d = _tmp()
+    rows = [f"row {i}: " + ("alpha beta both" if i in (70, 72) else "alpha only" if i % 2 else "beta only") for i in range(1, 81)]
+    _w(d, "doc/spec.md", "\n".join(rows) + "\n")
+    _w(d, "doc/other.md", "beta and ALPHA\nnothing\n")
+    out = run("grep_cmd.py", "alpha|beta", "doc/spec.md", "-C", "1", d=d)
+    assert "只列前 50 筆" in first_line(out) and "row 70:" not in out, "沒有 --rank：照檔案順序，檔尾的被截掉"
+    out = run("grep_cmd.py", "alpha|beta", "doc/spec.md", "-C", "1", "--rank", d=d)
+    head = first_line(out)
+    assert "--rank" in head and "只列 50 筆" in head, head
+    assert ">   70→row 70: alpha beta both" in out and ">   72→row 72: alpha beta both" in out, out
+    assert "    71→row 71: alpha only" in out, "71 沒挑到、在前後行的範圍裡：當前後行列"
+    out = run("grep_cmd.py", "alpha|beta", "doc", "--rank", d=d)
+    assert out.index("## doc/other.md") < out.index("## doc/spec.md"), "檔案照它最多的那一行排（other.md 的第 1 行有兩個字）"
+    out = run("grep_cmd.py", "-w", "alpha|beta", "doc", "--rank", "-l", d=d)
+    assert "-l 只列檔名，--rank 沒有作用" in out, out
+    out = run("grep_cmd.py", "alpha", "doc", "--rank", d=d)
+    assert "--rank 要有好幾個字" in out and "--rank）" not in first_line(out), out
+
+
 def t_search_errors():
     """search_text：找不到路徑、/、不支援的選項、只給路徑都是 [ERROR] 加下一步；找不到內容是 [PASS] 並建議同義詞"""
     d = _tmp()
@@ -456,6 +478,22 @@ def t_view_numbered_and_ranges():
     assert "顯示第 49-50 行" in first_line(out) and "    50→line 50" in out, out
     out = run("cat_cmd.py", "-n", "big.txt", d=d)
     assert out.startswith("[PASS] 檔案內容 (big.txt)"), "cat -n 的 -n 不會被當成路徑"
+
+
+def t_view_around():
+    """view_file --around N [-C M]：第 N 行前後各 M 行（預設 10），那一行標 >；超過總行數、跟 --from 一起用、-C 沒有 --around 都是 [ERROR]"""
+    d = _tmp()
+    _w(d, "big.txt", "".join(f"line {i}\n" for i in range(1, 51)))
+    out = run("cat_cmd.py", "big.txt", "--around", "20", "-C", "2", d=d)
+    assert first_line(out).startswith("[PASS] 檔案內容 (big.txt)：共 50 行，顯示第 18-22 行（第 20 行的前後"), first_line(out)
+    assert ">   20→line 20" in out and "    19→line 19" in out and "    23→" not in out, out
+    out = run("cat_cmd.py", "big.txt", "--around", "3", d=d)
+    assert "顯示第 1-13 行" in first_line(out) and ">    3→line 3" in out, first_line(out)
+    out = run("cat_cmd.py", "big.txt", "--around", "50", "-C", "0", d=d)
+    assert "顯示第 50-50 行" in first_line(out) and ">   50→line 50" in out, out
+    assert_error(run("cat_cmd.py", "big.txt", "--around", "51", d=d), "只有 50 行", "--around 51")
+    assert_error(run("cat_cmd.py", "big.txt", "--around", "5", "--from", "2", d=d), "--around 不能跟")
+    assert_error(run("cat_cmd.py", "big.txt", "-C", "3", d=d), "要跟 --around N 一起用")
 
 
 def t_view_truncation_and_big_file():

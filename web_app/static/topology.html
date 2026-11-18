@@ -9,7 +9,7 @@
   :root {
     color-scheme: dark;
     --bg: #1e1f22; --panel: #2b2d31; --panel2: #232428; --line: #3a3c40; --text: #e3e3e3; --muted: #9aa0a6;
-    --ok: #3fb950; --bad: #f85149; --warn: #d29922; --wait: #a371f7; --info: #58a6ff; --skip: #6e7681; --fb: #e0823d; --sel: #8ab4f8;
+    --ok: #3fb950; --bad: #f85149; --warn: #d29922; --wait: #a371f7; --info: #58a6ff; --skip: #6e7681; --fb: #e0823d; --sel: #8ab4f8; --judge: #39c5bb;
   }
   * { box-sizing: border-box; }
   body {
@@ -60,7 +60,7 @@
   .stage.cur { background: #2f3540; }
   .arrow { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 0 6px; color: var(--muted); font-size: 11px; min-width: 26px; }
   .arrow .lbl { max-width: 130px; text-align: center; line-height: 1.3; }
-  .arrow .lbl.fb { color: var(--fb); } .arrow .lbl.user { color: var(--wait); }
+  .arrow .lbl.fb { color: var(--fb); } .arrow .lbl.user { color: var(--wait); } .arrow .lbl.judge { color: var(--judge); }
 
   /* 圖 */
   #version-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
@@ -82,12 +82,18 @@
   .gnode.mark { border-style: dashed; width: 220px; background: #24262b; }
   .gnode.m-replanned { border-color: var(--fb); } .gnode.m-ask { border-color: var(--wait); }
   .gnode.m-no_new_nodes { border-color: var(--skip); } .gnode.m-circuit_break { border-color: var(--bad); }
+  .gnode.m-switched { border-color: var(--fb); } .gnode.m-cannot_answer { border-color: var(--skip); }
+  .gnode.jnode { background: #252a35; border-radius: 16px; }
+  .gnode .goal { color: #d0d3d8; margin-top: 3px; max-height: 4.3em; overflow: hidden; }
+  .c-judge { color: var(--judge); }
   .elabel { position: absolute; transform: translate(-50%, -50%); background: #191a1d; border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; font-size: 11px; color: var(--muted); cursor: pointer; white-space: nowrap; }
   .elabel.fallback { color: var(--fb); border-color: var(--fb); }
+  .elabel.judgment { color: var(--judge); border-color: var(--judge); }
   .elabel.mark { color: var(--muted); border-style: dashed; }
   .elabel.sel { box-shadow: 0 0 0 2px var(--sel); }
   path.edge { fill: none; stroke: #8b949e; stroke-width: 1.6; }
   path.edge.fallback { stroke: var(--fb); stroke-dasharray: 7 4; }
+  path.edge.judgment { stroke: var(--judge); stroke-dasharray: 7 4; }
   path.edge.mark { stroke: #a0a4ab; stroke-dasharray: 4 4; }
   path.edge.ghost { stroke-dasharray: 3 4; opacity: .4; }
   path.edge.sel { stroke: var(--sel); stroke-width: 2.6; }
@@ -152,6 +158,8 @@
       <span><span class="sw" style="border-color:var(--skip);border-style:dashed"></span>這一版沒有跑到</span>
       <span><span class="ln"></span>依賴、帶入（從前一個節點的收據，每一項一個實例）</span>
       <span><span class="ln" style="border-top:2px dashed var(--fb)"></span>回退（從條件的節點到加的節點）</span>
+      <span><span class="sw" style="border-color:var(--info);border-radius:7px;background:#252a35"></span>判斷節點（模型看原文挑行、選路）</span>
+      <span><span class="ln" style="border-top:2px dashed var(--judge)"></span>判斷選的路加的節點（從判斷節點畫）</span>
       <span><span class="ln" style="border-top:2px dashed #a0a4ab"></span>這一版跑完時的回退、問使用者</span>
       <span>淡的虛線框：這一版拿掉的節點</span>
     </div>
@@ -173,11 +181,17 @@ const NODE_CLASS = { done: 'ok', failed: 'bad', unexpected: 'bad', denied: 'bad'
 const EDG_STATUS = { done: '做完', judgment: '交回判斷', stopped: '停下來（有節點沒成功）', need_user: '等使用者確認', invalid: '圖沒通過檢查', running: '執行中' };
 const EDG_CLASS = { done: 'ok', judgment: 'info', stopped: 'bad', need_user: 'wait', invalid: 'bad', running: 'info' };
 const MID_CLASS = { done: 'ok', dead_end: 'bad', circuit_break: 'bad', failed: 'bad', no_skill: 'warn', out_of_domain: 'warn', need_user: 'wait', running: 'info' };
-const SOURCE_TEXT = { question: '原文', default: '預設', fetch: '自己查到的', user: '使用者回答' };
+const SOURCE_TEXT = { question: '原文', default: '預設', fetch: '自己查到的', user: '使用者回答', switch: '換技能時帶過來' };
 const ATT_STATUS = { pass: '成功', empty: '0 筆', error: '錯誤' };
 const ERROR_KIND = { args: '參數錯', timeout: '逾時', env: '環境的問題', parse: '腳本的錯' };
-const MARK = { replanned: ['↻ 回退', 'c-fb'], ask: ['？問使用者', 'c-wait'], no_new_nodes: ['↻ 回退（不收斂）', 'c-skip'], circuit_break: ['⛔ 熔斷', 'c-bad'] };
-const MARK_RESULT = { replanned: '加節點、重排', ask: '問使用者', no_new_nodes: '排出來的節點都跑過了（不收斂），沒有重排', circuit_break: '已經重排太多次，熔斷' };
+const MARK = { replanned: ['↻ 回退', 'c-fb'], ask: ['？問使用者', 'c-wait'], no_new_nodes: ['↻ 回退（不收斂）', 'c-skip'], circuit_break: ['⛔ 熔斷', 'c-bad'],
+  switched: ['⇄ 換技能', 'c-fb'], cannot_answer: ['⇄ 換技能（沒換）', 'c-skip'] };
+const MARK_RESULT = { replanned: '加節點、重排', ask: '問使用者', no_new_nodes: '排出來的節點都跑過了（不收斂），沒有重排', circuit_break: '已經重排太多次，熔斷',
+  switched: '換成另一個複合技能，照它的骨架重排', cannot_answer: '換過去的技能答不了問題要的那一種，沒有換' };
+const JUDGE_RESULT = { done: '結束', replanned: '照這條路加了節點，接著做', no_new_nodes: '要接著找的都找過了（不收斂），停', circuit_break: '判斷的次數用完了，熔斷',
+  params_rejected: '這條路要填的值沒有通過核對，停', no_lines: '這條路要有挑出的行，但都沒有通過核對', no_input: '要看的節點沒有結果（0 筆），沒有判斷',
+  failed: '判斷的模型沒有回覆或回覆不對' };
+const JUDGE_CLASS = { done: 'ok', replanned: 'judge', no_new_nodes: 'warn', circuit_break: 'bad', params_rejected: 'bad', no_lines: 'bad', no_input: 'skip', failed: 'bad' };
 
 async function api(path) {
   const r = await fetch(path);
@@ -230,6 +244,7 @@ function renderList() {
         ${j.kind === 'edg' ? '<span class="chip c-skip">低階</span>' : ''}
         ${j.versions > 1 ? `<span title="重排過">${j.versions} 版</span>` : ''}
         ${(j.fallbacks || []).length ? `<span class="c-fb" title="用了回退">↻ ${esc(j.fallbacks.join('、'))}</span>` : ''}
+        ${j.judged ? `<span class="c-judge" title="判斷節點判斷了幾次">⚖ ${esc(j.judged)}</span>` : ''}
         ${j.fixed ? '<span class="c-info" title="第 1 級修正過">✎ 修正過</span>' : ''}</div>
       <div class="title">${esc(j.title)}</div>
       ${j.skill ? `<div class="row1">${esc(j.skill)}</div>` : ''}
@@ -304,6 +319,8 @@ function causeText(c) {
   if (!c) return ['', ''];
   if (c.kind === 'fallback') return [`↻ 回退 ${c.fallback}${(c.added || []).length ? `<br>加 ${c.added.join('、')}` : ''}`, 'fb'];
   if (c.kind === 'user') return [`使用者回答<br>${c.param}＝${show(c.value)}`, 'user'];
+  if (c.kind === 'judgment') return [`⚖ 判斷 ${c.node}：${c.branch}${(c.added || []).length ? `<br>加 ${c.added.join('、')}` : ''}`, 'judge'];
+  if (c.kind === 'switch') return [`⇄ 換技能<br>${c.from} → ${c.to}`, 'fb'];
   return [c.kind, ''];
 }
 
@@ -336,7 +353,8 @@ function stages(v) {
     out.push({ id: 'complete', name: '補參數', cls: waiting ? 'wait' : nf ? 'warn' : 'ok',
       html: waiting ? `等使用者：${esc(v.need_user.question)}` : esc(parts.join('、') || '不用補') });
     v.versions.forEach((ver, i) => {
-      const marks = ver.marks.map((m) => `<span class="${MARK[m.type] ? MARK[m.type][1] : 'c-fb'}">${MARK[m.type] ? MARK[m.type][0] : '↻'} ${esc(m.fallback)}</span>`).join(' ');
+      const marks = ver.marks.map((m) => `<span class="${MARK[m.type] ? MARK[m.type][1] : 'c-fb'}">${MARK[m.type] ? MARK[m.type][0] : '↻'} ${esc(m.fallback)}</span>`)
+        .concat((ver.judgments || []).map((j) => `<span class="c-${JUDGE_CLASS[j.result] || 'judge'}">⚖ ${esc(j.branch || JUDGE_RESULT[j.result] || j.result)}</span>`)).join(' ');
       out.push({ id: `v${i}`, version: i, name: `第 ${ver.version} 版的圖`, cls: EDG_CLASS[ver.status] || 'skip', arrow: i > 0 ? causeText(ver.cause) : null,
         html: `${ver.graph.nodes.length} 個節點・${esc(EDG_STATUS[ver.status] || ver.status || '沒有跑')}` + (marks ? `<div>${marks}</div>` : '') });
     });
@@ -367,11 +385,13 @@ function buildGraph(v, ver) {
   const nodes = [], edges = [];
   const change = ver.change || {};
   const fbAdded = new Set((v.fallbacks || []).filter((f) => f.result === 'replanned' && f.version < ver.version).flatMap((f) => f.added || []));
+  const jAdded = new Set((v.judgments || []).filter((j) => j.result === 'replanned' && j.version < ver.version).flatMap((j) => j.added || []));
   const tag = (id) => (change.added || []).includes(id) ? 'added' : (change.rerun || []).includes(id) ? 'rerun' : (change.kept || []).includes(id) ? 'kept' : '';
   const ids = new Set();
   for (const n of ver.graph.nodes) {
     const st = ver.nodes[n.id] || {};
-    nodes.push({ id: n.id, kind: 'tool', def: n, box: st.box, detail: st.detail, change: tag(n.id), fbAdded: fbAdded.has(n.id) });
+    nodes.push({ id: n.id, kind: n.kind === 'judgment' ? 'judgment' : 'tool', def: n, box: st.box, detail: st.detail, change: tag(n.id),
+      fbAdded: fbAdded.has(n.id), jAdded: jAdded.has(n.id), vno: ver.version });
     ids.add(n.id);
   }
   for (const n of change.dropped_nodes || []) {
@@ -387,7 +407,10 @@ function buildGraph(v, ver) {
   };
   ver.graph.nodes.forEach((n) => depEdges(n));
   (change.dropped_nodes || []).forEach((n) => depEdges(n, 'ghost'));
-  for (const e of ver.extra_edges || []) if (ids.has(e.from) && ids.has(e.to)) edges.push({ id: `f_${e.from}_${e.to}`, from: e.from, to: e.to, type: 'fallback', info: e });
+  for (const e of ver.extra_edges || []) {
+    const type = e.type === 'judgment' ? 'judgment' : 'fallback';
+    if (ids.has(e.from) && ids.has(e.to)) edges.push({ id: `${type[0]}_${e.from}_${e.to}`, from: e.from, to: e.to, type, info: e });
+  }
   for (const m of ver.marks || []) {
     nodes.push({ id: m.id, kind: 'mark', mark: m });
     if (ids.has(m.from)) edges.push({ id: `m_${m.id}`, from: m.from, to: m.id, type: 'mark', mark: m });
@@ -398,11 +421,21 @@ function buildGraph(v, ver) {
 function argText(a) {
   if (typeof a === 'string') return /\s/.test(a) || a === '' ? JSON.stringify(a) : a;
   if (a && a.from) return `‹${a.from}.${a.field}›`;
+  if (a && a.if) return `[${(a.args || []).map(argText).join(' ')}（有 ${a.if} 才放）]`;   // 骨架的 if 群組（判斷節點的路裡看得到）
   return JSON.stringify(a);
+}
+
+function judgmentsOf(id, vno) {
+  return ((S.view || {}).judgments || []).filter((j) => j.node === id && (vno === undefined || j.version <= vno));
 }
 
 function nodeClass(n) {
   if (n.kind === 'mark') return `gnode mark m-${n.mark.type}`;
+  if (n.kind === 'judgment') {
+    const last = judgmentsOf(n.id, n.vno).slice(-1)[0];
+    const cls = !n.box ? 'skip' : !last ? 'info' : (JUDGE_CLASS[last.result] === 'judge' ? 'ok' : JUDGE_CLASS[last.result] || 'info');
+    return `gnode jnode ${cls}`;
+  }
   const cls = n.box ? (NODE_CLASS[n.box.state] || 'skip') : 'skip';
   return `gnode ${cls}${n.kind === 'ghost' ? ' ghost' : ''}`;
 }
@@ -412,8 +445,23 @@ function idList(ids) {
   return ids.slice(0, 3).map((i) => '#' + i).join(' ') + (ids.length > 3 ? ` …共 ${ids.length} 份` : '');
 }
 
+function judgmentNodeHtml(n) {
+  const d = n.def, b = n.box, js = judgmentsOf(d.id, n.vno);
+  const state = !b ? '<span class="chip c-skip">沒有跑到</span>' : js.length ? '' : '<span class="chip c-info">等判斷</span>';
+  const chips = js.map((j) => `<span class="chip c-${JUDGE_CLASS[j.result] || 'skip'}">⚖ ${j.round ? `第 ${j.round} 次：` : ''}${esc(j.branch || JUDGE_RESULT[j.result] || j.result)}</span>`
+    + (j.round ? `<span class="hint">挑 ${(j.lines || []).length} 行${(j.rejected || []).length ? `、${j.rejected.length} 沒過` : ''}</span>` : '')
+    + (j.to_version ? `<button class="linkbtn" data-goto="${j.to_version - 1}">→ 第 ${j.to_version} 版</button>` : '')).join('');
+  const badges = [n.change === 'added' && '<span class="chip c-ok">新加</span>', n.change === 'rerun' && '<span class="chip c-info">重跑</span>',
+    n.change === 'kept' && '<span class="chip c-skip">沿用</span>', n.jAdded && '<span class="chip c-judge">判斷加的</span>'].filter(Boolean);
+  return `<div><span class="nid">${esc(d.id)}</span><span class="tool c-judge">⚖ 判斷</span></div>
+    <div class="goal">${esc(d.goal || '')}</div>
+    <div class="meta">${state}${chips}</div>
+    ${badges.length ? `<div class="meta">${badges.join('')}</div>` : ''}`;
+}
+
 function nodeHtml(n) {
   if (n.kind === 'mark') return markHtml(n.mark);
+  if (n.kind === 'judgment') return judgmentNodeHtml(n);
   const d = n.def, b = n.box;
   const badges = [];
   if (n.kind === 'ghost') badges.push('<span class="chip c-skip">這一版拿掉</span>');
@@ -421,6 +469,7 @@ function nodeHtml(n) {
   if (n.change === 'rerun') badges.push('<span class="chip c-info">重跑</span>');
   if (n.change === 'kept') badges.push('<span class="chip c-skip" title="定義沒變、跑過了，沿用上一版的結果">沿用</span>');
   if (n.fbAdded) badges.push('<span class="chip c-fb">回退加的</span>');
+  if (n.jAdded) badges.push('<span class="chip c-judge">判斷加的</span>');
   if (d.report) badges.push(`<span class="chip c-info" title="寫進報告：${esc(d.report)}">報告</span>`);
   if (b && b.fixed) badges.push('<span class="chip c-info">第 1 級修正過</span>');
   else if (b && b.fix_failed) badges.push('<span class="chip c-bad">修正沒成功</span>');
@@ -464,6 +513,7 @@ function edgeLabel(e, nodesById) {
     return `帶入 ${e.fields.join('、')}` + (each ? `（${each.instances} 個${each.ran < each.instances ? `，跑 ${each.ran}` : ''}）` : '');
   }
   if (e.type === 'fallback') return `↻ ${e.info.fallback}`;
+  if (e.type === 'judgment') return `⚖ ${e.info.branch}`;
   return '';
 }
 
@@ -564,7 +614,7 @@ function renderGraph() {
   const svg = document.createElementNS(NS, 'svg');
   svg.setAttribute('width', L.width);
   svg.setAttribute('height', L.height);
-  const colors = { dep: '#8b949e', bind: '#8b949e', ghost: '#8b949e', fallback: '#e0823d', mark: '#a0a4ab', sel: '#8ab4f8' };
+  const colors = { dep: '#8b949e', bind: '#8b949e', ghost: '#8b949e', fallback: '#e0823d', judgment: '#39c5bb', mark: '#a0a4ab', sel: '#8ab4f8' };
   svg.innerHTML = '<defs>' + Object.entries(colors).map(([k, c]) =>
     `<marker id="arr-${k}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${c}"/></marker>`).join('') + '</defs>';
   wrap.prepend(svg);
@@ -728,7 +778,9 @@ function stageHtml(v, id) {
       ${(e.stops || []).length ? `<h4>沒有做完的節點</h4><ul class="plain">${e.stops.map((s) => `<li>${esc(s.node)}：${esc(NODE_STATE[s.state] || s.state)}（${esc(s.reason)}）</li>`).join('')}</ul>` : ''}
       ${(e.judgments || []).length ? `<h4>交回判斷</h4>${pre(e.judgments)}` : ''}
       ${v.need_user ? `<h4>在等使用者</h4>${askHtml(v.asked && v.asked.length ? v.asked[v.asked.length - 1] : v.need_user)}` : ''}
-      ${(v.fallbacks || []).length ? `<h4>第 2 級（回退）</h4><ul class="plain">${v.fallbacks.map((f) => `<li><b>${esc(f.fallback)}</b>（第 ${esc(f.version)} 版之後）：${esc(MARK_RESULT[f.result] || f.result)}<div class="hint">${esc(f.say)}</div></li>`).join('')}</ul>` : ''}`;
+      ${(v.fallbacks || []).length ? `<h4>第 2 級（回退）</h4><ul class="plain">${v.fallbacks.map((f) => `<li><b>${esc(f.fallback)}</b>（第 ${esc(f.version)} 版之後）：${esc(MARK_RESULT[f.result] || f.result)}<div class="hint">${esc(f.say)}</div></li>`).join('')}</ul>` : ''}
+      ${(v.switched || []).length ? `<h4>換技能</h4><ul class="plain">${v.switched.map((x) => `<li>${esc(x.from)} → <b>${esc(x.to)}</b>（第 ${esc(x.version)} 版之後，回退 ${esc(x.fallback)}）<div class="hint">帶過去的參數：${esc(paramsText(x.params))}</div></li>`).join('')}</ul>` : ''}
+      ${(v.judgments || []).length ? `<h4>判斷</h4><ul class="plain">${v.judgments.map((j) => `<li>${j.round ? `第 ${esc(j.round)} 次` : '沒有判斷'}（${esc(j.node)}，第 ${esc(j.version)} 版跑完時）：${esc(j.branch || '')} <span class="c-${JUDGE_CLASS[j.result] || 'skip'}">${esc(JUDGE_RESULT[j.result] || j.result || '')}</span>${j.round ? `<span class="hint">；挑 ${(j.lines || []).length} 行</span>` : ''}</li>`).join('')}</ul>` : ''}`;
   }
   if (id.startsWith('v')) {
     const i = Number(id.slice(1)), ver = v.versions[i];
@@ -747,7 +799,8 @@ function stageHtml(v, id) {
 function markDetailHtml(m) {
   const t = MARK[m.type] || ['↻ 回退', 'c-fb'];
   return `<div class="${m.type === 'ask' ? 'askbox' : 'fixbox'}"><div><b class="${t[1]}">${t[0]} ${esc(m.fallback)}</b> <span class="hint">${esc(MARK_RESULT[m.type] || m.type)}</span></div>
-    ${kv([['條件', whenText(m.when)], ['做法', m.change && m.change.add ? `加節點 ${m.change.add.map((n) => n.id).join('、')}` : m.change && m.change.ask ? `問使用者 ${m.change.ask}` : ''],
+    ${kv([['條件', whenText(m.when)], ['做法', m.change && m.change.add ? `加節點 ${m.change.add.map((n) => n.id).join('、')}` : m.change && m.change.ask ? `問使用者 ${m.change.ask}`
+      : m.change && m.change.switch ? `換成 ${m.change.switch}（參數：${Object.entries(m.change.params || {}).map(([a, b]) => `${b} → ${a}`).join('、')}）` : ''],
       ['說明', m.say], ['時間', m.time]])}
     ${m.type === 'ask' ? askHtml(m.ask) : ''}
     ${m.to_version ? `<button class="linkbtn" data-goto="${m.to_version - 1}">→ 看第 ${m.to_version} 版</button>` : ''}</div>`;
@@ -796,9 +849,65 @@ function instancesHtml(st, ref, nid) {
   return `${nid ? `<h4>${esc(nid)} 的執行</h4>` : ''}${head}${body.slice(0, 8).join('')}${more}`;
 }
 
+const PARAM_KIND = { words: '搜尋的字', path: '原文裡的檔案', line: '那個檔案的行號' };
+
+function paramsText(p) {
+  return Object.entries(p || {}).map(([k, x]) => `${k}＝${show(x)}`).join('；');
+}
+
+function judgeCalls(v) {
+  const groups = [];                         // 第 k 次判斷的模型呼叫（judge，沒過核對時再一次 judge_fix）
+  for (const c of v.calls || []) {
+    if (c.role === 'judge') groups.push([c]);
+    else if (c.role === 'judge_fix' && groups.length) groups[groups.length - 1].push(c);
+  }
+  return groups;
+}
+
+function sourceLink(sid) {
+  const m = /^#(\d+)$/.exec(sid || '');
+  return m ? resultLink(m[1]) : esc(sid || '');
+}
+
+function judgmentHtml(v, j) {
+  if (!j.round) return `<div class="fixbox"><b class="c-judge">⚖ 沒有判斷</b>（第 ${esc(j.version)} 版跑完時）：${esc(JUDGE_RESULT[j.result] || j.result)}</div>`;
+  const lines = (j.lines || []).map((x) => `<li><b>${esc(x.file)}:${esc(x.line)}</b> <span class="chip c-info">${esc(x.label)}</span> ${sourceLink(x.source)}
+      <div style="white-space:pre-wrap">${esc(x.text)}</div><div class="hint">片段：「${esc(x.quote)}」${x.round === 2 ? '（交回修之後）' : ''}</div></li>`).join('');
+  const rej = (j.rejected || []).map((r) => `<li>第 ${esc(r.round)} 次：「${esc((r.item || {}).quote || '')}」<div class="c-warn">${esc(r.why)}</div></li>`).join('');
+  const prej = (j.param_rejected || []).map((w) => `<li class="c-warn">${esc(w)}</li>`).join('');
+  const omitted = Object.entries((j.shown || {}).omitted || {}).map(([sid, fs]) => Object.entries(fs).map(([f, k]) => `${sid} 的 ${f} ${k} 行`).join('；')).join('；');
+  const calls = judgeCalls(v)[j.round - 1] || [];
+  return `<div class="fixbox"><div><b class="c-judge">⚖ 第 ${esc(j.round)} 次判斷</b>（第 ${esc(j.version)} 版跑完時）
+      <span class="chip c-${JUDGE_CLASS[j.result] || 'skip'}">${esc(JUDGE_RESULT[j.result] || j.result || '')}</span></div>
+    ${kv([['理解', j.understanding], ['選的路', j.branch ? `${j.branch}：${j.say}` : '沒有選'], ['填的值', paramsText(j.params)], ['理由', j.reason],
+      ['看的原文', (j.inputs || []).map((x) => `${x.node} ${x.source}`).join('、')],
+      ['交給模型的原文', j.shown ? `${j.shown.rows} 行、${j.shown.chars} 字${omitted ? `；放不下、沒有列的：${omitted}` : ''}` : ''],
+      ['加的節點', (j.added || []).join('、')]])}
+    <h4>挑出的行（${(j.lines || []).length} 行；程式核對過，整行從原文取）</h4><ul class="plain">${lines || '<li class="hint">沒有</li>'}</ul>
+    ${rej ? `<h4>沒過核對的片段</h4><ul class="plain">${rej}</ul>` : ''}
+    ${prej ? `<h4>沒過核對的值</h4><ul class="plain">${prej}</ul>` : ''}
+    ${j.to_version ? `<button class="linkbtn" data-goto="${j.to_version - 1}">→ 看第 ${j.to_version} 版</button>` : ''}
+    ${calls.length ? `<h4>模型呼叫</h4>${calls.map(callHtml).join('')}` : ''}</div>`;
+}
+
+function judgmentDetailHtml(v, n) {
+  const d = n.def, js = judgmentsOf(d.id, n.vno);
+  const changeText = { added: '這一版新加的', rerun: '依賴的重跑了，這一版重新判斷', kept: '沿用上一版（判斷過的不重判）' }[n.change];
+  const branches = (d.branches || []).map((br) => `<li><b>${esc(br.id)}</b>：${esc(br.say)}
+      ${(br.params || []).length ? `<div class="hint">要填：${esc(br.params.map((q) => `${q.name}（${PARAM_KIND[q.type] || q.type}）`).join('、'))}</div>` : ''}
+      <div class="hint">${(br.add || []).length ? `加：${esc(br.add.map((x) => `${x.id}（${x.tool} ${(x.args || []).map(argText).join(' ')}）`).join('；'))}`
+        : `結束${br.need_lines ? '（要有挑出的行）' : ''}`}</div></li>`).join('');
+  return `<h3>判斷節點 ${esc(d.id)}</h3>
+    ${kv([['要判斷的', d.goal], ['看哪些節點的原文', (d.depends_on || []).join('、')], ['挑出的行可以標的', (d.labels || []).join('、')],
+      ['這一版', changeText], ['判斷加的', n.jAdded ? '是（上一次判斷選的路加的，後面接同一個判斷）' : '']])}
+    <h4>看完之後可以選的路</h4><ul class="plain">${branches}</ul>
+    ${js.length ? js.map((j) => judgmentHtml(v, j)).join('') : `<p class="hint">${n.box ? '這一版跑完時還沒判斷。' : '這一版沒有跑到這個節點。'}</p>`}`;
+}
+
 function nodeDetailHtml(v, n) {
   if (!n) return '';
   if (n.kind === 'mark') return `<h3>這一版跑完時的回退</h3>${markDetailHtml(n.mark)}`;
+  if (n.kind === 'judgment') return judgmentDetailHtml(v, n);
   const d = n.def, b = n.box;
   const changeText = { added: '這一版新加的', rerun: '定義改了或依賴的重跑了，這一版重跑', kept: '定義沒變、跑過了：沿用上一版的結果，沒有重跑' }[n.change];
   const ref = (v.edg || {}).ref;
@@ -820,6 +929,10 @@ function edgeDetailHtml(v, e) {
       ['結果', `上一版跑完時條件符合，加了 ${e.to}，交給低階重排（跑過的不重跑）`]])}`;
   }
   if (e.type === 'mark') return `<h3>${esc(e.from)} 跑完時的回退</h3>${markDetailHtml(e.mark)}`;
+  if (e.type === 'judgment') {
+    return `<h3>判斷 ${esc(e.from)} 選了 ${esc(e.info.branch)}：→ ${esc(e.to)}</h3>${kv([['這條路', e.info.say], ['填的值', paramsText(e.info.params)],
+      ['結果', `第 ${e.info.version} 版跑完時的判斷（第 ${e.info.round} 次）選了這條路，加了 ${e.to}（後面接同一個判斷看新的結果），交給低階重排（跑過的不重跑）`]])}`;
+  }
   if (e.type === 'ghost') return `<h3>${esc(e.from)} → ${esc(e.to)}</h3><p class="hint">上一版的依賴；${esc(e.to)} 這一版拿掉了。</p>`;
   if (e.type === 'bind') {
     const vals = ((to.detail || {}).instances || []).map((inst) => (inst.args || []).map(argText).join(' '));

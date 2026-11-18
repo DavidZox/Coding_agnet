@@ -6,7 +6,9 @@
 一個中階的工作整理成每一版的圖（mid 的 graphs），每一版附：
 - 每個節點跑完那一版時的狀態與每一次嘗試（低階 job.json 的 nodes；之後重排掉的，從 replans 的 replaced 找回當時的狀態）；
 - 跟上一版比沿用、重跑、新加、拿掉的節點（低階的 replans）；
-- 這一版的回退與問使用者（marks：頁面畫成虛線與另外的節點）、上一版的回退加進來的節點（extra_edges：從條件的節點畫虛線）。
+- 這一版的回退與問使用者（marks：頁面畫成虛線與另外的節點）、上一版的回退加進來的節點（extra_edges：從條件的節點畫虛線）；
+- 這一版跑完時的判斷（judgments：判斷節點挑的行、選的路），判斷加進來的節點在之後的每一版都從那個判斷節點畫虛線（extra_edges，
+  看得到一路追下去的鏈）；換技能的回退（marks 的 switched）。
 
 只讀檔案、不改任何東西，也不 import web_app.state（不用起 agent；離線測試直接呼叫，root 換成臨時的副本）。路徑一律在這裡組：
 來源只認 logs 與 evals/results/<目錄>，工作只認來源底下的相對路徑（每一段都是名稱，不能有 ..），收據只認 receipts/ 底下的 .json。
@@ -139,7 +141,8 @@ def jobs(src, root=PROJECT_ROOT):
             mids.append({"ref": ref, "kind": "mid", "id": job.get("id"), "case": case, "status": job.get("status"),
                          "status_text": STATUS_TEXT.get(job.get("status"), job.get("status")), "title": job.get("question", ""),
                          "skill": job.get("skill"), "versions": len(job.get("graphs") or []),
-                         "fallbacks": [f.get("fallback") for f in job.get("fallbacks") or []], "created": job.get("created")})
+                         "fallbacks": [f.get("fallback") for f in job.get("fallbacks") or []],
+                         "judged": sum(1 for j in job.get("judgments") or [] if j.get("round")), "created": job.get("created")})
         else:
             insts = [i for st in (job.get("nodes") or {}).values() for i in st.get("instances") or []]
             edgs.append({"ref": ref, "kind": "edg", "id": job.get("id"), "case": case, "status": job.get("status"),
@@ -204,7 +207,9 @@ def _marks(job, versions):
         mark = {"id": f"fb_{fb.get('fallback')}_{k}", "type": fb.get("result"), "fallback": fb.get("fallback"), "from": trigger,
                 "say": fb.get("say", ""), "when": fb.get("when"), "change": fb.get("change"), "time": fb.get("time")}
         nxt = versions[k] if k < len(versions) else None
-        if fb.get("result") == "replanned" and nxt:
+        if fb.get("result") == "switched" and nxt:
+            mark.update(to_version=k + 1, to=fb.get("to"))
+        elif fb.get("result") == "replanned" and nxt:
             mark.update(to_version=k + 1, added=fb.get("added") or [])
             nxt["extra_edges"] += [{"from": trigger, "to": nid, "type": "fallback", "fallback": fb.get("fallback"),
                                     "say": fb.get("say", ""), "when": fb.get("when")} for nid in mark["added"]]
@@ -221,6 +226,23 @@ def _marks(job, versions):
             if nxt:
                 mark["to_version"] = k + 1
         versions[k - 1]["marks"].append(mark)
+
+
+def _judgments(job, versions):
+    """判斷放到它發生的那一版（judgments）；照判斷加進來的節點，在之後每一版（兩個節點都還在的）從判斷節點畫虛線。"""
+    for j in job.get("judgments") or []:
+        k = j.get("version") or 0
+        if not 1 <= k <= len(versions):
+            continue
+        item = dict(j, to_version=k + 1 if j.get("result") == "replanned" and k < len(versions) else None)
+        versions[k - 1]["judgments"].append(item)
+        if not item["to_version"]:
+            continue
+        for ver in versions[k:]:
+            tools = {n["id"] for n in ver["graph"].get("nodes") or [] if n.get("kind", "tool") == "tool"}   # 加的判斷節點由依賴的邊接上
+            if j["node"] in {n["id"] for n in ver["graph"].get("nodes") or []}:
+                ver["extra_edges"] += [{"from": j["node"], "to": nid, "type": "judgment", "branch": j.get("branch"), "say": j.get("say", ""),
+                                        "params": j.get("params"), "round": j.get("round"), "version": k} for nid in j.get("added") or [] if nid in tools]
 
 
 def _asked(job):
@@ -266,15 +288,16 @@ def _mid_view(base, ref, d, job):
         versions.append({"version": g.get("version", i + 1), "time": g.get("time"), "cause": g.get("cause"), "status": g.get("status"),
                          "graph": g.get("graph") or {"nodes": []}, "nodes": nodes,
                          "change": _change(reps[i - 1], graphs[i - 1]["graph"]["nodes"]) if 0 < i <= len(reps) else None,
-                         "marks": [], "extra_edges": []})
+                         "marks": [], "extra_edges": [], "judgments": []})
     _marks(job, versions)
+    _judgments(job, versions)
     fetches = []
     for f in job.get("fetches") or []:
         fref, fj, _ = edg(f.get("edg_job"))
         fetches.append(dict(f, ref=fref, graph=(fj or {}).get("graph"),
                             nodes={nid: {"box": _box(None, st), "detail": st} for nid, st in ((fj or {}).get("nodes") or {}).items()}))
     keys = ("id", "status", "created", "updated", "cwd", "domain", "question", "goal", "selection", "skill", "contract", "params",
-            "rejected", "auto_filled", "need_user", "fallbacks", "result")
+            "rejected", "auto_filled", "need_user", "fallbacks", "switched", "judgments", "result")
     view = {k: job.get(k) for k in keys}
     if view["result"]:
         view["result"] = {k: v for k, v in view["result"].items() if k != "report"}
@@ -292,7 +315,7 @@ def _edg_view(ref, d, job):
     nodes = {n["id"]: {"box": _box(None, (job.get("nodes") or {}).get(n["id"])), "detail": (job.get("nodes") or {}).get(n["id"])}
              for n in graph.get("nodes") or []}
     version = {"version": 1 + len(reps), "time": job.get("updated"), "cause": None, "status": job.get("status"), "graph": graph,
-               "nodes": nodes, "change": None, "marks": [], "extra_edges": []}
+               "nodes": nodes, "change": None, "marks": [], "extra_edges": [], "judgments": []}
     return {"kind": "edg", "id": job.get("id"), "status": job.get("status"), "created": job.get("created"), "updated": job.get("updated"),
             "cwd": job.get("cwd"), "goal": graph.get("goal", ""), "need_user": job.get("need_user"), "versions": [version],
             "edg": _edg_brief(ref, job), "events": [], "calls": [], "edg_events": _texts(os.path.join(d, "events.jsonl")),

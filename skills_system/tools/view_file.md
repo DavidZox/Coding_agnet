@@ -1,11 +1,11 @@
 ---
 type: Tool
 title: 查看檔案內容
-description: 看本機文字檔（設定檔、log、腳本）的內容，每行附行號；可 --from／--lines 看一段、--tail 看最後幾行。
-version: 2.0.1
+description: 看本機文字檔（設定檔、log、腳本）的內容，每行附行號；可 --from／--lines 看一段、--tail 看最後幾行、--around 看某一行前後。
+version: 2.1.0
 dependencies: []
 parameters: [{"name": "path", "required": true, "fetch": "find_file <檔名>"}]
-receipt: {"counts": ["total_lines", "from", "to", "bytes"], "items": ["path", "from", "to"], "fields": ["path", "encoding", "tail", "limit", "clipped_lines"]}
+receipt: {"counts": ["total_lines", "from", "to", "bytes"], "items": ["path", "from", "to"], "fields": ["path", "encoding", "tail", "limit", "clipped_lines", "around"]}
 ---
 
 # 用途
@@ -13,9 +13,10 @@ receipt: {"counts": ["total_lines", "from", "to", "bytes"], "items": ["path", "f
 大檔案（log）先用 search_text 找行號，或 `--tail` 看最後幾行，再用 `--from` 看那一段。
 
 # 語法
-`EXECUTE: scripts/cat_cmd.py <檔案> [--from N] [--lines M] | [--tail N]`
+`EXECUTE: scripts/cat_cmd.py <檔案> [--from N] [--lines M] | [--tail N] | [--around N [-C M]]`
 * `檔案`：一個，可用 `~`。預設從第 1 行列到最後，最多 2000 行、60000 字；單行超過 2000 字截斷。
-* `--from N`：從第 N 行開始；`--lines M`：列 M 行（上限 2000）；`--tail N`：只看最後 N 行（不能跟 --from 一起用）。
+* `--from N`：從第 N 行開始；`--lines M`：列 M 行（上限 2000）；`--tail N`：只看最後 N 行（不能跟 --from 一起用）；
+  `--around N`：看第 N 行前後各 M 行（`-C M`，預設 10；那一行標 `>`）。
 
 # 範例
 `EXECUTE: scripts/cat_cmd.py config/camera.yaml`　`EXECUTE: scripts/cat_cmd.py agent_core/dispatch.py --from 120 --lines 60`

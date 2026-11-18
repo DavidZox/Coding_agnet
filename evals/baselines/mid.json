@@ -1,7 +1,7 @@
 {
  "models": {
   "gemma4:26b": {
-   "label": "第 3 步 3a，各 3 次（2026-11-18，20261118_182324_mid_gemma4-26b_all_final）",
+   "label": "第 3 步 3b，各 3 次（2026-11-18，20261118_223826_mid_gemma4-26b_all_phase）",
    "per": {
     "cnt_hw_params": {
      "final": [
@@ -41,7 +41,7 @@
       3
      ],
      "skill": [
-      1,
+      3,
       3
      ]
     },
@@ -88,6 +88,10 @@
      ]
     },
     "cpp_compact_parser": {
+     "final": [
+      3,
+      3
+     ],
      "params": [
       3,
       3
@@ -98,6 +102,10 @@
      ]
     },
     "cpp_laser_qos": {
+     "final": [
+      0,
+      3
+     ],
      "params": [
       3,
       3
@@ -108,6 +116,10 @@
      ]
     },
     "cpp_laserscan_pub": {
+     "final": [
+      3,
+      3
+     ],
      "params": [
       3,
       3
@@ -118,6 +130,10 @@
      ]
     },
     "cpp_rf2o_params": {
+     "final": [
+      3,
+      3
+     ],
      "params": [
       3,
       3
@@ -128,6 +144,10 @@
      ]
     },
     "cpp_sick_ports": {
+     "final": [
+      3,
+      3
+     ],
      "params": [
       3,
       3
@@ -138,6 +158,10 @@
      ]
     },
     "cpp_sick_services": {
+     "final": [
+      3,
+      3
+     ],
      "params": [
       3,
       3
@@ -148,6 +172,10 @@
      ]
     },
     "cross_imu": {
+     "final": [
+      3,
+      3
+     ],
      "params": [
       3,
       3
@@ -158,6 +186,10 @@
      ]
     },
     "cross_odom_source": {
+     "final": [
+      0,
+      3
+     ],
      "params": [
       3,
       3
@@ -168,6 +200,10 @@
      ]
     },
     "cross_rf2o_runtime": {
+     "final": [
+      2,
+      3
+     ],
      "params": [
       3,
       3
@@ -178,6 +214,10 @@
      ]
     },
     "cross_scan_chain": {
+     "final": [
+      0,
+      3
+     ],
      "params": [
       3,
       3
@@ -188,6 +228,10 @@
      ]
     },
     "cross_sched_tuning": {
+     "final": [
+      0,
+      3
+     ],
      "params": [
       3,
       3
@@ -198,6 +242,10 @@
      ]
     },
     "cross_speed_limit": {
+     "final": [
+      3,
+      3
+     ],
      "params": [
       3,
       3
@@ -208,8 +256,12 @@
      ]
     },
     "doc_dock_align": {
+     "final": [
+      0,
+      3
+     ],
      "params": [
-      3,
+      0,
       3
      ],
      "skill": [
@@ -218,6 +270,10 @@
      ]
     },
     "doc_gate_startup": {
+     "final": [
+      3,
+      3
+     ],
      "params": [
       3,
       3
@@ -228,6 +284,10 @@
      ]
     },
     "doc_nav_stop": {
+     "final": [
+      3,
+      3
+     ],
      "params": [
       3,
       3
@@ -238,6 +298,10 @@
      ]
     },
     "doc_pred_map": {
+     "final": [
+      3,
+      3
+     ],
      "params": [
       3,
       3
@@ -248,6 +312,10 @@
      ]
     },
     "doc_sched_iter": {
+     "final": [
+      3,
+      3
+     ],
      "params": [
       3,
       3
@@ -258,6 +326,10 @@
      ]
     },
     "doc_task_confirm": {
+     "final": [
+      3,
+      3
+     ],
      "params": [
       3,
       3
@@ -355,11 +427,11 @@
    "sets": {
     "holdout": {
      "final": [
-      0,
-      6
+      3,
+      15
      ],
      "params": [
-      12,
+      9,
       15
      ],
      "skill": [
@@ -369,22 +441,22 @@
     },
     "main": {
      "final": [
-      22,
-      30
+      57,
+      75
      ],
      "params": [
       70,
       75
      ],
      "skill": [
-      70,
+      72,
       75
      ]
     }
    }
   },
   "gemma4:e4b": {
-   "label": "第 3 步 3a，各 3 次（2026-11-18，20261118_182506_mid_gemma4-e4b_all_final）",
+   "label": "第 3 步 3b，各 3 次（2026-11-18，20261118_224523_mid_gemma4-e4b_all_phase）",
    "per": {
     "cnt_hw_params": {
      "final": [
@@ -471,6 +543,10 @@
      ]
     },
     "cpp_compact_parser": {
+     "final": [
+      2,
+      3
+     ],
      "params": [
       3,
       3
@@ -481,8 +557,12 @@
      ]
     },
     "cpp_laser_qos": {
+     "final": [
+      0,
+      3
+     ],
      "params": [
-      3,
+      2,
       3
      ],
      "skill": [
@@ -491,18 +571,26 @@
      ]
     },
     "cpp_laserscan_pub": {
+     "final": [
+      3,
+      3
+     ],
      "params": [
-      0,
+      3,
       3
      ],
      "skill": [
-      0,
+      3,
       3
      ]
     },
     "cpp_rf2o_params": {
+     "final": [
+      0,
+      3
+     ],
      "params": [
-      3,
+      0,
       3
      ],
      "skill": [
@@ -511,6 +599,10 @@
      ]
     },
     "cpp_sick_ports": {
+     "final": [
+      0,
+      3
+     ],
      "params": [
       3,
       3
@@ -521,6 +613,10 @@
      ]
     },
     "cpp_sick_services": {
+     "final": [
+      3,
+      3
+     ],
      "params": [
       3,
       3
@@ -531,6 +627,10 @@
      ]
     },
     "cross_imu": {
+     "final": [
+      0,
+      3
+     ],
      "params": [
       3,
       3
@@ -541,6 +641,10 @@
      ]
     },
     "cross_odom_source": {
+     "final": [
+      0,
+      3
+     ],
      "params": [
       3,
       3
@@ -551,6 +655,10 @@
      ]
     },
     "cross_rf2o_runtime": {
+     "final": [
+      1,
+      3
+     ],
      "params": [
       3,
       3
@@ -561,6 +669,10 @@
      ]
     },
     "cross_scan_chain": {
+     "final": [
+      0,
+      3
+     ],
      "params": [
       3,
       3
@@ -571,16 +683,24 @@
      ]
     },
     "cross_sched_tuning": {
+     "final": [
+      0,
+      3
+     ],
      "params": [
-      3,
+      1,
       3
      ],
      "skill": [
-      3,
+      1,
       3
      ]
     },
     "cross_speed_limit": {
+     "final": [
+      2,
+      3
+     ],
      "params": [
       3,
       3
@@ -591,8 +711,12 @@
      ]
     },
     "doc_dock_align": {
-     "params": [
+     "final": [
       3,
+      3
+     ],
+     "params": [
+      0,
       3
      ],
      "skill": [
@@ -601,6 +725,10 @@
      ]
     },
     "doc_gate_startup": {
+     "final": [
+      3,
+      3
+     ],
      "params": [
       3,
       3
@@ -611,8 +739,12 @@
      ]
     },
     "doc_nav_stop": {
-     "params": [
+     "final": [
       3,
+      3
+     ],
+     "params": [
+      0,
       3
      ],
      "skill": [
@@ -621,8 +753,12 @@
      ]
     },
     "doc_pred_map": {
-     "params": [
+     "final": [
       3,
+      3
+     ],
+     "params": [
+      0,
       3
      ],
      "skill": [
@@ -631,8 +767,12 @@
      ]
     },
     "doc_sched_iter": {
-     "params": [
+     "final": [
       3,
+      3
+     ],
+     "params": [
+      1,
       3
      ],
      "skill": [
@@ -641,6 +781,10 @@
      ]
     },
     "doc_task_confirm": {
+     "final": [
+      2,
+      3
+     ],
      "params": [
       3,
       3
@@ -738,11 +882,11 @@
    "sets": {
     "holdout": {
      "final": [
-      3,
-      6
+      8,
+      15
      ],
      "params": [
-      15,
+      12,
       15
      ],
      "skill": [
@@ -752,15 +896,15 @@
     },
     "main": {
      "final": [
-      24,
-      30
+      47,
+      75
      ],
      "params": [
-      69,
+      58,
       75
      ],
      "skill": [
-      72,
+      73,
       75
      ]
     }

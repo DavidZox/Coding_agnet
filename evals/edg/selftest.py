@@ -395,6 +395,11 @@ def main():
         assert rp["replaced"]["s"]["state"] == "done" and rp["replaced"]["s"]["tool"] == "search_text", "原本的狀態記在 replans"
         assert [os.path.basename(i["args"][0]) for i in node(job, "r")["instances"]] == ["node_b.py"]
         assert node(job, "r")["instances"][0]["attempts"][0].get("reused"), "重排前跑過的（被拿掉的 wr）也算"
+        old_rf = rp["replaced"]["s"]["instances"][0]["attempts"][-1]["receipt_file"]
+        new_rf = node(job, "s")["instances"][0]["attempts"][-1]["receipt_file"]
+        assert (old_rf, new_rf) == ("receipts/s_1_1.json", "receipts/s_1_1_v3.json"), (old_rf, new_rf)
+        rd = lambda rf: json.load(open(os.path.join(agent.script_dir, "logs", "edg_jobs", job["id"], rf), encoding="utf-8"))   # noqa: E731
+        assert rd(old_rf)["paths"][0].endswith("alpha") and rd(new_rf)["paths"][0].endswith("beta"), "重跑不蓋掉之前那一版的收據"
         bad = edg.Executor(agent, fixer=FakeFixer()).replan(job["id"], {"goal": "g", "nodes": [{"id": "x", "tool": "nope_tool"}]})
         assert bad["status"] == "invalid" and bad["problems"], bad
         saved = json.load(open(os.path.join(agent.script_dir, "logs", "edg_jobs", job["id"], "job.json"), encoding="utf-8"))
@@ -410,7 +415,7 @@ def main():
              ("依賴的節點沒成功就跳過；不相干的節點照跑", t_blocked_and_independent),
              ("帶入的參數去重、實例的上限（要完整時不算做完）；同一個工具＋同樣的參數只跑一次", t_dedupe_cap_reuse),
              ("確認關卡：停下來（need_user）→ 同意後接回同一個節點；拒絕就往上報", t_guard_resume),
-             ("重排：照新的圖接著跑同一個工作；沒變的節點不重跑、跑過的工具＋參數直接用之前的收據；拿掉與重跑的狀態記在 replans", t_replan),
+             ("重排：照新的圖接著跑同一個工作；沒變的節點不重跑、跑過的工具＋參數直接用之前的收據；拿掉與重跑的狀態記在 replans；重跑的收據檔名加上第幾版（不蓋掉之前的）", t_replan),
              ("修正的模型：prompt 在 prompts/edg/、schema、記進 calls.jsonl；回覆不是 JSON 就不修", t_model_fixer),
              ("第 1 級的真模型評測：每一題的圖都過得了檢查；核對收據的欄位與範圍（範圍放大要擋）；修不好的題目要往上交；階段驗證跟基準比", t_eval_cases)]
     passed = skipped = 0

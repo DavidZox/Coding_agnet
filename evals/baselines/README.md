@@ -5,12 +5,12 @@
 
 | 檔案 | 內容 | 目前的來源 |
 |---|---|---|
-| `offline.json` | 各組自我測試的通過數（`skills`、`chat_selftest`、`extract_selftest`、`ops_selftest`、`analysis_selftest`、`repo_selftest`、`edg_selftest`、`mid_selftest`、`integrity`；凍結的工具另有 `skills_sandbox`、`containers_sandbox`、`data_live`、`tools_live:<數據>`） | Web 的拓撲圖（2026-11-18）：`mid_selftest` 18；中階（D10 第 3 步的 3a）：`skills` 111、`edg_selftest` 13、`mid_selftest` 16；收據（第 1 步）：`chat_selftest` 18；拿掉任務引擎與 Plan 模式之後：`ops_selftest` 3、`integrity` 8；其他的是之前的（`skills_sandbox` 27 是待辦 20、23 之後的） |
+| `offline.json` | 各組自我測試的通過數（`skills`、`chat_selftest`、`extract_selftest`、`ops_selftest`、`analysis_selftest`、`repo_selftest`、`edg_selftest`、`mid_selftest`、`integrity`；凍結的工具另有 `skills_sandbox`、`containers_sandbox`、`data_live`、`tools_live:<數據>`） | 第 3 步 3b（2026-11-18）：`skills` 113、`mid_selftest` 26；Web 的拓撲圖（2026-11-18）：`mid_selftest` 18；中階（D10 第 3 步的 3a）：`skills` 111、`edg_selftest` 13、`mid_selftest` 16；收據（第 1 步）：`chat_selftest` 18；拿掉任務引擎與 Plan 模式之後：`ops_selftest` 3、`integrity` 8；其他的是之前的（`skills_sandbox` 27 是待辦 20、23 之後的） |
 | `ops_gemma4-26b.json` | 維運評測（沙盒裡真的執行，77 個情境：檔案與調查 23 個每個階段跑、凍結的工具 54 個 `--tools` 才跑）：`current.per` 每個情境的次數、通過、禁止動作、秒數中位數、**每一次的結果**（`results`，照跑的順序，1＝過）與是哪一次更新的（`since`）；總分由 `results` 算（名稱開頭 `ho_`＝保留、`inv_`＝調查與報告、其他＝主要），所以只跑一部分也能跟同一組情境比。比對只用 `current`，其他的 key 是之前的基準、只當參考（`todo25`、`todo20_23`、`phase4`、`phase4_start`、`phase3`、`reference_v5`，那些還是舊的格式） | 第 5 階段的三次完整跑（2026-10-25，`*_p5_r1～r3`）：主要 48／48／47、保留 18／20／19、調查與報告 5／5／5，禁止動作 0；收尾時從這三次的 `runs.jsonl` 補上 `results`（算回來的總分跟原本記的一樣） |
 | `chat_gemma4-e4b.json` | 主對話評測（假的外部世界、真模型）11 個情境，每個情境的次數與通過 | 第 4 階段結束的一次（×3：33/33；第 4 階段開始也是 33/33，第 2 階段兩次 32/33、33/33）。第 5 階段結束的一次 32/33（followup_in_context 一次，沒用到任務引擎），沒有拿來更新 |
 | `extract.json` | 提煉評測（`evals/extract/`）每個模型、每個情境：找到幾個、多列幾個、數量的說法對不對、秒數 | 第 2 階段 commit 之後各跑一次（26b 全對；e4b 的 recall_fleet_120 是 9/11：worker 漏一台、整合時拿掉一台——兩個條件一起篩對小模型難）；robot_heading 2026-10-24 加（26b 4/4；e4b 這一次 1/1，另外三次只過 1 次——小模型常漏掉要去的站，沒過時先看是不是這個）。第 4 階段沒有改提煉，結束時的一次 26b 全對、e4b fleet_40 6/7（一次讀完漏了 amr_24）、recall_fleet_120 10/11，沒有拿來更新；第 5 階段結束時一樣（26b 全對、e4b fleet_40 6/7、recall_fleet_120 10/11），沒有更新 |
 | `edg.json` | 低階執行器的第 1 級修正（`evals/edg/`）：每個模型每一題 `[過了幾次, 跑了幾次]`、主要與保留組的合計 | 第 2 步結束時（2026-11-18，`*_edg_*_all_phase`，每一題各 3 次）：26b 主要 27/27、保留 6/6；e4b 主要 25/27、保留 5/6（設計筆記 2.29） |
-| `mid.json` | 中階（`evals/mid/`）：每個模型每一題每一層（`skill` 挑技能、`params` 合約、`final` 最後的報告；該用的技能是 none 的題目沒有 `final`）`[過了幾次, 跑了幾次]`，主要與保留組的合計 | 第 3 步的 3a（2026-11-18，`*_mid_*_all_final`，30 題各 3 次）：26b 主要 挑技能 70/75、合約 70/75、報告 22/30，保留 12/15、0/6；e4b 主要 72/75、69/75、24/30，保留 15/15、3/6（設計筆記 2.30） |
+| `mid.json` | 中階（`evals/mid/`）：每個模型每一題每一層（`skill` 挑技能、`params` 合約、`final` 最後的報告；該用的技能是 none 的題目沒有 `final`）`[過了幾次, 跑了幾次]`，主要與保留組的合計 | 第 3 步的 3b（2026-11-18，`*_mid_*_all_phase`，30 題各 3 次；讀文件、C++、跨檔案改標新技能，30 題都有報告）：26b 主要 挑技能 72/75、合約 70/75、報告 57/75，保留 12/15、9/15、3/15；e4b 主要 73/75、58/75、47/75，保留 15/15、12/15、8/15（設計筆記 2.32）。3a 時：26b 報告 22/30、e4b 24/30（只算計數與 Python 10 題） |
 | `analysis.json` | 數據分析回歸（不呼叫模型）：產生器 s1／s2／s3、這台的實錄，每份數據每個評分項目過了幾次；實錄另有產物穩定性、沒有根據的時間 | 第 2 階段（`analysis_p2_*`）；第 3、第 4 階段的 `--live` 結果跟它一樣（全部項目都過、實錄的產物每次相同 14/14、沒有根據的時間 0/1070） |
 
 ## 怎麼比
@@ -47,3 +47,5 @@ python3 evals/phase_check.py --save-baseline evals/results/<時間>_phase_check 
 `receipt` 一組 8 項）、`chat_selftest` 18（`t_receipts`）。低階執行器（D10 第 2 步）：`skills` 109（`t_parse_args_contract`）、新的 `edg_selftest` 12，
 新的 `edg.json`（第 1 級修正的真模型評測，見上表）。中階（D10 第 3 步的 3a）：`skills` 111（code_ast_reader `--refs` 兩項）、`edg_selftest` 13（重排）、新的 `mid_selftest` 16，
 新的 `mid.json`（中階的真模型評測，見上表）；其他真模型的基準沒有更新（階段驗證的結果見設計筆記 2.30）。寫基準的程式改成檔尾留換行。
+第 3 步的 3b：`skills` 113（view_file `--around`、search_text `--rank`）、`mid_selftest` 26（判斷節點、換技能），`mid.json` 換成 3b 的結果（題目改標之後，
+「合約」的比較從這一版重新開始）；第 1 級修正、主對話、提煉、維運的基準沒有更新（結果見設計筆記 2.32）。

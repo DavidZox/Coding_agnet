@@ -2,10 +2,10 @@
 type: Tool
 title: 檔案內容搜尋
 description: 在檔案「內部文字」裡搜關鍵字（a|b 同義詞、不分大小寫），命中依檔案分組、筆數由腳本算好。
-version: 2.0.2
+version: 2.1.0
 dependencies: ["grep"]
 parameters: [{"name": "keyword", "required": true, "ask": "要搜的字（使用者的問題裡沒有時才問）"}, {"name": "path", "required": false, "default": ".", "fetch": "find_file <目錄名稱>"}]
-receipt: {"counts": ["hits", "files"], "items": ["path", "line"], "fields": ["per_file", "pattern", "paths", "options", "excluded_dirs", "skipped", "timed_out"]}
+receipt: {"counts": ["hits", "files"], "items": ["path", "line", "words?"], "fields": ["per_file", "pattern", "paths", "options", "excluded_dirs", "skipped", "timed_out"]}
 narrow: {"paths": {"rule": "inside", "arg": "路徑"}, "include": {"rule": "added", "arg": "--include"}}
 ---
 
@@ -18,7 +18,7 @@ narrow: {"paths": {"rule": "inside", "arg": "路徑"}, "include": {"rule": "adde
 * 關鍵字：不分大小寫，同義詞用 `|`（`error|fail`），可用正規表示式（不合法時自動照字面搜）。以 `-` 開頭的寫 `-e "--timeout"`。
 * 路徑：檔案或目錄，可多個，預設 `.`，可用 `~`，不能是 `/`。
 * 選項只有：`-w` 整個字、`-F` 照字面、`--case` 分大小寫、`-l` 只列檔名與筆數、`-C N` 前後 N 行（上限 5）、`--include "*.py"`（可重複）、
-  `--exclude-dir 名稱`、`--all-dirs` 連預設略過的目錄也搜。
+  `--exclude-dir 名稱`、`--all-dirs` 連預設略過的目錄也搜、`--rank` 好幾個字（`a|b|c`）時先列同一行含最多個不同的字的行。
 * 每檔最多列 20 筆、總共 200 筆（-C 時 10／50；只搜一個檔案時 200），單行超過 300 字截斷；逾時 30 秒。
 
 # 範例

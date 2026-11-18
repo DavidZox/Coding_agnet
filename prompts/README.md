@@ -30,7 +30,8 @@ harness 送給模型的字都在這裡：改字不用改程式，存檔之後下
 | `edg/inputs.md` | 第 1 級修正的 user 訊息裡程式組的標籤（子目標、規格、參數、錯誤、逾時的縮小方式） | `edg.fix_message` |
 | `mid/select.md` | 新架構的中階：挑複合技能（先寫理解、問題要的是位置／數量／內容，再選一個或說 none、out_of_domain）的規則 | `mid.Worker._select` |
 | `mid/contract.md` | 中階的合約：照技能的參數從問題抽值，每個附一字不改的原文（程式核對）的規則 | `mid.Worker._contract_call` |
-| `mid/inputs.md` | 中階的 user 訊息裡程式組的標籤（問題、領域、複合技能、參數與種類、沒過核對的參數） | `mid.py` |
+| `mid/judge.md` | 中階的判斷節點：看原文挑出回答問題的行（來源、檔案、行號、一字不改的片段、標籤），從技能列的路選一條、填那條路的值（程式核對）的規則 | `mid.Worker._judge` |
+| `mid/inputs.md` | 中階的 user 訊息裡程式組的標籤（問題、領域、複合技能、參數與種類、沒過核對的參數；判斷的原文、之前挑出的行、找過的字、路與要填的值、沒過核對的片段） | `mid.py`、`judge.py` |
 | `vision/extraction.md` | Web 附圖的影像提取（視覺模型的 system、純文字的退路、user 訊息） | `vision/extraction.py` |
 
 ## 範本的寫法

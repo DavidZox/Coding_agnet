@@ -2,7 +2,7 @@
 type: Skill
 title: Python 的名稱用在哪裡
 description: 程式裡的一個名稱（函式、方法、類別、變數）定義在哪、哪裡呼叫或用到（在 .py 檔裡照語法找：每一處的檔案、行號與所在的函式，各檔案用了幾次、總共幾次）
-version: 1.0.0
+version: 1.1.0
 answers: ["位置", "數量"]
 topology: {"depends_on": [], "sub_skills": ["search_text", "code_ast_reader"]}
 parameters: [{"name": "name", "type": "name", "required": true, "desc": "問題問到的那個名稱本身：要找它定義在哪、被誰用到的那一個（問題寫「誰呼叫 X」「哪些檔案用了 X」就是 X；只寫名稱，不要寫成句子）", "ask": "要查哪一個函式、類別或變數？"}, {"name": "path", "type": "path", "default": ".", "desc": "範圍：套件、目錄或檔案", "fetch": {"tool": "find_file", "args": ["{value}", "."]}}, {"name": "exclude", "type": "names", "desc": "範圍裡不要的子目錄名稱（原文寫「不含 a、b」這種）"}]
@@ -12,7 +12,7 @@ parameters: [{"name": "name", "type": "name", "required": true, "desc": "問題�
 問題提到程式裡的一個名稱（函式、方法、類別、變數這種識別字），要知道它定義在哪、哪些地方呼叫或用到它、有沒有人用、改它會影響哪裡。
 也用來數：哪些檔案用了它、各幾次、總共幾次——呼叫一個函式或方法（不管問題說的是呼叫、建立還是宣告）就是用到這個名稱。
 它在 .py 檔裡照語法分：註解、字串與名稱更長的相似名稱不會算進去，數量比照字面搜尋準；範圍裡的 Python 程式沒有這個名稱時，報告會寫明。
-問題寫明是 C++ 或其他語言（或問標頭檔、.cpp）才不用這個；沒寫是哪種語言就用這個，不要從名稱的樣子猜語言。
+問題寫明是 C++（或問標頭檔、.cpp）用 cpp_symbol；沒寫是哪種語言就用這個，不要從名稱的樣子猜語言（範圍裡的 .py 沒有、C++ 檔有時程式會換成 cpp_symbol）。
 
 # 骨架
 ```json
@@ -27,7 +27,16 @@ parameters: [{"name": "name", "type": "name", "required": true, "desc": "問題�
 
 # 回退
 ```json
-[{"id": "outside_scope", "when": {"node": "hits", "status": "empty"},
+[{"id": "other_language", "when": {"node": "hits", "status": "empty"},
+  "change": {"add": [{"id": "cpp", "tool": "search_text",
+                      "args": ["{name}", "{path}", "-w", "-l", "--include", "*.h", "--include", "*.hpp", "--include", "*.cpp", "--include", "*.cc",
+                               {"if": "exclude", "args": ["--exclude-dir", "{exclude}"]}],
+                      "expect": ["pass", "empty"], "why": "範圍裡的 .py 沒有這個名稱：看範圍裡的 C++ 檔有沒有"}]},
+  "say": "範圍裡的 Python 程式沒有這個名稱：看範圍裡的 C++ 檔有沒有"},
+ {"id": "to_cpp", "when": {"node": "cpp", "status": "pass"},
+  "change": {"switch": "cpp_symbol", "params": {"names": "name", "path": "path", "exclude": "exclude"}},
+  "say": "範圍裡的 C++ 檔有這個名稱：換成 C++ 的做法（cpp_symbol）"},
+ {"id": "outside_scope", "when": {"node": "hits", "status": "empty"},
   "change": {"add": [{"id": "wider", "tool": "search_text", "args": ["{name}", ".", "-w", "--include", "*.py"], "expect": ["pass", "empty"],
                       "report": "範圍外提到這個名稱的檔案", "why": "範圍裡沒有：看整個工作目錄有沒有"}]},
   "say": "範圍裡找不到這個名稱：在整個工作目錄找一次；回答寫明範圍裡沒有，範圍外有的話在哪裡"},

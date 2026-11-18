@@ -202,6 +202,16 @@ MID_MODEL = os.environ.get("AGENT_MID_MODEL", "").strip()
 MID_SELECT_PREDICT = 600     # 挑技能的輸出（理解＋名稱＋理由）的 num_predict 上限
 MID_CONTRACT_PREDICT = 900   # 合約的輸出（每個參數的原文與值）的 num_predict 上限
 MID_REPORT_LINES = 120       # 報告裡每一節最多列幾行（其他的看 #編號的原文）
+# 判斷節點（第 3 步 3b，agent_core/judge.py 與 mid.Worker._judgment）：模型看原文挑行、從技能列的分支選一條；程式核對。
+# 每個工作最多判斷幾次（另外算，不佔第 2 級的 MID_REPLAN_MAX）、交給判斷的原文最多幾個字、原文的一行最多幾個字、一次最多挑幾行：
+# 都是資源的上限（模型的上下文、輸出的長度），不是調來讓某一題過的門檻（〈新架構討論紀錄〉第 5 節 3b）。
+MID_JUDGE_MAX = 4
+MID_JUDGE_CHARS = 16000
+MID_JUDGE_LINE_CHARS = 400
+MID_JUDGE_LINES = 12
+# 判斷用的模型（D8：可以另外設定）；空字串＝中階的模型（MID_MODEL，再空就是主對話的模型）。
+MID_JUDGE_MODEL = os.environ.get("AGENT_MID_JUDGE_MODEL", "").strip()
+MID_JUDGE_PREDICT = 2000     # 判斷的輸出（理解＋挑的行＋分支與參數＋理由）的 num_predict 上限
 
 # run_tool 載入技能規格文件時回傳字串的固定開頭。規格文件是「按需載入」機制的核心，
 # 內容（尤其是實際腳本路徑與參數格式）必須完整進入上下文，因此 _content_for_context

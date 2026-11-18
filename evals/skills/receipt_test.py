@@ -81,6 +81,10 @@ def t_search_text():
     assert "build" in r["excluded_dirs"] and r["pattern"] == "foo" and r["paths"] == [d]
     _, r = run("search_text", "foo", ".", "--include", "*.py", "-w", d=d)
     assert set(r["per_file"]) == {os.path.join(d, "a", "x.py"), z} and r["options"]["word"] and r["options"]["include"] == ["*.py"]
+    _, r = run("search_text", "foo|bar", "a", "--rank", d=d)
+    assert r["options"]["rank"] and [(i["line"], i["words"]) for i in r["items"] if i["path"].endswith("x.py")] == [(1, 1), (2, 2), (4, 1)], r["items"]
+    _, r = run("search_text", "foo", "a", "--rank", d=d)
+    assert all("words" not in i for i in r["items"]), "只有一個字：不記 words"
     _, r = run("search_text", "zzz_not_here", ".", d=d)
     assert r["status"] == "empty" and r["counts"] == {"hits": 0, "files": 0} and r["items"] == []
     _error("search_text", "args", "foo", "nope_dir", d=d)
@@ -157,7 +161,10 @@ def t_view_file():
     _, r = run("view_file", "ten.txt", "--from", "3", "--lines", "2", d=d)
     assert (r["counts"]["from"], r["counts"]["to"]) == (3, 4) and r["truncated"], r
     _, r = run("view_file", "ten.txt", "--tail", "3", d=d)
-    assert (r["counts"]["from"], r["counts"]["to"]) == (8, 10) and r["tail"]
+    assert (r["counts"]["from"], r["counts"]["to"]) == (8, 10) and r["tail"] and r["around"] is None
+    _, r = run("view_file", "ten.txt", "--around", "5", "-C", "1", d=d)
+    assert (r["counts"]["from"], r["counts"]["to"], r["around"]) == (4, 6, 5) and r["truncated"], r
+    _error("view_file", "args", "ten.txt", "--around", "11", d=d)
     _, r = run("view_file", "empty.txt", d=d)
     assert r["status"] == "empty" and r["counts"]["total_lines"] == 0
     _error("view_file", "args", "bin.dat", d=d)
