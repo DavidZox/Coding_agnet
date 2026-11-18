@@ -18,8 +18,9 @@
 6. **報告**（程式）：照收據整理（定義、呼叫、每個檔案的數量、總數，各附 #編號）；用了哪些回退、哪裡沒做完、自己補的參數。
    判斷節點（要看內容才能決定的）與 depends_on（硬性前置的複合技能）第一版的兩個技能用不到，跟用到的複合技能一起做（3b）。
 
-每一次存在 logs/mid_jobs/<編號>/：job.json（選的技能、參數與原文、每一版的圖與節點的狀態、回退、結果）、report.md、events.jsonl、
-calls.jsonl（挑技能與合約的模型呼叫）。低階的執行（每個節點的嘗試、收據、第 1 級）在 logs/edg_jobs/<edg_job>/。Web 的拓撲圖用這兩份。
+每一次存在 logs/mid_jobs/<編號>/：job.json（選的技能、參數與原文、每一版的圖與節點的狀態、回退、問使用者的問題與回答 asked、結果）、report.md、
+events.jsonl、calls.jsonl（挑技能與合約的模型呼叫）。低階的執行（每個節點的嘗試、收據、第 1 級）在 logs/edg_jobs/<edg_job>/。
+Web 的拓撲圖（web_app/topology.py）用這兩份。
 """
 import collections
 import json
@@ -356,7 +357,7 @@ class Worker:
         job = {"id": jid, "status": "running", "created": _now(), "updated": _now(), "cwd": self.agent.current_cwd,
                "domain": self.domain_name, "question": question, "goal": (goal or question).strip(), "selection": None, "skill": None,
                "contract": None, "params": {}, "rejected": [], "auto_filled": [], "fetches": [], "graphs": [], "edg_job": None,
-               "fallbacks": [], "applied": [], "added": [], "replans": 0, "need_user": None, "result": None}
+               "fallbacks": [], "applied": [], "added": [], "replans": 0, "need_user": None, "asked": [], "result": None}
         self._note(jid, f"🧭 中階（{self.domain_name}）開始：{question[:80]}")
         domain = self._domain()
         if domain["problems"]:
@@ -376,14 +377,19 @@ class Worker:
             return self._finish(job, "failed", note="領域的規格有問題：" + "；".join(domain["problems"]))
         need = job["need_user"]
         if need["kind"] == "guard":
+            if approve is not None:
+                self._answered(job, approve=bool(approve))
             job.update(status="running", need_user=None)
             return self._after(job, domain, self._executor().resume(job["edg_job"], approve))
         p = next(x for x in domain["skills"][job["skill"]]["parameters"] if x["name"] == need["param"])
         value, err = check_answer(p, answer, job["cwd"])
         if err:
             need["error"] = err
+            if job.get("asked"):
+                job["asked"][-1].setdefault("errors", []).append({"answer": str(answer or ""), "error": err, "time": _now()})
             self.store.save(job)
             return job
+        self._answered(job, answer=value)
         job["params"][p["name"]] = {"value": value, "source": "user", "checked": True}
         self._note(jid, f"🧭 使用者回答 {p['name']}＝{value}")
         job.update(status="running", need_user=None)
@@ -628,10 +634,17 @@ class Worker:
 
     # ---------------------------------------------------------------- 結束
     def _wait(self, job, need):
+        job.setdefault("asked", []).append(dict(need, time=_now(), version=len(job["graphs"])))
         job.update(status="need_user", need_user=need, updated=_now())
         self.store.save(job)
         self._note(job["id"], f"🧭 要問使用者：{need['question'][:100]}")
         return job
+
+    @staticmethod
+    def _answered(job, **fields):
+        """問使用者的紀錄（asked 的最後一筆）記下回答：確認關卡的 approve、參數的 answer（Web 的拓撲圖看得到問了什麼、回答什麼）。"""
+        if job.get("asked"):
+            job["asked"][-1].update(fields, answered=_now())
 
     def _finish(self, job, status, ej=None, note=""):
         job.update(status=status, need_user=None, updated=_now())

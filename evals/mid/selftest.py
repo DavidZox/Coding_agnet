@@ -3,7 +3,8 @@
 領域與複合技能的規格（解析、給模型時拿掉給程式看的部分、寫錯的擋下來）、合約的核對（原文要在問題裡、值照種類對原文；沒過的交回修一次）、
 排圖（if 群組、名稱清單一項一組、節點的 if）、補參數（預設值、路徑找不到時自己查、剛好一個就補、好幾個問使用者、必填的問使用者、接回）、
 執行與報告（定義、呼叫、每個檔案的數量、總數、#編號）、第 2 級（加節點重排、不收斂、問範圍附各子目錄的筆數、熔斷）、
-確認關卡停下來與接回、存檔（每一版的圖與節點的狀態、回退、報告、模型呼叫）、真模型評測的題目（evals/mid/cases.py）。
+確認關卡停下來與接回、存檔（每一版的圖與節點的狀態、回退、問使用者的問題與回答、報告、模型呼叫）、真模型評測的題目（evals/mid/cases.py）、
+Web 的拓撲圖（web_app/topology.py 整理的資料、/topology 頁面與 /api/topology/* 的路由）。
 
     python3 evals/mid/selftest.py
 """
@@ -16,7 +17,7 @@ import traceback
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROJECT = os.path.dirname(os.path.dirname(HERE))
-COPY = ["agent_core", "skills_system", "prompts"]
+COPY = ["agent_core", "skills_system", "prompts", "web_app", "vision"]
 
 
 class Skip(Exception):
@@ -278,6 +279,9 @@ def main():
         job = w.resume(job["id"], answer="handle_cmd")
         assert job["status"] == "done" and job["params"]["name"] == {"value": "handle_cmd", "source": "user", "checked": True}
         assert "呼叫：總共 4 次" in job["result"]["report"] and "name＝handle_cmd（使用者回答）" in job["result"]["report"]
+        asked = saved(job)["asked"]
+        assert len(asked) == 1 and asked[0]["param"] == "name" and asked[0]["version"] == 0 and asked[0]["answer"] == "handle_cmd", asked
+        assert asked[0]["answered"] and asked[0]["errors"][0]["answer"] == "a.b" and "要是一個名稱" in asked[0]["errors"][0]["error"], asked
         assert w.resume(job["id"], answer="x")["status"] == "done", "沒有在等使用者就照原樣回"
 
     def t_fetch():
@@ -331,6 +335,8 @@ def main():
         assert job["status"] == "done" and job["replans"] == 1 and job["graphs"][1]["cause"] == {"kind": "user", "param": "path", "value": "src/beta"}
         assert job["graphs"][1]["graph"]["nodes"][0]["args"][1] == "src/beta" and "呼叫：總共 2 次（1 個檔案）" in job["result"]["report"]
         assert [f["result"] for f in job["fallbacks"]] == ["ask"]
+        asked = job["asked"][0]
+        assert asked["fallback"] == "too_many_files" and asked["version"] == 1 and asked["answer"] == "src/beta" and len(asked["candidates"]) == 3, asked
 
     def t_circuit_break():
         nodes = [{"id": "a", "tool": "search_text", "args": ["{name}", "{path}"], "expect": ["pass", "empty"]}]
@@ -396,6 +402,138 @@ def main():
         finally:
             agent.guard_check = real
         assert job["status"] == "done" and "- 指定（1）：" in job["result"]["report"], job["result"]["report"]
+        assert job["asked"][0]["kind"] == "guard" and job["asked"][0]["node"] == "hits" and job["asked"][0]["approve"] is True, job["asked"]
+        ej = json.load(open(os.path.join(agent.script_dir, "logs", "edg_jobs", job["edg_job"], "job.json"), encoding="utf-8"))
+        decisions = ej["nodes"]["hits"]["instances"][0]["decisions"]
+        assert len(decisions) == 1 and decisions[0]["approve"] is True and decisions[0]["text"], decisions
+
+    def t_topology_view():
+        from web_app import topology
+        view = lambda j: topology.job_view("logs", f"mid_jobs/{j['id']}", root=tmp)
+        # 兩版的圖：範圍裡沒有 → 回退加 wider；第一版看得到回退（marks），第二版從條件的節點畫虛線（extra_edges）
+        two = run("src/alpha 裡誰呼叫 start？", py_usage("誰呼叫 start", "start", "src/alpha 裡", "src/alpha"))
+        v = view(two)
+        assert v["kind"] == "mid" and v["status_text"] == "做完" and v["originals"] is True and len(v["versions"]) == 2, v["status"]
+        v1, v2 = v["versions"]
+        assert [(m["type"], m["from"], m["to_version"], m["added"]) for m in v1["marks"]] == [("replanned", "hits", 2, ["wider"])], v1["marks"]
+        assert v1["change"] is None and v2["change"]["added"] == ["wider"] and set(v2["change"]["kept"]) == {"hits", "refs"}, v2["change"]
+        assert [(e["from"], e["to"], e["type"], e["fallback"]) for e in v2["extra_edges"]] == [("hits", "wider", "fallback", "outside_scope")]
+        assert "wider" not in v1["nodes"] and v1["nodes"]["hits"]["box"]["state"] == "done" and v1["nodes"]["hits"]["box"]["statuses"] == ["empty"]
+        assert v1["nodes"]["refs"]["box"]["each"]["instances"] == 0 and v2["nodes"]["wider"]["box"]["results"], v2["nodes"]["wider"]
+        att = v1["nodes"]["hits"]["detail"]["instances"][0]["attempts"][0]
+        assert v1["nodes"]["hits"]["box"]["results"] == [att["result_id"]]
+        assert topology.receipt("logs", v["edg"]["ref"], att["receipt_file"], root=tmp)["status"] == "empty", "收據全文"
+        assert "## 第 2 級（回退）" in v["report"] and v["events"] and [c["role"] for c in v["calls"]] == ["select", "contract"]
+        assert "report" not in v["result"], "報告另外給一份，不重複"
+        # 問使用者（回退）→ 回答 → 照新的參數重新排：第一版換掉的節點，從低階的 replans 找回當時的狀態
+        real = edg.EDG_EACH_MAX
+        edg.EDG_EACH_MAX = 2
+        try:
+            job = run("src 裡誰呼叫 handle_cmd？", py_usage("誰呼叫 handle_cmd", "handle_cmd", "src 裡", "src"))
+            mark = view(job)["versions"][0]["marks"][0]
+            assert mark["type"] == "ask" and mark["ask"]["candidates"][0] == "src/beta（3 筆）" and "answer" not in mark["ask"], mark
+            assert "to_version" not in mark and view(job)["need_user"]["fallback"] == "too_many_files"
+            job = mid.Worker(agent, model=FakeModel(), fixer=lambda req, log: None).resume(job["id"], answer="src/beta")
+        finally:
+            edg.EDG_EACH_MAX = real
+        v = view(job)
+        m = v["versions"][0]["marks"][0]
+        assert m["ask"]["answer"] == "src/beta" and m["to_version"] == 2 and v["versions"][1]["cause"]["kind"] == "user", m
+        first = v["versions"][0]["nodes"]["hits"]["detail"]["instances"][0]["args"]
+        second = v["versions"][1]["nodes"]["hits"]["detail"]["instances"][0]["args"]
+        assert first[1] == "src" and second[1] == "src/beta", (first, second)
+        assert v["versions"][1]["change"]["rerun"] == ["hits", "refs"] and v["versions"][1]["change"]["kept"] == [], v["versions"][1]["change"]
+        each = v["versions"][0]["nodes"]["refs"]["box"]["each"]
+        assert each["instances"] == 3 and each["ran"] == 2, "第一版：帶入的超過上限"
+        # 確認關卡：等確認時節點看得到；同意之後看得到決定
+        real_guard = agent.guard_check
+        agent.guard_check = lambda parsed: ({"skill": "search_text", "script": "grep_cmd.py", "reason": "測試用",
+                                             "command": "scripts/grep_cmd.py " + parsed["action"]["args"]}
+                                            if "locked" in parsed["action"]["args"] and "grep_cmd" in parsed["action"]["command"]
+                                            else real_guard(parsed))
+        try:
+            job = run("locked 裡誰用 handle_cmd？", py_usage("誰用 handle_cmd", "handle_cmd", "locked 裡", "locked"))
+            box = view(job)["versions"][0]["nodes"]["hits"]["box"]
+            assert box["state"] == "need_user" and box["decisions"] == [] and view(job)["asked"][0]["kind"] == "guard", box
+            job = mid.Worker(agent, model=FakeModel(), fixer=lambda req, log: None).resume(job["id"], approve=True)
+        finally:
+            agent.guard_check = real_guard
+        box = view(job)["versions"][0]["nodes"]["hits"]["box"]
+        assert job["status"] == "done" and box["decisions"][0]["approve"] is True and box["state"] == "done", (job["status"], box)
+        assert view(job)["asked"][0]["approve"] is True and view(job)["versions"][0]["status"] == "done"
+        # 自己查路徑：另一個低階工作，附在中階的工作裡，清單不另外列
+        job = run("beta 裡誰呼叫 handle_cmd？", py_usage("誰呼叫 handle_cmd", "handle_cmd", "beta 裡", "beta"))
+        f = view(job)["fetches"][0]
+        assert f["ref"] == f"edg_jobs/{job['fetches'][0]['edg_job']}" and f["nodes"]["fetch"]["box"]["state"] == "done", f
+        listed = {j["ref"] for j in topology.jobs("logs", root=tmp)}
+        assert f"mid_jobs/{job['id']}" in listed and f["ref"] not in listed and f"edg_jobs/{job['edg_job']}" not in listed
+        # 沒有技能：沒有圖，看得到停在挑技能
+        job = run("問題", FakeModel(select=[{"understanding": "u", "skill": "none", "reason": "沒有技能讀長文件"}]))
+        v = view(job)
+        assert v["versions"] == [] and v["selection"]["skill"] == "none" and v["result"]["note"] == "沒有技能讀長文件" and v["asked"] == []
+        # 單獨的低階工作（沒有被中階用到）列在清單裡
+        ej = edg.Executor(agent, fixer=lambda req, log: None).start(
+            {"goal": "g", "nodes": [{"id": "n", "tool": "search_text", "args": ["handle_cmd", "src"], "expect": ["pass", "empty"]}]})
+        assert f"edg_jobs/{ej['id']}" in {j["ref"] for j in topology.jobs("logs", root=tmp)}
+        v = topology.job_view("logs", f"edg_jobs/{ej['id']}", root=tmp)
+        assert v["kind"] == "edg" and v["versions"][0]["nodes"]["n"]["box"]["state"] == "done" and v["goal"] == "g"
+        # 評測結果的來源：題目底下的 mid_jobs、edg_jobs，或低階評測直接放的 job.json；評測的 #編號 原文看不到
+        logs = os.path.join(tmp, "logs")
+        res = os.path.join(tmp, "evals", "results")
+        shutil.copytree(os.path.join(logs, "mid_jobs", two["id"]), os.path.join(res, "20990101_000000_mid_fake", "logs", "q_1", "mid_jobs", two["id"]))
+        shutil.copytree(os.path.join(logs, "edg_jobs", two["edg_job"]), os.path.join(res, "20990101_000000_mid_fake", "logs", "q_1", "edg_jobs", two["edg_job"]))
+        shutil.copytree(os.path.join(logs, "edg_jobs", ej["id"]), os.path.join(res, "20990101_000001_edg_fake", "logs", "q_2"))
+        os.makedirs(os.path.join(res, "20990101_000002_ops_fake", "logs", "s_1"))
+        keys = [s["key"] for s in topology.sources(root=tmp)]
+        assert keys[:3] == ["logs", "evals/results/20990101_000001_edg_fake", "evals/results/20990101_000000_mid_fake"], keys
+        assert "evals/results/20990101_000002_ops_fake" not in keys, "沒有工作的評測結果不列"
+        src = "evals/results/20990101_000000_mid_fake"
+        assert [(j["ref"], j["case"], j["versions"]) for j in topology.jobs(src, root=tmp)] == [(f"q_1/mid_jobs/{two['id']}", "q_1", 2)]
+        v = topology.job_view(src, f"q_1/mid_jobs/{two['id']}", root=tmp)
+        assert v["originals"] is False and v["edg"]["ref"] == f"q_1/edg_jobs/{two['edg_job']}" and len(v["versions"]) == 2
+        assert v["versions"][1]["nodes"]["wider"]["box"]["state"] == "done"
+        assert [j["ref"] for j in topology.jobs("evals/results/20990101_000001_edg_fake", root=tmp)] == ["q_2"]
+        # 路徑一律由程式組：不合規則的回 None（頁面回 404）
+        for s, ref in (("logs", "../logs/mid_jobs/x"), ("logs", "mid_jobs/.."), ("logs", f"mid_jobs/{two['id']}/.."), ("evals/results/..", "logs"),
+                       ("/etc", "passwd"), ("logs", "a/b/c/d"), ("logs", ""), (None, None), ("evals/results", "x")):
+            assert topology.job_view(s, ref, root=tmp) is None, (s, ref)
+        assert topology.jobs("evals/results/../..", root=tmp) is None and topology.jobs("/etc", root=tmp) is None
+        for rel in ("../job.json", "receipts/../../job.json", "job.json", "receipts/x.txt", None):
+            assert topology.receipt("logs", f"edg_jobs/{two['edg_job']}", rel, root=tmp) is None, rel
+
+    def t_topology_http():
+        import threading
+        import urllib.error
+        import urllib.parse
+        import urllib.request
+        from http.server import ThreadingHTTPServer
+        from web_app import server
+        run("問題", FakeModel(select=[{"understanding": "u", "skill": "none", "reason": "r"}]))
+        httpd = ThreadingHTTPServer(("127.0.0.1", 0), server.ConsoleHandler)
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        base = f"http://127.0.0.1:{httpd.server_address[1]}"
+
+        def get(path):
+            try:
+                with urllib.request.urlopen(base + path, timeout=10) as r:
+                    return r.status, r.read().decode("utf-8"), r.headers.get("Content-Type", "")
+            except urllib.error.HTTPError as e:
+                return e.code, e.read().decode("utf-8"), e.headers.get("Content-Type", "")
+        try:
+            status, body, ctype = get("/topology?src=logs")
+            assert status == 200 and "<title>決策圖</title>" in body and ctype.startswith("text/html"), status
+            assert 'href="/topology"' in get("/")[1], "對話頁的標題列有連結"
+            status, body, _ = get("/api/topology/sources")
+            assert status == 200 and json.loads(body)[0]["key"] == "logs"
+            ref = next(j["ref"] for j in json.loads(get("/api/topology/jobs?src=logs")[1]) if j["kind"] == "mid")
+            status, body, _ = get(f"/api/topology/job?src=logs&ref={urllib.parse.quote(ref)}")
+            assert status == 200 and json.loads(body)["ref"] == ref
+            for bad in ("/api/topology/job?src=logs&ref=..%2F..%2Fetc", "/api/topology/jobs?src=%2Fetc", "/api/topology/nothing",
+                        f"/api/topology/receipt?src=logs&ref={urllib.parse.quote(ref)}&file=..%2Fjob.json"):
+                assert get(bad)[0] == 404, bad
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
 
     def t_model_caller():
         seen = {}
@@ -472,7 +610,7 @@ def main():
              ("排圖：if 群組（名稱清單一項一組）、節點的 if、依賴沒排的節點也不排", t_expand),
              ("py_usage 走一遍：挑技能 → 合約 → 排圖 → 低階 → 報告（定義、呼叫、每個檔案幾次、總數、import 不算呼叫、#編號）；存檔與模型的輸入", t_py_usage_flow),
              ("合約沒過核對（或漏了必填的參數）：只把這幾個交回修一次；修了還是不對就當成沒提到", t_contract_fix),
-             ("必填的參數沒提到：問使用者 → 回答不合法再問 → 回答之後接著做", t_ask_and_resume),
+             ("必填的參數沒提到：問使用者 → 回答不合法再問 → 回答之後接著做（問了什麼、不合法的回答、最後的回答都記下來）", t_ask_and_resume),
              ("路徑找不到：照 fetch 查一次，剛好一個就自己補（報告寫明）；好幾個或沒有就問使用者", t_fetch),
              ("第 2 級：範圍裡沒有 → 加節點看範圍外；重排只跑新的節點，每一版的狀態都留著", t_outside_scope),
              ("第 2 級：加的節點都跑過了＝不收斂，不重排；0 筆就是答案", t_not_converging),
@@ -480,7 +618,10 @@ def main():
              ("第 2 級：重排超過上限就熔斷", t_circuit_break),
              ("count_in_scope：照範圍數（只看的檔案、不含的子目錄由程式扣），每個檔案的筆數與總數；什麼都沒給就問", t_count_in_scope),
              ("挑技能：沒有適合的、不屬於這個領域、清單外、沒有回覆；選的技能答不了問題要的那一種（位置、數量、內容）", t_select_outcomes),
-             ("確認關卡：低階停下來 → 中階要問使用者 → 同意後接回", t_guard),
+             ("確認關卡：低階停下來 → 中階要問使用者 → 同意後接回（中階記下問了什麼、低階的實例記下決定）", t_guard),
+             ("Web 的拓撲圖的資料：每一版的圖與當時的狀態（重排換掉的從低階找回）、跟上一版比、回退與問使用者、確認關卡、自己查路徑、清單、"
+              "評測的來源、不合規則的路徑擋下來", t_topology_view),
+             ("Web 的拓撲圖：/topology 頁面與 /api/topology/*（找不到、路徑不合規則回 404）；對話頁的標題列有連結", t_topology_http),
              ("模型呼叫：prompt、schema、num_predict、記進 calls.jsonl；回覆不是 JSON 當成沒有回覆", t_model_caller),
              ("中階的真模型評測：每一題都標了該用的複合技能，參數是那個技能的；參數與每一層的核對", t_eval_cases)]
     passed = skipped = 0

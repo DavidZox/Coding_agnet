@@ -1,0 +1,873 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>決策圖</title>
+<style>
+  /* 新架構的決策圖（唯讀）：資料由 web_app/topology.py 整理（/api/topology/*），版面由這一頁自己分層排；無外部依賴、可離線使用 */
+  :root {
+    color-scheme: dark;
+    --bg: #1e1f22; --panel: #2b2d31; --panel2: #232428; --line: #3a3c40; --text: #e3e3e3; --muted: #9aa0a6;
+    --ok: #3fb950; --bad: #f85149; --warn: #d29922; --wait: #a371f7; --info: #58a6ff; --skip: #6e7681; --fb: #e0823d; --sel: #8ab4f8;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: -apple-system, "Segoe UI", "PingFang TC", "Microsoft JhengHei", "Noto Sans CJK TC", sans-serif;
+    background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; font-size: 13px;
+  }
+  header {
+    padding: 8px 14px; background: var(--panel); border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+  }
+  header h1 { font-size: 15px; margin: 0; }
+  header h1 .sub { font-size: 12px; color: var(--muted); font-weight: normal; margin-left: 6px; }
+  .hdr-right { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  select, input, button { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 5px; padding: 4px 8px; font: inherit; }
+  select { max-width: min(70vw, 520px); }
+  button { cursor: pointer; background: #3a3c40; }
+  button:hover { background: #4a4c50; }
+  a { color: #8ab4f8; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  main { flex: 1; display: flex; min-height: 0; }
+  #list-pane { width: 300px; flex: none; border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+  .filters { padding: 8px; display: flex; gap: 6px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .filters input { flex: 1; min-width: 120px; }
+  #job-list { overflow-y: auto; flex: 1; }
+  .job { padding: 7px 10px; border-bottom: 1px solid #2c2e33; cursor: pointer; }
+  .job:hover { background: var(--panel2); }
+  .job.sel { background: #2c3e50; }
+  .job .row1 { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+  .job .title { margin-top: 3px; line-height: 1.35; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  #view-pane { flex: 1; min-width: 0; overflow-y: auto; padding: 12px 16px 40px; }
+  #detail-pane { width: 400px; flex: none; border-left: 1px solid var(--line); overflow-y: auto; padding: 12px 14px 40px; background: #212226; overflow-wrap: anywhere; }
+  .hint { color: var(--muted); }
+  .chip { display: inline-block; padding: 0 7px; border-radius: 10px; font-size: 11px; line-height: 17px; border: 1px solid currentColor; white-space: nowrap; }
+  .c-ok { color: var(--ok); } .c-bad { color: var(--bad); } .c-warn { color: var(--warn); } .c-wait { color: var(--wait); }
+  .c-info { color: var(--info); } .c-skip { color: var(--skip); } .c-fb { color: var(--fb); }
+  .head-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 2px 0; }
+  .question { font-size: 15px; margin: 6px 0 4px; line-height: 1.45; }
+  .param { background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; font-size: 12px; }
+
+  /* 流程列 */
+  #stages { display: flex; align-items: stretch; flex-wrap: wrap; row-gap: 8px; margin: 12px 0 8px; }
+  .stage { border: 1.5px solid var(--skip); border-radius: 8px; padding: 5px 10px; min-width: 92px; max-width: 230px; cursor: pointer; background: var(--panel); }
+  .stage .st-name { font-size: 11px; color: var(--muted); }
+  .stage .st-text { margin-top: 2px; line-height: 1.35; word-break: break-word; }
+  .stage.ok { border-color: var(--ok); } .stage.bad { border-color: var(--bad); } .stage.warn { border-color: var(--warn); }
+  .stage.wait { border-color: var(--wait); } .stage.info { border-color: var(--info); } .stage.skip { border-style: dashed; opacity: .7; }
+  .stage.sel { box-shadow: 0 0 0 2px var(--sel); }
+  .stage.cur { background: #2f3540; }
+  .arrow { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 0 6px; color: var(--muted); font-size: 11px; min-width: 26px; }
+  .arrow .lbl { max-width: 130px; text-align: center; line-height: 1.3; }
+  .arrow .lbl.fb { color: var(--fb); } .arrow .lbl.user { color: var(--wait); }
+
+  /* 圖 */
+  #version-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+  #version-bar .vt { font-weight: bold; }
+  #graph-wrap { overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: #191a1d; padding: 18px; margin-top: 6px; }
+  #graph { position: relative; min-height: 40px; }
+  #graph svg { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
+  .gnode { position: absolute; width: 236px; border: 2px solid var(--skip); border-radius: 8px; background: var(--panel); padding: 6px 9px; cursor: pointer; font-size: 12px; line-height: 1.4; }
+  .gnode:hover { background: #31343a; }
+  .gnode.sel { box-shadow: 0 0 0 3px var(--sel); }
+  .gnode .nid { font-weight: bold; }
+  .gnode .tool { color: var(--muted); margin-left: 6px; }
+  .gnode .args { color: #c9d1d9; font-family: "Cascadia Code", Consolas, monospace; font-size: 11px; margin-top: 3px; word-break: break-all; max-height: 4.3em; overflow: hidden; }
+  .gnode .say { color: #d0d3d8; margin-top: 3px; }
+  .gnode .meta { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; }
+  .gnode.ok { border-color: var(--ok); } .gnode.bad { border-color: var(--bad); } .gnode.warn { border-color: var(--warn); }
+  .gnode.wait { border-color: var(--wait); } .gnode.info { border-color: var(--info); } .gnode.skip { border-style: dashed; }
+  .gnode.ghost { opacity: .45; border-style: dashed; }
+  .gnode.mark { border-style: dashed; width: 220px; background: #24262b; }
+  .gnode.m-replanned { border-color: var(--fb); } .gnode.m-ask { border-color: var(--wait); }
+  .gnode.m-no_new_nodes { border-color: var(--skip); } .gnode.m-circuit_break { border-color: var(--bad); }
+  .elabel { position: absolute; transform: translate(-50%, -50%); background: #191a1d; border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; font-size: 11px; color: var(--muted); cursor: pointer; white-space: nowrap; }
+  .elabel.fallback { color: var(--fb); border-color: var(--fb); }
+  .elabel.mark { color: var(--muted); border-style: dashed; }
+  .elabel.sel { box-shadow: 0 0 0 2px var(--sel); }
+  path.edge { fill: none; stroke: #8b949e; stroke-width: 1.6; }
+  path.edge.fallback { stroke: var(--fb); stroke-dasharray: 7 4; }
+  path.edge.mark { stroke: #a0a4ab; stroke-dasharray: 4 4; }
+  path.edge.ghost { stroke-dasharray: 3 4; opacity: .4; }
+  path.edge.sel { stroke: var(--sel); stroke-width: 2.6; }
+  path.hit { fill: none; stroke: transparent; stroke-width: 14; cursor: pointer; pointer-events: stroke; }
+  #legend { margin-top: 8px; color: var(--muted); font-size: 11.5px; display: flex; flex-wrap: wrap; gap: 4px 14px; }
+  #legend .sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; border: 2px solid; vertical-align: -2px; margin-right: 3px; }
+  #legend .ln { display: inline-block; width: 22px; border-top: 2px solid #8b949e; vertical-align: 3px; margin-right: 3px; }
+
+  /* 細節 */
+  #detail h3 { font-size: 14px; margin: 0 0 8px; line-height: 1.4; }
+  #detail h4 { font-size: 12px; margin: 14px 0 5px; color: var(--muted); font-weight: normal; border-bottom: 1px solid var(--line); padding-bottom: 2px; }
+  .kv { display: grid; grid-template-columns: 92px 1fr; gap: 3px 8px; }
+  .kv .k { color: var(--muted); }
+  .kv .v { word-break: break-word; }
+  pre, code { font-family: "Cascadia Code", Consolas, monospace; font-size: 11.5px; }
+  pre { background: #17181b; border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; white-space: pre-wrap; word-break: break-word; max-height: 380px; overflow: auto; margin: 4px 0; }
+  .inst { border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; margin: 6px 0; }
+  .att { border-left: 3px solid var(--skip); padding: 2px 0 2px 8px; margin: 6px 0; }
+  .att.pass { border-color: var(--ok); } .att.empty { border-color: var(--info); } .att.error { border-color: var(--bad); }
+  .fixbox { border: 1px dashed var(--info); border-radius: 6px; padding: 4px 8px; margin: 6px 0; }
+  .askbox { border: 1px dashed var(--wait); border-radius: 6px; padding: 4px 8px; margin: 6px 0; }
+  ul.plain { margin: 4px 0; padding-left: 18px; }
+  details summary { cursor: pointer; color: var(--muted); margin: 12px 0 4px; }
+  .linkbtn { background: none; border: none; color: #8ab4f8; padding: 0; cursor: pointer; font-size: 12px; }
+  .linkbtn:hover { text-decoration: underline; background: none; }
+  .call { border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; margin: 6px 0; }
+  @media (max-width: 1100px) {
+    main { flex-direction: column; overflow-y: auto; }
+    #list-pane, #detail-pane { width: auto; max-height: 45vh; border: none; border-bottom: 1px solid var(--line); }
+    #view-pane { overflow: visible; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>🔗 決策圖<span class="sub">新架構的中階與低階執行過的工作（唯讀）</span></h1>
+  <div class="hdr-right">
+    <label>來源 <select id="src"></select></label>
+    <button id="reload" title="重新讀來源、工作清單與這個工作">重新整理</button>
+    <a href="/">← 回對話</a>
+  </div>
+</header>
+<main>
+  <aside id="list-pane">
+    <div class="filters">
+      <input id="q" placeholder="搜尋題目、問題、技能、回退…">
+      <select id="fstatus"><option value="">全部狀態</option></select>
+    </div>
+    <div id="job-list"></div>
+  </aside>
+  <section id="view-pane">
+    <div id="job-head"><p class="hint">從左邊選一個工作。</p></div>
+    <div id="stages"></div>
+    <div id="version-bar"></div>
+    <div id="graph-wrap" hidden><div id="graph"></div></div>
+    <div id="legend" hidden>
+      <span><span class="sw" style="border-color:var(--ok)"></span>做完</span>
+      <span><span class="sw" style="border-color:var(--bad)"></span>失敗、結果不符預期、使用者不同意</span>
+      <span><span class="sw" style="border-color:var(--warn)"></span>沒跑（依賴的沒成功）</span>
+      <span><span class="sw" style="border-color:var(--wait)"></span>等使用者</span>
+      <span><span class="sw" style="border-color:var(--info)"></span>還沒跑、交回判斷</span>
+      <span><span class="sw" style="border-color:var(--skip);border-style:dashed"></span>這一版沒有跑到</span>
+      <span><span class="ln"></span>依賴、帶入（從前一個節點的收據，每一項一個實例）</span>
+      <span><span class="ln" style="border-top:2px dashed var(--fb)"></span>回退（從條件的節點到加的節點）</span>
+      <span><span class="ln" style="border-top:2px dashed #a0a4ab"></span>這一版跑完時的回退、問使用者</span>
+      <span>淡的虛線框：這一版拿掉的節點</span>
+    </div>
+    <details id="report-box" hidden><summary>報告（程式照收據整理的 report.md）</summary><pre id="report"></pre></details>
+    <details id="events-box" hidden><summary>進度</summary><div id="events"></div></details>
+    <details id="calls-box" hidden><summary>模型呼叫</summary><div id="calls"></div></details>
+  </section>
+  <aside id="detail-pane"><div id="detail"><p class="hint">點流程的一段、圖上的節點或邊看細節。</p></div></aside>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const show = (v) => Array.isArray(v) ? v.join('、') : (v === null || v === undefined ? '' : String(v));
+const S = { sources: [], src: null, jobs: [], ref: null, view: null, viewKey: '', v: 0, sel: null, timer: null, receipts: {} };
+
+const NODE_STATE = { done: '做完', failed: '失敗', unexpected: '結果不符預期', blocked: '沒跑（依賴的沒成功）', denied: '使用者不同意',
+  judgment: '交回判斷', need_user: '等使用者確認', pending: '還沒跑', running: '執行中' };
+const NODE_CLASS = { done: 'ok', failed: 'bad', unexpected: 'bad', denied: 'bad', blocked: 'warn', judgment: 'info', need_user: 'wait', pending: 'info', running: 'info' };
+const EDG_STATUS = { done: '做完', judgment: '交回判斷', stopped: '停下來（有節點沒成功）', need_user: '等使用者確認', invalid: '圖沒通過檢查', running: '執行中' };
+const EDG_CLASS = { done: 'ok', judgment: 'info', stopped: 'bad', need_user: 'wait', invalid: 'bad', running: 'info' };
+const MID_CLASS = { done: 'ok', dead_end: 'bad', circuit_break: 'bad', failed: 'bad', no_skill: 'warn', out_of_domain: 'warn', need_user: 'wait', running: 'info' };
+const SOURCE_TEXT = { question: '原文', default: '預設', fetch: '自己查到的', user: '使用者回答' };
+const ATT_STATUS = { pass: '成功', empty: '0 筆', error: '錯誤' };
+const ERROR_KIND = { args: '參數錯', timeout: '逾時', env: '環境的問題', parse: '腳本的錯' };
+const MARK = { replanned: ['↻ 回退', 'c-fb'], ask: ['？問使用者', 'c-wait'], no_new_nodes: ['↻ 回退（不收斂）', 'c-skip'], circuit_break: ['⛔ 熔斷', 'c-bad'] };
+const MARK_RESULT = { replanned: '加節點、重排', ask: '問使用者', no_new_nodes: '排出來的節點都跑過了（不收斂），沒有重排', circuit_break: '已經重排太多次，熔斷' };
+
+async function api(path) {
+  const r = await fetch(path);
+  if (!r.ok) throw new Error(`${r.status}`);
+  return r.json();
+}
+const q = (o) => Object.entries(o).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
+
+// ================================================================ 來源與清單
+function srcLabel(s) {
+  const name = s.key === 'logs' ? '正式的紀錄（logs/）' : s.key.split('/').pop();
+  return `${name}（中階 ${s.mid}、低階 ${s.edg}）`;
+}
+
+async function loadSources(want) {
+  S.sources = await api('/api/topology/sources');
+  const keys = S.sources.map((s) => s.key);
+  const firstWithJobs = S.sources.find((s) => s.mid + s.edg > 0);
+  S.src = keys.includes(want) ? want : keys.includes(S.src) ? S.src : (firstWithJobs || S.sources[0] || {}).key;
+  $('src').innerHTML = S.sources.map((s) => `<option value="${esc(s.key)}"${s.key === S.src ? ' selected' : ''}>${esc(srcLabel(s))}</option>`).join('');
+}
+
+async function loadJobs() {
+  try { S.jobs = (await api(`/api/topology/jobs?${q({ src: S.src })}`)) || []; } catch (e) { S.jobs = []; }
+  const statuses = [...new Set(S.jobs.map((j) => j.status))].sort();
+  const cur = $('fstatus').value;
+  $('fstatus').innerHTML = '<option value="">全部狀態</option>' + statuses.map((s) => `<option value="${esc(s)}"${s === cur ? ' selected' : ''}>${esc(jobStatusText(s))}</option>`).join('');
+  renderList();
+}
+
+function jobStatusText(s) {
+  const j = S.jobs.find((x) => x.status === s && x.status_text);
+  return j ? j.status_text : (EDG_STATUS[s] || s);
+}
+
+function statusChip(kind, status, text) {
+  const cls = (kind === 'mid' ? MID_CLASS : EDG_CLASS)[status] || 'skip';
+  return `<span class="chip c-${cls}">${esc(text || (kind === 'mid' ? status : EDG_STATUS[status] || status))}</span>`;
+}
+
+function renderList() {
+  const text = $('q').value.trim().toLowerCase(), fs = $('fstatus').value;
+  const rows = S.jobs.filter((j) => (!fs || j.status === fs) &&
+    (!text || [j.case, j.title, j.skill, j.id, ...(j.fallbacks || [])].join(' ').toLowerCase().includes(text)));
+  const empty = S.jobs.length ? '沒有符合的工作' : (S.src === 'logs'
+    ? '正式的紀錄裡還沒有中階或低階的工作（第 4 步才接上主對話；現在只有評測與測試用到）。可以在上面選評測的結果來看。'
+    : '這個來源沒有工作');
+  $('job-list').innerHTML = rows.length ? rows.map((j) => `<div class="job${j.ref === S.ref ? ' sel' : ''}" data-ref="${esc(j.ref)}">
+      <div class="row1">${statusChip(j.kind, j.status, j.status_text)}<span>${esc(j.case || j.created || j.id)}</span>
+        ${j.kind === 'edg' ? '<span class="chip c-skip">低階</span>' : ''}
+        ${j.versions > 1 ? `<span title="重排過">${j.versions} 版</span>` : ''}
+        ${(j.fallbacks || []).length ? `<span class="c-fb" title="用了回退">↻ ${esc(j.fallbacks.join('、'))}</span>` : ''}
+        ${j.fixed ? '<span class="c-info" title="第 1 級修正過">✎ 修正過</span>' : ''}</div>
+      <div class="title">${esc(j.title)}</div>
+      ${j.skill ? `<div class="row1">${esc(j.skill)}</div>` : ''}
+    </div>`).join('') : `<p class="hint" style="padding:10px">${esc(empty)}</p>`;
+  for (const el of $('job-list').querySelectorAll('.job')) el.onclick = () => openJob(el.dataset.ref);
+}
+
+// ================================================================ 一個工作
+async function openJob(ref, version) {
+  S.ref = ref; S.sel = null; S.receipts = {};
+  renderList();
+  await loadView(false, version);
+}
+
+async function loadView(keep, version) {
+  clearTimeout(S.timer);
+  const ref = S.ref;
+  if (!ref) return;
+  let view;
+  try { view = await api(`/api/topology/job?${q({ src: S.src, ref })}`); } catch (e) {
+    if (!keep) { $('job-head').innerHTML = `<p class="c-bad">讀不到這個工作（${esc(e.message)}）。</p>`; clearView(); }
+    return;
+  }
+  if (ref !== S.ref) return;
+  const key = JSON.stringify(view), changed = key !== S.viewKey;
+  S.view = view; S.viewKey = key;
+  const n = (view.versions || []).length;
+  if (!keep) S.v = version !== undefined && version >= 0 && version < n ? version : Math.max(0, n - 1);
+  else if (S.v >= n) S.v = Math.max(0, n - 1);
+  if (changed || !keep) renderView();
+  if (S.src === 'logs' && ['running', 'need_user'].includes(view.status)) S.timer = setTimeout(() => loadView(true), view.status === 'running' ? 2500 : 6000);
+}
+
+function clearView() {
+  for (const id of ['stages', 'version-bar']) $(id).innerHTML = '';
+  for (const id of ['graph-wrap', 'legend', 'report-box', 'events-box', 'calls-box']) $(id).hidden = true;
+  $('detail').innerHTML = '<p class="hint">點流程的一段、圖上的節點或邊看細節。</p>';
+}
+
+function syncUrl() {
+  const p = { src: S.src || '' };
+  if (S.ref) p.ref = S.ref;
+  if (S.view && S.view.versions.length > 1) p.v = S.v + 1;
+  history.replaceState(null, '', '/topology?' + q(p));
+}
+
+function renderView() {
+  renderHead(); renderStages(); renderGraph(); renderBottom(); renderDetail(); syncUrl();
+}
+
+function resultLink(id) {
+  return S.view.originals ? `<a href="/api/results/${encodeURIComponent(id)}" target="_blank">#${esc(id)}</a>`
+    : `<span title="評測只留了收據，原文沒有留下來">#${esc(id)}</span>`;
+}
+
+function renderHead() {
+  const v = S.view;
+  const text = v.kind === 'mid' ? v.status_text : (EDG_STATUS[v.status] || v.status);
+  const params = Object.entries(v.params || {}).map(([k, p]) =>
+    `<span class="param"><b>${esc(k)}</b>＝${esc(show(p.value))} <span class="hint">${esc(SOURCE_TEXT[p.source] || p.source)}</span></span>`).join('');
+  $('job-head').innerHTML = `
+    <div class="head-row">${statusChip(v.kind, v.status, text)}<span class="hint">${v.kind === 'mid' ? '中階' : '低階'}的工作 ${esc(v.id)}${v.domain ? `・領域 ${esc(v.domain)}` : ''}${v.created ? `・${esc(v.created)}` : ''}</span></div>
+    <div class="question">${esc(v.question || v.goal || '')}</div>
+    ${v.question && v.goal && v.goal !== v.question ? `<div class="hint">子目標：${esc(v.goal)}</div>` : ''}
+    ${v.skill ? `<div class="head-row">複合技能 <b>${esc(v.skill)}</b> ${params}</div>` : ''}
+    ${v.cwd ? `<div class="hint">工作目錄：${esc(v.cwd)}</div>` : ''}
+    ${v.originals ? '' : '<div class="hint">評測的工作只留了收據：#編號的原文沒有留下來。</div>'}`;
+}
+
+// ---------------------------------------------------------------- 流程列
+function causeText(c) {
+  if (!c) return ['', ''];
+  if (c.kind === 'fallback') return [`↻ 回退 ${c.fallback}${(c.added || []).length ? `<br>加 ${c.added.join('、')}` : ''}`, 'fb'];
+  if (c.kind === 'user') return [`使用者回答<br>${c.param}＝${show(c.value)}`, 'user'];
+  return [c.kind, ''];
+}
+
+function stages(v) {
+  const out = [];
+  if (v.kind === 'edg') {
+    const ver = v.versions[0];
+    out.push({ id: 'v0', version: 0, name: '決策圖', cls: EDG_CLASS[v.status] || 'skip', html: `${ver.graph.nodes.length} 個節點` });
+    out.push({ id: 'result', name: '結果', cls: EDG_CLASS[v.status] || 'skip', html: esc(EDG_STATUS[v.status] || v.status) });
+    return out;
+  }
+  const sel = v.selection;
+  let s1;
+  if (!sel) s1 = v.status === 'failed' ? ['bad', '沒有挑（失敗）'] : ['skip', '—'];
+  else if (v.skill) s1 = ['ok', v.skill];
+  else if (sel.rejected) s1 = ['warn', `選了 ${sel.rejected}，答不了`];
+  else if (sel.skill === 'none') s1 = ['warn', '沒有適合的技能'];
+  else if (sel.skill === 'out_of_domain') s1 = ['warn', '不屬於這個領域'];
+  else s1 = ['bad', '失敗'];
+  const asks = [...new Set(sel && sel.asks || [])].map((a) => `<span class="chip c-info">${esc(a)}</span>`).join(' ');
+  out.push({ id: 'select', name: '挑技能', cls: s1[0], html: esc(s1[1]) + (asks ? `<div style="margin-top:3px">${asks}</div>` : '') });
+  if (v.skill) {
+    const ps = Object.values(v.params || {});
+    const rej = (v.rejected || []).length;
+    out.push({ id: 'contract', name: '合約', cls: rej ? 'warn' : 'ok',
+      html: `原文 ${ps.filter((p) => p.source === 'question').length} 個參數` + (rej ? `<div class="c-warn">${rej} 次沒過核對</div>` : '') });
+    const nd = ps.filter((p) => p.source === 'default').length, nf = (v.auto_filled || []).length, nu = ps.filter((p) => p.source === 'user').length;
+    const parts = [nd && `預設 ${nd}`, nf && `自己查到 ${nf}`, nu && `使用者回答 ${nu}`].filter(Boolean);
+    const waiting = v.status === 'need_user' && v.need_user && v.need_user.kind === 'param' && !v.need_user.fallback;
+    out.push({ id: 'complete', name: '補參數', cls: waiting ? 'wait' : nf ? 'warn' : 'ok',
+      html: waiting ? `等使用者：${esc(v.need_user.question)}` : esc(parts.join('、') || '不用補') });
+    v.versions.forEach((ver, i) => {
+      const marks = ver.marks.map((m) => `<span class="${MARK[m.type] ? MARK[m.type][1] : 'c-fb'}">${MARK[m.type] ? MARK[m.type][0] : '↻'} ${esc(m.fallback)}</span>`).join(' ');
+      out.push({ id: `v${i}`, version: i, name: `第 ${ver.version} 版的圖`, cls: EDG_CLASS[ver.status] || 'skip', arrow: i > 0 ? causeText(ver.cause) : null,
+        html: `${ver.graph.nodes.length} 個節點・${esc(EDG_STATUS[ver.status] || ver.status || '沒有跑')}` + (marks ? `<div>${marks}</div>` : '') });
+    });
+  }
+  out.push({ id: 'result', name: '結果', cls: MID_CLASS[v.status] || 'skip', html: esc(v.status_text) });
+  return out;
+}
+
+function renderStages() {
+  const list = stages(S.view);
+  $('stages').innerHTML = list.map((s, i) => {
+    const arrow = i === 0 ? '' : `<div class="arrow">${s.arrow && s.arrow[0] ? `<span class="lbl ${s.arrow[1]}">${esc(s.arrow[0]).replace(/&lt;br&gt;/g, '<br>')}</span>` : ''}<span>→</span></div>`;
+    const cur = s.version !== undefined && s.version === S.v ? ' cur' : '';
+    const sel = S.sel && S.sel.type === 'stage' && S.sel.id === s.id ? ' sel' : '';
+    return `${arrow}<div class="stage ${s.cls}${cur}${sel}" data-id="${esc(s.id)}"${s.version !== undefined ? ` data-version="${s.version}"` : ''}>
+      <div class="st-name">${esc(s.name)}</div><div class="st-text">${s.html}</div></div>`;
+  }).join('');
+  for (const el of $('stages').querySelectorAll('.stage')) {
+    el.onclick = () => {
+      if (el.dataset.version !== undefined) S.v = Number(el.dataset.version);
+      select({ type: 'stage', id: el.dataset.id }, el.dataset.version !== undefined);
+    };
+  }
+}
+
+// ---------------------------------------------------------------- 圖：節點與邊
+function buildGraph(v, ver) {
+  const nodes = [], edges = [];
+  const change = ver.change || {};
+  const fbAdded = new Set((v.fallbacks || []).filter((f) => f.result === 'replanned' && f.version < ver.version).flatMap((f) => f.added || []));
+  const tag = (id) => (change.added || []).includes(id) ? 'added' : (change.rerun || []).includes(id) ? 'rerun' : (change.kept || []).includes(id) ? 'kept' : '';
+  const ids = new Set();
+  for (const n of ver.graph.nodes) {
+    const st = ver.nodes[n.id] || {};
+    nodes.push({ id: n.id, kind: 'tool', def: n, box: st.box, detail: st.detail, change: tag(n.id), fbAdded: fbAdded.has(n.id) });
+    ids.add(n.id);
+  }
+  for (const n of change.dropped_nodes || []) {
+    nodes.push({ id: n.id, kind: 'ghost', def: n, box: (change.dropped_boxes || {})[n.id] });
+    ids.add(n.id);
+  }
+  const depEdges = (n, type) => {
+    const binds = {};
+    for (const a of n.args || []) if (a && typeof a === 'object' && a.from) (binds[a.from] = binds[a.from] || []).push(a.field);
+    for (const d of new Set([...(n.depends_on || []), ...Object.keys(binds)])) {
+      if (ids.has(d)) edges.push({ id: `e_${d}_${n.id}`, from: d, to: n.id, type: type || (binds[d] ? 'bind' : 'dep'), fields: binds[d] || [] });
+    }
+  };
+  ver.graph.nodes.forEach((n) => depEdges(n));
+  (change.dropped_nodes || []).forEach((n) => depEdges(n, 'ghost'));
+  for (const e of ver.extra_edges || []) if (ids.has(e.from) && ids.has(e.to)) edges.push({ id: `f_${e.from}_${e.to}`, from: e.from, to: e.to, type: 'fallback', info: e });
+  for (const m of ver.marks || []) {
+    nodes.push({ id: m.id, kind: 'mark', mark: m });
+    if (ids.has(m.from)) edges.push({ id: `m_${m.id}`, from: m.from, to: m.id, type: 'mark', mark: m });
+  }
+  return { nodes, edges };
+}
+
+function argText(a) {
+  if (typeof a === 'string') return /\s/.test(a) || a === '' ? JSON.stringify(a) : a;
+  if (a && a.from) return `‹${a.from}.${a.field}›`;
+  return JSON.stringify(a);
+}
+
+function nodeClass(n) {
+  if (n.kind === 'mark') return `gnode mark m-${n.mark.type}`;
+  const cls = n.box ? (NODE_CLASS[n.box.state] || 'skip') : 'skip';
+  return `gnode ${cls}${n.kind === 'ghost' ? ' ghost' : ''}`;
+}
+
+function idList(ids) {
+  if (!ids || !ids.length) return '';
+  return ids.slice(0, 3).map((i) => '#' + i).join(' ') + (ids.length > 3 ? ` …共 ${ids.length} 份` : '');
+}
+
+function nodeHtml(n) {
+  if (n.kind === 'mark') return markHtml(n.mark);
+  const d = n.def, b = n.box;
+  const badges = [];
+  if (n.kind === 'ghost') badges.push('<span class="chip c-skip">這一版拿掉</span>');
+  if (n.change === 'added') badges.push('<span class="chip c-ok">新加</span>');
+  if (n.change === 'rerun') badges.push('<span class="chip c-info">重跑</span>');
+  if (n.change === 'kept') badges.push('<span class="chip c-skip" title="定義沒變、跑過了，沿用上一版的結果">沿用</span>');
+  if (n.fbAdded) badges.push('<span class="chip c-fb">回退加的</span>');
+  if (d.report) badges.push(`<span class="chip c-info" title="寫進報告：${esc(d.report)}">報告</span>`);
+  if (b && b.fixed) badges.push('<span class="chip c-info">第 1 級修正過</span>');
+  else if (b && b.fix_failed) badges.push('<span class="chip c-bad">修正沒成功</span>');
+  for (const x of (b && b.decisions) || []) badges.push(`<span class="chip ${x.approve ? 'c-ok' : 'c-bad'}">使用者${x.approve ? '同意' : '不同意'}</span>`);
+  const state = b ? `<span class="chip c-${NODE_CLASS[b.state] || 'skip'}">${esc(NODE_STATE[b.state] || b.state)}</span>` : '<span class="chip c-skip">沒有跑到</span>';
+  const facts = [];
+  if (b && b.statuses && b.statuses.length) facts.push(b.statuses.map((s) => ATT_STATUS[s] || s).join('、'));
+  if (b && b.each) facts.push(`${b.instances} 個實例` + (b.each.ran < b.each.instances ? `（只跑 ${b.each.ran}）` : ''));
+  if (b && b.results && b.results.length) facts.push(idList(b.results));
+  return `<div><span class="nid">${esc(d.id)}</span><span class="tool">${esc(d.tool || d.kind || '')}</span></div>
+    <div class="args">${esc((d.args || []).map(argText).join(' '))}</div>
+    <div class="meta">${state}${facts.map((f) => `<span class="hint">${esc(f)}</span>`).join('')}</div>
+    ${badges.length ? `<div class="meta">${badges.join('')}</div>` : ''}`;
+}
+
+function markHtml(m) {
+  const t = MARK[m.type] || ['↻ 回退', 'c-fb'];
+  let html = `<div><span class="nid ${t[1]}">${t[0]}</span><span class="tool">${esc(m.fallback)}</span></div>
+    <div class="hint">條件：${esc(whenText(m.when))}</div><div class="say">${esc(m.say)}</div>`;
+  const go = m.to_version ? `<button class="linkbtn" data-goto="${m.to_version - 1}">→ 看第 ${m.to_version} 版</button>` : '';
+  if (m.type === 'replanned') html += `<div class="meta"><span class="hint">加了 ${esc((m.added || []).join('、'))}</span>${go}</div>`;
+  else if (m.type === 'ask') {
+    const a = m.ask || {};
+    html += `<div class="meta">${'answer' in a ? `<span class="chip c-ok">回答：${esc(show(a.answer))}</span>` : '<span class="chip c-wait">等回答</span>'}${go}</div>`;
+  } else html += `<div class="meta"><span class="hint">${esc(MARK_RESULT[m.type] || '')}</span></div>`;
+  return html;
+}
+
+function whenText(w) {
+  if (!w) return '';
+  const parts = Object.entries(w).filter(([k]) => k !== 'node').map(([k, val]) =>
+    k === 'capped' ? (val ? '帶入的實例超過上限' : '帶入的實例沒有超過上限')
+      : k === 'state' ? `狀態是「${NODE_STATE[val] || val}」` : `收據的 ${k} 是 ${JSON.stringify(val)}`);
+  return `${w.node}：${parts.join('、')}`;
+}
+
+function edgeLabel(e, nodesById) {
+  if (e.type === 'bind') {
+    const b = (nodesById[e.to] || {}).box;
+    const each = b && b.each;
+    return `帶入 ${e.fields.join('、')}` + (each ? `（${each.instances} 個${each.ran < each.instances ? `，跑 ${each.ran}` : ''}）` : '');
+  }
+  if (e.type === 'fallback') return `↻ ${e.info.fallback}`;
+  return '';
+}
+
+// ---------------------------------------------------------------- 圖：分層的版面（由左到右）
+function layout(nodes, edges, size) {
+  const ids = nodes.map((n) => n.id), has = new Set(ids);
+  const preds = {}, succs = {};
+  ids.forEach((id) => { preds[id] = []; succs[id] = []; });
+  for (const e of edges) if (has.has(e.from) && has.has(e.to) && e.from !== e.to) { preds[e.to].push(e.from); succs[e.from].push(e.to); }
+  const layer = {};
+  const depth = (id, seen) => {
+    if (layer[id] !== undefined) return layer[id];
+    if (seen.has(id)) return 0;
+    seen.add(id);
+    let l = 0;
+    for (const p of preds[id]) l = Math.max(l, depth(p, seen) + 1);
+    seen.delete(id);
+    return (layer[id] = l);
+  };
+  ids.forEach((id) => depth(id, new Set()));
+  const cols = [];
+  ids.forEach((id) => { (cols[layer[id]] = cols[layer[id]] || []).push(id); });
+  for (let c = 0; c < cols.length; c++) cols[c] = cols[c] || [];
+  const idx = {};
+  const reindex = () => cols.forEach((col) => col.forEach((id, i) => { idx[id] = i; }));
+  reindex();
+  const bary = (id, nb) => nb[id].length ? nb[id].reduce((s, x) => s + idx[x], 0) / nb[id].length : idx[id];
+  for (let it = 0; it < 4; it++) {
+    for (let c = 1; c < cols.length; c++) { cols[c].sort((a, b) => bary(a, preds) - bary(b, preds)); reindex(); }
+    for (let c = cols.length - 2; c >= 0; c--) { cols[c].sort((a, b) => bary(a, succs) - bary(b, succs)); reindex(); }
+  }
+  const GX = 96, GY = 28;
+  const colW = cols.map((col) => Math.max(0, ...col.map((id) => size[id].w)));
+  const colH = cols.map((col) => col.reduce((s, id) => s + size[id].h, 0) + GY * Math.max(0, col.length - 1));
+  const H = Math.max(0, ...colH);
+  const pos = {};
+  let x = 0;
+  cols.forEach((col, c) => {
+    let y = (H - colH[c]) / 2;
+    for (const id of col) { pos[id] = { x, y, w: size[id].w, h: size[id].h }; y += size[id].h + GY; }
+    x += colW[c] + GX;
+  });
+  return { pos, width: Math.max(0, x - GX), height: H };
+}
+
+function renderGraph() {
+  const v = S.view, ver = v.versions[S.v], wrap = $('graph');
+  $('legend').hidden = $('graph-wrap').hidden = !ver;
+  if (!ver) {
+    $('version-bar').innerHTML = `<p class="hint">${esc(noGraphText(v))}</p>`;
+    wrap.innerHTML = '';
+    wrap.style.width = wrap.style.height = '';
+    S.graph = { nodes: {}, edges: {} };
+    return;
+  }
+  const n = v.versions.length;
+  const ch = ver.change;
+  const diff = ch ? [ch.kept.length && `沿用 ${ch.kept.join('、')}`, ch.rerun.length && `重跑 ${ch.rerun.join('、')}`,
+    ch.added.length && `新加 ${ch.added.join('、')}`, ch.dropped.length && `拿掉 ${ch.dropped.join('、')}`].filter(Boolean).join('；') : '';
+  const cause = ver.cause ? causeText(ver.cause)[0].replace(/<br>/g, ' ') : (S.v === 0 && v.kind === 'mid' ? '照〈骨架〉代入參數排的' : '');
+  $('version-bar').innerHTML = `${n > 1 ? `<button id="vprev" ${S.v === 0 ? 'disabled' : ''}>←</button>` : ''}
+    <span class="vt">第 ${esc(ver.version)} 版的圖${n > 1 ? `（共 ${n} 版）` : ''}</span>
+    ${n > 1 ? `<button id="vnext" ${S.v === n - 1 ? 'disabled' : ''}>→</button>` : ''}
+    <span class="hint">${esc([cause, diff && `跟上一版比：${diff}`, ver.time].filter(Boolean).join('・'))}</span>`;
+  if ($('vprev')) $('vprev').onclick = () => gotoVersion(S.v - 1);
+  if ($('vnext')) $('vnext').onclick = () => gotoVersion(S.v + 1);
+
+  const g = buildGraph(v, ver);
+  const byId = Object.fromEntries(g.nodes.map((x) => [x.id, x]));
+  wrap.innerHTML = '';
+  const els = {};
+  for (const node of g.nodes) {
+    const el = document.createElement('div');
+    el.className = nodeClass(node) + (S.sel && S.sel.type === 'node' && S.sel.id === node.id ? ' sel' : '');
+    el.innerHTML = nodeHtml(node);
+    el.style.visibility = 'hidden';
+    el.onclick = (ev) => {
+      const go = ev.target.closest('[data-goto]');
+      if (go) { gotoVersion(Number(go.dataset.goto)); return; }
+      select({ type: 'node', id: node.id });
+    };
+    wrap.appendChild(el);
+    els[node.id] = el;
+  }
+  const size = {};
+  for (const node of g.nodes) size[node.id] = { w: els[node.id].offsetWidth, h: els[node.id].offsetHeight };
+  const L = layout(g.nodes, g.edges, size);
+  for (const node of g.nodes) {
+    const el = els[node.id];
+    el.style.left = L.pos[node.id].x + 'px';
+    el.style.top = L.pos[node.id].y + 'px';
+    el.style.visibility = '';
+  }
+  wrap.style.width = L.width + 'px';
+  wrap.style.height = L.height + 'px';
+
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('width', L.width);
+  svg.setAttribute('height', L.height);
+  const colors = { dep: '#8b949e', bind: '#8b949e', ghost: '#8b949e', fallback: '#e0823d', mark: '#a0a4ab', sel: '#8ab4f8' };
+  svg.innerHTML = '<defs>' + Object.entries(colors).map(([k, c]) =>
+    `<marker id="arr-${k}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${c}"/></marker>`).join('') + '</defs>';
+  wrap.prepend(svg);
+  for (const e of g.edges) {
+    const a = L.pos[e.from], b = L.pos[e.to];
+    if (!a || !b) continue;
+    const x1 = a.x + a.w, y1 = a.y + a.h / 2, x2 = b.x, y2 = b.y + b.h / 2;
+    let d, mx, my;
+    if (x2 > x1) {
+      const dx = Math.max(30, (x2 - x1) / 2);
+      d = `M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}`;
+      mx = (x1 + 3 * (x1 + dx) + 3 * (x2 - dx) + x2) / 8; my = (y1 + y2) / 2;
+    } else {                                  // 同一欄或往回（不該發生）：從下面繞過去
+      const yb = Math.max(a.y + a.h, b.y + b.h) + 30;
+      d = `M${a.x + a.w / 2},${a.y + a.h} C${a.x + a.w / 2},${yb} ${b.x + b.w / 2},${yb} ${b.x + b.w / 2},${b.y + b.h}`;
+      mx = (a.x + b.x + a.w / 2 + b.w / 2) / 2; my = yb - 8;
+    }
+    const selected = S.sel && S.sel.type === 'edge' && S.sel.id === e.id;
+    const path = document.createElementNS(NS, 'path');
+    path.setAttribute('d', d);
+    path.setAttribute('class', `edge ${e.type}${selected ? ' sel' : ''}`);
+    path.setAttribute('marker-end', `url(#arr-${selected ? 'sel' : e.type})`);
+    const hit = document.createElementNS(NS, 'path');
+    hit.setAttribute('d', d);
+    hit.setAttribute('class', 'hit');
+    hit.addEventListener('click', () => select({ type: 'edge', id: e.id }));
+    svg.append(path, hit);
+    const text = edgeLabel(e, byId);
+    if (text) {
+      const lab = document.createElement('div');
+      lab.className = `elabel ${e.type}${selected ? ' sel' : ''}`;
+      lab.style.left = mx + 'px';
+      lab.style.top = my + 'px';
+      lab.textContent = text;
+      lab.onclick = () => select({ type: 'edge', id: e.id });
+      wrap.appendChild(lab);
+    }
+  }
+  S.graph = { nodes: byId, edges: Object.fromEntries(g.edges.map((e) => [e.id, e])) };
+}
+
+function noGraphText(v) {
+  if (v.kind !== 'mid') return '這個工作沒有圖。';
+  const where = !v.selection ? '挑技能之前' : !v.skill ? '挑技能' : '補參數';
+  if (v.status === 'need_user' && v.need_user) return `這個工作還沒排圖：在等使用者回答（${v.need_user.question}）。`;
+  return `這個工作沒有排圖：停在「${where}」${v.result && v.result.note ? `（${v.result.note}）` : ''}。點上面的流程看細節。`;
+}
+
+function gotoVersion(i) {
+  if (!S.view || i < 0 || i >= S.view.versions.length) return;
+  S.v = i;
+  if (S.sel && S.sel.type !== 'stage') S.sel = null;
+  renderStages(); renderGraph(); renderDetail(); syncUrl();
+}
+
+function select(sel, versionChanged) {
+  S.sel = sel;
+  renderStages(); renderGraph(); renderDetail();
+  if (versionChanged) syncUrl();
+}
+
+// ================================================================ 細節
+function kv(rows) {
+  const body = rows.filter((r) => r && r[1] !== undefined && r[1] !== null && r[1] !== '').map(([k, v, raw]) =>
+    `<div class="k">${esc(k)}</div><div class="v">${raw ? v : esc(v)}</div>`).join('');
+  return body ? `<div class="kv">${body}</div>` : '';
+}
+const pre = (x) => `<pre>${esc(typeof x === 'string' ? x : JSON.stringify(x, null, 2))}</pre>`;
+
+function renderDetail() {
+  const v = S.view, el = $('detail');
+  if (!v) { el.innerHTML = '<p class="hint">從左邊選一個工作。</p>'; return; }
+  const sel = S.sel;
+  let html;
+  if (!sel) html = overviewHtml(v);
+  else if (sel.type === 'stage') html = stageHtml(v, sel.id);
+  else if (sel.type === 'node') html = nodeDetailHtml(v, S.graph.nodes[sel.id]);
+  else if (sel.type === 'edge') html = edgeDetailHtml(v, S.graph.edges[sel.id]);
+  el.innerHTML = html || '<p class="hint">這一版沒有這個項目。</p>';
+  for (const b of el.querySelectorAll('[data-receipt]')) b.onclick = () => loadReceipt(b.dataset.ref, b.dataset.receipt, b);
+  for (const b of el.querySelectorAll('[data-goto]')) b.onclick = () => gotoVersion(Number(b.dataset.goto));
+  for (const b of el.querySelectorAll('[data-open]')) b.onclick = () => openJob(b.dataset.open);
+}
+
+function overviewHtml(v) {
+  const r = v.result || {};
+  return `<h3>${v.kind === 'mid' ? '中階的工作' : '低階的工作'}</h3>
+    <p class="hint">點上面流程的一段、圖上的節點或邊看細節；回退與問使用者畫成虛線框，回退加的節點在下一版。</p>
+    ${kv([['狀態', v.kind === 'mid' ? v.status_text : (EDG_STATUS[v.status] || v.status)], ['說明', r.note],
+      ['出處', (r.sources || []).map(resultLink).join(' '), true], ['開始', v.created], ['更新', v.updated]])}
+    ${v.need_user ? `<h4>在等使用者</h4>${v.kind === 'mid' ? askHtml(v.asked && v.asked.length ? v.asked[v.asked.length - 1] : v.need_user)
+      : `<div class="askbox" style="white-space:pre-wrap">${esc(v.need_user.text || '')}</div>`}` : ''}`;
+}
+
+function askHtml(a) {
+  if (!a) return '';
+  const what = a.kind === 'guard' ? `確認關卡（節點 ${esc(a.node || '')}）` : `參數 ${esc(a.param || '')}` + (a.fallback ? `（回退 ${esc(a.fallback)}）` : '');
+  const answer = a.kind === 'guard'
+    ? ('approve' in a ? `<span class="chip ${a.approve ? 'c-ok' : 'c-bad'}">使用者${a.approve ? '同意' : '不同意'}</span>` : '<span class="chip c-wait">等回答</span>')
+    : ('answer' in a ? `<span class="chip c-ok">回答：${esc(show(a.answer))}</span>` : '<span class="chip c-wait">等回答</span>');
+  return `<div class="askbox"><div><b>${what}</b> ${answer}</div><div style="white-space:pre-wrap">${esc(a.question || '')}</div>
+    ${(a.candidates || []).length ? `<div class="hint">候選：</div><ul class="plain">${a.candidates.map((c) => `<li>${esc(c)}</li>`).join('')}</ul>` : ''}
+    ${(a.errors || []).map((x) => `<div class="c-bad">回答「${esc(x.answer)}」不行：${esc(x.error)}</div>`).join('')}
+    ${a.error && !(a.errors || []).length ? `<div class="c-bad">${esc(a.error)}</div>` : ''}
+    <div class="hint">${esc([a.version === undefined ? '' : a.kind === 'guard' ? `第 ${a.version} 版執行中` : a.version ? `第 ${a.version} 版跑完之後` : '排圖之前',
+      a.time && `問：${a.time}`, a.answered && `答：${a.answered}`].filter(Boolean).join('・'))}</div></div>`;
+}
+
+function callsOf(v, role) {
+  return (v.calls || []).filter((c) => c.role === role || (role === 'contract' && c.role === 'contract_fix'));
+}
+
+function callHtml(c) {
+  return `<div class="call"><div><b>${esc(c.role)}</b> <span class="hint">${esc(c.model || '')}${c.ms !== undefined ? `・${esc(c.ms)} ms` : ''}</span>
+    ${c.error ? `<span class="c-bad">${esc(c.error)}</span>` : ''}</div>
+    <details><summary>prompt（user）</summary>${pre(c.user || '')}</details>
+    ${c.system ? `<details><summary>prompt（system）</summary>${pre(c.system)}</details>` : ''}
+    <details open><summary>回覆</summary>${pre(c.response || '')}</details></div>`;
+}
+
+function stageHtml(v, id) {
+  if (id === 'select') {
+    const s = v.selection;
+    if (!s) return `<h3>挑技能</h3><p class="hint">沒有挑：${esc((v.result || {}).note || '還沒到這一步')}</p>`;
+    const note = (v.result || {}).note;
+    return `<h3>挑技能</h3>${kv([['理解', s.understanding], ['問題要的', [...new Set(s.asks || [])].join('、') || '（沒有寫）'], ['選的', s.skill],
+      ['被擋下來', s.rejected ? `選了 ${s.rejected}，但它答不了問題要的那一種` : ''], ['理由', s.reason],
+      ['結果', v.skill ? `用 ${v.skill}` : note !== s.reason ? note : '']])}
+      ${callsOf(v, 'select').length ? `<h4>模型呼叫</h4>${callsOf(v, 'select').map(callHtml).join('')}` : ''}`;
+  }
+  if (id === 'contract') {
+    const rows = Object.entries(v.params || {}).map(([k, p]) => `<li><b>${esc(k)}</b>＝${esc(show(p.value))} <span class="hint">（${esc(SOURCE_TEXT[p.source] || p.source)}${p.quote ? `：「${esc(p.quote)}」` : ''}）</span></li>`).join('');
+    const rej = (v.rejected || []).map((r) => `<li>第 ${esc(r.round)} 次 <b>${esc(r.param)}</b>：原文「${esc(r.quote || '')}」值「${esc(show(r.value))}」<div class="c-warn">${esc(r.why)}</div></li>`).join('');
+    return `<h3>合約</h3>${kv([['理解', (v.contract || {}).understanding]])}
+      <h4>參數</h4><ul class="plain">${rows || '<li class="hint">沒有</li>'}</ul>
+      ${rej ? `<h4>沒過核對（交回修一次）</h4><ul class="plain">${rej}</ul>` : ''}
+      ${callsOf(v, 'contract').length ? `<h4>模型呼叫</h4>${callsOf(v, 'contract').map(callHtml).join('')}` : ''}`;
+  }
+  if (id === 'complete') {
+    const ps = Object.entries(v.params || {}).filter(([, p]) => p.source !== 'question')
+      .map(([k, p]) => `<li><b>${esc(k)}</b>＝${esc(show(p.value))} <span class="hint">（${esc(SOURCE_TEXT[p.source] || p.source)}）</span></li>`).join('');
+    const auto = (v.auto_filled || []).map((a) => `<li>${esc(a.param)}：原文「${esc(a.given)}」→ <b>${esc(a.value)}</b>（查到剛好一個）</li>`).join('');
+    const fetches = (v.fetches || []).map((f) => `<div class="inst"><div><b>查 ${esc(f.param)}「${esc(f.given)}」</b> ${statusChip('edg', f.status)}
+        <span class="hint">找到 ${esc(f.found)} 個，結尾一樣的 ${esc((f.exact || []).length)} 個</span></div>
+        ${(f.exact || []).length ? `<ul class="plain">${f.exact.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+        ${Object.entries(f.nodes || {}).map(([nid, st]) => instancesHtml(st.detail, f.ref, nid)).join('')}
+        ${f.ref ? `<button class="linkbtn" data-open="${esc(f.ref)}">在圖上看這個低階工作</button>` : ''}</div>`).join('');
+    const asks = (v.asked || []).filter((a) => !a.fallback);
+    return `<h3>補參數</h3>
+      <h4>原文沒提到、補上的</h4><ul class="plain">${ps || '<li class="hint">沒有</li>'}</ul>
+      ${auto ? `<h4>自己補的</h4><ul class="plain">${auto}</ul>` : ''}
+      ${fetches ? `<h4>自己查（另開一個低階工作）</h4>${fetches}` : ''}
+      ${asks.length ? `<h4>問使用者</h4>${asks.map(askHtml).join('')}` : ''}`;
+  }
+  if (id === 'result') {
+    const r = v.result || {};
+    const e = v.edg || {};
+    return `<h3>結果</h3>${kv([['狀態', v.kind === 'mid' ? v.status_text : (EDG_STATUS[v.status] || v.status)], ['說明', r.note],
+      ['出處', (r.sources || []).map(resultLink).join(' '), true]])}
+      ${(e.problems || []).length ? `<h4>圖沒通過檢查</h4><ul class="plain">${e.problems.map((p) => `<li>${esc(p)}</li>`).join('')}</ul>` : ''}
+      ${(e.stops || []).length ? `<h4>沒有做完的節點</h4><ul class="plain">${e.stops.map((s) => `<li>${esc(s.node)}：${esc(NODE_STATE[s.state] || s.state)}（${esc(s.reason)}）</li>`).join('')}</ul>` : ''}
+      ${(e.judgments || []).length ? `<h4>交回判斷</h4>${pre(e.judgments)}` : ''}
+      ${v.need_user ? `<h4>在等使用者</h4>${askHtml(v.asked && v.asked.length ? v.asked[v.asked.length - 1] : v.need_user)}` : ''}
+      ${(v.fallbacks || []).length ? `<h4>第 2 級（回退）</h4><ul class="plain">${v.fallbacks.map((f) => `<li><b>${esc(f.fallback)}</b>（第 ${esc(f.version)} 版之後）：${esc(MARK_RESULT[f.result] || f.result)}<div class="hint">${esc(f.say)}</div></li>`).join('')}</ul>` : ''}`;
+  }
+  if (id.startsWith('v')) {
+    const i = Number(id.slice(1)), ver = v.versions[i];
+    if (!ver) return '';
+    const ch = ver.change;
+    return `<h3>第 ${esc(ver.version)} 版的圖</h3>${kv([['為什麼排', ver.cause ? causeText(ver.cause)[0].replace(/<br>/g, ' ') : (v.kind === 'mid' ? '第一版：照〈骨架〉代入參數' : '')],
+      ['跑完時', EDG_STATUS[ver.status] || ver.status], ['時間', ver.time], ['節點', ver.graph.nodes.map((n) => n.id).join('、')],
+      ['沿用', ch && ch.kept.join('、')], ['重跑', ch && ch.rerun.join('、')], ['新加', ch && ch.added.join('、')], ['拿掉', ch && ch.dropped.join('、')]])}
+      ${ver.cause && ver.cause.say ? `<p>${esc(ver.cause.say)}</p>` : ''}
+      ${ver.marks.length ? `<h4>這一版跑完時</h4>${ver.marks.map(markDetailHtml).join('')}` : ''}
+      ${i === v.versions.length - 1 && (v.edg || {}).replans && v.edg.replans.length ? `<h4>低階的重排紀錄</h4>${pre(v.edg.replans)}` : ''}`;
+  }
+  return '';
+}
+
+function markDetailHtml(m) {
+  const t = MARK[m.type] || ['↻ 回退', 'c-fb'];
+  return `<div class="${m.type === 'ask' ? 'askbox' : 'fixbox'}"><div><b class="${t[1]}">${t[0]} ${esc(m.fallback)}</b> <span class="hint">${esc(MARK_RESULT[m.type] || m.type)}</span></div>
+    ${kv([['條件', whenText(m.when)], ['做法', m.change && m.change.add ? `加節點 ${m.change.add.map((n) => n.id).join('、')}` : m.change && m.change.ask ? `問使用者 ${m.change.ask}` : ''],
+      ['說明', m.say], ['時間', m.time]])}
+    ${m.type === 'ask' ? askHtml(m.ask) : ''}
+    ${m.to_version ? `<button class="linkbtn" data-goto="${m.to_version - 1}">→ 看第 ${m.to_version} 版</button>` : ''}</div>`;
+}
+
+function argsHtml(args) {
+  return (args || []).map((a) => typeof a === 'string' ? esc(argText(a)) : a && a.from
+    ? `<span class="c-info" title="從 ${esc(a.from)} 的收據帶入：每一項的 ${esc(a.field)} 各一個實例">‹${esc(a.from)} 的 ${esc(a.field)}›</span>` : esc(JSON.stringify(a))).join(' ');
+}
+
+function eachText(each) {
+  if (!each) return '';
+  let t = `${each.from} 的收據有 ${each.items} 項 → ${each.instances} 個不同的參數`;
+  if (each.ran < each.instances) t += `，只跑了前 ${each.ran} 個（超過上限）`;
+  if (each.missing) t += `；${each.missing} 項沒有這個欄位`;
+  if (each.inputs_truncated) t += `；${each.from} 的收據本身不完整`;
+  return t;
+}
+
+function attemptHtml(a, k, ref) {
+  const st = a.status || '';
+  return `<div class="att ${esc(st)}"><div>第 ${k + 1} 次 ${a.check === 'pre' ? '<span class="hint">（執行前的檢查就沒過）</span>' : ''}
+      <b>${esc(ATT_STATUS[st] || st)}</b>${a.error_kind ? ` <span class="c-bad">${esc(ERROR_KIND[a.error_kind] || a.error_kind)}</span>` : ''}
+      ${a.truncated ? '<span class="c-warn">不完整（截斷或逾時）</span>' : ''} ${a.result_id !== undefined && a.result_id !== null ? resultLink(a.result_id) : ''}</div>
+    <div class="hint" style="font-family:monospace;font-size:11px">${esc((a.args || []).map(argText).join(' '))}</div>
+    ${a.counts ? `<div class="hint">數量：${esc(Object.entries(a.counts).map(([x, y]) => `${x} ${y}`).join('、'))}</div>` : ''}
+    ${a.head ? `<div>${esc(a.head)}</div>` : ''}
+    ${a.text && a.text !== a.head ? `<details><summary>錯誤的原文</summary>${pre(a.text)}</details>` : ''}
+    ${a.receipt_file && ref ? `<button class="linkbtn" data-ref="${esc(ref)}" data-receipt="${esc(a.receipt_file)}">收據全文</button><div class="rbox"></div>` : ''}</div>`;
+}
+
+function instancesHtml(st, ref, nid) {
+  if (!st) return '';
+  const insts = st.instances || [];
+  const head = `${kv([['狀態', NODE_STATE[st.state] || st.state], ['原因', st.reason], ['帶入', eachText(st.each)]])}`;
+  const body = insts.map((inst, i) => `<div class="inst"><div><b>${insts.length > 1 ? `實例 ${i + 1}` : '實例'}</b>
+      <span class="chip c-${NODE_CLASS[inst.state] || 'skip'}">${esc(NODE_STATE[inst.state] || inst.state)}</span> ${inst.reason ? `<span class="hint">${esc(inst.reason)}</span>` : ''}</div>
+      ${(inst.attempts || []).map((a, k) => attemptHtml(a, k, ref)).join('')}
+      ${inst.fix ? `<div class="fixbox"><b>第 1 級修正</b> ${inst.fix.accepted ? '<span class="chip c-ok">程式核對過、重跑</span>' : '<span class="chip c-bad">沒有用</span>'}
+        ${kv([['理由', inst.fix.reason], ['修不修得好', inst.fix.fixable === undefined ? '' : inst.fix.fixable ? '修得好' : '修不好（往上交）'],
+          ['改成', (inst.fix.args || []).map(argText).join(' ')], ['沒用的原因', inst.fix.why]])}</div>` : ''}
+      ${inst.guard ? `<div class="askbox"><b>確認關卡</b>：${esc(typeof inst.guard === 'string' ? inst.guard : JSON.stringify(inst.guard))}</div>` : ''}
+      ${(inst.decisions || []).map((d) => `<div class="askbox"><b>確認關卡</b> <span class="chip ${d.approve ? 'c-ok' : 'c-bad'}">使用者${d.approve ? '同意' : '不同意'}</span>
+        <div class="hint" style="white-space:pre-wrap">${esc(d.text)}</div><div class="hint">${esc(d.time)}</div></div>`).join('')}</div>`);
+  const more = body.length > 8 ? `<details><summary>其他 ${body.length - 8} 個實例</summary>${body.slice(8).join('')}</details>` : '';
+  return `${nid ? `<h4>${esc(nid)} 的執行</h4>` : ''}${head}${body.slice(0, 8).join('')}${more}`;
+}
+
+function nodeDetailHtml(v, n) {
+  if (!n) return '';
+  if (n.kind === 'mark') return `<h3>這一版跑完時的回退</h3>${markDetailHtml(n.mark)}`;
+  const d = n.def, b = n.box;
+  const changeText = { added: '這一版新加的', rerun: '定義改了或依賴的重跑了，這一版重跑', kept: '定義沒變、跑過了：沿用上一版的結果，沒有重跑' }[n.change];
+  const ref = (v.edg || {}).ref;
+  return `<h3>節點 ${esc(d.id)}<span class="hint">（${esc(d.tool || d.kind)}）</span></h3>
+    ${n.kind === 'ghost' ? '<p class="c-warn">這一版拿掉了；下面是上一版跑完時的狀態。</p>' : ''}
+    ${kv([['這一版', changeText], ['回退加的', n.fbAdded ? '是（第 2 級的回退加進來的）' : ''], ['為什麼', d.why],
+      ['參數', argsHtml(d.args), true], ['依賴', (d.depends_on || []).join('、')], ['預期', (d.expect || ['pass']).join('、')],
+      ['要完整', d.complete ? '是（收據截斷或逾時算不符預期）' : ''], ['寫進報告', d.report || '']])}
+    ${b ? `<h4>這一版跑完時</h4>${kv([['狀態', NODE_STATE[b.state] || b.state], ['原因', b.reason], ['帶入', eachText(b.each)],
+      ['#編號', (b.results || []).map(resultLink).join(' '), true]])}` : '<p class="hint">這一版沒有跑到這個節點。</p>'}
+    ${n.kind === 'tool' && n.detail ? instancesHtml(Object.assign({}, n.detail, { state: undefined, reason: undefined, each: undefined }), ref) : ''}`;
+}
+
+function edgeDetailHtml(v, e) {
+  if (!e) return '';
+  const to = S.graph.nodes[e.to] || {}, b = to.box;
+  if (e.type === 'fallback') {
+    return `<h3>回退 ${esc(e.info.fallback)}：${esc(e.from)} → ${esc(e.to)}</h3>${kv([['條件', whenText(e.info.when)], ['說明', e.info.say],
+      ['結果', `上一版跑完時條件符合，加了 ${e.to}，交給低階重排（跑過的不重跑）`]])}`;
+  }
+  if (e.type === 'mark') return `<h3>${esc(e.from)} 跑完時的回退</h3>${markDetailHtml(e.mark)}`;
+  if (e.type === 'ghost') return `<h3>${esc(e.from)} → ${esc(e.to)}</h3><p class="hint">上一版的依賴；${esc(e.to)} 這一版拿掉了。</p>`;
+  if (e.type === 'bind') {
+    const vals = ((to.detail || {}).instances || []).map((inst) => (inst.args || []).map(argText).join(' '));
+    return `<h3>帶入：${esc(e.from)} → ${esc(e.to)}</h3>
+      ${kv([['欄位', e.fields.join('、')], ['怎麼帶', `${e.from} 的收據裡每一項的 ${e.fields.join('、')} 各跑一個 ${e.to} 的實例（同樣的參數只跑一次）`],
+        ['依賴', `${e.from} 沒成功時 ${e.to} 不跑`], ['這一版', b ? eachText(b.each) : '沒有跑到']])}
+      ${vals.length ? `<h4>帶進去的參數（${vals.length} 個實例）</h4>${pre(vals.slice(0, 60).join('\n') + (vals.length > 60 ? `\n…還有 ${vals.length - 60} 個` : ''))}` : ''}`;
+  }
+  return `<h3>依賴：${esc(e.from)} → ${esc(e.to)}</h3><p>${esc(e.from)} 成功之後才跑 ${esc(e.to)}；${esc(e.from)} 沒成功時 ${esc(e.to)} 不跑（沒跑、依賴的沒成功）。</p>`;
+}
+
+async function loadReceipt(ref, file, btn) {
+  const box = btn.nextElementSibling;
+  if (box.innerHTML) { box.innerHTML = ''; return; }
+  const key = `${ref}|${file}`;
+  try {
+    S.receipts[key] = S.receipts[key] || await api(`/api/topology/receipt?${q({ src: S.src, ref, file })}`);
+    box.innerHTML = pre(S.receipts[key]);
+  } catch (e) { box.innerHTML = `<p class="c-bad">讀不到收據（${esc(e.message)}）</p>`; }
+}
+
+// ---------------------------------------------------------------- 報告、進度、模型呼叫
+function renderBottom() {
+  const v = S.view;
+  $('report-box').hidden = !v.report;
+  $('report').textContent = v.report || '';
+  const events = [...(v.events || []).map((t) => ['中階', t]), ...(v.edg_events || []).map((t) => ['低階', t])];
+  $('events-box').hidden = !events.length;
+  $('events').innerHTML = events.map(([k, t]) => `<div><span class="hint">${k}</span> ${esc(t)}</div>`).join('');
+  const calls = [...(v.calls || []), ...(v.edg_calls || [])];
+  $('calls-box').hidden = !calls.length;
+  $('calls').innerHTML = calls.map(callHtml).join('');
+}
+
+// ================================================================ 開始
+async function init() {
+  const p = new URLSearchParams(location.search);
+  try { await loadSources(p.get('src')); } catch (e) { $('job-list').innerHTML = `<p class="c-bad" style="padding:10px">讀不到來源（${esc(e.message)}）</p>`; return; }
+  await loadJobs();
+  if (p.get('ref')) await openJob(p.get('ref'), p.get('v') ? Number(p.get('v')) - 1 : undefined);
+}
+
+$('src').onchange = async () => { S.src = $('src').value; S.ref = null; S.view = null; S.viewKey = ''; clearTimeout(S.timer);
+  $('job-head').innerHTML = '<p class="hint">從左邊選一個工作。</p>'; clearView(); await loadJobs(); syncUrl(); };
+$('reload').onclick = async () => { await loadSources(S.src); await loadJobs(); if (S.ref) await loadView(true); };
+$('q').oninput = renderList;
+$('fstatus').onchange = renderList;
+init();
+</script>
+</body>
+</html>

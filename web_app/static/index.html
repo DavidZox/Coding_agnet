@@ -226,6 +226,8 @@
   .entry .goto { display: inline-block; margin-top: 6px; font-size: 12px; color: #8ab4f8; cursor: pointer; text-decoration: underline; }
   button.analysis-on { background: #2a5fb0; }
   #stat-analysis { cursor: pointer; }
+  #stat-topology { color: #8ab4f8; text-decoration: none; }
+  #stat-topology:hover { text-decoration: underline; }
   #stat-analysis.running { color: #9fc7ff; font-weight: bold; }
 </style>
 </head>
@@ -244,6 +246,7 @@
     <span id="stat-ros2-workspace" title="目前 ROS 2 Workspace；只有所屬容器與目前目標容器一致時才能沿用。">ROS 2 WS: -</span>
     <span id="stat-tokens">tokens: -</span>
     <span id="stat-attach"></span>
+    <a id="stat-topology" href="/topology" target="_blank" title="新架構的決策圖（唯讀）：中階與低階執行過的工作（含評測），每一版的圖、回退、問使用者的地方">🔗 決策圖</a>
   </div>
 </header>
 <div id="model-panel"></div>

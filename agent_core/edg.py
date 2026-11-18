@@ -17,7 +17,7 @@
    圖上拿掉的與重跑的節點，原本的狀態記在 replans（收據檔都還在）。同一個工具＋同樣的參數之前跑過的，直接用之前的收據（D5 中 4）。
 
 每一次執行存在 logs/edg_jobs/<編號>/：job.json（圖、每個節點與實例的狀態、嘗試、修正）、receipts/（每次嘗試的收據全文）、
-events.jsonl（進度）、calls.jsonl（修正的模型呼叫）。Web 之後畫拓撲圖用的就是 job.json（〈新架構討論紀錄〉第 4 節）。
+events.jsonl（進度）、calls.jsonl（修正的模型呼叫）。確認關卡的決定記在實例的 decisions。Web 的拓撲圖（web_app/topology.py）用 job.json。
 """
 import importlib
 import json
@@ -354,6 +354,7 @@ class Executor:
         if pending and approve is not None:
             inst = job["nodes"][pending["node"]]["instances"][pending["instance"]]
             inst["approved"] = bool(approve)
+            inst.setdefault("decisions", []).append({"time": _now(), "approve": bool(approve), "text": pending.get("text", "")})
         self._rebuild_cache(job)
         return self._run(job, specs)
 

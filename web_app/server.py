@@ -1,4 +1,4 @@
-"""HTTP 伺服器：路由（/、/api/*、/static/vision/*）、NDJSON 串流（EventStream）與主程式 main()。"""
+"""HTTP 伺服器：路由（/、/topology、/api/*、/static/vision/*）、NDJSON 串流（EventStream）與主程式 main()。"""
 import json
 import os
 import traceback
@@ -38,6 +38,9 @@ from .state import (
 # 網頁本身（HTML／CSS／JS 都在一個檔案，無外部依賴、可離線使用）放在 static/index.html，啟動時讀一次
 HTML_PAGE = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "index.html"),
                  encoding="utf-8").read()
+# 🔗 決策圖（新架構的中階與低階的工作，唯讀；資料在 topology.py）
+TOPOLOGY_PAGE = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "topology.html"),
+                     encoding="utf-8").read()
 
 
 # =========================================================
@@ -129,13 +132,16 @@ class ConsoleHandler(BaseHTTPRequestHandler):
         self._finish(stream, awaiting_decision)
 
     def do_GET(self):
-        if self.path == "/":
-            body = HTML_PAGE.encode("utf-8")
+        if self.path == "/" or self.path == "/topology" or self.path.startswith("/topology?"):
+            body = (HTML_PAGE if self.path == "/" else TOPOLOGY_PAGE).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
+            return
+        if self.path.startswith("/api/topology/"):
+            self._handle_topology_get()
             return
         if self.path == "/api/status":
             self._send_json(build_stats())
@@ -204,6 +210,32 @@ class ConsoleHandler(BaseHTTPRequestHandler):
         except Exception as e:
             traceback.print_exc()
             self._send_json({"error": f"伺服器處理數據分析查詢時發生錯誤：{e}"}, status=500)
+
+    def _handle_topology_get(self):
+        """🔗 決策圖（唯讀，不進主對話的 lock）：sources、jobs?src=、job?src=&ref=、receipt?src=&ref=&file=；找不到回 404。"""
+        from urllib.parse import parse_qs, urlparse
+        from . import topology
+        url = urlparse(self.path)
+        q = {k: v[0] for k, v in parse_qs(url.query).items()}
+        what = url.path[len("/api/topology/"):]
+        try:
+            if what == "sources":
+                data = topology.sources()
+            elif what == "jobs":
+                data = topology.jobs(q.get("src"))
+            elif what == "job":
+                data = topology.job_view(q.get("src"), q.get("ref"))
+            elif what == "receipt":
+                data = topology.receipt(q.get("src"), q.get("ref"), q.get("file"))
+            else:
+                data = None
+            if data is None:
+                self._send_json({"error": "找不到"}, status=404)
+            else:
+                self._send_json(data)
+        except Exception as e:
+            traceback.print_exc()
+            self._send_json({"error": f"伺服器讀決策圖時發生錯誤：{e}"}, status=500)
 
     def _handle_analysis_post(self, action):
         """📊 數據分析面板的設定（不串流、不進主對話的 lock）。"""

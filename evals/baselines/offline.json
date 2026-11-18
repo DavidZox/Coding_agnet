@@ -35,9 +35,9 @@
   "total": 8
  },
  "mid_selftest": {
-  "label": "第 3 步 3a（2026-11-18）",
-  "passed": 16,
-  "total": 16
+  "label": "Web 的拓撲圖（2026-11-18）",
+  "passed": 18,
+  "total": 18
  },
  "ops_selftest": {
   "label": "拿掉任務引擎與 Plan 模式（2026-11-18）",

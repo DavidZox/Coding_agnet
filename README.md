@@ -5,7 +5,8 @@
 - **新架構**（2026-11-18 起由下往上實作，還沒接上主對話）：高－中－低三層（領域路由、技能合約與 SOP、照收據執行的決策圖）與三級回退；
   構想在 `docs/`，討論與決定在〈[新架構討論紀錄](docs/新架構討論紀錄.md)〉。做好的：評測（`evals/repo/`）、第一版領域技能的收據、
   低階執行器（`agent_core/edg.py`：照圖執行、照收據守門、第 1 級修正、重排）、中階的第一段（`agent_core/mid.py`：挑複合技能、合約、
-  照骨架排圖、第 2 級；領域 `skills_system/repo_analysis/` 的 `py_usage`、`count_in_scope`）。下面寫的是現在的程式。
+  照骨架排圖、第 2 級；領域 `skills_system/repo_analysis/` 的 `py_usage`、`count_in_scope`）、Web 的決策圖（`/topology`，唯讀：
+  中階與低階執行過的工作，每一版的圖、回退與問使用者）。下面寫的是現在的程式。
 - **harness 本身**（新架構沿用的基礎；目標是找檔案、文件與程式分析做到穩定）：一次一個動作的主對話迴圈、會改變狀態的動作先問使用者
   （確認關卡）、**多段處理長內容**（太長的工具輸出由程式切段、每段一個 worker 提煉、每條事實附行號由程式核對）、**存檔與回顧**（每次的
   原文存成 `#編號`，之後用 `result_recall` 等回到原文）。多步驟的任務由主對話一步一步做：任務引擎（`task_run`）與 Plan 模式
@@ -32,7 +33,9 @@ python3 -m vision.sniper    # 獨立的「截圖 → 框選 → 視覺推論」�
 
 Web 左欄是對話，右欄是系統與工具回傳（另一個分頁是「📊 數據分析」面板）：每次工具回傳有兩張卡，一張是完整原文（附 `#編號`），一張是
 「AI 實際收到的內容」。輸入框打 `/` 會跳出指令與技能選單，旁邊有附圖（📷）與 📊 分析模式按鈕；標題列顯示目前的
-目標容器、ROS 2 Workspace 與目前分析的數據，🧠 設定主對話的模型。
+目標容器、ROS 2 Workspace 與目前分析的數據，🧠 設定主對話的模型。標題列的「🔗 決策圖」打開 `/topology`（唯讀）：新架構的中階與低階執行過的
+工作（正式的 `logs/` 與評測結果），流程（挑技能 → 合約 → 補參數 → 每一版的圖 → 結果）與決策圖；點節點或邊看每一次嘗試、收據、修正，
+回退與問使用者畫成虛線。
 
 | 常用指令 | 作用 |
 |---|---|
@@ -144,7 +147,7 @@ Coding_agnet/            （資料夾名稱沿用；原本的 coding agent 已�
 ├── Agent_Runner.py      CLI 入口（實作在 agent_core/cli.py）
 ├── web_console.py       Web 入口（實作在 web_app/）
 ├── agent_core/          核心：SkillAgent（由各 mixin 組成）、回覆協議、常數；analysis_job.py＝數據解析、extract.py＝工具回傳的提煉、edg.py＝新架構的低階執行器、mid.py＝中階
-├── web_app/             Web 介面（純標準庫）：回合流程、slash 指令、HTTP、static/index.html；analysis.py＝📊 面板的後端
+├── web_app/             Web 介面（純標準庫）：回合流程、slash 指令、HTTP、static/index.html；analysis.py＝📊 面板的後端；topology.py 與 static/topology.html＝決策圖
 ├── prompts/             給模型的文字，全部在這裡（可以直接改，不用改程式；README.md＝每個檔案給誰、範本的寫法）
 │   ├── AGENT.md         主對話的 system prompt
 │   ├── Memory.md        長期記憶（modify_memory 寫入，每輪常駐）
