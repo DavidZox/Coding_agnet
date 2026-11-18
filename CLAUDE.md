@@ -23,14 +23,14 @@
 
 ## 每一次修改的測試
 
-1. **開始改之前，完整的離線測試要全部通過**：`python3 evals/phase_check.py`（約 2 分鐘；技能、主對話、提煉、維運、數據分析的
-   自我測試，加上評測的完整性）。
+1. **開始改之前，完整的離線測試要全部通過**：`python3 evals/phase_check.py`（約 2 分鐘；技能、主對話、提煉、維運、數據分析、
+   真實專案評測的自我測試，加上評測的完整性）。
    全過才開始改、才加新的測試案例；有沒過的先查清楚（環境少了東西、之前就壞了、還是真的退步），不要在沒過的測試上疊新的修改或案例。
 2. **新的修改一定帶測試，而且要加進測試案例**：改了什麼就在對應的自我測試加案例（假模型、離線、幾秒）；行為會受模型影響的，再加真模型的情境。
    手動驗證過的東西（暫存區的腳本、互動式的試跑、單次的指令）也要轉成測試案例，不要只留在對話裡。新的測試要讓 `phase_check.py` 跑得到
    （新的一組加進它的 `OFFLINE` 或對應的組）。
 3. **改到模型會讀的文字**（`prompts/`、`skills_system/SKILLS.md`、`skills_system/tools/`）或主對話的流程：
-   再跑對應的真模型評測（`evals/chat/run.py`、`evals/ops/run.py`、`evals/extract/run.py`），跟基準比。
+   再跑對應的真模型評測（`evals/chat/run.py`、`evals/ops/run.py`、`evals/extract/run.py`、`evals/repo/run.py`），跟基準比。
 4. **一個階段結束**：`python3 evals/phase_check.py --model`（harness 的真模型評測）全跑；動到凍結的工具共用的程式時再加 `--tools`。
    要注意的項目逐一查清楚（重跑、看紀錄），寫進設計筆記。
 5. **基準**（`evals/baselines/`，跟程式一起進版控）：自我測試的通過數變了就更新（`--save-baseline <結果目錄> --only <項目>`）；
@@ -45,10 +45,12 @@
 - **模型有隨機性**：單次沒過先重跑 3 次再下結論。也要看檢查本身是不是太寬——不要只看通過／沒過，打開那一次的紀錄
   （結果目錄的 `logs/<情境>/`：`extract_jobs`、`tool_results`、`calls.jsonl`）看實際做了什麼
   （例：cx_domain_fix 的檢查只看回覆裡有沒有那段字，第 3 階段 ops_run 的計畫其實一次都沒做完）。
-- **保留組（`ho_*`）是量沒看過的情境**：不要照保留組的內容調提示或技能說明。
+- **保留組（維運的 `ho_*`、真實專案評測 `set` 是 `holdout` 的題目）是量沒看過的情境**：不要照保留組的內容調提示、技能說明或複合技能。
 - 同一時間只跑一組要用 Ollama 的評測（同一個模型一次一個 slot，互相拖慢，時間的比較就不準）；跑很久的放背景，結果出來再看。
 - Python 用 `~/aiagent_venv_env/.venv/bin/python`；暫存的檔案放 session 的 scratchpad，不要寫進專案。
 - 離線測試要證明「不需要模型」時，把 `OLLAMA_HOST` 指到沒有服務的位址（例：`127.0.0.1:9`）。
+- 真實專案評測（`evals/repo/`）的快照在專案外的 `~/cah_eval/repo_snapshots/`（不進版控）；不見了用 `python3 evals/repo/snapshot.py build`
+  從 git 重建（固定的 commit 要還在）。題目的答案改了要重寫 `answers.json`（`questions.py --write`），自我測試會核對兩者一致。
 
 ## 修改的原則
 

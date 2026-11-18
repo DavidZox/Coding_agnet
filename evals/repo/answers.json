@@ -1,0 +1,2374 @@
+{
+ "commit": "6d91797a686b8e34a1254ab261bd6a8f7c7c82dd",
+ "digest": "f6411a65de77141017b286e8db2033b0d4512a63e6eacc4a96d306e23db6947f",
+ "questions": [
+  {
+   "id": "cnt_rmf_publishers",
+   "kind": "count",
+   "set": "main",
+   "package": "fih_rmf_system",
+   "question": "fih_rmf_system 的程式（fih_rmf_system/fih_rmf_system/，不含 test、docs）裡，哪些 Python 檔呼叫了 create_publisher？各幾次、總共幾次？",
+   "answer": "14 個檔案、共 28 次（整個套件的文字搜尋是 24 個檔案、41 次）",
+   "items": [
+    {
+     "label": "adapter_node.py：2",
+     "all": [
+      [
+       "adapter_node.py"
+      ],
+      [
+       "2"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    },
+    {
+     "label": "dispatcher_node.py：1",
+     "all": [
+      [
+       "dispatcher_node.py"
+      ],
+      [
+       "1"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    },
+    {
+     "label": "dispatcher_node_asmple.py：1",
+     "all": [
+      [
+       "dispatcher_node_asmple.py"
+      ],
+      [
+       "1"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    },
+    {
+     "label": "ResourceAllocator_node_HTML_demo.py：4",
+     "all": [
+      [
+       "ResourceAllocator_node_HTML_demo.py"
+      ],
+      [
+       "4"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    },
+    {
+     "label": "task_fastapi_to_distribute.py：3",
+     "all": [
+      [
+       "task_fastapi_to_distribute.py"
+      ],
+      [
+       "3"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    },
+    {
+     "label": "manual_local_fastapi_to_is_authiored.py：2",
+     "all": [
+      [
+       "manual_local_fastapi_to_is_authiored.py"
+      ],
+      [
+       "2"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    },
+    {
+     "label": "negotiator_node.py：2",
+     "all": [
+      [
+       "negotiator_node.py"
+      ],
+      [
+       "2"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    },
+    {
+     "label": "orchestrtor_node.py：4",
+     "all": [
+      [
+       "orchestrtor_node.py"
+      ],
+      [
+       "4"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    },
+    {
+     "label": "predictor.py：1",
+     "all": [
+      [
+       "predictor.py"
+      ],
+      [
+       "1"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    },
+    {
+     "label": "registry.py：2",
+     "all": [
+      [
+       "registry.py"
+      ],
+      [
+       "2"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    },
+    {
+     "label": "scheduler_multi_scheme.py：1",
+     "all": [
+      [
+       "scheduler_multi_scheme.py"
+      ],
+      [
+       "1"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    },
+    {
+     "label": "scheduler_node.py：1",
+     "all": [
+      [
+       "scheduler_node.py"
+      ],
+      [
+       "1"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    },
+    {
+     "label": "supervisor_node.py：3",
+     "all": [
+      [
+       "supervisor_node.py"
+      ],
+      [
+       "3"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    },
+    {
+     "label": "robot_label_node.py：1",
+     "all": [
+      [
+       "robot_label_node.py"
+      ],
+      [
+       "1"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    },
+    {
+     "label": "總共 28",
+     "all": [
+      [
+       "28"
+      ],
+      [
+       "共",
+       "總",
+       "合計",
+       "加起來",
+       "total"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    }
+   ],
+   "forbid": [
+    {
+     "label": "答成整個套件的總數 32",
+     "all": [
+      [
+       "32"
+      ],
+      [
+       "共",
+       "總",
+       "合計",
+       "加起來",
+       "total"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    },
+    {
+     "label": "答成整個套件的總數 41",
+     "all": [
+      [
+       "41"
+      ],
+      [
+       "共",
+       "總",
+       "合計",
+       "加起來",
+       "total"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    }
+   ]
+  },
+  {
+   "id": "cnt_sw_clients",
+   "kind": "count",
+   "set": "main",
+   "package": "amr_base_sw",
+   "question": "amr_base_sw 的程式（amr_base_sw/amr_base_sw/，不含 test、tool）裡，哪些檔案建立了 service client（create_client）？各幾個、總共幾個？",
+   "answer": "3 個檔案、共 4 個（整個套件的文字搜尋是 14 個檔案、19 次）",
+   "items": [
+    {
+     "label": "ActionWrapper.py：1",
+     "all": [
+      [
+       "ActionWrapper.py"
+      ],
+      [
+       "1"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    },
+    {
+     "label": "SmacTunerNode.py：2",
+     "all": [
+      [
+       "SmacTunerNode.py"
+      ],
+      [
+       "2"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    },
+    {
+     "label": "isaac_initial_pose_relay.py：1",
+     "all": [
+      [
+       "isaac_initial_pose_relay.py"
+      ],
+      [
+       "1"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    },
+    {
+     "label": "總共 4",
+     "all": [
+      [
+       "4"
+      ],
+      [
+       "共",
+       "總",
+       "合計",
+       "加起來",
+       "total"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    }
+   ],
+   "forbid": [
+    {
+     "label": "答成整個套件的總數 14",
+     "all": [
+      [
+       "14"
+      ],
+      [
+       "共",
+       "總",
+       "合計",
+       "加起來",
+       "total"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    },
+    {
+     "label": "答成整個套件的總數 19",
+     "all": [
+      [
+       "19"
+      ],
+      [
+       "共",
+       "總",
+       "合計",
+       "加起來",
+       "total"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    }
+   ]
+  },
+  {
+   "id": "cnt_hw_params",
+   "kind": "count",
+   "set": "main",
+   "package": "amr_base_hw",
+   "question": "amr_base_hw 裡哪些 Python 檔宣告了 ROS 參數（declare_parameter）？各幾個、總共幾個？",
+   "answer": "5 個檔案、共 42 個",
+   "items": [
+    {
+     "label": "base_controller_node.py：28",
+     "all": [
+      [
+       "base_controller_node.py"
+      ],
+      [
+       "28"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    },
+    {
+     "label": "keyboard_teleop_node.py：3",
+     "all": [
+      [
+       "keyboard_teleop_node.py"
+      ],
+      [
+       "3"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    },
+    {
+     "label": "laser_scan_merger.py：6",
+     "all": [
+      [
+       "laser_scan_merger.py"
+      ],
+      [
+       "6"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    },
+    {
+     "label": "tdk_imu_node.py：3",
+     "all": [
+      [
+       "tdk_imu_node.py"
+      ],
+      [
+       "3"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    },
+    {
+     "label": "wit_ros2_imu.py：2",
+     "all": [
+      [
+       "wit_ros2_imu.py"
+      ],
+      [
+       "2"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    },
+    {
+     "label": "總共 42",
+     "all": [
+      [
+       "42"
+      ],
+      [
+       "共",
+       "總",
+       "合計",
+       "加起來",
+       "total"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    }
+   ],
+   "forbid": []
+  },
+  {
+   "id": "cnt_rmf_tests",
+   "kind": "count",
+   "set": "main",
+   "package": "fih_rmf_system",
+   "question": "fih_rmf_system 的 test/ 底下有幾個測試檔（檔名 test_ 開頭的 .py）？這些檔案裡總共有幾個測試函式（名稱 test 開頭的 def）？",
+   "answer": "58 個測試檔、393 個測試函式",
+   "items": [
+    {
+     "label": "58 個測試檔",
+     "all": [
+      [
+       "58"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": false
+    },
+    {
+     "label": "393 個測試函式",
+     "all": [
+      [
+       "393"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": false
+    }
+   ],
+   "forbid": []
+  },
+  {
+   "id": "cnt_sw_specs",
+   "kind": "count",
+   "set": "main",
+   "package": "amr_base_sw",
+   "question": "amr_base_sw 的 docs/specs/nodes/ 底下有幾份規格書（.md）？最長的兩份是哪兩份、各幾行？",
+   "answer": "20 份；最長的是 LocalNavNode.md（5003 行）、LocalDockNode.md（3659 行）",
+   "items": [
+    {
+     "label": "20 份",
+     "all": [
+      [
+       "20"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": false
+    },
+    {
+     "label": "LocalNavNode.md：5003 行",
+     "all": [
+      [
+       "LocalNavNode.md"
+      ],
+      [
+       "5003"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    },
+    {
+     "label": "LocalDockNode.md：3659 行",
+     "all": [
+      [
+       "LocalDockNode.md"
+      ],
+      [
+       "3659"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    }
+   ],
+   "forbid": []
+  },
+  {
+   "id": "cnt_sw_nodes",
+   "kind": "count",
+   "set": "holdout",
+   "package": "amr_base_sw",
+   "question": "amr_base_sw 的程式（amr_base_sw/amr_base_sw/，不含 test、tool）裡，有幾個類別直接繼承 rclpy 的 Node？列出類別名稱與所在的檔案。",
+   "answer": "24 個類別（24 個檔案；整個套件是 41 個）",
+   "items": [
+    {
+     "label": "總共 24",
+     "all": [
+      [
+       "24"
+      ],
+      [
+       "共",
+       "總",
+       "合計",
+       "加起來",
+       "total",
+       "個類別"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    },
+    {
+     "label": "MapAnnotator（map_annotator.py）",
+     "all": [
+      [
+       "MapAnnotator"
+      ],
+      [
+       "map_annotator.py"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    },
+    {
+     "label": "RecoveryArbiterNode（arbitration.py）",
+     "all": [
+      [
+       "RecoveryArbiterNode"
+      ],
+      [
+       "arbitration.py"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    },
+    {
+     "label": "RecoveryArbiterNode（AsyncToRealtimeAdapter.py）",
+     "all": [
+      [
+       "RecoveryArbiterNode"
+      ],
+      [
+       "AsyncToRealtimeAdapter.py"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    },
+    {
+     "label": "RobotStateBroadcaster（RobotStateBroadcaster.py）",
+     "all": [
+      [
+       "RobotStateBroadcaster"
+      ],
+      [
+       "RobotStateBroadcaster.py"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    },
+    {
+     "label": "BridgeNode（ros_ws_bridge.py）",
+     "all": [
+      [
+       "BridgeNode"
+      ],
+      [
+       "ros_ws_bridge.py"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    },
+    {
+     "label": "PathRecorderNode（PathRecorderNode.py）",
+     "all": [
+      [
+       "PathRecorderNode"
+      ],
+      [
+       "PathRecorderNode.py"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    },
+    {
+     "label": "GlobalPlannerNode（GlobalPlannerNode.py）",
+     "all": [
+      [
+       "GlobalPlannerNode"
+      ],
+      [
+       "GlobalPlannerNode.py"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    },
+    {
+     "label": "RouteExecutorNode（RouteExecutorNode.py）",
+     "all": [
+      [
+       "RouteExecutorNode"
+      ],
+      [
+       "RouteExecutorNode.py"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    },
+    {
+     "label": "ClosedLoopSpinServer（ClosedLoopSpinServer.py）",
+     "all": [
+      [
+       "ClosedLoopSpinServer"
+      ],
+      [
+       "ClosedLoopSpinServer.py"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    },
+    {
+     "label": "StraightLineDriveServer（StraightLineDriveServer.py）",
+     "all": [
+      [
+       "StraightLineDriveServer"
+      ],
+      [
+       "StraightLineDriveServer.py"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    },
+    {
+     "label": "VelocityMux（VelocityMux.py）",
+     "all": [
+      [
+       "VelocityMux"
+      ],
+      [
+       "VelocityMux.py"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    },
+    {
+     "label": "LocalDockNode（LocalDockNode.py）",
+     "all": [
+      [
+       "LocalDockNode"
+      ],
+      [
+       "LocalDockNode.py"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    },
+    {
+     "label": "SmacTunerNode（SmacTunerNode.py）",
+     "all": [
+      [
+       "SmacTunerNode"
+      ],
+      [
+       "SmacTunerNode.py"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    },
+    {
+     "label": "LocalNavNode（LocalNavNode.py）",
+     "all": [
+      [
+       "LocalNavNode"
+      ],
+      [
+       "LocalNavNode.py"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    },
+    {
+     "label": "RobotPosePublisher（RobotPosePublisher.py）",
+     "all": [
+      [
+       "RobotPosePublisher"
+      ],
+      [
+       "RobotPosePublisher.py"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    },
+    {
+     "label": "IsaacInitialPoseRelay（isaac_initial_pose_relay.py）",
+     "all": [
+      [
+       "IsaacInitialPoseRelay"
+      ],
+      [
+       "isaac_initial_pose_relay.py"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    },
+    {
+     "label": "HeaderFixerCombined（joint_state_header_fixer.py）",
+     "all": [
+      [
+       "HeaderFixerCombined"
+      ],
+      [
+       "joint_state_header_fixer.py"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    },
+    {
+     "label": "LidarSelfFilterNode（lidar_self_filter.py）",
+     "all": [
+      [
+       "LidarSelfFilterNode"
+      ],
+      [
+       "lidar_self_filter.py"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    },
+    {
+     "label": "OdometryTFBroadcaster（odom_tf_broadcaster.py）",
+     "all": [
+      [
+       "OdometryTFBroadcaster"
+      ],
+      [
+       "odom_tf_broadcaster.py"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    },
+    {
+     "label": "ReflectorInitialPose（reflector_initial_pose.py）",
+     "all": [
+      [
+       "ReflectorInitialPose"
+      ],
+      [
+       "reflector_initial_pose.py"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    },
+    {
+     "label": "MissionBridgeNode（fastapi_mission_bridge.py）",
+     "all": [
+      [
+       "MissionBridgeNode"
+      ],
+      [
+       "fastapi_mission_bridge.py"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    },
+    {
+     "label": "InitialPosePublisher（send_initial_pose.py）",
+     "all": [
+      [
+       "InitialPosePublisher"
+      ],
+      [
+       "send_initial_pose.py"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    },
+    {
+     "label": "TaskAgent（task_agent.py）",
+     "all": [
+      [
+       "TaskAgent"
+      ],
+      [
+       "task_agent.py"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    },
+    {
+     "label": "SafetyMotionController（safety_motion_controller.py）",
+     "all": [
+      [
+       "SafetyMotionController"
+      ],
+      [
+       "safety_motion_controller.py"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    }
+   ],
+   "forbid": [
+    {
+     "label": "答成整個套件的數量 41",
+     "all": [
+      [
+       "41"
+      ],
+      [
+       "共",
+       "總",
+       "合計",
+       "加起來",
+       "total",
+       "個類別"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    }
+   ]
+  },
+  {
+   "id": "doc_task_confirm",
+   "kind": "doc",
+   "set": "main",
+   "package": "amr_base_sw",
+   "question": "照 amr_base_sw 的 task_agent 規格書（docs/specs/nodes/task_agent.md）：WAITING_CONFIRM 時收到不同 task_id 的 confirm 會怎樣？同一筆的 authorize 又來呢？各引用規格書的編號。",
+   "answer": "TSK-S08（第 756 行）：狀態不變，繼續等；TSK-S06（第 754 行）：狀態不變，重發 yes，不重新計時",
+   "items": [
+    {
+     "label": "TSK-S08：不變、繼續等",
+     "all": [
+      [
+       "TSK-S08",
+       "TSK-F23-B04"
+      ],
+      [
+       "繼續等",
+       "持續等",
+       "維持",
+       "不變",
+       "保持"
+      ]
+     ],
+     "near": 300,
+     "line": false,
+     "file": false
+    },
+    {
+     "label": "TSK-S06：重發 yes",
+     "all": [
+      [
+       "TSK-S06",
+       "TSK-F22-B03"
+      ],
+      [
+       "yes"
+      ]
+     ],
+     "near": 300,
+     "line": false,
+     "file": false
+    },
+    {
+     "label": "TSK-S06：不重新計時",
+     "all": [
+      [
+       "TSK-S06",
+       "TSK-F22-B03"
+      ],
+      [
+       "不重新計時",
+       "re:不[^。，,；;\n]{0,6}(計時|起算)",
+       "re:計時[^。，,；;\n]{0,6}(不變|照舊)"
+      ]
+     ],
+     "near": 300,
+     "line": false,
+     "file": false
+    }
+   ],
+   "forbid": []
+  },
+  {
+   "id": "doc_nav_stop",
+   "kind": "doc",
+   "set": "main",
+   "package": "amr_base_sw",
+   "question": "照 amr_base_sw 的 LocalNavNode 規格書：LocalNavNode 在任何狀態收到 cmd_stop 會轉到哪個狀態？會不會回報？引用規格書的編號。",
+   "answer": "LNV-S26（第 4521 行）：回到 IDLE，不回報",
+   "items": [
+    {
+     "label": "LNV-S26：IDLE",
+     "all": [
+      [
+       "LNV-S26",
+       "LNV-F063"
+      ],
+      [
+       "IDLE"
+      ]
+     ],
+     "near": 300,
+     "line": false,
+     "file": false
+    },
+    {
+     "label": "不回報",
+     "all": [
+      [
+       "LNV-S26",
+       "LNV-F063"
+      ],
+      [
+       "不回報",
+       "re:不[^。，,；;\n]{0,6}回報",
+       "re:(沒有|無)[^。，,；;\n]{0,6}回報"
+      ]
+     ],
+     "near": 300,
+     "line": false,
+     "file": false
+    }
+   ],
+   "forbid": []
+  },
+  {
+   "id": "doc_gate_startup",
+   "kind": "doc",
+   "set": "main",
+   "package": "amr_base_sw",
+   "question": "照 amr_base_sw 的 safety_motion_controller 規格書：require_safety_command 是 true 時，節點剛啟動、還沒收到安全指令，會進入什麼狀態、第一筆輸出是什麼？引用規格書的編號。",
+   "answer": "GATE-S06（第 595 行）：保護停車（NO_SAFETY_COMMAND_YET），第一筆輸出就是 0",
+   "items": [
+    {
+     "label": "GATE-S06：保護停車",
+     "all": [
+      [
+       "GATE-S06",
+       "GATE-F01",
+       "GATE-F12"
+      ],
+      [
+       "NO_SAFETY_COMMAND_YET",
+       "保護停車",
+       "re:protective.?stop"
+      ]
+     ],
+     "near": 300,
+     "line": false,
+     "file": false
+    },
+    {
+     "label": "第一筆輸出是 0",
+     "all": [
+      [
+       "輸出",
+       "送出",
+       "發出",
+       "發布",
+       "output"
+      ],
+      [
+       "0",
+       "零"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    }
+   ],
+   "forbid": []
+  },
+  {
+   "id": "doc_sched_iter",
+   "kind": "doc",
+   "set": "main",
+   "package": "fih_rmf_system",
+   "question": "照 fih_rmf_system 的 scheduler 規格書：scheduler.max_delay_threshold_iter 實際上是什麼的上限？預設多少？引用規格書的編號。",
+   "answer": "SCH-P06（第 59 行）：疊代次數的上限（名稱裡的 delay 和用途無關），預設 2000",
+   "items": [
+    {
+     "label": "SCH-P06：2000",
+     "all": [
+      [
+       "SCH-P06",
+       "SCH-F08-B01"
+      ],
+      [
+       "2000"
+      ]
+     ],
+     "near": 300,
+     "line": false,
+     "file": false
+    },
+    {
+     "label": "是疊代次數的上限",
+     "all": [
+      [
+       "疊代",
+       "迭代",
+       "iteration",
+       "循環次數",
+       "重複次數"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": false
+    }
+   ],
+   "forbid": []
+  },
+  {
+   "id": "doc_pred_map",
+   "kind": "doc",
+   "set": "main",
+   "package": "fih_rmf_system",
+   "question": "照 fih_rmf_system 的 predictor 規格書：predictor 啟動時讀地圖失敗會怎樣？之後收到的序列怎麼處理？引用規格書的編號。",
+   "answer": "PRD-O07（第 488 行）：地圖只在啟動時讀一次；失敗時照常執行，只記一筆 ERROR 事件，stations 是空的；之後每台的序列都被剔光，每個站點記一次 WARN",
+   "items": [
+    {
+     "label": "PRD-O07：只記 ERROR",
+     "all": [
+      [
+       "PRD-O07",
+       "PRD-F20",
+       "PRD-F20-B01"
+      ],
+      [
+       "ERROR",
+       "re:error"
+      ]
+     ],
+     "near": 300,
+     "line": false,
+     "file": false
+    },
+    {
+     "label": "照常執行",
+     "all": [
+      [
+       "照常執行",
+       "re:(照常|照樣|仍|繼續|還是|一樣)[^。，,；;\n]{0,6}(執行|運作|成功|跑|啟動|configure)",
+       "re:不[^。，,；;\n]{0,6}(停止|中止|停下)"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": false
+    },
+    {
+     "label": "序列被剔光",
+     "all": [
+      [
+       "剔光",
+       "re:(剔|移除|清空|丟掉|刪除|濾掉|過濾|丟棄|去掉|拿掉|捨棄)"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": false
+    }
+   ],
+   "forbid": []
+  },
+  {
+   "id": "doc_dock_align",
+   "kind": "doc",
+   "set": "holdout",
+   "package": "amr_base_sw",
+   "question": "照 amr_base_sw 的 LocalDockNode 規格書：PRE_DOCK_ALIGN 狀態下朝向對了但橫向超差，會轉到哪個狀態？引用規格書的編號。",
+   "answer": "LDK-S15（第 3177 行）：轉到 PRE_DOCK_NAV",
+   "items": [
+    {
+     "label": "LDK-S15：PRE_DOCK_NAV",
+     "all": [
+      [
+       "LDK-S15",
+       "LDK-F64",
+       "LDK-F65-B02"
+      ],
+      [
+       "PRE_DOCK_NAV"
+      ]
+     ],
+     "near": 300,
+     "line": false,
+     "file": false
+    }
+   ],
+   "forbid": []
+  },
+  {
+   "id": "py_solve_conflicts",
+   "kind": "python",
+   "set": "main",
+   "package": "fih_rmf_system",
+   "question": "fih_rmf_system 的程式裡，solve_conflicts 定義在哪個類別、哪個檔案的第幾行？哪些地方呼叫它（檔案與行號）？",
+   "answer": "定義：SpatioTemporalScheduler.solve_conflicts（spatio_temporal_scheduler.py:178）；呼叫：scheduler_multi_scheme.py:89, scheduler_node.py:82",
+   "items": [
+    {
+     "label": "類別 SpatioTemporalScheduler",
+     "all": [
+      [
+       "SpatioTemporalScheduler"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": false
+    },
+    {
+     "label": "spatio_temporal_scheduler.py:178",
+     "all": [
+      [
+       "spatio_temporal_scheduler.py"
+      ],
+      [
+       "178"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    },
+    {
+     "label": "scheduler_multi_scheme.py:89",
+     "all": [
+      [
+       "scheduler_multi_scheme.py"
+      ],
+      [
+       "89"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    },
+    {
+     "label": "scheduler_node.py:82",
+     "all": [
+      [
+       "scheduler_node.py"
+      ],
+      [
+       "82"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    }
+   ],
+   "forbid": []
+  },
+  {
+   "id": "py_fleet_msg",
+   "kind": "python",
+   "set": "main",
+   "package": "fih_rmf_system",
+   "question": "fih_rmf_system 的程式裡，fleet_states_to_msg 定義在哪個檔案的第幾行？哪些地方呼叫它（檔案與行號）？",
+   "answer": "定義：fleet_states_to_msg（msg_codec.py:149）；呼叫：registry.py:80, supervisor_node.py:148",
+   "items": [
+    {
+     "label": "msg_codec.py:149",
+     "all": [
+      [
+       "msg_codec.py"
+      ],
+      [
+       "149"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    },
+    {
+     "label": "registry.py:80",
+     "all": [
+      [
+       "registry.py"
+      ],
+      [
+       "80"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    },
+    {
+     "label": "supervisor_node.py:148",
+     "all": [
+      [
+       "supervisor_node.py"
+      ],
+      [
+       "148"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    }
+   ],
+   "forbid": []
+  },
+  {
+   "id": "py_pre_dock",
+   "kind": "python",
+   "set": "main",
+   "package": "amr_base_sw",
+   "question": "amr_base_sw 的程式（amr_base_sw/amr_base_sw/）裡，compute_pre_dock_pose 定義在哪個檔案的第幾行？哪些地方呼叫它（檔案與行號）？",
+   "answer": "定義：compute_pre_dock_pose（DockGeometry.py:99）；呼叫：DockPrePosePlanner.py:106, LocalDockNode.py:653",
+   "items": [
+    {
+     "label": "DockGeometry.py:99",
+     "all": [
+      [
+       "DockGeometry.py"
+      ],
+      [
+       "99"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    },
+    {
+     "label": "DockPrePosePlanner.py:106",
+     "all": [
+      [
+       "DockPrePosePlanner.py"
+      ],
+      [
+       "106"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    },
+    {
+     "label": "LocalDockNode.py:653",
+     "all": [
+      [
+       "LocalDockNode.py"
+      ],
+      [
+       "653"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    }
+   ],
+   "forbid": []
+  },
+  {
+   "id": "py_speed_limit",
+   "kind": "python",
+   "set": "main",
+   "package": "amr_base_sw",
+   "question": "amr_base_sw 的程式（amr_base_sw/amr_base_sw/）裡，apply_speed_limit 定義在哪個檔案的第幾行？哪些地方呼叫它（檔案與行號，全部列出）？",
+   "answer": "定義：apply_speed_limit（monitors.py:170）；呼叫：LocalNavNode.py:706, monitors.py:163, monitors.py:199, monitors.py:208",
+   "items": [
+    {
+     "label": "monitors.py:170",
+     "all": [
+      [
+       "monitors.py"
+      ],
+      [
+       "170"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    },
+    {
+     "label": "LocalNavNode.py:706",
+     "all": [
+      [
+       "LocalNavNode.py"
+      ],
+      [
+       "706"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    },
+    {
+     "label": "monitors.py:163",
+     "all": [
+      [
+       "monitors.py"
+      ],
+      [
+       "163"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    },
+    {
+     "label": "monitors.py:199",
+     "all": [
+      [
+       "monitors.py"
+      ],
+      [
+       "199"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    },
+    {
+     "label": "monitors.py:208",
+     "all": [
+      [
+       "monitors.py"
+      ],
+      [
+       "208"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    }
+   ],
+   "forbid": []
+  },
+  {
+   "id": "py_encoder",
+   "kind": "python",
+   "set": "main",
+   "package": "amr_base_hw",
+   "question": "amr_base_hw 裡，update_from_encoder_counts_s32 是哪個類別的方法、定義在哪個檔案的第幾行？哪些地方呼叫它（檔案與行號）？",
+   "answer": "定義：DiffDriveOdom.update_from_encoder_counts_s32（diff_drive_odom.py:154）；呼叫：base_controller_node.py:621, diff_drive_odom.py:149",
+   "items": [
+    {
+     "label": "類別 DiffDriveOdom",
+     "all": [
+      [
+       "DiffDriveOdom"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": false
+    },
+    {
+     "label": "diff_drive_odom.py:154",
+     "all": [
+      [
+       "diff_drive_odom.py"
+      ],
+      [
+       "154"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    },
+    {
+     "label": "base_controller_node.py:621",
+     "all": [
+      [
+       "base_controller_node.py"
+      ],
+      [
+       "621"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    },
+    {
+     "label": "diff_drive_odom.py:149",
+     "all": [
+      [
+       "diff_drive_odom.py"
+      ],
+      [
+       "149"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    }
+   ],
+   "forbid": []
+  },
+  {
+   "id": "py_check_path",
+   "kind": "python",
+   "set": "holdout",
+   "package": "amr_base_sw",
+   "question": "amr_base_sw 的程式（amr_base_sw/amr_base_sw/）裡，check_path 是哪個類別的方法、定義在哪個檔案的第幾行？哪些地方呼叫它（檔案與行號，全部列出）？",
+   "answer": "定義：PathCollisionChecker.check_path（PathCollisionChecker.py:48）；呼叫：PathCollisionChecker.py:185, BypassGoal.py:482, bypass.py:159, holding.py:229, tick.py:137",
+   "items": [
+    {
+     "label": "PathCollisionChecker.py:48",
+     "all": [
+      [
+       "PathCollisionChecker.py"
+      ],
+      [
+       "48"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    },
+    {
+     "label": "PathCollisionChecker.py:185",
+     "all": [
+      [
+       "PathCollisionChecker.py"
+      ],
+      [
+       "185"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    },
+    {
+     "label": "BypassGoal.py:482",
+     "all": [
+      [
+       "BypassGoal.py"
+      ],
+      [
+       "482"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    },
+    {
+     "label": "bypass.py:159",
+     "all": [
+      [
+       "bypass.py"
+      ],
+      [
+       "159"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    },
+    {
+     "label": "holding.py:229",
+     "all": [
+      [
+       "holding.py"
+      ],
+      [
+       "229"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    },
+    {
+     "label": "tick.py:137",
+     "all": [
+      [
+       "tick.py"
+      ],
+      [
+       "137"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    }
+   ],
+   "forbid": []
+  },
+  {
+   "id": "cpp_rf2o_params",
+   "kind": "cpp",
+   "set": "main",
+   "package": "amr_base_hw",
+   "question": "amr_base_hw 的 rf2o_laser_odometry（C++）節點宣告了哪些 ROS 參數？各自的預設值是什麼？",
+   "answer": "laser_scan_topic=/scan、odom_topic=/odom_rf2o、base_frame_id=base_link、odom_frame_id=odom、publish_tf=true、init_pose_from_topic=/base_pose_ground_truth、freq=10.0（CLaserOdometry2DNode.cpp）",
+   "items": [
+    {
+     "label": "laser_scan_topic = /scan",
+     "all": [
+      [
+       "laser_scan_topic"
+      ],
+      [
+       "/scan"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    },
+    {
+     "label": "odom_topic = /odom_rf2o",
+     "all": [
+      [
+       "odom_topic"
+      ],
+      [
+       "/odom_rf2o"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    },
+    {
+     "label": "base_frame_id = base_link",
+     "all": [
+      [
+       "base_frame_id"
+      ],
+      [
+       "base_link"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    },
+    {
+     "label": "odom_frame_id = odom",
+     "all": [
+      [
+       "odom_frame_id"
+      ],
+      [
+       "odom"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    },
+    {
+     "label": "publish_tf = true",
+     "all": [
+      [
+       "publish_tf"
+      ],
+      [
+       "true"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    },
+    {
+     "label": "init_pose_from_topic = /base_pose_ground_truth",
+     "all": [
+      [
+       "init_pose_from_topic"
+      ],
+      [
+       "/base_pose_ground_truth"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    },
+    {
+     "label": "freq = 10.0",
+     "all": [
+      [
+       "freq"
+      ],
+      [
+       "10.0",
+       "10"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    }
+   ],
+   "forbid": []
+  },
+  {
+   "id": "cpp_sick_ports",
+   "kind": "cpp",
+   "set": "main",
+   "package": "amr_base_hw",
+   "question": "amr_base_hw 的 sick_scan_xd 裡，scansegment_xd 的設定（Config）預設的 UDP port、IMU 的 UDP port、SOPAS 的 TCP port 各是多少？在哪個檔案設定？",
+   "answer": "UDP 2115、IMU 的 UDP 7503、SOPAS 的 TCP 2111（config.cpp 第 145、166、170 行）",
+   "items": [
+    {
+     "label": "config.cpp",
+     "all": [
+      [
+       "config.cpp"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": false
+    },
+    {
+     "label": "UDP port 2115",
+     "all": [
+      [
+       "2115"
+      ],
+      [
+       "udp",
+       "re:udp"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    },
+    {
+     "label": "IMU 的 UDP port 7503",
+     "all": [
+      [
+       "7503"
+      ],
+      [
+       "imu",
+       "re:imu"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    },
+    {
+     "label": "SOPAS 的 TCP port 2111",
+     "all": [
+      [
+       "2111"
+      ],
+      [
+       "sopas",
+       "re:sopas|tcp"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    }
+   ],
+   "forbid": []
+  },
+  {
+   "id": "cpp_laserscan_pub",
+   "kind": "cpp",
+   "set": "main",
+   "package": "amr_base_hw",
+   "question": "amr_base_hw 的 sick_scan_xd 裡，RosMsgpackPublisher 類別的哪個成員函式負責發布 LaserScan 訊息？定義在哪個檔案的第幾行？",
+   "answer": "publishLaserScanMsg（ros_msgpack_publisher.cpp:552）",
+   "items": [
+    {
+     "label": "publishLaserScanMsg",
+     "all": [
+      [
+       "publishLaserScanMsg"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": false
+    },
+    {
+     "label": "ros_msgpack_publisher.cpp:552",
+     "all": [
+      [
+       "ros_msgpack_publisher.cpp"
+      ],
+      [
+       "552"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    }
+   ],
+   "forbid": []
+  },
+  {
+   "id": "cpp_sick_services",
+   "kind": "cpp",
+   "set": "main",
+   "package": "amr_base_hw",
+   "question": "amr_base_hw 的 sick_scan_xd 裡，SickScanServices 類別宣告在哪個標頭檔？成員函式實作在哪個 .cpp？",
+   "answer": "宣告：include/sick_scan/sick_scan_services.h；實作：driver/src/sick_scan_services.cpp",
+   "items": [
+    {
+     "label": "sick_scan_services.h",
+     "all": [
+      [
+       "sick_scan_services.h"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": false
+    },
+    {
+     "label": "sick_scan_services.cpp",
+     "all": [
+      [
+       "sick_scan_services.cpp"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": false
+    }
+   ],
+   "forbid": []
+  },
+  {
+   "id": "cpp_laser_qos",
+   "kind": "cpp",
+   "set": "main",
+   "package": "amr_base_hw",
+   "question": "amr_base_hw 的 rf2o_laser_odometry 節點用什麼 QoS 訂閱雷射掃描（保留幾筆、reliability、durability）？在哪個檔案的第幾行？",
+   "answer": "KeepLast(1)、best_effort、durability_volatile（CLaserOdometry2DNode.cpp:49）",
+   "items": [
+    {
+     "label": "CLaserOdometry2DNode.cpp:49",
+     "all": [
+      [
+       "CLaserOdometry2DNode.cpp"
+      ],
+      [
+       "49"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    },
+    {
+     "label": "保留 1 筆",
+     "all": [
+      [
+       "KeepLast",
+       "keep last",
+       "keep_last",
+       "保留",
+       "depth",
+       "深度"
+      ],
+      [
+       "1"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    },
+    {
+     "label": "best effort",
+     "all": [
+      [
+       "best_effort",
+       "best effort",
+       "besteffort",
+       "best-effort"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": false
+    },
+    {
+     "label": "volatile",
+     "all": [
+      [
+       "volatile"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": false
+    }
+   ],
+   "forbid": []
+  },
+  {
+   "id": "cpp_compact_parser",
+   "kind": "cpp",
+   "set": "holdout",
+   "package": "amr_base_hw",
+   "question": "amr_base_hw 的 sick_scan_xd 裡，compact 格式的掃描資料由哪個類別解析？這個類別宣告在哪個標頭檔？",
+   "answer": "CompactDataParser（compact_parser.h:146）",
+   "items": [
+    {
+     "label": "CompactDataParser",
+     "all": [
+      [
+       "CompactDataParser"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": false
+    },
+    {
+     "label": "compact_parser.h",
+     "all": [
+      [
+       "compact_parser.h"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": false
+    }
+   ],
+   "forbid": []
+  },
+  {
+   "id": "cross_rf2o_runtime",
+   "kind": "cross",
+   "set": "main",
+   "package": "amr_base_hw",
+   "question": "照 amr_base_hw 裡的程式與設定檔回答：實機用 hw_bringup 啟動時，rf2o 的里程計發布到哪個 topic、頻率多少、會不會發 TF？誰用這個里程計？",
+   "answer": "/rf2o_odom、20 Hz、不發 TF（rf2o 的 launch 第 17 行起覆寫了程式的預設 /odom_rf2o、10 Hz、發 TF）；robot_localization 的 EKF 用它（ekf.yaml:38 的 odom1）",
+   "items": [
+    {
+     "label": "/rf2o_odom",
+     "all": [
+      [
+       "/rf2o_odom"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": false
+    },
+    {
+     "label": "20 Hz",
+     "all": [
+      [
+       "20",
+       "20.0"
+      ],
+      [
+       "hz",
+       "頻率",
+       "freq"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    },
+    {
+     "label": "不發 TF",
+     "all": [
+      [
+       "tf",
+       "publish_tf"
+      ],
+      [
+       "false",
+       "不發",
+       "不會發",
+       "不發布",
+       "不廣播",
+       "關閉",
+       "沒有發",
+       "不會廣播",
+       "不會發布"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    },
+    {
+     "label": "EKF 用它",
+     "all": [
+      [
+       "ekf",
+       "re:ekf",
+       "robot_localization"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": false
+    }
+   ],
+   "forbid": []
+  },
+  {
+   "id": "cross_scan_chain",
+   "kind": "cross",
+   "set": "main",
+   "package": "amr_base_hw",
+   "question": "照 amr_base_hw 裡的程式與設定檔回答：實機用 hw_bringup 啟動時，rf2o 訂閱的 /scan 是怎麼來的？從雷射開始經過哪些節點、各段的 topic 叫什麼？",
+   "answer": "兩台 picoScan（sick_scan_xd）發 /sick/front/lidar、/sick/back/lidar → laser_scan_merger 合成 /scan_merged → laser_filters 的 scan_to_scan_filter_chain 濾完發 /scan → rf2o 訂閱 /scan",
+   "items": [
+    {
+     "label": "/sick/front/lidar",
+     "all": [
+      [
+       "/sick/front/lidar"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": false
+    },
+    {
+     "label": "/sick/back/lidar",
+     "all": [
+      [
+       "/sick/back/lidar"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": false
+    },
+    {
+     "label": "laser_scan_merger",
+     "all": [
+      [
+       "laser_scan_merger"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": false
+    },
+    {
+     "label": "/scan_merged",
+     "all": [
+      [
+       "/scan_merged"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": false
+    },
+    {
+     "label": "laser_filters",
+     "all": [
+      [
+       "scan_to_scan_filter_chain",
+       "laser_filters",
+       "laser_filter"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": false
+    }
+   ],
+   "forbid": []
+  },
+  {
+   "id": "cross_speed_limit",
+   "kind": "cross",
+   "set": "main",
+   "package": "amr_base_sw",
+   "question": "模擬啟動（amr_base_sw 的 launch/start_sim_and_spawn_Base.launch.py）時，LocalNavNode 發出的限速送到哪個 topic？由哪個節點合併、它還合併了哪些限速來源？合併後輸出到哪個 topic？",
+   "answer": "LocalNavNode 的 /speed_limit 被 remap 成 /speed_limit_nav → safety_motion_controller 合併 rmf、local_nav、local_dock（/speed_limit_dock）三個來源（safety_motion_controller.py:62）→ 輸出到 /speed_limit",
+   "items": [
+    {
+     "label": "/speed_limit_nav",
+     "all": [
+      [
+       "/speed_limit_nav"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": false
+    },
+    {
+     "label": "safety_motion_controller",
+     "all": [
+      [
+       "safety_motion_controller"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": false
+    },
+    {
+     "label": "dock 的限速來源",
+     "all": [
+      [
+       "/speed_limit_dock",
+       "local_dock",
+       "re:local.?dock"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": false
+    },
+    {
+     "label": "RMF 的限速來源",
+     "all": [
+      [
+       "rmf",
+       "re:rmf",
+       "調度"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": false
+    },
+    {
+     "label": "輸出到 /speed_limit",
+     "all": [
+      [
+       "/speed_limit"
+      ],
+      [
+       "輸出",
+       "output",
+       "最後",
+       "合併後",
+       "發到",
+       "送到",
+       "發布到"
+      ]
+     ],
+     "near": null,
+     "line": true,
+     "file": false
+    }
+   ],
+   "forbid": []
+  },
+  {
+   "id": "cross_sched_tuning",
+   "kind": "cross",
+   "set": "main",
+   "package": "fih_rmf_system",
+   "question": "fih_rmf_system 的 scheduler 用的 l2_trigger_delay_ms 從哪個設定檔讀、值是多少？由哪段程式讀？設定檔沒寫時的預設值是多少、寫在哪個檔案的第幾行？",
+   "answer": "config/tuning.yaml:141 寫 5500；scheduler_node.py 經 config_loader 讀 scheduler.l2_trigger_delay_ms，沒寫時用 SchedulerParams 的預設 5500（spatio_temporal_scheduler.py:29）",
+   "items": [
+    {
+     "label": "tuning.yaml",
+     "all": [
+      [
+       "tuning.yaml"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": false
+    },
+    {
+     "label": "5500",
+     "all": [
+      [
+       "5500"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": false
+    },
+    {
+     "label": "config_loader 讀",
+     "all": [
+      [
+       "config_loader",
+       "_cfg",
+       "config.get"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": false
+    },
+    {
+     "label": "spatio_temporal_scheduler.py:29",
+     "all": [
+      [
+       "spatio_temporal_scheduler.py"
+      ],
+      [
+       "29"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": true
+    }
+   ],
+   "forbid": []
+  },
+  {
+   "id": "cross_imu",
+   "kind": "cross",
+   "set": "main",
+   "package": "amr_base_hw",
+   "question": "照 amr_base_hw 裡的程式與設定檔回答：實機用 hw_bringup 啟動時，預設用哪一顆 IMU 的驅動？它的資料發到哪個 topic（remap 之後）？誰在用這個資料？",
+   "answer": "預設用 tdk_ros2_imu（use_tdk_imu 預設 true）；/tdk/imu remap 成 /imu_data；robot_localization 的 EKF 用它（ekf.yaml:51 的 imu0）",
+   "items": [
+    {
+     "label": "tdk_ros2_imu",
+     "all": [
+      [
+       "tdk_ros2_imu",
+       "re:tdk"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": false
+    },
+    {
+     "label": "/imu_data",
+     "all": [
+      [
+       "/imu_data"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": false
+    },
+    {
+     "label": "EKF 用它",
+     "all": [
+      [
+       "ekf",
+       "re:ekf",
+       "robot_localization"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": false
+    }
+   ],
+   "forbid": []
+  },
+  {
+   "id": "cross_odom_source",
+   "kind": "cross",
+   "set": "holdout",
+   "package": "amr_base_hw",
+   "question": "照 amr_base_hw 裡的程式與設定檔回答：實機用 hw_bringup 啟動時，預設由哪個節點發布 /odom？它融合了哪些輸入 topic？把 use_robot_localization 關掉時改由哪個節點發布？",
+   "answer": "預設是 robot_localization 的 ekf_node（odometry/filtered remap 成 /odom），融合 /wheel_odom、/rf2o_odom、/imu_data；use_robot_localization 關掉時改由 my_robot_description 的 odom_tf_broadcaster 把 /wheel_odom 轉發成 /odom",
+   "items": [
+    {
+     "label": "EKF 發布",
+     "all": [
+      [
+       "ekf",
+       "re:ekf",
+       "robot_localization"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": false
+    },
+    {
+     "label": "/wheel_odom",
+     "all": [
+      [
+       "/wheel_odom"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": false
+    },
+    {
+     "label": "/rf2o_odom",
+     "all": [
+      [
+       "/rf2o_odom"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": false
+    },
+    {
+     "label": "/imu_data",
+     "all": [
+      [
+       "/imu_data"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": false
+    },
+    {
+     "label": "關掉時 odom_tf_broadcaster",
+     "all": [
+      [
+       "odom_tf_broadcaster",
+       "wheel_odom_to_odom"
+      ]
+     ],
+     "near": null,
+     "line": false,
+     "file": false
+    }
+   ],
+   "forbid": []
+  }
+ ]
+}

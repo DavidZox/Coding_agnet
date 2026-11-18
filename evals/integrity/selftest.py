@@ -28,6 +28,7 @@ file_ops 的範例正好是那一題的答案；設計筆記 2.19）。這裡把
 """
 import ast
 import glob
+import json
 import os
 import re
 import sys
@@ -42,9 +43,10 @@ SOURCES = ["evals/ops/dataset/scenarios.py", "evals/ops/dataset/scenarios_holdou
            "evals/ops/dataset/sandbox/sandbox.py", "evals/ops/dataset/sandbox/rmf_sim/rmf_sim.py",
            "evals/chat/scenarios.py"]
 # 調度系統與 ROS 2 本身的名稱：評測沙盒照真的系統做，技能規格要描述它們
-# （/opt/ros 是 ROS 2 的安裝位置：容器裡的 ros2 指令要先 source 它）
+# （/opt/ros 是 ROS 2 的安裝位置：容器裡的 ros2 指令要先 source 它；TaskAgent 是機器人端回授權的節點；
+#  best_effort、keep_last 是 ROS 2 的 QoS，ROS2_topic_pub 要列出可以用的 QoS；/scan 是 ROS 2 雷射慣用的 topic）
 ALLOWED = {"ros__parameters", "authorize_timeout_sec", "threshold_recovery_sec", "threshold_ovp_sec", "fleet_name",
-           "web_console_url", "manual_trigger_url", "/opt/ros"}
+           "web_console_url", "manual_trigger_url", "/opt/ros", "TaskAgent", "best_effort", "best-effort", "keep_last", "KeepLast", "/scan"}
 SKIP_CODE = {"skills_system/scripts/mock_server.py"}
 
 
@@ -94,7 +96,21 @@ def eval_names():
     add("映像", list(sandbox.IMAGES) + [sandbox.SIM_IMAGE])
     world_text = "\n".join(text for text, _ in fs_world.files().values())
     add("設定名稱", re.findall(r"^\s*-?\s*([a-z]+_[a-z0-9_]+):", world_text, re.M))
+    add("真實專案的答案", repo_answer_names())
     return names
+
+
+def repo_answer_names():
+    """真實專案評測（evals/repo/answers.json）答案裡的名稱：檔名、函式與類別、參數、topic、規格書的編號。
+    只收答案：題目裡的名稱不算（凍結的調度工具本來就照真的系統描述 distribute 這些名字）；數字、中文、短的通用字（ekf、IDLE）不算。"""
+    with open(os.path.join(PROJECT, "evals", "repo", "answers.json"), encoding="utf-8") as f:
+        qs = json.load(f)["questions"]
+    out = set()
+    for q in qs:
+        for alt in (a for it in q["items"] for grp in it["all"] for a in grp):
+            if len(alt) >= 5 and re.fullmatch(r"[/A-Za-z_][\w./-]*", alt) and re.search(r"[_./-]|[a-z][A-Z]", alt):
+                out.add(alt)
+    return out
 
 
 def _pattern(names):
@@ -359,12 +375,14 @@ def main():
     def t_names_extracted():
         # 從評測的來源取得到各種名稱（取不到的話下面兩項就是空的檢查）；協定名稱不在裡面
         kinds = set(names.values())
-        for kind in ("機器人", "工作包", "數據", "錯誤碼", "站點", "站點的語意名稱", "檔案", "容器", "映像", "設定名稱"):
+        for kind in ("機器人", "工作包", "數據", "錯誤碼", "站點", "站點的語意名稱", "檔案", "容器", "映像", "設定名稱", "真實專案的答案"):
             assert kind in kinds, f"沒有取到「{kind}」：{sorted(kinds)}"
         for x in ("tb4", "WP_L2", "exp_20261014_084506", "E1203", "a7", "組裝線區-2", "configs/robots.yaml",
                   "configs/nav/nav_params.yaml", "/etc/web_cache.conf", "ops_notes/2026-10-10.md", "web_cache", "talker_box",
-                  "scratch_box", "ros2_humble", "ubuntu:24.04", "max_vel_x", "battery_low"):
+                  "scratch_box", "ros2_humble", "ubuntu:24.04", "max_vel_x", "battery_low",
+                  "spatio_temporal_scheduler.py", "/rf2o_odom", "TSK-S08"):
             assert x in names, f"沒有取到 {x}"
+        assert "distribute" not in names, "真實專案只收答案裡的名稱，題目裡的不收"
         assert not ALLOWED & set(names), ALLOWED & set(names)
 
     def t_detects_planted():

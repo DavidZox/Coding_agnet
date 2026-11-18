@@ -1,7 +1,8 @@
-"""跑一個多步驟維運情境（evals/ops/run.py 在臨時的 harness 副本裡呼叫；不要直接在正式專案目錄執行）。
+"""跑一個多步驟維運情境（evals/ops/run.py 在臨時的 harness 副本裡呼叫；不要直接在正式專案目錄執行）。真實專案評測
+（evals/repo/run.py）也用它跑一題：工作目錄是快照，確認關卡一律拒絕，Docker 與調度系統的位址指到不存在的地方。
 
     python3 evals/ops/worker.py <情境 json> <輸出 json>
-環境變數：EVAL_MODEL、OPS_FS_ROOT（檔案沙盒＝agent 的工作目錄）、DOCKER_HOST（沙盒 daemon）、RMF_WEB_CONSOLE_URL（沙盒的調度系統）。
+環境變數：EVAL_MODEL、OPS_FS_ROOT（agent 的工作目錄：檔案沙盒或快照）、DOCKER_HOST（沙盒 daemon）、RMF_WEB_CONSOLE_URL（沙盒的調度系統）。
 
 跟 evals/chat/worker.py 一樣比照 CLI 的 auto 模式（工具結果自動加入上下文、連續執行到模型不再下 action），差別是工具都真的執行
 （在沙盒裡），確認關卡依情境自動回答。模型呼叫數另外計數（agent.perf_calls 只留最近 200 筆）。"""

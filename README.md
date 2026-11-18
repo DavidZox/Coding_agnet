@@ -127,6 +127,7 @@ Web 左欄是對話，右欄是系統與工具回傳（另一個分頁是「📊
 | 數據解析 | `evals/analysis/selftest.py`、`evals/datagen/check_facts.py` | `evals/analysis/regression.py`（這台的實錄與隨機情境產生器 `evals/datagen/` 的錄製；不呼叫模型，要容器）、`evals/analysis/tools_live.py` |
 | 多步驟維運 | `evals/ops/selftest.py`（維運技能） | `evals/ops/run.py`（Docker-in-Docker 沙盒裡真的執行） |
 | 提煉 | `evals/chat/extract_selftest.py` | `evals/extract/run.py`（已知答案的長輸出） |
+| 真實專案（新架構的評測） | `evals/repo/selftest.py`（核對、答案跟固定版本的快照一致） | `evals/repo/run.py`（amr_base 三個套件的 30 題，答案由程式算） |
 | 評測的完整性 | `evals/integrity/selftest.py`（模型會讀的文字沒有評測世界的名稱） | — |
 | 每個階段結束 | `evals/phase_check.py`（離線） | `evals/phase_check.py --model`（harness 的真模型評測，跟 `evals/baselines/` 逐項比；凍結的工具加 `--tools`） |
 
@@ -150,7 +151,7 @@ Coding_agnet/            （資料夾名稱沿用；原本的 coding agent 已�
 │   └── vision/          附圖的影像提取
 ├── skills_system/       技能：SKILLS.md（索引）、tools/（規格）、scripts/（腳本與共用模組）
 ├── vision/              視覺模態：擷取、推論、提取、Web 的框選（web/）、sniper.py（獨立的框選小工具）
-├── evals/               評測：chat/、skills/、analysis/、datagen/、ops/、extract/、integrity/、phase_check.py、baselines/；
+├── evals/               評測：chat/、skills/、analysis/、datagen/、ops/、extract/、repo/、integrity/、phase_check.py、baselines/；
 │                        results/（.gitignore）
 ├── doc/                 文件（現在的程式）；diagrams/（圖的 .puml）、images/（產生的 PNG）、archive/（第一～九輪的根因版本，只供閱讀）
 ├── docs/                新架構：使用者的構想（三份 HTML）與〈新架構討論紀錄.md〉

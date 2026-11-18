@@ -1,6 +1,6 @@
 """每個階段結束時的持續驗證：跑一組固定的檢查，跟 evals/baselines/ 的基準逐項比，列出退步、變慢、禁止動作。
 
-    python3 evals/phase_check.py                  # 離線（約 2 分鐘）：技能、主對話、提煉、維運、任務引擎、數據分析的自我測試，評測的完整性
+    python3 evals/phase_check.py                  # 離線（約 2 分鐘）：技能、主對話、提煉、維運、數據分析、真實專案評測的自我測試，評測的完整性
                                                   #   （凍結的工具的自我測試也跑：harness 改壞它們還是擋得到）
     python3 evals/phase_check.py --model          # 再加上 harness 的真模型評測（約 30 分鐘）：提煉（26b、e4b）、主對話（e4b 11 個情境 ×3）、
                                                   #   維運的檔案與調查（26b 23 個：檔案 12、保留組的檔案 4、調查與報告 7）
@@ -33,6 +33,7 @@ OFFLINE = [("skills", "技能自我測試", ["evals/skills/selftest.py"]),
            ("extract_selftest", "提煉自我測試", ["evals/chat/extract_selftest.py"]),
            ("ops_selftest", "維運自我測試", ["evals/ops/selftest.py"]),
            ("analysis_selftest", "數據分析自我測試", ["evals/analysis/selftest.py"]),
+           ("repo_selftest", "真實專案評測的自我測試（核對、答案跟快照一致）", ["evals/repo/selftest.py"]),
            ("integrity", "評測的完整性（模型會讀的文字沒有評測世界的名稱）", ["evals/integrity/selftest.py"])]
 TEST_CONTAINER = "cah_analysis_test"
 LIVE_DATA = ["/workspace/experiment_logs/gen/s1/gen_s1_005", "/workspace/experiment_logs/exp_5090_overheat"]
@@ -40,7 +41,7 @@ CHAT_SCENARIOS = ("fleet_battery,fleet_followup,followup_in_context,cross_sessio
                   "current_state_rerun,memory_stale_state,error_recovery,guard_dispatch,containers_basic")
 EXTRACT_MODELS = ("gemma4:26b", "gemma4:e4b")
 OPS_MODEL, CHAT_MODEL = "gemma4:26b", "gemma4:e4b"
-# 維運情境分兩部分（2026-11 起 harness 是重點、其他工具凍結）：harness＝檔案（含保留組的檔案）與調查、整理報告（任務引擎），每個階段都跑；
+# 維運情境分兩部分（2026-11 起 harness 是重點、其他工具凍結）：harness＝檔案（含保留組的檔案）與調查、整理報告（2026-11-18 起由主對話自己做），每個階段都跑；
 # 凍結的工具＝容器、ROS 2、調度交握、複合任務與它們的保留組，--tools 才跑
 OPS_HARNESS_DOMAINS, OPS_TOOLS_DOMAINS = "fs,investigate,report", "docker,ros2,handshake,complex"
 _OPS_HARNESS_PREFIX = ("fs_", "ho_fs_", "inv_")

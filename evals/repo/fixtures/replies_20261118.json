@@ -1,0 +1,248 @@
+{
+ "note": "2026-11-18 第一次試跑（evals/results/20261118_121342_repo_gemma4-26b_all_before、20261118_122054_repo_gemma4-e4b_all_before）與最終量測（20261118_123714_repo_gemma4-26b_all_current、20261118_124425_repo_gemma4-e4b_all_current）的真實回覆，人看過、確認對錯之後存下來：核對規則改了也要維持這些判斷",
+ "replies": [
+  {
+   "id": "doc_nav_stop",
+   "model": "gemma4:26b",
+   "why": "答對：引用列裡寫到的分支 LNV-F063，「不會進行回報」",
+   "reply": "根據 `amr_base_sw` 的 `LocalNavNode` 規格書，在收到 `cmd_stop` 時，節點會轉移到 `IDLE` 狀態且不會進行回報（對應規格編號：`LNV-F063`）。",
+   "passed": true,
+   "ok": [
+    "LNV-S26：IDLE",
+    "不回報"
+   ],
+   "missing": []
+  },
+  {
+   "id": "doc_task_confirm",
+   "model": "gemma4:26b",
+   "why": "兩則對（引用 TSK-F23-B04、TSK-F22-B03），漏了「不重新計時」",
+   "reply": "根據 「amr_base_sw/docs/specs/nodes/task_agent.md」 規格書的內容，回答如下：\n\n1. **收到不同 task_id 的 confirm**：\n   會拒絕該 confirm 並繼續等待原本的 ID (TSK-F23-B04) (task_agent.py:548-550)。（見行 341-342）\n\n2. **收到同一筆的 authorize**：\n   會重發 yes 並繼續等待 confirm (TSK-F22-B03, task_agent.py:498-500)。（見行 336-337）\n\n此外，若該 authorize 的 task_id 已經啟動過或已被中止，則不再受理 (TSK-F22-B04, task_agent.py:505-507)。（見行 337-338）",
+   "passed": false,
+   "ok": [
+    "TSK-S08：不變、繼續等",
+    "TSK-S06：重發 yes"
+   ],
+   "missing": [
+    "TSK-S06：不重新計時"
+   ]
+  },
+  {
+   "id": "doc_sched_iter",
+   "model": "gemma4:26b",
+   "why": "答對：引用 SCH-F08-B01",
+   "reply": "根據 「fih_rmf_system/docs/specs/nodes/scheduler.md」 規格書，`scheduler.max_delay_threshold_iter` 實際上是「疊代次數」的上限，其預設值為 `2000`，對應的規格書編號為 `SCH-F08-B01`。",
+   "passed": true,
+   "ok": [
+    "SCH-P06：2000",
+    "是疊代次數的上限"
+   ],
+   "missing": []
+  },
+  {
+   "id": "doc_gate_startup",
+   "model": "gemma4:26b",
+   "why": "答錯：狀態寫成 SAFETY_COMMAND_TIMEOUT，引用的編號不在那一列",
+   "reply": "根據 amr_base_sw 的 safety_motion_controller 規格書：\n\n當 「require_safety_command」 為 true 且節點尚未收到新鮮的安全指令時，會進入 「SAFETY_COMMAND_TIMEOUT」 狀態（編號 GATE-F10-B03）。在此狀態下，若存在任何停車原因，節點的第一筆輸出將會是 「0, 0」（編號 GATE-F11-B01）。",
+   "passed": false,
+   "ok": [
+    "第一筆輸出是 0"
+   ],
+   "missing": [
+    "GATE-S06：保護停車"
+   ]
+  },
+  {
+   "id": "py_check_path",
+   "model": "gemma4:26b",
+   "why": "答對：定義寫成「檔案：…」換行「行號：第 48 行」",
+   "reply": "根據搜尋結果，`check_path` 的相關資訊如下：\n\n### 定義位置\n- **類別**：`PathCollisionChecker`\n- **檔案**：`amr_base_sw/amr_base_sw/LocalPlanner_Controller/common/perception/PathCollisionChecker.py`\n- **行號**：第 48 行\n\n### 呼叫位置\n共計有 5 處明確的程式碼呼叫：\n1. `amr_base_sw/amr_base_sw/LocalPlanner_Controller/common/perception/PathCollisionChecker.py`：第 185 行\n2. `amr_base_sw/amr_base_sw/LocalPlanner_Controller/navigation/planning/BypassGoal.py`：第 482 行\n3. `amr_base_sw/amr_base_sw/LocalPlanner_Controller/navigation/ros_nodes/nav_fsm/bypass.py`：第 159 行\n4. `amr_base_sw/amr_base_sw/LocalPlanner_Controller/navigation/ros_nodes/nav_fsm/holding.py`：第 229 行\n5. `amr_base_sw/amr_base_sw/LocalPlanner_Controller/navigation/ros_nodes/nav_fsm/tick.py`：第 137 行",
+   "passed": true,
+   "ok": [
+    "PathCollisionChecker.py:48",
+    "PathCollisionChecker.py:185",
+    "BypassGoal.py:482",
+    "bypass.py:159",
+    "holding.py:229",
+    "tick.py:137"
+   ],
+   "missing": []
+  },
+  {
+   "id": "py_pre_dock",
+   "model": "gemma4:e4b",
+   "why": "答對：每個檔案下面分行列行號（也列了 import 那一行）",
+   "reply": "我已在 `amr_base_sw/amr_base_sw/` 目錄中搜尋到「compute_pre_dock_pose」的相關資訊：\n\n**定義位置：**\n*   檔案：`amr_base_sw/amr_base_sw/LocalPlanner_Controller/docking/utils/DockGeometry.py`\n*   行號：第 99 行 (`def compute_pre_dock_pose(`)\n\n**呼叫位置：**\n*   檔案：`amr_base_sw/amr_base_sw/LocalPlanner_Controller/docking/planning/DockPrePosePlanner.py`\n    *   第 25 行 (`compute_pre_dock_pose,`)\n    *   第 106 行 (`pre_pose = compute_pre_dock_pose(final_goal, standoff, reverse_entry=reverse_entry)`) \n*   檔案：`amr_base_sw/amr_base_sw/LocalPlanner_Controller/docking/ros_nodes/LocalDockNode.py`\n    *   第 45 行 (`compute_pre_dock_pose,`)\n    *   第 653 行 (`return compute_pre_dock_pose(Pose2D(target.x, target.y, heading), self._p_num('pre_dock_standoff_m'),`)\n\n這份結果包含了函式的定義和所有找到的呼叫點的檔案與行號。",
+   "passed": true,
+   "ok": [
+    "DockGeometry.py:99",
+    "DockPrePosePlanner.py:106",
+    "LocalDockNode.py:653"
+   ],
+   "missing": []
+  },
+  {
+   "id": "cross_speed_limit",
+   "model": "gemma4:26b",
+   "why": "答對：RMF 的來源寫成「調度系統」",
+   "reply": "根據 launch 檔的內容分析：\n\n1. **LocalNavNode 發出的限速 Topic**：為 `/speed_limit_nav`。\n2. **合併節點與來源**：由 `safety_motion_controller` 進行合併。它會訂閱並整合以下三個來源的限速：\n   - 調度系統（當 `use_rmf_speed_limit` 為 true 時，訂閱 `/<ROBOT_NS>/speed_limit`）\n   - LocalNav (`/speed_limit_nav`)\n   - LocalDock (`/speed_limit_dock`)\n   合併邏輯是取這三者中的**最小值**（最慢速）。\n3. **合併後的輸出 Topic**：`safety_motion_controller` 將結果發送給 `controller_server`，最終由 `controller_server` 發布 `/speed_limit`。",
+   "passed": true,
+   "ok": [
+    "/speed_limit_nav",
+    "safety_motion_controller",
+    "dock 的限速來源",
+    "RMF 的限速來源",
+    "輸出到 /speed_limit"
+   ],
+   "missing": []
+  },
+  {
+   "id": "cross_odom_source",
+   "model": "gemma4:26b",
+   "why": "對一半：寫了 ekf_filter_node，沒有寫融合的 topic 名稱",
+   "reply": "根據 `amr_base_hw/hw_bringup/launch/hw_bringup.launch.py` 的內容：\n\n1. **預設發布節點**：預設由 `ekf_filter_node` 發布 `/odom`。\n2. **融合的輸入 Topic**：它融合了 `wheel odometry`、`RF2O` 與 `IMU data`。\n3. **關閉 `use_robot_localization` 時**：改由 `wheel_odom_to_odom` 節點發布 `/odom`。",
+   "passed": false,
+   "ok": [
+    "EKF 發布",
+    "關掉時 odom_tf_broadcaster"
+   ],
+   "missing": [
+    "/wheel_odom",
+    "/rf2o_odom",
+    "/imu_data"
+   ]
+  },
+  {
+   "id": "cnt_hw_params",
+   "model": "gemma4:26b",
+   "why": "答錯：照抄文字搜尋的 30／44（_declare_parameters 也算進去）",
+   "reply": "在 「amr_base_hw」 中，共有 5 個 Python 檔宣告了 ROS 參數（declare_parameter），總計 44 筆。各檔案統計如下：\n\n- 「base_controller_node.py」：30 筆\n- 「laser_scan_merger.py」：6 筆\n- 「keyboard_teleop_node.py」：3 筆\n- 「tdk_imu_node.py」：3 筆\n- 「wit_ros2_imu.py」：2 筆",
+   "passed": false,
+   "ok": [
+    "keyboard_teleop_node.py：3",
+    "laser_scan_merger.py：6",
+    "tdk_imu_node.py：3",
+    "wit_ros2_imu.py：2"
+   ],
+   "missing": [
+    "base_controller_node.py：28",
+    "總共 42"
+   ]
+  },
+  {
+   "id": "cpp_rf2o_params",
+   "model": "gemma4:26b",
+   "why": "答錯：去查容器，Docker 連不上就停下來",
+   "reply": "執行結果顯示無法連線到 Docker daemon（無法連線到 tcp://127.0.0.1:9），這代表 Docker 服務目前可能沒有啟動，或者目前的帳號沒有權限操作 Docker。請您確認 Docker 服務是否正常運行（例如檢查 `systemctl status docker`）。",
+   "passed": false,
+   "ok": [],
+   "missing": [
+    "laser_scan_topic = /scan",
+    "odom_topic = /odom_rf2o",
+    "base_frame_id = base_link",
+    "odom_frame_id = odom",
+    "publish_tf = true",
+    "init_pose_from_topic = /base_pose_ground_truth",
+    "freq = 10.0"
+   ]
+  },
+  {
+   "id": "doc_gate_startup",
+   "model": "gemma4:26b",
+   "why": "對一則：「立即送出一筆 0」算輸出 0；狀態寫成 SAFETY_COMMAND_TIMEOUT 是錯的",
+   "reply": "根據規格書內容：\n\n當 `require_safety_command` 為 true 時，若節點剛啟動且尚未收到安全指令（處置逾時），會判斷為拒絕，原因為 `SAFETY_COMMAND_TIMEOUT` (GATE-F06-B04)；在初始化流程中，會執行第一次狀態發布，並立即送出一筆 0 (GATE-S06)。",
+   "passed": false,
+   "ok": [
+    "第一筆輸出是 0"
+   ],
+   "missing": [
+    "GATE-S06：保護停車"
+   ]
+  },
+  {
+   "id": "doc_pred_map",
+   "model": "gemma4:26b",
+   "why": "對兩則：PRD_MAP_ERROR 就是 ERROR 事件、「仍會被視為成功」；沒講序列被剔光（講的是單台出錯跳過）",
+   "reply": "根據 `fih_rmf_system/docs/specs/nodes/predictor.md` 規格書：\n\n1. **啟動時讀地圖失敗**：會記錄一個 `PRD_MAP_ERROR` 事件，其中包含例外類別 `err` 與詳細訊息 `detail`（行 144, 258-259）。此時 `stations` 與 `edges` 會維持為空，但 `configure` 過程仍會被視為成功（PRD-F20-B01, PRD-O07, 行 268-269）。\n2. **序列處理**：若收到的序列中，單台機器人的資料處理出錯（例如 sequence 格式錯誤、缺少 timestamp 或 `v_mps` 為 0 等），會記錄 `PRD_ROBOT_FAILED` 事件（包含 `robot`, `err`, `detail`）並跳過該台機器人，使其不會出現在最終輸出中（PRD-F12-B06, 行 406）。若所有機器人都處理失敗，則會記錄 `PRD_ALL_FAILED` 並回傳 `None`（行 410）。",
+   "passed": false,
+   "ok": [
+    "PRD-O07：只記 ERROR",
+    "照常執行"
+   ],
+   "missing": [
+    "序列被剔光"
+   ]
+  },
+  {
+   "id": "cross_speed_limit",
+   "model": "gemma4:26b",
+   "why": "答對：dock 的來源寫成「LocalDock」",
+   "reply": "根據 `start_sim_and_spawn_Base.launch.py` 的分析結果：\n\n1. **LocalNavNode 發出的限速 Topic**：透過 `SPEED_LIMIT_NAV`（即 `/speed_limit_nav`）發送。\n2. **負責合併的節點**：由 `safety_motion_controller` 節點負責合併。\n3. **合併的限速來源**：包含調度系統 (RMF)、LocalNav 以及 LocalDock 的限速來源（它會取這些來源中的最慢值）。\n4. **合併後的輸出 Topic**：最終發布至 `/speed_limit`。",
+   "passed": true,
+   "ok": [
+    "/speed_limit_nav",
+    "safety_motion_controller",
+    "dock 的限速來源",
+    "RMF 的限速來源",
+    "輸出到 /speed_limit"
+   ],
+   "missing": []
+  },
+  {
+   "id": "doc_task_confirm",
+   "model": "gemma4:26b",
+   "why": "引用錯：不同 task_id 那一則寫成 TSK-F23-B01（應該是 B04；B01 是沒有等待中的派工），也漏了不重新計時",
+   "reply": "根據 `task_agent` 規格書的內容：\n\n1. **收到不同 `task_id` 的 confirm**：會因 `task_id` 不符而拒絕該訊號，並繼續維持在 `WAITING_CONFIRM` 狀態等待（參考編號：TSK-F23-B01，行 341）。\n2. **收到同一筆的 `authorize`**：\n   - 若該 `task_id` 尚未啟動，則會重發 `yes` 並繼續等待 `confirm`（參考編號：TSK-F22-B03，行 337）。\n   - 若該 `task_id` 已經啟動過或已被中止（紀錄於 `AllocatorHandshake.closed_task_ids` 中），則該 `authorize` 與後續的 `confirm` 都會被拒絕，不再受理（參考編號：TSK-F22-B03，行 337；行 133）。",
+   "passed": false,
+   "ok": [
+    "TSK-S06：重發 yes"
+   ],
+   "missing": [
+    "TSK-S08：不變、繼續等",
+    "TSK-S06：不重新計時"
+   ]
+  },
+  {
+   "id": "doc_nav_stop",
+   "model": "gemma4:e4b",
+   "why": "內容對但沒有引用規格書的編號（去讀程式，引用存檔的行號）",
+   "reply": "根據規格書的內容，在 `amr_base_sw/amr_base_sw/LocalPlanner_Controller/navigation/ros_nodes/nav_fsm/segment.py` 中，`LocalNavNode` 在任何狀態收到 `cmd_stop` 後，會轉移到 `H.IDLE` 狀態，並且會記錄日誌訊息「收到 cmd_stop，結束這個段落（{node._fsm.state}），不回報」。這段行為的相關事實記錄在存檔 #2 中（行 177-181）。",
+   "passed": false,
+   "ok": [],
+   "missing": [
+    "LNV-S26：IDLE",
+    "不回報"
+   ]
+  },
+  {
+   "id": "cpp_laserscan_pub",
+   "model": "gemma4:26b",
+   "why": "答錯：寫了標頭檔的宣告（.h 第 383 行），題目問定義（.cpp）",
+   "reply": "在 `amr_base_hw/sick_scan_xd` 中，`RosMsgpackPublisher` 類別負責發布 `LaserScan` 訊息的成員函式是 `publishLaserScanMsg`，其定義位於 `amr_base_hw/sick_scan_xd/include/sick_scansegment_xd/ros_msgpack_publisher.h` 檔案的第 383 行。",
+   "passed": false,
+   "ok": [
+    "publishLaserScanMsg"
+   ],
+   "missing": [
+    "ros_msgpack_publisher.cpp:552"
+   ]
+  },
+  {
+   "id": "py_check_path",
+   "model": "gemma4:26b",
+   "why": "漏列同一個檔案裡的呼叫（PathCollisionChecker.py:185）",
+   "reply": "根據搜尋結果，`check_path` 是 `PathCollisionChecker` 類別的方法，其定義與呼叫位置如下：\n\n**定義位置：**\n- `amr_base_sw/amr_base_sw/LocalPlanner_Controller/common/perception/PathCollisionChecker.py` 第 48 行\n\n**呼叫位置：**\n- `BypassGoal.py` 第 482 行\n- `bypass.py` 第 159 行\n- `holding.py` 第 229 行\n- `tick.py` 第 137 行",
+   "passed": false,
+   "ok": [
+    "PathCollisionChecker.py:48",
+    "BypassGoal.py:482",
+    "bypass.py:159",
+    "holding.py:229",
+    "tick.py:137"
+   ],
+   "missing": [
+    "PathCollisionChecker.py:185"
+   ]
+  }
+ ]
+}

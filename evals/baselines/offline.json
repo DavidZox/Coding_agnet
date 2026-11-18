@@ -34,6 +34,11 @@
   "passed": 3,
   "total": 3
  },
+ "repo_selftest": {
+  "label": "真實專案評測（第 0 步）（2026-11-18）",
+  "passed": 9,
+  "total": 9
+ },
  "skills": {
   "label": "待辦 20、23（2026-10-25）",
   "passed": 100,
