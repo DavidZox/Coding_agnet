@@ -179,6 +179,17 @@ EXTRACT_JOBS_DIRNAME = "extract_jobs"
 EXTRACT_JOBS_KEEP = int(os.environ.get("AGENT_EXTRACT_JOBS_KEEP", "500"))   # 提煉的存檔只留最近幾次（每次幾十 KB：prompt 含那一段的原文）
 RECALL_MAX_RECORDS = 3   # result_recall 一次最多讀幾份存檔（幾份的段落交給 worker，同一個整合看全部）
 
+# 🔗 新架構的低階執行器（agent_core/edg.py，D10 第 2 步）：照決策圖執行工具節點、執行前用腳本的 parse_args 檢查參數、照收據守門、
+# 第 1 級修正（每個節點修一次）。每一次執行存在 logs/edg_jobs/<編號>/（圖、每個節點的嘗試與收據、修正的模型呼叫）。
+EDG_JOBS_DIRNAME = "edg_jobs"
+EDG_JOBS_KEEP = int(os.environ.get("AGENT_EDG_JOBS_KEEP", "300"))
+# 參數從前一個節點的收據帶入、一項一個實例時，一個節點最多跑幾個實例：多的不跑，節點標「沒跑完」並寫明共幾個，交回中階決定
+# （資源的上限，不是判斷的門檻：收據的項目最多 1000 筆，全部展開會跑一千次腳本）。
+EDG_EACH_MAX = int(os.environ.get("AGENT_EDG_EACH_MAX", "50"))
+# 第 1 級修正用的模型（D8：每一層可以分開設定，第一版跟主對話同一個）；空字串＝主對話的模型。
+EDG_MODEL = os.environ.get("AGENT_EDG_MODEL", "").strip()
+EDG_FIX_PREDICT = 600   # 修正的輸出（理由＋參數）的 num_predict 上限
+
 # run_tool 載入技能規格文件時回傳字串的固定開頭。規格文件是「按需載入」機制的核心，
 # 內容（尤其是實際腳本路徑與參數格式）必須完整進入上下文，因此 _content_for_context
 # 對這類結果一律放行、不套用 TOOL_RESULT_TOKEN_THRESHOLD，Web Console 也不標記 ⚠️。

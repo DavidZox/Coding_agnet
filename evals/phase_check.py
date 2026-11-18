@@ -1,13 +1,14 @@
 """每個階段結束時的持續驗證：跑一組固定的檢查，跟 evals/baselines/ 的基準逐項比，列出退步、變慢、禁止動作。
 
-    python3 evals/phase_check.py                  # 離線（約 2 分鐘）：技能、主對話、提煉、維運、數據分析、真實專案評測的自我測試，評測的完整性
+    python3 evals/phase_check.py                  # 離線（約 2 分鐘）：技能、主對話、提煉、維運、數據分析、真實專案評測、低階執行器的自我測試，評測的完整性
                                                   #   （凍結的工具的自我測試也跑：harness 改壞它們還是擋得到）
     python3 evals/phase_check.py --model          # 再加上 harness 的真模型評測（約 30 分鐘）：提煉（26b、e4b）、主對話（e4b 11 個情境 ×3）、
+                                                  #   低階執行器的第 1 級修正（26b、e4b，11 題 ×3）、
                                                   #   維運的檔案與調查（26b 23 個：檔案 12、保留組的檔案 4、調查與報告 7）
     python3 evals/phase_check.py --tools          # 凍結的工具（選用，2026-11 起不再開發）：技能接沙盒、容器技能、數據技能實機、數據分析回歸
     python3 evals/phase_check.py --tools --model  # 再加上維運的其他情境（26b 54 個：容器、ROS 2、調度交握、複合任務與它們的保留組）
     python3 evals/phase_check.py --only ops,extract --model     # 只跑某幾項（名稱見 summary.md 的第一欄括號）
-    python3 evals/phase_check.py --compare <結果目錄> [...]      # 不跑，只拿已經跑好的結果跟基準比（維運、主對話、提煉、數據分析回歸）
+    python3 evals/phase_check.py --compare <結果目錄> [...]      # 不跑，只拿已經跑好的結果跟基準比（維運、主對話、提煉、第 1 級修正、數據分析回歸）
     python3 evals/phase_check.py --save-baseline <結果目錄> [...]  # 階段 commit 之後，用這幾次的結果更新基準（同一種的多個目錄合成一份）
     python3 evals/phase_check.py --save-baseline <phase_check 目錄> --only skills,chat_selftest,ops   # 只更新這幾項（其他的基準不動）
 
@@ -34,12 +35,14 @@ OFFLINE = [("skills", "技能自我測試", ["evals/skills/selftest.py"]),
            ("ops_selftest", "維運自我測試", ["evals/ops/selftest.py"]),
            ("analysis_selftest", "數據分析自我測試", ["evals/analysis/selftest.py"]),
            ("repo_selftest", "真實專案評測的自我測試（核對、答案跟快照一致）", ["evals/repo/selftest.py"]),
+           ("edg_selftest", "低階執行器的自我測試（照圖執行、守門、第 1 級）", ["evals/edg/selftest.py"]),
            ("integrity", "評測的完整性（模型會讀的文字沒有評測世界的名稱）", ["evals/integrity/selftest.py"])]
 TEST_CONTAINER = "cah_analysis_test"
 LIVE_DATA = ["/workspace/experiment_logs/gen/s1/gen_s1_005", "/workspace/experiment_logs/exp_5090_overheat"]
 CHAT_SCENARIOS = ("fleet_battery,fleet_followup,followup_in_context,cross_session_recall,compare_two_archives,count_from_script,"
                   "current_state_rerun,memory_stale_state,error_recovery,guard_dispatch,containers_basic")
 EXTRACT_MODELS = ("gemma4:26b", "gemma4:e4b")
+EDG_MODELS = ("gemma4:26b", "gemma4:e4b")   # 低階執行器的第 1 級修正（evals/edg/run.py；全部的題目各跑 3 次）
 OPS_MODEL, CHAT_MODEL = "gemma4:26b", "gemma4:e4b"
 # 維運情境分兩部分（2026-11 起 harness 是重點、其他工具凍結）：harness＝檔案（含保留組的檔案）與調查、整理報告（2026-11-18 起由主對話自己做），每個階段都跑；
 # 凍結的工具＝容器、ROS 2、調度交握、複合任務與它們的保留組，--tools 才跑
@@ -182,6 +185,11 @@ def suite_model(only, tools=False):
         rc, out = run([PY, "evals/chat/run.py", "--modes", "harness", "--runs", "3", "--only", CHAT_SCENARIOS, "--model", CHAT_MODEL,
                        "--tag", "phase"], timeout=7200)
         res.append(chat_result([report_dir(out)]) if report_dir(out) else {"key": "chat", "title": "主對話", "kind": "chat", "error": out[-600:]})
+    if want("edg"):
+        for model in EDG_MODELS:
+            rc, out = run([PY, "evals/edg/run.py", "--model", model, "--set", "all", "--runs", "3", "--tag", "phase"], timeout=3600)
+            res.append(edg_result(report_dir(out), model) if report_dir(out) else
+                       {"key": f"edg:{model}", "title": f"第 1 級修正（{model}）", "kind": "edg", "error": out[-600:]})
     if want("ops"):
         res.append(run_ops("harness", OPS_HARNESS_DOMAINS))
     if tools and want("ops_tools"):
@@ -260,6 +268,20 @@ def extract_result(d, model=None):
     return {"key": f"extract:{model}", "title": f"提煉（{model}）", "kind": "extract", "model": model, "dirs": [d], "per": per}
 
 
+def edg_result(d, model=None):
+    """第 1 級修正的評測：每一題 [過了幾次, 跑了幾次]、主要／保留組的合計。"""
+    per, sets = {}, {}
+    for r in _jsonl(os.path.join(d, "runs.jsonl")):
+        model = model or r.get("model")
+        s = per.setdefault(r["id"], [0, 0])
+        s[0] += int(r["passed"])
+        s[1] += 1
+        g = sets.setdefault(r["set"], [0, 0])
+        g[0] += int(r["passed"])
+        g[1] += 1
+    return {"key": f"edg:{model}", "title": f"第 1 級修正（{model}）", "kind": "edg", "model": model, "dirs": [d], "per": per, "sets": sets}
+
+
 def analysis_result(name, d):
     """數據分析回歸：每份數據的評分項目（時間線、Topic 類別、用詞、時間有根據、重點涵蓋…，scorecard.json）；實錄另有穩定性與時間的根據。"""
     res = {"key": f"analysis:{name}", "title": f"數據分析回歸（{name}）", "kind": "analysis", "dirs": [d], "per": {}}
@@ -297,6 +319,8 @@ def classify(d):
         return "ops"
     if "_extract_" in base:
         return "extract"
+    if "_edg_" in base:
+        return "edg"
     if base.startswith("analysis_"):
         return "analysis"
     p = os.path.join(d, "runs.jsonl")
@@ -332,6 +356,8 @@ def from_dirs(dirs):
         res.append(chat_result(groups["chat"]))
     for d in groups.get("extract", []):
         res.append(extract_result(d))
+    for d in groups.get("edg", []):
+        res.append(edg_result(d))
     for d in groups.get("analysis", []):
         name = os.path.basename(d.rstrip("/")).split("_")[-1]
         name = f"gen_{name}" if name.startswith("s") else name
@@ -371,6 +397,8 @@ def compare(r):
         return compare_chat(r)
     if kind == "extract":
         return compare_extract(r)
+    if kind == "edg":
+        return compare_edg(r)
     if kind == "analysis":
         return compare_analysis(r)
     return "—", "—", "?", []
@@ -449,6 +477,20 @@ def compare_extract(r):
     return text, btxt, ("⚠️" if notes else "✅"), notes
 
 
+def compare_edg(r):
+    base = ((load_baseline("edg") or {}).get("models") or {}).get(r["model"], {})
+    bper, notes = base.get("per", {}), []
+    for case, (ok, n) in sorted(r["per"].items()):
+        b = bper.get(case)
+        if not b:
+            notes.append(f"{case}：基準裡沒有")
+        elif ok / n < b[0] / b[1]:
+            notes.append(f"{case}：{ok}/{n}（基準 {b[0]}/{b[1]}）")
+    fmt = lambda sets: "、".join(f"{'主要' if s == 'main' else '保留'} {v[0]}/{v[1]}"   # noqa: E731
+                                 for s, v in sorted(sets.items(), key=lambda kv: kv[0] != "main"))
+    return fmt(r["sets"]), (fmt(base.get("sets", {})) or "（沒有基準）"), ("⚠️" if notes else "✅"), notes
+
+
 def compare_analysis(r):
     name = r["key"].split(":", 1)[1]
     base = ((load_baseline("analysis") or {}).get("sets") or {}).get(name, {})
@@ -502,6 +544,11 @@ def save_baseline(results, label):
             old["models"][r["model"]] = r["per"]
             old.setdefault("labels", {})[r["model"]] = f"{label}（{stamp}，{os.path.basename(r['dirs'][0])}）"
             write("extract", old)
+        elif r["kind"] == "edg":
+            old = load_baseline("edg") or {"models": {}}
+            old["models"][r["model"]] = {"per": r["per"], "sets": r["sets"],
+                                         "label": f"{label}（{stamp}，{os.path.basename(r['dirs'][0])}）"}
+            write("edg", old)
         elif r["kind"] == "analysis":
             old = load_baseline("analysis") or {"sets": {}}
             name = r["key"].split(":", 1)[1]

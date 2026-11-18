@@ -20,9 +20,9 @@
 
 | 圖 | 來源 | 內容 |
 |---|---|---|
-| ![架構](images/AI_agent_harness的說明.png) | `diagrams/AI_agent_harness的說明.puml` | 元件與資料流；`vision/`（框選／上傳 → 結構化提取 → `[vision result]`）與使用者介面、SkillAgent、技能、偽技能（result_recall、analysis_run）、一次性 session（提煉、滾動摘要、視覺）、`logs/` 底下各種存檔、確認關卡的範圍 |
+| ![架構](images/AI_agent_harness的說明.png) | `diagrams/AI_agent_harness的說明.puml` | 元件與資料流；`vision/`（框選／上傳 → 結構化提取 → `[vision result]`）與使用者介面、SkillAgent、技能、偽技能（result_recall、analysis_run）、一次性 session（提煉、滾動摘要、視覺）、`logs/` 底下各種存檔（含收據 `<存檔>.receipt.json`）、確認關卡的範圍 |
 | ![一回合](images/AI_agent_harness的狀態轉移.png) | `diagrams/AI_agent_harness的狀態轉移.puml` | 一回合的狀態機；`/analyze` 直接指定；確認關卡擋哪些；Dispatch 的偽技能；附圖時的視覺提取（1b），以及附圖分析在 prompt、壓縮、下一句話裡的位置 |
-| ![工具回傳管線](images/AI_agent_harness的工具回傳管線.png) | `diagrams/AI_agent_harness的工具回傳管線.puml` | 原文存檔 → 規格文件、提煉過的、程式整理好的報告（數據分析）直接給原文 → 太長的提煉（程式切段 → 每段一個 worker → 整合，程式核對行號）→ 檢索清單 → result_recall；退路（`/summarize off`、提煉沒成功、重點不比原文短）；中段是附圖的影像分析（提取 → 存成 #編號 → 〔附圖分析〕進清單 → 併進訊息），同一套 recall |
+| ![工具回傳管線](images/AI_agent_harness的工具回傳管線.png) | `diagrams/AI_agent_harness的工具回傳管線.puml` | 原文存檔（第一版領域的腳本另外寫收據給程式讀）→ 規格文件、提煉過的、程式整理好的報告（數據分析）直接給原文 → 太長的提煉（程式切段 → 每段一個 worker → 整合，程式核對行號）→ 檢索清單 → result_recall；退路（`/summarize off`、提煉沒成功、重點不比原文短）；中段是附圖的影像分析（提取 → 存成 #編號 → 〔附圖分析〕進清單 → 併進訊息），同一套 recall |
 | ![數據分析的流程](images/數據診斷的流程.png) | `diagrams/數據診斷的流程.puml` | 數據分析（事實報告）的完整流程（活動圖）：收到問題 → 資料預備與事實（超過 3 分鐘先切；字串裡的 JSON 展開成 Key；程式量全部 Topic 的全部 Key、整理成有編號的事實）→ 重點（程式照規則寫：每個重要的時間點一則）→ 報告 → 主對話依報告回答與程式的核對（之後的回合也核對）；藍＝程式、橘＝模型、綠＝程式核對，底部是程式做的與模型做的；第九輪的流程圖在 `archive/root_cause_reference/doc/` |
 | ![prompts 與流程的對應](images/prompts與流程的對應.png) | `diagrams/prompts與流程的對應.puml` | 給模型的字都在 `prompts/`：主對話（AGENT.md、context_modes/、Memory.md、harness/）與各種獨立 session（summary/、extract/、vision/）各用哪些檔案，誰組 prompt、輸出的 schema；`skills_system/` 的 SKILLS.md、技能規格也是模型會讀的；留在程式裡的只有程式的輸出（工具結果、報告、[ERROR]）與程式認的標記；各 session 用哪個模型 |
 

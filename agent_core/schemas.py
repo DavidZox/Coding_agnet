@@ -100,3 +100,16 @@ EXTRACT_WORKER_SCHEMA = {
     },
     "required": ["relevant", "facts", "errors", "summary"],
 }
+
+# 低階執行器的第 1 級修正（agent_core/edg.py）：一個工具節點參數錯（或逾時）時，只改這個節點的字面參數。先寫理由（哪裡錯、照規格怎麼改），
+# 再寫修不修得好（要換工具、要使用者決定的是修不好，往上交）與新的參數（一個一個的字串，不用 shell 的引號）；程式再用腳本的 parse_args
+# 檢查、核對逾時的縮小方式與範圍。寫成一行參數（像主對話的 action.args）時，e4b 常漏了引號、把腳本路徑也寫進去（2.29）。
+EDG_FIX_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "reason": _text(300),
+        "fixable": {"type": "boolean"},
+        "args": {"type": "array", "items": _text(300), "maxItems": 20},
+    },
+    "required": ["reason", "fixable", "args"],
+}

@@ -26,7 +26,7 @@ USAGE = (
 )
 
 
-def parse_cli(argv):
+def parse_args(argv):
     """解析命令列參數 → (file_path, show_docstrings, show_private, error)"""
     file_path, show_docstrings, show_private, extra = None, True, False, []
     for arg in argv:
@@ -283,7 +283,7 @@ def analyze_ast(file_path, show_docstrings=True, show_private=False):
 
 
 def execute(argv):
-    file_path, show_docstrings, show_private, err = parse_cli(argv)
+    file_path, show_docstrings, show_private, err = parse_args(argv)
     if err:
         return fail(err, "args")
     if hasattr(signal, "SIGALRM"):

@@ -97,6 +97,7 @@ def eval_names():
     world_text = "\n".join(text for text, _ in fs_world.files().values())
     add("設定名稱", re.findall(r"^\s*-?\s*([a-z]+_[a-z0-9_]+):", world_text, re.M))
     add("真實專案的答案", repo_answer_names())
+    add("低階執行器評測的參數", edg_case_names())
     return names
 
 
@@ -110,6 +111,22 @@ def repo_answer_names():
         for alt in (a for it in q["items"] for grp in it["all"] for a in grp):
             if len(alt) >= 5 and re.fullmatch(r"[/A-Za-z_][\w./-]*", alt) and re.search(r"[_./-]|[a-z][A-Z]", alt):
                 out.add(alt)
+    return out
+
+
+def edg_case_names():
+    """第 1 級修正的評測（evals/edg/cases.py）題目裡的檔名、路徑與名稱（規則同 repo_answer_names）：修正的 prompt 與技能說明不能用到。"""
+    sys.path.insert(0, os.path.join(PROJECT, "evals", "edg"))
+    try:
+        import cases
+    finally:
+        del sys.path[0]
+    out = set()
+    for c in cases.CASES:
+        for a in c["node"]["args"]:
+            a = a[2:] if a.startswith("./") else a
+            if len(a) >= 5 and re.fullmatch(r"[/A-Za-z_][\w./-]*", a) and re.search(r"[_./-]|[a-z][A-Z]", a):
+                out.add(a)
     return out
 
 

@@ -26,6 +26,8 @@ harness 送給模型的字都在這裡：改字不用改程式，存檔之後下
 | `summary/rolling.md` | 滾動摘要 session | `compression._summary_prompts` |
 | `extract/worker.md`、`synthesizer.md` | 工具回傳的提煉：分段的 worker、整合（規則） | `extract.py` |
 | `extract/inputs.md` | 提煉的 user 訊息裡程式組的標籤、程式的說明、修一次的說明 | `extract.py` |
+| `edg/fix.md` | 新架構的低階執行器：第 1 級修正（一個工具節點參數錯或逾時，只改字面參數；修不好就說修不好）的規則 | `edg.ModelFixer` |
+| `edg/inputs.md` | 第 1 級修正的 user 訊息裡程式組的標籤（子目標、規格、參數、錯誤、逾時的縮小方式） | `edg.fix_message` |
 | `vision/extraction.md` | Web 附圖的影像提取（視覺模型的 system、純文字的退路、user 訊息） | `vision/extraction.py` |
 
 ## 範本的寫法

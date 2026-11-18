@@ -2,8 +2,9 @@
 
 以本地 Ollama 模型（預設 `gemma4:e4b`）為核心的 agent harness，有 CLI 與 Web 兩種介面；決策模型只用本地模型（離線的工廠環境）。
 
-- **新架構**（2026-11-18 起討論中，還沒實作）：高－中－低三層（領域路由、技能合約與 SOP、照收據執行的決策圖）與三級回退；
-  構想在 `docs/`，討論與決定在〈[新架構討論紀錄](docs/新架構討論紀錄.md)〉。下面寫的是現在的程式。
+- **新架構**（2026-11-18 起由下往上實作，還沒接上主對話）：高－中－低三層（領域路由、技能合約與 SOP、照收據執行的決策圖）與三級回退；
+  構想在 `docs/`，討論與決定在〈[新架構討論紀錄](docs/新架構討論紀錄.md)〉。做好的：評測（`evals/repo/`）、第一版領域技能的收據、
+  低階執行器（`agent_core/edg.py`：照圖執行、照收據守門、第 1 級修正）。下面寫的是現在的程式。
 - **harness 本身**（新架構沿用的基礎；目標是找檔案、文件與程式分析做到穩定）：一次一個動作的主對話迴圈、會改變狀態的動作先問使用者
   （確認關卡）、**多段處理長內容**（太長的工具輸出由程式切段、每段一個 worker 提煉、每條事實附行號由程式核對）、**存檔與回顧**（每次的
   原文存成 `#編號`，之後用 `result_recall` 等回到原文）。多步驟的任務由主對話一步一步做：任務引擎（`task_run`）與 Plan 模式
@@ -128,6 +129,7 @@ Web 左欄是對話，右欄是系統與工具回傳（另一個分頁是「📊
 | 多步驟維運 | `evals/ops/selftest.py`（維運技能） | `evals/ops/run.py`（Docker-in-Docker 沙盒裡真的執行） |
 | 提煉 | `evals/chat/extract_selftest.py` | `evals/extract/run.py`（已知答案的長輸出） |
 | 真實專案（新架構的評測） | `evals/repo/selftest.py`（核對、答案跟固定版本的快照一致） | `evals/repo/run.py`（amr_base 三個套件的 30 題，答案由程式算） |
+| 低階執行器（新架構） | `evals/edg/selftest.py`（寫好的圖、假的修正模型） | `evals/edg/run.py`（第 1 級修正：故意錯一個參數，看修好或往上交） |
 | 評測的完整性 | `evals/integrity/selftest.py`（模型會讀的文字沒有評測世界的名稱） | — |
 | 每個階段結束 | `evals/phase_check.py`（離線） | `evals/phase_check.py --model`（harness 的真模型評測，跟 `evals/baselines/` 逐項比；凍結的工具加 `--tools`） |
 
@@ -139,7 +141,7 @@ Web 左欄是對話，右欄是系統與工具回傳（另一個分頁是「📊
 Coding_agnet/            （資料夾名稱沿用；原本的 coding agent 已移到 ~/Coding_agent_harness）
 ├── Agent_Runner.py      CLI 入口（實作在 agent_core/cli.py）
 ├── web_console.py       Web 入口（實作在 web_app/）
-├── agent_core/          核心：SkillAgent（由各 mixin 組成）、回覆協議、常數；analysis_job.py＝數據解析、extract.py＝工具回傳的提煉
+├── agent_core/          核心：SkillAgent（由各 mixin 組成）、回覆協議、常數；analysis_job.py＝數據解析、extract.py＝工具回傳的提煉、edg.py＝新架構的低階執行器
 ├── web_app/             Web 介面（純標準庫）：回合流程、slash 指令、HTTP、static/index.html；analysis.py＝📊 面板的後端
 ├── prompts/             給模型的文字，全部在這裡（可以直接改，不用改程式；README.md＝每個檔案給誰、範本的寫法）
 │   ├── AGENT.md         主對話的 system prompt

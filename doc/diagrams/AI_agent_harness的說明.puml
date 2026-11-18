@@ -89,6 +89,9 @@ rectangle NodeSkills #D5E8D4 [
     結果跟一般工具回傳一樣存檔、提煉
   * 慣例（doc/技能撰寫規範.md）：第一行 [PASS]／[ERROR]（[ERROR] 附下一步）；
     長的輸出分 ## 章節；計數、排序、門檻由腳本算；不讀標準輸入、有逾時
+  * 收據（新架構 D4）：第一版領域的腳本另外寫一份給程式讀的結果
+    （_receipt_common：狀態、錯誤種類、數量、項目；給模型的文字不變）；
+    規格的 parameters／receipt 是給程式看的，載入給模型時拿掉
 ]
 
 rectangle NodeWorld #FFF2CC [
@@ -102,7 +105,8 @@ rectangle NodeStore #E1D5E7 [
   **logs/ 與記憶（logs/ 已 .gitignore）**
   ----
   * tool_results/<session>_<編號>_<腳本>.md：每次執行的完整原文
-    （編號跨 session 唯一；工具回傳留最近 200 檔／50 MB）＋ index.md
+    （編號跨 session 唯一；工具回傳留最近 200 檔／50 MB）＋ index.md；
+    腳本寫了收據時旁邊有 <…>.receipt.json（跟存檔一起刪）
   * tool_results/tools_use_index.md：大量回傳的一句話關聯描述
     （「#編號｜使用者想知道什麼：原文有什麼」，整句不截斷，永久累加）
   * 被壓縮的對話片段也存成 #編號（conversation_segment），描述只講那一段；
@@ -130,7 +134,7 @@ NodeAgent -down-> NodeSkills : 技能名稱 → 回規格文件（不執行）
 NodeAgent -[#CC6600,bold]down-> NodeSkills : 腳本路徑 → subprocess
 NodeSkills -down-> NodeWorld : docker exec／HTTP／檔案操作
 NodeWorld -up-> NodeSkills : 原始輸出
-NodeSkills -[#009933,bold]up-> NodeAgent : [PASS]／[ERROR] 完整輸出\n+ [CWD_CHANGED]／[TARGET_CONTAINER]
+NodeSkills -[#009933,bold]up-> NodeAgent : [PASS]／[ERROR] 完整輸出\n+ [CWD_CHANGED]／[TARGET_CONTAINER]\n＋收據（另一個檔，給程式讀）
 NodeAgent -left-> NodeStore : 存檔原文、附圖分析、檢索描述、\n軌跡、摘要歸檔、耗時
 NodeStore -right-> NodeAgent : 檢索清單、最新摘要與使用者原話、\n常駐記憶；recall 讀回原文
 NodeLLM -[hidden]down-> NodeSub

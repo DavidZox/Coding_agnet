@@ -19,6 +19,11 @@
   "passed": 8,
   "total": 8
  },
+ "edg_selftest": {
+  "label": "低階執行器（D10 第 2 步）（2026-11-18）",
+  "passed": 12,
+  "total": 12
+ },
  "extract_selftest": {
   "label": "第 4 階段（任務引擎，三次完整跑）（2026-10-24）",
   "passed": 12,
@@ -40,9 +45,9 @@
   "total": 9
  },
  "skills": {
-  "label": "收據（D10 第 1 步）（2026-11-18）",
-  "passed": 108,
-  "total": 108
+  "label": "低階執行器（D10 第 2 步）（2026-11-18）",
+  "passed": 109,
+  "total": 109
  },
  "skills_sandbox": {
   "label": "待辦 20、23（2026-10-25）",

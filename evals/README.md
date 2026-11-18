@@ -1,6 +1,6 @@
 # 評測（evals）
 
-評測依對象分成八組，外加每個階段結束時跑的總執行器（`phase_check.py`，見最後一節）。**不用模型**的自我測試（假的 `ollama.chat` 照劇本回答，或直接執行腳本，幾秒到一分多鐘）改程式之後先跑；**真模型／實機**的評測要 Ollama、容器或沙盒。
+評測依對象分成九組，外加每個階段結束時跑的總執行器（`phase_check.py`，見最後一節）。**不用模型**的自我測試（假的 `ollama.chat` 照劇本回答，或直接執行腳本，幾秒到一分多鐘）改程式之後先跑；**真模型／實機**的評測要 Ollama、容器或沙盒。
 每一次都在臨時目錄複製一份專案來跑，不碰正式的 `logs/` 與 `prompts/Memory.md`（數據分析回歸例外：job 照常寫進正式的 `logs/analysis_jobs/`，評分從那裡讀）；結果寫到 `evals/results/`（已在 `.gitignore`）。
 
 | 組 | 不用模型 | 真模型／實機 | 測什麼 |
@@ -13,6 +13,7 @@
 | `integrity/` 評測的完整性 | `selftest.py` | — | 模型會讀的文字（prompt、技能說明、程式回給模型的字）沒有評測世界的名稱（從評測的來源自動取）；`prompts/` 的範本跟程式對得上；沒人用的程式 |
 | `extract/` 提煉 | —（不用模型的在 `chat/extract_selftest.py`） | `run.py`（情境在 `cases.py`：程式產生已知答案的長輸出；`worker.py` 跑一個情境） | 工具回傳的提煉與 result_recall：找到幾個、多列幾個、數量的說法、切幾段讀幾段、程式拿掉幾條 |
 | `repo/` 真實專案（新架構的評測） | `selftest.py`（核對、每一題答得出來、答案跟快照一致、碰不到真的容器） | `run.py`（題目在 `questions.py`，答案 `answers.json` 由程式從固定版本的快照算；借用 `ops/worker.py` 跑一題） | 在真實專案（amr_base_sw、amr_base_hw、fih_rmf_system）裡找檔案與計數、讀長文件、Python 的定義與呼叫、C++、跨檔案的調查；最後的回覆由程式核對 |
+| `edg/` 低階執行器（新架構 D10 第 2 步） | `selftest.py`（寫好的圖、假的修正模型） | `run.py`（題目在 `cases.py`：一個工具節點故意錯一個參數，工作目錄是真實專案評測的快照） | 照決策圖執行、照收據守門、從收據帶入參數；第 1 級修正：修得好的有沒有修好（收據的欄位與範圍由程式核對）、修不好的有沒有往上交 |
 
 改程式之後先跑不用模型的自我測試：
 
@@ -20,7 +21,7 @@
 PY=~/aiagent_venv_env/.venv/bin/python     # 有 ollama 套件的 Python
 $PY evals/phase_check.py                   # 下面這幾組一次跑完、跟基準比（約 2 分鐘，見最後一節）
 $PY evals/chat/selftest.py && $PY evals/chat/extract_selftest.py && $PY evals/analysis/selftest.py && $PY evals/ops/selftest.py \
-  && $PY evals/repo/selftest.py && $PY evals/integrity/selftest.py
+  && $PY evals/repo/selftest.py && $PY evals/edg/selftest.py && $PY evals/integrity/selftest.py
 $PY evals/skills/selftest.py               # 技能腳本（需要容器的情境沒有沙盒就略過）；只跑某幾組：selftest.py fs containers rmf data
 ```
 
@@ -214,6 +215,27 @@ python3 evals/repo/questions.py --check                     # answers.json 跟�
 - 結果在 `evals/results/<時間>_repo_<模型>[_holdout|_all][_<tag>]/`：`runs.jsonl`（每一題最後的回覆、每則事實對不對、工具呼叫）、`report.md`、
   `logs/<題目>/`（提煉的切段與模型呼叫、工具的完整原文）。
 
+## 低階執行器（`edg/`，新架構 D10 第 2 步）
+
+```bash
+python3 evals/edg/selftest.py                               # 離線（幾秒）：寫好的圖、假的修正模型
+python3 evals/edg/run.py --model gemma4:26b --set all --runs 3   # 真模型：第 1 級修正（11 題，含保留組 2 題）
+python3 evals/edg/run.py --only view_typo_path --tag try1   # 只跑某幾題
+python3 evals/edg/run.py --rescore evals/results/<結果目錄>   # 不跑模型：核對改了之後，用存下來的 job 重新計分
+```
+
+- **離線**（`selftest.py`，12 項）：檢查圖（依賴、循環、工具要寫收據、帶入的欄位要是來源工具收據的項目、判斷節點不被依賴）、
+  照收據守門（expect、complete）、從收據帶入參數（一項一個實例、去重、上限）、第 1 級（執行前用 parse_args 檢查、修一次、程式核對修正：
+  沒改、過不了檢查、多了 shell 的引號、修不好、範圍放大都不重跑；逾時只照規格的 narrow 縮小；env 不修）、依賴沒成功就跳過、判斷節點交回中階、
+  確認關卡停下來與接回、存檔、修正的 prompt 只給規格、錯誤、子目標，以及下面這個評測自己的核對。
+- **第 1 級修正的真模型評測**（`run.py`、`cases.py`）：每一題是一張只有一個工具節點的決策圖，參數故意錯一個地方（選項寫錯、關鍵字含空白
+  沒包成一個、路徑打錯字、行號超過檔案、一次給兩個目錄、只給路徑沒給關鍵字）。修得好的題目要修好，而且收據的欄位對（含範圍：
+  搜尋與找檔案的起點跟子目標一樣）；修不好的（要換工具、要使用者決定）要說 fixable=false、不重跑。工作目錄是真實專案評測的快照（唯讀）。
+- **保留組**（`ho_*`）：不拿來調 `prompts/edg/` 的字與程式的核對。
+- **基準**：`evals/baselines/edg.json`（每個模型每一題過了幾次）；`phase_check --model` 每個模型全部的題目各跑 3 次跟它比。
+- 結果在 `evals/results/<時間>_edg_<模型>[_holdout|_all][_<tag>]/`：`runs.jsonl`（每一次的修正、嘗試、最後的參數）、`report.md`、
+  `logs/<題目>_<第幾次>/`（job.json、收據、修正的模型呼叫）。
+
 ## 評測的完整性（`integrity/`）
 
 ```bash
@@ -255,8 +277,9 @@ python3 evals/extract/run.py --model gemma4:e4b --runs 3 --only fleet_80,recall_
 ## 持續驗證：每個階段結束時（`phase_check.py`）
 
 ```bash
-python3 evals/phase_check.py                  # 離線（約 2 分鐘）：七組自我測試與評測的完整性（凍結的工具的自我測試也跑）
+python3 evals/phase_check.py                  # 離線（約 2 分鐘）：八組自我測試與評測的完整性（凍結的工具的自我測試也跑）
 python3 evals/phase_check.py --model          # 再加上 harness 的真模型評測（約 30 分鐘）：提煉（26b、e4b）、主對話（e4b 11 個情境 ×3）、
+                                              #   低階執行器的第 1 級修正（26b、e4b，11 題 ×3）、
                                               #   維運的檔案與調查（26b 23 個：檔案 12、保留組的檔案 4、調查與報告 7）
 python3 evals/phase_check.py --tools          # 凍結的工具（選用；不呼叫模型，約 15 分鐘）：調度技能接沙盒、容器技能接開發用沙盒、
                                               #   數據技能接測試容器、數據技能實機、數據分析回歸（產生器 s1／s2／s3、實錄 ×2）
@@ -266,10 +289,10 @@ python3 evals/phase_check.py --compare <結果目錄…>          # 不跑，只
 python3 evals/phase_check.py --save-baseline <結果目錄…> --label "第 N 階段（<commit>）" [--only <項目>]   # 階段 commit 之後更新基準
 ```
 
-- `--only` 的名稱：離線 `skills`、`chat_selftest`、`extract_selftest`、`ops_selftest`、`analysis_selftest`、`repo_selftest`、`integrity`；
-  `--tools` 的 `skills_sandbox`、`containers_sandbox`、`data_live`、`tools_live`、`analysis_regression`；`--model` 的 `extract`、`chat`、`ops`
+- `--only` 的名稱：離線 `skills`、`chat_selftest`、`extract_selftest`、`ops_selftest`、`analysis_selftest`、`repo_selftest`、`edg_selftest`、`integrity`；
+  `--tools` 的 `skills_sandbox`、`containers_sandbox`、`data_live`、`tools_live`、`analysis_regression`；`--model` 的 `extract`、`chat`、`edg`、`ops`
   （維運的檔案與調查），加 `--tools` 時另有 `ops_tools`（維運的其他情境）。
-  `--save-baseline` 的 `--only` 用 summary.md 第一欄括號裡的名稱，有冒號的取冒號前面（`analysis`、`tools_live`、`extract`），見 [`baselines/README.md`](baselines/README.md)。
+  `--save-baseline` 的 `--only` 用 summary.md 第一欄括號裡的名稱，有冒號的取冒號前面（`analysis`、`tools_live`、`extract`、`edg`），見 [`baselines/README.md`](baselines/README.md)。
 - 跟 `evals/baselines/` 逐項比（怎麼比、什麼時候更新見 [`baselines/README.md`](baselines/README.md)），結果在
   `evals/results/<時間>_phase_check/summary.md`：每一項一行（結果、基準、判定 ✅／⚠️／❌），要注意的逐項列出——沒過的測試、比基準差的情境、
   禁止動作、變慢超過 2 倍的情境。
@@ -277,4 +300,4 @@ python3 evals/phase_check.py --save-baseline <結果目錄…> --label "第 N �
 - 近期加進來的案例：第 2 階段——提煉的真模型評測（〈提煉〉一節）、交握 status 連續幾次的判斷（`skills/rmf_test.py` 的 `t_sandbox_status_stable`）、
   數據技能的「不是錄製數據」判斷不擋任何一份真的錄製（`skills/data_test.py` 的 `t_not_recording_real_data`）、維運評測的 `logs/<情境>/`
   （每一步的紀錄）；第 4 階段——評測的完整性（`integrity`）、
-  數據分析的存檔只留最近幾次（`analysis_selftest`）；第 4 階段之後——`--until-done` 看得出卡住就提早結束、`--until-confirmed` 等授權有結果（`skills/rmf_test.py` 的 `t_until_done_stuck`、`t_until_confirmed`、`t_until_done_stuck_rules`）；2026-11-18——任務引擎與 Plan 模式拿掉（`task_selftest` 跟著拿掉），CLI 主迴圈的確認關卡改在 `chat_selftest` 測（`t_cli_guard`），範本的檢查改成每個 import 了 `prompt_files` 的模組各自核對（`integrity`，取代「至少 200 處」）；同一天——真實專案評測的自我測試（`repo_selftest`），完整性檢查也收它答案裡的名稱；收據（D10 第 1 步）——`skills/receipt_test.py` 8 項、`chat_selftest` 的 `t_receipts`。
+  數據分析的存檔只留最近幾次（`analysis_selftest`）；第 4 階段之後——`--until-done` 看得出卡住就提早結束、`--until-confirmed` 等授權有結果（`skills/rmf_test.py` 的 `t_until_done_stuck`、`t_until_confirmed`、`t_until_done_stuck_rules`）；2026-11-18——任務引擎與 Plan 模式拿掉（`task_selftest` 跟著拿掉），CLI 主迴圈的確認關卡改在 `chat_selftest` 測（`t_cli_guard`），範本的檢查改成每個 import 了 `prompt_files` 的模組各自核對（`integrity`，取代「至少 200 處」）；同一天——真實專案評測的自我測試（`repo_selftest`），完整性檢查也收它答案裡的名稱；收據（D10 第 1 步）——`skills/receipt_test.py` 8 項、`chat_selftest` 的 `t_receipts`；低階執行器（D10 第 2 步）——`edg_selftest` 12 項、`skills/receipt_test.py` 的 `t_parse_args_contract`（寫收據的腳本都有純函式 `parse_args`、規格的 `narrow`），`--model` 加上第 1 級修正的真模型評測（`edg`）。

@@ -255,26 +255,35 @@ class DispatchMixin:
                     print(f"🛡️ {guard['skill']} 需要使用者確認才能執行，這次沒有執行。")
                     return self.guard_blocked_text(guard)
             clean_args = self._parse_script_args(script_name, remainder)
-            # 軌跡記錄用：執行「前」的狀態
-            cwd_before, container_before, target_before = self.current_cwd, self.container_cwd, self.target_container
             if script_name in ANALYSIS_PSEUDO_SCRIPTS:
                 # 偽技能：在本 process 內做（agent_core/analysis_job.py：job 資料夾、進度推到 Web 右欄、目前的數據同步）；
                 # 報告記一筆軌跡並存檔（#編號），之後可以 result_recall
+                cwd_before, container_before, target_before = self.current_cwd, self.container_cwd, self.target_container
                 output_text = self.analysis_run(remainder)
                 self._record_trajectory(script_name, clean_args, output_text, cwd_before, container_before, target_before)
                 return output_text
-            self._raw_args = remainder          # 原始的參數字串（file_ops 的內容含引號時，shlex 拆過的參數會壞掉）
-            try:
-                output_text = self._exec_script(script_name, script_path, clean_args)
-            finally:
-                self._raw_args = ""
-            self._sync_state_from_tool_output(output_text)  # 逾時訊息裡不會有狀態標記，掃過去是安全的 no-op
-            self._record_trajectory(script_name, clean_args, output_text, cwd_before, container_before, target_before)
-            return output_text
+            return self.run_script(script_name, clean_args, remainder)   # remainder：原始的參數字串（file_ops 的內容含引號時，shlex 拆過的會壞掉）
 
         except Exception as e:   # noqa: BLE001  偽技能（ops／analysis）或 harness 自己的錯：照實回報，[ERROR] 開頭才會被當成失敗
             return (f"[ERROR] 執行時發生未預期的錯誤（{type(e).__name__}: {e}）。下一步：確認參數（引號要成對）後重試一次；"
                     f"同樣的錯誤再出現就把這段訊息告訴使用者，不要一直重試。")
+
+    def run_script(self, script_name, clean_args, raw_args=""):
+        """執行一支腳本（呼叫端已經過確認關卡）、同步狀態標記、記軌跡與存檔（#編號、收據），回傳給模型的文字。
+        主對話（_run_tool_once）與低階執行器（agent_core/edg.py）共用；執行完 last_result_id、last_receipt 是這一次的。"""
+        self.last_result_id = self.last_result_file = None
+        self.last_receipt = None
+        script_path = os.path.join(self.base_path, "scripts", script_name)
+        # 軌跡記錄用：執行「前」的狀態
+        cwd_before, container_before, target_before = self.current_cwd, self.container_cwd, self.target_container
+        self._raw_args = raw_args
+        try:
+            output_text = self._exec_script(script_name, script_path, clean_args)
+        finally:
+            self._raw_args = ""
+        self._sync_state_from_tool_output(output_text)  # 逾時訊息裡不會有狀態標記，掃過去是安全的 no-op
+        self._record_trajectory(script_name, clean_args, output_text, cwd_before, container_before, target_before)
+        return output_text
 
     def _usable_cwd(self):
         """目前的工作目錄還能用（存在、可以讀與進入）就回 None；不能用（被刪掉、切到沒有權限的目錄）就換回專案目錄，回傳說明。

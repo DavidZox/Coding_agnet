@@ -18,6 +18,13 @@ note right
 end note
 :執行腳本，完整原文存成 **#編號**
 （每次都存，之後隨時可以回來讀）;
+note right
+  第一版領域的腳本另外寫一份**收據**給程式讀
+  （AGENT_RECEIPT_PATH）：狀態、錯誤種類、
+  程式算好的數量、項目清單、是否完整；
+  存在 #編號 旁邊（<存檔>.receipt.json），軌跡記摘要。
+  給模型的文字不變，下面的管線照舊
+end note
 if (結果要加入主對話？
 auto 直接加入；manual／hybrid 等使用者按 y) then (加入)
   if (規格文件、已經提煉過的（recall）、
