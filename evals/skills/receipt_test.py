@@ -215,6 +215,26 @@ def t_code_ast_reader():
     _error("code_ast_reader", "args", "m.py", "--bogus", d=d)
 
 
+def t_code_ast_reader_refs():
+    """code_ast_reader --refs：收據一處一筆（種類、行號、所在的函式、檔案的路徑；定義另有 qualname、in_class、行號範圍）；
+    數量跟標頭一致；沒有＝empty"""
+    d = _tmp()
+    _w(d, "m.py", _PY + "\n\nBox().open()\nx = top\nfrom m import top\n")
+    out, r = run("code_ast_reader", "m.py", "--refs", "open", d=d)
+    assert r["status"] == "pass" and r["refs"] == "open" and r["path"] == os.path.join(d, "m.py"), r
+    assert r["counts"] == {"lines": len(_PY.splitlines()) + 5, "refs": 2, "defs": 1, "calls": 1, "imports": 0, "assigns": 0, "others": 0}
+    defn = [i for i in r["items"] if i["kind"] == "def"][0]
+    assert defn["qualname"] == "Box.open" and defn["in_class"] == "Box" and defn["start"] == defn["line"] == 7 and defn["end"] == 10, defn
+    call = [i for i in r["items"] if i["kind"] == "call"][0]
+    assert call["scope"] is None and call["path"] == r["path"] and call["text"] == "Box().open()", call
+    out, r = run("code_ast_reader", "m.py", "--refs", "top", d=d)
+    assert {i["kind"] for i in r["items"]} == {"def", "ref", "import"} and r["counts"]["refs"] == 3, r["items"]
+    assert "出現 3 處" in out
+    out, r = run("code_ast_reader", "m.py", "--refs", "absent_name", d=d)
+    assert r["status"] == "empty" and r["items"] == [] and r["counts"]["refs"] == 0, r
+    _error("code_ast_reader", "args", "m.py", "--refs", "a.b", d=d)
+
+
 # ---------------------------------------------------------------- result_list／result_grep／result_view
 def _archive(d, session, rid, stem, body):
     name = f"{session}_{rid:03d}_{stem}.md"
@@ -347,7 +367,7 @@ def t_parse_args_contract():
     sys.path.insert(0, PROJECT)
     from agent_core import skill_spec
     ok_args = {"search_text": ["x", "."], "find_file": ["x", "."], "list_dir": ["."], "view_file": ["a.txt"],
-               "code_ast_reader": ["a.py"], "result_list": [], "result_grep": ["latest", "x"], "result_view": ["latest"]}
+               "code_ast_reader": ["a.py", "--refs", "x"], "result_list": [], "result_grep": ["latest", "x"], "result_view": ["latest"]}
     narrowed = []
     for skill, script in V1.items():
         with open(os.path.join(PROJECT, "skills_system", "tools", f"{skill}.md"), encoding="utf-8") as f:

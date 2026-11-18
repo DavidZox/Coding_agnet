@@ -5,7 +5,7 @@ file_ops 的範例正好是那一題的答案；設計筆記 2.19）。這裡把
 掃模型會讀的文字：
 
 - prompts/ 底下的 .md（prompts/Memory.md 除外：那是使用者的長期記憶，會隨使用改變）、skills_system/SKILLS.md、
-  skills_system/tools/*.md；
+  skills_system/tools/*.md、各領域的 skills_system/<領域>/*.md（領域的 SKILLS.md 與複合技能）；
 - agent_core/、vision/、web_app/、skills_system/scripts/ 裡回給模型的字串（用法、[ERROR] 的例子）：程式裡的字串常數，docstring 與
   註解不算；scripts/mock_server.py（開發用的替身，本來就是評測沙盒）不算。
 
@@ -98,6 +98,7 @@ def eval_names():
     add("設定名稱", re.findall(r"^\s*-?\s*([a-z]+_[a-z0-9_]+):", world_text, re.M))
     add("真實專案的答案", repo_answer_names())
     add("低階執行器評測的參數", edg_case_names())
+    add("中階評測的參數", mid_case_names())
     return names
 
 
@@ -130,6 +131,21 @@ def edg_case_names():
     return out
 
 
+def mid_case_names():
+    """中階的評測（evals/mid/cases.py）標的參數裡的名稱與路徑（規則同 repo_answer_names）：複合技能、prompts/mid/ 不能用到。
+    只有套件名稱的路徑（fih_rmf_system 這種）不算：那是題目裡的名稱，凍結的調度工具本來就照真的系統描述它（同 repo_answer_names 只收答案）。"""
+    import importlib.util                 # 低階評測也有一個 cases 模組：照路徑載入，不要拿到 import 快取裡的那一個
+    spec = importlib.util.spec_from_file_location("mid_cases", os.path.join(PROJECT, "evals", "mid", "cases.py"))
+    cases = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cases)
+    vals = []
+    for lab in cases.LABELS.values():
+        for key, want in (lab.get("params") or {}).items():
+            got = [want] if isinstance(want, str) else want.get("any", []) + [want.get("endswith", "")] + want.get("words", [])
+            vals += [v for v in got if key != "path" or "/" in v]
+    return {v for v in vals if len(v) >= 5 and re.fullmatch(r"[/A-Za-z_][\w./-]*", v) and re.search(r"[_./-]|[a-z][A-Z]", v)}
+
+
 def _pattern(names):
     alts = sorted(names, key=len, reverse=True)
     return re.compile(r"(?<![\w-])(?:" + "|".join(re.escape(n) for n in alts) + r")(?![\w-])")
@@ -139,7 +155,7 @@ def facing_docs():
     docs = glob.glob(os.path.join(PROJECT, "prompts", "**", "*.md"), recursive=True)
     docs = [p for p in docs if os.path.basename(p) != "Memory.md"]
     docs += [os.path.join(PROJECT, "skills_system", "SKILLS.md")]
-    docs += glob.glob(os.path.join(PROJECT, "skills_system", "tools", "*.md"))
+    docs += glob.glob(os.path.join(PROJECT, "skills_system", "*", "*.md"))       # tools/ 與各領域（SKILLS.md、複合技能）
     return sorted(docs)
 
 

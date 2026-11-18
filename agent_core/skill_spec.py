@@ -6,12 +6,20 @@ frontmatter 的這幾個欄位是給程式看的，值寫成一行 JSON（JSON �
 - narrow：逾時（還沒有任何結果）時第 1 級可以怎麼縮小範圍——腳本 parse_args 結果的鍵 → 規則（inside：路徑換成原本路徑裡面的；
   added：清單多加幾項），低階執行器（agent_core/edg.py）核對修正只動了這些。沒寫的工具逾時就往上報。
 載入規格給模型看時拿掉這幾行（for_model），模型讀到的跟以前一樣。
+
+複合技能（skills_system/<領域>/<名稱>.md，新架構第 3 步的中階讀；寫法見 doc/技能撰寫規範.md）另外有：
+- frontmatter 的 topology（一行 JSON：depends_on、sub_skills）、parameters 與 answers（答得了問題要的哪幾種：位置、數量、內容）；
+- 正文的〈骨架〉（決策圖的樣板）與〈回退〉（第 2 級的做法）：各是一個 ```json 區塊，給程式看；
+交給模型時這兩節也拿掉（for_model），模型只讀〈什麼時候用〉與〈策略與 SOP〉。
 """
 import json
 import re
 
-_MACHINE = re.compile(r"^(parameters|receipt|narrow):\s*(.*)$")
+_MACHINE = re.compile(r"^(parameters|receipt|narrow|topology|answers):\s*(.*)$")
 _EXECUTE = re.compile(r"EXECUTE:\s*scripts/([A-Za-z0-9_]+\.py)")
+MACHINE_SECTIONS = ("骨架", "回退")      # 複合技能正文裡給程式看的章節
+_FENCE = re.compile(r"^\s*```")
+_JSON_BLOCK = re.compile(r"```json\s*\n(.*?)\n\s*```", re.S)
 
 
 def _split(text):
@@ -25,11 +33,71 @@ def _split(text):
 
 
 def for_model(text):
-    """給模型看的規格：拿掉 frontmatter 裡給程式看的欄位；沒有這些欄位時原文照回。"""
+    """給模型看的規格：拿掉 frontmatter 裡給程式看的欄位與正文裡給程式看的章節（〈骨架〉〈回退〉）；沒有這些時原文照回。"""
     head, rest = _split(text)
     if head is None:
         return text
-    return "---\n" + "\n".join(ln for ln in head if not _MACHINE.match(ln)) + rest
+    return "---\n" + "\n".join(ln for ln in head if not _MACHINE.match(ln)) + _drop_sections(rest, MACHINE_SECTIONS)
+
+
+def _headings(lines):
+    """正文裡 `# 標題` 的 (行的位置, 標題)；程式碼區塊裡的 # 不算。"""
+    out, fenced = [], False
+    for i, ln in enumerate(lines):
+        if _FENCE.match(ln):
+            fenced = not fenced
+        elif not fenced and ln.startswith("# "):
+            out.append((i, ln[2:].strip()))
+    return out
+
+
+def _drop_sections(rest, names):
+    lines = rest.split("\n")
+    heads = _headings(lines)
+    drop = set()
+    for k, (i, title) in enumerate(heads):
+        if title in names:
+            end = heads[k + 1][0] if k + 1 < len(heads) else len(lines)
+            drop.update(range(i, end))
+    return "\n".join(ln for i, ln in enumerate(lines) if i not in drop)
+
+
+def sections(text):
+    """正文的 `# 標題` → 那一節的內容（去頭尾空白）。"""
+    _, rest = _split(text)
+    lines = rest.split("\n")
+    heads = _headings(lines)
+    out = {}
+    for k, (i, title) in enumerate(heads):
+        end = heads[k + 1][0] if k + 1 < len(heads) else len(lines)
+        out[title] = "\n".join(lines[i + 1:end]).strip()
+    return out
+
+
+def composite(text):
+    """複合技能的規格 → {"meta": {type, title, description, version}, "topology", "parameters", "answers", "skeleton", "fallbacks", "sections"}。
+    給程式看的 JSON（frontmatter 的欄位、〈骨架〉〈回退〉的 json 區塊）寫錯時丟 ValueError。"""
+    head, _ = _split(text)
+    if head is None:
+        raise ValueError("沒有 frontmatter（--- 開頭的那幾行）")
+    meta = {}
+    for ln in head:
+        if ":" in ln and not _MACHINE.match(ln):
+            k, v = ln.split(":", 1)
+            meta[k.strip()] = v.strip()
+    machine = contract(text)
+    secs = sections(text)
+    blocks = {}
+    for name in MACHINE_SECTIONS:
+        m = _JSON_BLOCK.search(secs.get(name, ""))
+        if not m:
+            raise ValueError(f"〈{name}〉沒有 ```json 區塊")
+        try:
+            blocks[name] = json.loads(m.group(1))
+        except ValueError as e:
+            raise ValueError(f"〈{name}〉的 JSON 寫錯了：{e}") from e
+    return {"meta": meta, "topology": machine.get("topology"), "parameters": machine.get("parameters"), "answers": machine.get("answers"),
+            "skeleton": blocks["骨架"], "fallbacks": blocks["回退"], "sections": secs}
 
 
 def contract(text):

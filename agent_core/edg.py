@@ -13,6 +13,8 @@
    不一樣、過得了 parse_args、逾時只用規格 narrow 列出的縮小方式、參數錯的修正不能把範圍（narrow 標 inside 的路徑）換成上層，
    才重跑一次；修完還是錯就往上報。環境（env）、腳本的錯（parse）不修。
 6. **往上交**（低 → 中）：每個節點的狀態、每次嘗試的收據摘要與 #編號、修正的紀錄；停下來的原因（stops）、等中階判斷的節點（judgments）。
+7. **重排**（replan，中階的第 2 級用）：照新的圖接著跑同一個工作——定義沒變、依賴也沒重跑的節點保留狀態（不重跑）；新的、改了的重新跑；
+   圖上拿掉的與重跑的節點，原本的狀態記在 replans（收據檔都還在）。同一個工具＋同樣的參數之前跑過的，直接用之前的收據（D5 中 4）。
 
 每一次執行存在 logs/edg_jobs/<編號>/：job.json（圖、每個節點與實例的狀態、嘗試、修正）、receipts/（每次嘗試的收據全文）、
 events.jsonl（進度）、calls.jsonl（修正的模型呼叫）。Web 之後畫拓撲圖用的就是 job.json（〈新架構討論紀錄〉第 4 節）。
@@ -166,6 +168,11 @@ def _topo(by_id):
             done.add(nid)
         pending = [nid for nid in pending if nid not in done]
     return order, []
+
+
+def _definition(n):
+    """節點的定義（重排時比對有沒有改）：工具、參數、依賴、預期、要完整、判斷節點的目標。"""
+    return json.dumps({k: n.get(k) for k in ("kind", "tool", "args", "depends_on", "expect", "complete", "goal")}, ensure_ascii=False, sort_keys=True)
 
 
 def _binding(a):
@@ -347,13 +354,51 @@ class Executor:
         if pending and approve is not None:
             inst = job["nodes"][pending["node"]]["instances"][pending["instance"]]
             inst["approved"] = bool(approve)
+        self._rebuild_cache(job)
+        return self._run(job, specs)
+
+    def replan(self, jid, graph):
+        """中階重排：同一個工作換成新的圖接著跑。定義（工具、參數、依賴、預期…）沒變、依賴的節點也都保留的節點不重跑；
+        其他的重新跑。拿掉的、重跑的節點原本的狀態記在 job["replans"]。新的圖沒通過檢查就不執行（狀態 invalid）。"""
+        job = self.store.load(jid)
+        if not job:
+            return None
+        problems, specs, order = validate(self.agent.tools_dir, graph)
+        if problems:
+            job.update(status="invalid", problems=problems, updated=_now())
+            self.store.save(job)
+            self._note(jid, "🔗 重排的圖沒有通過檢查，沒有執行：" + "；".join(problems))
+            return job
+        old = {n["id"]: n for n in job["graph"]["nodes"]}
+        new = {n["id"]: n for n in graph["nodes"]}
+        kept, nodes = [], {}
+        for nid in order:
+            same = nid in old and _definition(old[nid]) == _definition(new[nid]) and job["nodes"].get(nid, {}).get("state") in NODE_FINAL
+            if same and all(d in kept for d in new[nid].get("depends_on", [])):
+                kept.append(nid)
+                nodes[nid] = job["nodes"][nid]
+            else:
+                nodes[nid] = {"state": "pending"}
+        replaced = {nid: dict(st, tool=old[nid].get("tool")) for nid, st in job["nodes"].items() if nid not in kept}
+        job.setdefault("replans", []).append({"time": _now(), "kept": kept, "rerun": [n for n in order if n not in kept and n in old],
+                                              "added": [n for n in order if n not in old], "dropped": [n for n in old if n not in new],
+                                              "replaced": replaced})
+        job.update(graph=graph, order=order, nodes=nodes, problems=[], stops=[], judgments=[], need_user=None)
+        self._note(jid, f"🔗 重排：保留 {len(kept)} 個節點，要跑 {len(order) - len(kept)} 個")
+        self._rebuild_cache(job)
+        return self._run(job, specs)
+
+    def _rebuild_cache(self, job):
+        """這個工作之前成功跑過的嘗試（含重排前的）：同一個工具＋同樣的參數不重跑，直接用之前的收據。"""
+        tools = {n["id"]: n.get("tool") for n in job["graph"]["nodes"]}
+        states = [(tools.get(nid), st) for nid, st in job["nodes"].items()]
+        states += [(st.get("tool"), st) for r in job.get("replans", []) for st in r["replaced"].values()]
         self._cache = {}
-        for nid, st in job["nodes"].items():                 # 之前跑過的也算（同一個工具＋同樣的參數不重跑）
+        for tool, st in states:
             for inst in st.get("instances", []):
                 for a in inst.get("attempts", []):
-                    if a.get("check") == "run" and a.get("status") != "error":
-                        self._cache.setdefault(self._key(job["graph"], nid, a["args"]), a)
-        return self._run(job, specs)
+                    if tool and a.get("check") == "run" and a.get("status") != "error":
+                        self._cache.setdefault(self._key(tool, a["args"]), a)
 
     # ---------------------------------------------------------------- 圖
     def _run(self, job, specs):
@@ -518,7 +563,7 @@ class Executor:
                 return {"need_user": guard}
             if approved is False:
                 return {"denied": guard}
-        key = self._key(job["graph"], n["id"], args)
+        key = self._key(n["tool"], args)
         if key in self._cache:
             prev = self._cache[key]
             rec.update({k: prev.get(k) for k in ("check", "status", "error_kind", "counts", "truncated", "result_id", "receipt_file", "head")},
@@ -588,8 +633,7 @@ class Executor:
 
     # ---------------------------------------------------------------- 存檔
     @staticmethod
-    def _key(graph, nid, args):
-        tool = next(n["tool"] for n in graph["nodes"] if n["id"] == nid)
+    def _key(tool, args):
         return json.dumps([tool, list(args)], ensure_ascii=False)
 
     def _save_receipt(self, job, nid, i, k, receipt):

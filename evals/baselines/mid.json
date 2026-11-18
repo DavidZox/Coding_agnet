@@ -1,0 +1,770 @@
+{
+ "models": {
+  "gemma4:26b": {
+   "label": "第 3 步 3a，各 3 次（2026-11-18，20261118_182324_mid_gemma4-26b_all_final）",
+   "per": {
+    "cnt_hw_params": {
+     "final": [
+      3,
+      3
+     ],
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "cnt_rmf_publishers": {
+     "final": [
+      3,
+      3
+     ],
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "cnt_rmf_tests": {
+     "final": [
+      1,
+      3
+     ],
+     "params": [
+      1,
+      3
+     ],
+     "skill": [
+      1,
+      3
+     ]
+    },
+    "cnt_sw_clients": {
+     "final": [
+      3,
+      3
+     ],
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "cnt_sw_nodes": {
+     "final": [
+      0,
+      3
+     ],
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "cnt_sw_specs": {
+     "final": [
+      0,
+      3
+     ],
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "cpp_compact_parser": {
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "cpp_laser_qos": {
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "cpp_laserscan_pub": {
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "cpp_rf2o_params": {
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "cpp_sick_ports": {
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "cpp_sick_services": {
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "cross_imu": {
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "cross_odom_source": {
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "cross_rf2o_runtime": {
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "cross_scan_chain": {
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "cross_sched_tuning": {
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "cross_speed_limit": {
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "doc_dock_align": {
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "doc_gate_startup": {
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "doc_nav_stop": {
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "doc_pred_map": {
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "doc_sched_iter": {
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "doc_task_confirm": {
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "py_check_path": {
+     "final": [
+      0,
+      3
+     ],
+     "params": [
+      0,
+      3
+     ],
+     "skill": [
+      0,
+      3
+     ]
+    },
+    "py_encoder": {
+     "final": [
+      0,
+      3
+     ],
+     "params": [
+      0,
+      3
+     ],
+     "skill": [
+      0,
+      3
+     ]
+    },
+    "py_fleet_msg": {
+     "final": [
+      3,
+      3
+     ],
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "py_pre_dock": {
+     "final": [
+      3,
+      3
+     ],
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "py_solve_conflicts": {
+     "final": [
+      3,
+      3
+     ],
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "py_speed_limit": {
+     "final": [
+      3,
+      3
+     ],
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    }
+   },
+   "sets": {
+    "holdout": {
+     "final": [
+      0,
+      6
+     ],
+     "params": [
+      12,
+      15
+     ],
+     "skill": [
+      12,
+      15
+     ]
+    },
+    "main": {
+     "final": [
+      22,
+      30
+     ],
+     "params": [
+      70,
+      75
+     ],
+     "skill": [
+      70,
+      75
+     ]
+    }
+   }
+  },
+  "gemma4:e4b": {
+   "label": "第 3 步 3a，各 3 次（2026-11-18，20261118_182506_mid_gemma4-e4b_all_final）",
+   "per": {
+    "cnt_hw_params": {
+     "final": [
+      3,
+      3
+     ],
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "cnt_rmf_publishers": {
+     "final": [
+      3,
+      3
+     ],
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "cnt_rmf_tests": {
+     "final": [
+      0,
+      3
+     ],
+     "params": [
+      0,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "cnt_sw_clients": {
+     "final": [
+      3,
+      3
+     ],
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "cnt_sw_nodes": {
+     "final": [
+      0,
+      3
+     ],
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "cnt_sw_specs": {
+     "final": [
+      0,
+      3
+     ],
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "cpp_compact_parser": {
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "cpp_laser_qos": {
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "cpp_laserscan_pub": {
+     "params": [
+      0,
+      3
+     ],
+     "skill": [
+      0,
+      3
+     ]
+    },
+    "cpp_rf2o_params": {
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "cpp_sick_ports": {
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "cpp_sick_services": {
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "cross_imu": {
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "cross_odom_source": {
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "cross_rf2o_runtime": {
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "cross_scan_chain": {
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "cross_sched_tuning": {
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "cross_speed_limit": {
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "doc_dock_align": {
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "doc_gate_startup": {
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "doc_nav_stop": {
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "doc_pred_map": {
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "doc_sched_iter": {
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "doc_task_confirm": {
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "py_check_path": {
+     "final": [
+      3,
+      3
+     ],
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "py_encoder": {
+     "final": [
+      3,
+      3
+     ],
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "py_fleet_msg": {
+     "final": [
+      3,
+      3
+     ],
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "py_pre_dock": {
+     "final": [
+      3,
+      3
+     ],
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "py_solve_conflicts": {
+     "final": [
+      3,
+      3
+     ],
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    },
+    "py_speed_limit": {
+     "final": [
+      3,
+      3
+     ],
+     "params": [
+      3,
+      3
+     ],
+     "skill": [
+      3,
+      3
+     ]
+    }
+   },
+   "sets": {
+    "holdout": {
+     "final": [
+      3,
+      6
+     ],
+     "params": [
+      15,
+      15
+     ],
+     "skill": [
+      15,
+      15
+     ]
+    },
+    "main": {
+     "final": [
+      24,
+      30
+     ],
+     "params": [
+      69,
+      75
+     ],
+     "skill": [
+      72,
+      75
+     ]
+    }
+   }
+  }
+ }
+}

@@ -190,6 +190,19 @@ EDG_EACH_MAX = int(os.environ.get("AGENT_EDG_EACH_MAX", "50"))
 EDG_MODEL = os.environ.get("AGENT_EDG_MODEL", "").strip()
 EDG_FIX_PREDICT = 600   # 修正的輸出（理由＋參數）的 num_predict 上限
 
+# 🧭 新架構的中階（agent_core/mid.py，D10 第 3 步）：挑複合技能、合約（抽參數並核對原文、自己查、問使用者）、照骨架排圖、交給低階、
+# 第 2 級（照〈回退〉換做法重排）。每一次存在 logs/mid_jobs/<編號>/（每一版的圖、回退、報告、模型呼叫）。
+MID_JOBS_DIRNAME = "mid_jobs"
+MID_JOBS_KEEP = int(os.environ.get("AGENT_MID_JOBS_KEEP", "300"))
+# 第 2 級最多重排幾次（架構圖的例子是 3 次），再要重排就熔斷、把做到哪裡往上報。是預算，不是調來讓某一題過的門檻；
+# 收斂與否另外看「重排出來的節點是不是全都跑過」（〈新架構討論紀錄〉D5 中 4）。
+MID_REPLAN_MAX = 3
+# 挑技能與合約用的模型（D8：每一層可以分開設定，第一版跟主對話同一個）；空字串＝主對話的模型。
+MID_MODEL = os.environ.get("AGENT_MID_MODEL", "").strip()
+MID_SELECT_PREDICT = 600     # 挑技能的輸出（理解＋名稱＋理由）的 num_predict 上限
+MID_CONTRACT_PREDICT = 900   # 合約的輸出（每個參數的原文與值）的 num_predict 上限
+MID_REPORT_LINES = 120       # 報告裡每一節最多列幾行（其他的看 #編號的原文）
+
 # run_tool 載入技能規格文件時回傳字串的固定開頭。規格文件是「按需載入」機制的核心，
 # 內容（尤其是實際腳本路徑與參數格式）必須完整進入上下文，因此 _content_for_context
 # 對這類結果一律放行、不套用 TOOL_RESULT_TOKEN_THRESHOLD，Web Console 也不標記 ⚠️。

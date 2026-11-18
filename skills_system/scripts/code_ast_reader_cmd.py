@@ -5,9 +5,14 @@
 有型別標註的（`X: int = 5`）；太長的值截斷。逾時 15 秒。
 收據（_receipt_common，欄位見規格的 receipt）：全部的 def／class（含 _ 開頭的私有項目、不受 MAX_ITEMS 限制）——名稱、所在的類別或函式、
 種類、行號範圍；程式拿搜尋命中的行號就查得到它在哪個函式裡。
+
+`--refs <名稱>`（新架構第 3 步，複合技能 py_usage 用）：改成列出這個名稱在檔案裡的每一處——定義（def、class）、呼叫、import、
+指定（`x = …`、`self.x = …`、參數）、其他用到（當成值傳出去、讀屬性），每一處附行號與所在的函式。用 AST 分，所以註解與字串裡
+提到的本來就不算；import 不是呼叫。收據的項目一處一筆（含檔案的路徑：中階可以再從這裡帶入行號）。
 """
 import ast
 import os
+import re
 import signal
 import sys
 
@@ -19,36 +24,54 @@ TIMEOUT_SECONDS = 15
 MAX_ITEMS = 400               # 最多列幾個 def／class
 VALUE_CHARS = 80              # 常數的值最多幾個字
 DEFAULT_CHARS = 40            # 參數預設值最多幾個字
+REF_TEXT_CHARS = 160          # --refs 每一處附的原始碼最多幾個字
 USAGE = (
-    "用法: scripts/code_ast_reader_cmd.py <檔案.py> [--no-docstrings] [--private]\n"
+    "用法: scripts/code_ast_reader_cmd.py <檔案.py> [--no-docstrings] [--private] [--refs <名稱>]\n"
     "  <檔案.py>：一個 Python 檔（相對或絕對路徑，可用 ~）\n"
-    "  --no-docstrings：不印 docstring　--private：也列 _ 開頭的私有函式與方法"
+    "  --no-docstrings：不印 docstring　--private：也列 _ 開頭的私有函式與方法\n"
+    "  --refs <名稱>：改成列出這個名稱的每一處（定義、呼叫、import、指定、其他用到）與所在的函式"
 )
+_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+REF_KINDS = {"def": "定義", "call": "呼叫", "import": "import", "assign": "指定", "ref": "其他用到"}   # 收據的 kind（class 也算定義）
 
 
 def parse_args(argv):
-    """解析命令列參數 → (file_path, show_docstrings, show_private, error)"""
-    file_path, show_docstrings, show_private, extra = None, True, False, []
-    for arg in argv:
+    """解析命令列參數 → (file_path, show_docstrings, show_private, refs, error)；refs 是 --refs 的名稱（沒給是 None）"""
+    file_path, show_docstrings, show_private, refs, extra = None, True, False, None, []
+    args = list(argv)
+    i = 0
+    while i < len(args):
+        arg = args[i]
         if arg == "--no-docstrings":
             show_docstrings = False
         elif arg == "--private":
             show_private = True
+        elif arg == "--refs" or arg.startswith("--refs="):
+            if "=" in arg:
+                refs = arg.split("=", 1)[1]
+            elif i + 1 < len(args):
+                refs, i = args[i + 1], i + 1
+            else:
+                return None, None, None, None, f"[ERROR] --refs 後面需要一個名稱。\n{USAGE}"
+            if not _NAME.match(refs):
+                return None, None, None, None, (f"[ERROR] --refs 的名稱要是一個 Python 的名稱（英文字母或底線開頭，只有英數字與底線；"
+                                                f"`a.b` 只寫最後一段），收到「{refs}」。\n{USAGE}")
         elif arg.startswith("-"):
-            return None, None, None, f"[ERROR] 不支援的選項 {arg}。下一步：照下面的用法改。\n{USAGE}"
+            return None, None, None, None, f"[ERROR] 不支援的選項 {arg}。下一步：照下面的用法改。\n{USAGE}"
         elif file_path is None:
             file_path = arg
         else:
             extra.append(arg)
+        i += 1
     if extra:
         joined = pc.join_if_exists([file_path] + extra)
         if joined is None:
-            return None, None, None, (f"[ERROR] 一次只能解析一個檔案（收到 {file_path}、{'、'.join(extra)}）。"
-                                      f"下一步：分開執行。\n{USAGE}")
+            return None, None, None, None, (f"[ERROR] 一次只能解析一個檔案（收到 {file_path}、{'、'.join(extra)}）。"
+                                            f"下一步：分開執行。\n{USAGE}")
         file_path = joined
     if not file_path:
-        return None, None, None, f"[ERROR] 沒有給要解析的檔案。下一步：給一個 .py 檔的路徑。\n{USAGE}"
-    return file_path, show_docstrings, show_private, None
+        return None, None, None, None, f"[ERROR] 沒有給要解析的檔案。下一步：給一個 .py 檔的路徑。\n{USAGE}"
+    return file_path, show_docstrings, show_private, refs, None
 
 
 def _short(text, n):
@@ -239,27 +262,36 @@ def _constants(tree):
     return out
 
 
-def analyze_ast(file_path, show_docstrings=True, show_private=False):
+def _load(file_path):
+    """(絕對路徑, 原始碼, AST, 行數) 或 ([ERROR] 的文字,)：找檔案、確認是 Python、讀檔、解析。"""
     abs_path, err = pc.resolve(file_path, "file",
                                dir_hint=f"code_ast_reader 一次讀一個 .py 檔：先用 find_file \"*.py\" {file_path} 找出檔案，再對單一檔案執行")
     if err:
-        return fail(err)
+        return (fail(err),)
     if not _is_python(abs_path):
-        return fail(f"[ERROR] {file_path} 不是 Python 檔（副檔名不是 .py、第一行也不是 python 的 #!）。"
-                    f"下一步：其他語言或設定檔用 view_file 看內容、search_text 找定義。", "args")
+        return (fail(f"[ERROR] {file_path} 不是 Python 檔（副檔名不是 .py、第一行也不是 python 的 #!）。"
+                     f"下一步：其他語言或設定檔用 view_file 看內容、search_text 找定義。", "args"),)
     try:
         with open(abs_path, "r", encoding="utf-8", errors="replace") as f:
             code = f.read()
     except OSError as e:
-        return fail(f"[ERROR] 無法讀取 {file_path}：{e}。下一步：確認路徑與權限。", "env")
+        return (fail(f"[ERROR] 無法讀取 {file_path}：{e}。下一步：確認路徑與權限。", "env"),)
     n_lines = code.count("\n") + (0 if code.endswith("\n") or not code else 1)
     try:
         tree = ast.parse(code, filename=file_path)
     except SyntaxError as se:
         text = (se.text or "").strip()
-        return fail(f"[ERROR] {file_path} 有語法錯誤，無法解析：第 {se.lineno} 行 {se.msg}" + (f"（{_short(text, 120)}）" if text else "")
-                    + f"。下一步：用 view_file {file_path} --from {max(1, (se.lineno or 1) - 5)} --lines 15 看那一段；"
-                      f"如果是 Python 2 的檔案，改用 search_text 找 def／class。", "args")
+        return (fail(f"[ERROR] {file_path} 有語法錯誤，無法解析：第 {se.lineno} 行 {se.msg}" + (f"（{_short(text, 120)}）" if text else "")
+                     + f"。下一步：用 view_file {file_path} --from {max(1, (se.lineno or 1) - 5)} --lines 15 看那一段；"
+                       f"如果是 Python 2 的檔案，改用 search_text 找 def／class。", "args"),)
+    return abs_path, code, tree, n_lines
+
+
+def analyze_ast(file_path, show_docstrings=True, show_private=False):
+    loaded = _load(file_path)
+    if len(loaded) == 1:
+        return loaded[0]
+    abs_path, _, tree, n_lines = loaded
     visitor = CodeASTVisitor(show_docstrings=show_docstrings, show_private=show_private)
     visitor.visit(tree)
     defs, consts = _definitions(tree), _constants(tree)
@@ -282,15 +314,141 @@ def analyze_ast(file_path, show_docstrings=True, show_private=False):
     return "\n".join([head] + out)
 
 
+class _RefVisitor(ast.NodeVisitor):
+    """--refs：一個名稱在檔案裡的每一處（定義、呼叫、import、指定、其他用到）與所在的函式（最內層的 def／class 的 qualname，模組層是 None）。
+    decorator、預設值、型別標註、基底類別屬於外面那一層；參數屬於那個函式。呼叫只算一次（被呼叫的名稱本身不再算成「其他用到」）。
+    定義另外記 qualname、in_class（直接定義在哪個類別裡：方法；不是方法是 None）與行號範圍。"""
+
+    def __init__(self, name, lines, path):
+        self.name, self.lines, self.path = name, lines, path
+        self.stack = []
+        self.out = []
+
+    def _scope(self):
+        return ".".join(n for n, _ in self.stack) or None
+
+    def _add(self, kind, node, scope=None, **extra):
+        ln = node.lineno
+        text = self.lines[ln - 1].strip() if 0 < ln <= len(self.lines) else ""
+        self.out.append({"name": self.name, "kind": kind, "line": ln, "scope": scope if scope is not None else self._scope(),
+                         "text": _short(text, REF_TEXT_CHARS), "path": self.path, **extra})
+
+    def _visit_def(self, node, is_class):
+        if node.name == self.name:
+            outer = self._scope()
+            self._add("class" if is_class else "def", node, qualname=".".join([n for n, _ in self.stack] + [node.name]),
+                      in_class=self.stack[-1][0] if self.stack and self.stack[-1][1] else None,
+                      start=min([node.lineno] + [d.lineno for d in node.decorator_list]),
+                      end=getattr(node, "end_lineno", None) or node.lineno, scope=outer)
+        for d in node.decorator_list:
+            self.visit(d)
+        if is_class:
+            for b in list(node.bases) + list(node.keywords):
+                self.visit(b)
+        else:
+            a = node.args
+            for x in list(a.defaults) + [k for k in a.kw_defaults if k is not None]:
+                self.visit(x)
+            params = list(a.posonlyargs) + list(a.args) + list(a.kwonlyargs) + [p for p in (a.vararg, a.kwarg) if p]
+            for p in params:
+                if p.annotation is not None:
+                    self.visit(p.annotation)
+            if node.returns is not None:
+                self.visit(node.returns)
+        self.stack.append((node.name, is_class))
+        if not is_class:
+            for p in params:
+                if p.arg == self.name:
+                    self._add("assign", p)
+        for child in node.body:
+            self.visit(child)
+        self.stack.pop()
+
+    def visit_FunctionDef(self, node):
+        self._visit_def(node, False)
+
+    def visit_AsyncFunctionDef(self, node):
+        self._visit_def(node, False)
+
+    def visit_ClassDef(self, node):
+        self._visit_def(node, True)
+
+    def visit_Call(self, node):
+        f = node.func
+        if (isinstance(f, ast.Name) and f.id == self.name) or (isinstance(f, ast.Attribute) and f.attr == self.name):
+            self._add("call", node)
+            if isinstance(f, ast.Attribute):
+                self.visit(f.value)
+            for x in list(node.args) + list(node.keywords):
+                self.visit(x)
+            return
+        self.generic_visit(node)
+
+    def visit_Name(self, node):
+        if node.id == self.name:
+            self._add("ref" if isinstance(node.ctx, ast.Load) else "assign", node)
+
+    def visit_Attribute(self, node):
+        if node.attr == self.name:
+            self._add("ref" if isinstance(node.ctx, ast.Load) else "assign", node)
+        self.visit(node.value)
+
+    def _visit_import(self, node, module=None):
+        mods = (module or "").split(".")
+        if any(a.name == self.name or a.name.split(".")[-1] == self.name or a.asname == self.name for a in node.names) \
+                or self.name in mods:
+            self._add("import", node)
+
+    def visit_Import(self, node):
+        self._visit_import(node)
+
+    def visit_ImportFrom(self, node):
+        self._visit_import(node, node.module)
+
+
+def analyze_refs(file_path, name):
+    """--refs：這個名稱的每一處（AST），依種類分節；收據一處一筆。"""
+    loaded = _load(file_path)
+    if len(loaded) == 1:
+        return loaded[0]
+    abs_path, code, tree, n_lines = loaded
+    v = _RefVisitor(name, code.split("\n"), abs_path)
+    v.visit(tree)
+    refs = sorted(v.out, key=lambda r: (r["line"], r["kind"]))
+    by = {k: [r for r in refs if (r["kind"] in ("def", "class") if k == "def" else r["kind"] == k)] for k in REF_KINDS}
+    counts = {"lines": n_lines, "refs": len(refs), "defs": len(by["def"]), "calls": len(by["call"]), "imports": len(by["import"]),
+              "assigns": len(by["assign"]), "others": len(by["ref"])}
+    result("pass" if refs else "empty", counts=counts, items=refs, path=abs_path, refs=name)
+    if not refs:
+        return (f"[PASS] {file_path} 裡沒有「{name}」（AST：定義、呼叫、import、指定、其他用到都是 0；註解與字串裡提到的不算）。"
+                f"下一步：名稱可能拼錯，或在別的檔案：用 search_text \"{name}\" <目錄> -w --include \"*.py\" 找哪些檔案有。")
+    head = (f"[PASS] {file_path} 裡「{name}」出現 {len(refs)} 處（AST）：" + "、".join(f"{label} {len(by[k])}" for k, label in REF_KINDS.items())
+            + ("" if len(refs) <= MAX_ITEMS else f"；只列前 {MAX_ITEMS} 處"))
+    out, shown = [head], 0
+    for k, label in REF_KINDS.items():
+        if not by[k]:
+            continue
+        out.append(f"## {label}（{len(by[k])}）")
+        for r in by[k]:
+            if shown >= MAX_ITEMS:
+                break
+            shown += 1
+            where = f"在 {r['scope']}" if r["scope"] else "模組層"
+            span = f"行 {r['start']}-{r['end']}" if k == "def" and r["end"] != r["start"] else f"行 {r['line']}"
+            out.append(f"- {span}（{where}）：{r['text']}")
+    out.append(f"（註解與字串裡提到的不算；import 不算呼叫。看前後：view_file {file_path} --from <行號> --lines <行數>）")
+    return "\n".join(out)
+
+
 def execute(argv):
-    file_path, show_docstrings, show_private, err = parse_args(argv)
+    file_path, show_docstrings, show_private, refs, err = parse_args(argv)
     if err:
         return fail(err, "args")
     if hasattr(signal, "SIGALRM"):
         signal.signal(signal.SIGALRM, _timeout_handler)
         signal.alarm(TIMEOUT_SECONDS)
     try:
-        return analyze_ast(file_path, show_docstrings, show_private)
+        return analyze_refs(file_path, refs) if refs else analyze_ast(file_path, show_docstrings, show_private)
     except TimeoutError:
         return fail(f"[ERROR] 解析 {file_path} 逾時（超過 {TIMEOUT_SECONDS} 秒）：檔案可能非常大。"
                     f"下一步：用 search_text \"def |class \" {file_path} 列出定義，或用 view_file --from 看需要的那一段。", "timeout")

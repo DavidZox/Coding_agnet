@@ -113,3 +113,23 @@ EDG_FIX_SCHEMA = {
     },
     "required": ["reason", "fixable", "args"],
 }
+
+
+# 新架構的中階（agent_core/mid.py）：挑技能與合約的 schema 跟著領域的技能、技能的參數變，所以用函式產生。
+# 挑技能：先寫理解（要找什麼、範圍、要回答哪幾項），再寫問題要的是哪幾種（位置、數量、內容：程式核對選的技能答得了每一種），
+# 再從列出的名稱裡選一個（none＝這個領域沒有技能做得到、out_of_domain＝不屬於這個領域），最後寫理由。
+def mid_select_schema(names, kinds):
+    return {"type": "object",
+            "properties": {"understanding": _text(400),
+                           "asks": {"type": "array", "items": {"type": "string", "enum": list(kinds)}, "minItems": 1, "maxItems": len(kinds)},
+                           "skill": {"type": "string", "enum": list(names) + ["none", "out_of_domain"]}, "reason": _text(300)},
+            "required": ["understanding", "asks", "skill", "reason"]}
+
+
+# 合約：每個參數一格，先抄原文（quote）再寫值（value）；沒提到的兩個都留空。only＝只重寫這幾個參數（核對沒過、交回修一次時）。
+def mid_contract_schema(params, only=None):
+    props = {"understanding": _text(300)}
+    for p in params:
+        if only is None or p["name"] in only:
+            props[p["name"]] = {"type": "object", "properties": {"quote": _text(200), "value": _text(200)}, "required": ["quote", "value"]}
+    return {"type": "object", "properties": props, "required": list(props)}

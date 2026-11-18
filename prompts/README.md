@@ -28,6 +28,9 @@ harness 送給模型的字都在這裡：改字不用改程式，存檔之後下
 | `extract/inputs.md` | 提煉的 user 訊息裡程式組的標籤、程式的說明、修一次的說明 | `extract.py` |
 | `edg/fix.md` | 新架構的低階執行器：第 1 級修正（一個工具節點參數錯或逾時，只改字面參數；修不好就說修不好）的規則 | `edg.ModelFixer` |
 | `edg/inputs.md` | 第 1 級修正的 user 訊息裡程式組的標籤（子目標、規格、參數、錯誤、逾時的縮小方式） | `edg.fix_message` |
+| `mid/select.md` | 新架構的中階：挑複合技能（先寫理解、問題要的是位置／數量／內容，再選一個或說 none、out_of_domain）的規則 | `mid.Worker._select` |
+| `mid/contract.md` | 中階的合約：照技能的參數從問題抽值，每個附一字不改的原文（程式核對）的規則 | `mid.Worker._contract_call` |
+| `mid/inputs.md` | 中階的 user 訊息裡程式組的標籤（問題、領域、複合技能、參數與種類、沒過核對的參數） | `mid.py` |
 | `vision/extraction.md` | Web 附圖的影像提取（視覺模型的 system、純文字的退路、user 訊息） | `vision/extraction.py` |
 
 ## 範本的寫法
@@ -49,4 +52,4 @@ harness 送給模型的字都在這裡：改字不用改程式，存檔之後下
 ## 改了之後
 
 改到這裡的字＝改到模型會讀的文字：跑對應的真模型評測跟基準比（`CLAUDE.md`〈每一次修改的測試〉第 3 條；主對話 `evals/chat/run.py`、
-維運 `evals/ops/run.py`、提煉 `evals/extract/run.py`）；範例不要用評測世界的名稱（`evals/integrity/selftest.py` 會擋）。
+維運 `evals/ops/run.py`、提煉 `evals/extract/run.py`、低階執行器的修正 `evals/edg/run.py`、中階 `evals/mid/run.py`）；範例不要用評測世界的名稱（`evals/integrity/selftest.py` 會擋）。

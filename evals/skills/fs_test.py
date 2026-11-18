@@ -347,6 +347,53 @@ def t_ast_signature_and_ranges():
     assert "def _hidden(self)  行 23-24" in out and "- _P = 1（行 4）" in out and '"""' not in out, out
 
 
+REFS_SRC = '''"""helper 在 docstring 裡提到不算"""
+from pkg.util import helper
+import pkg.helper as hp
+
+
+def helper(msg, helper=None):  # helper 註解不算
+    return msg
+
+
+class Box:
+    helper = 3
+
+    @wrap(helper)
+    def run(self):
+        self.helper = 1
+        cb = self.helper
+        return helper("a") + self.other.helper(
+            "b")
+
+
+def outer():
+    def helper():
+        pass
+    return helper()
+'''
+
+
+def t_ast_refs():
+    """code_ast_reader --refs：每一處分成定義、呼叫、import、指定、其他用到，附行號與所在的函式；註解與字串不算；import 不算呼叫；
+    同一行兩個呼叫算兩處；沒有＝[PASS] 沒有；名稱不合法、沒給名稱＝[ERROR]"""
+    d = _tmp()
+    _w(d, "m.py", REFS_SRC)
+    out = run("code_ast_reader_cmd.py", "m.py", "--refs", "helper", d=d)
+    assert first_line(out) == "[PASS] m.py 裡「helper」出現 12 處（AST）：定義 2、呼叫 3、import 2、指定 3、其他用到 2", first_line(out)
+    assert "## 呼叫（3）\n- 行 17（在 Box.run）：" in out and out.count("- 行 17（在 Box.run）") == 2, out
+    assert "- 行 24（在 outer）：return helper()" in out and "- 行 22-23（在 outer）：def helper():" in out, out
+    assert "- 行 6-7（模組層）：def helper(msg, helper=None)" in out and "- 行 6（在 helper）：def helper(" in out, "參數屬於那個函式"
+    assert "- 行 13（在 Box）：@wrap(helper)" in out and "- 行 11（在 Box）：helper = 3" in out, "decorator 屬於外面那一層"
+    assert "## import（2）\n- 行 2（模組層）：from pkg.util import helper\n- 行 3（模組層）：import pkg.helper as hp" in out, out
+    assert "- 行 1（" not in out, "docstring 不算"
+    assert run("code_ast_reader_cmd.py", "m.py", "--refs=run", d=d).startswith("[PASS] m.py 裡「run」出現 1 處（AST）：定義 1、呼叫 0")
+    out = run("code_ast_reader_cmd.py", "m.py", "--refs", "nothing_here", d=d)
+    assert out.startswith("[PASS] m.py 裡沒有「nothing_here」") and "search_text" in out, out
+    assert_error(run("code_ast_reader_cmd.py", "m.py", "--refs", "a.b", d=d), "Python 的名稱", "只寫最後一段")
+    assert_error(run("code_ast_reader_cmd.py", "m.py", "--refs", d=d), "--refs 後面需要一個名稱")
+
+
 def t_ast_errors():
     """code_ast_reader：找不到（相近的路徑）、目錄（指向 find_file）、不是 Python、語法錯誤（指向 view_file --from）、沒給檔案"""
     d = _tmp()

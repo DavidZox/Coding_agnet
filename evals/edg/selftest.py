@@ -366,6 +366,40 @@ def main():
         finally:
             pc.load_baseline = real_load
 
+    def t_replan():
+        before = len(agent.trajectory)
+        ex = edg.Executor(agent, fixer=FakeFixer())
+        g1 = {"goal": "找 handle_cmd", "nodes": [
+            {"id": "s", "tool": "search_text", "args": ["handle_cmd", "src/alpha", "-w", "--include", "*.py"], "expect": ["pass", "empty"]},
+            {"id": "r", "tool": "code_ast_reader", "args": [{"from": "s", "field": "path"}, "--refs", "handle_cmd"], "depends_on": ["s"]}]}
+        job = ex.start(g1)
+        assert job["status"] == "done" and len(node(job, "r")["instances"]) == 1, (job["status"], job["stops"])
+        assert len(agent.trajectory) - before == 2
+        g2 = {"goal": g1["goal"], "nodes": g1["nodes"] + [
+            {"id": "w", "tool": "search_text", "args": ["handle_cmd", "src", "-w", "--include", "*.py"], "expect": ["pass", "empty"]},
+            {"id": "wr", "tool": "code_ast_reader", "args": [{"from": "w", "field": "path"}, "--refs", "handle_cmd"], "depends_on": ["w"]}]}
+        job = edg.Executor(agent, fixer=FakeFixer()).replan(job["id"], g2)
+        assert job["status"] == "done" and set(job["order"]) == {"s", "r", "w", "wr"}, (job["status"], job["order"])
+        rp = job["replans"][-1]
+        assert set(rp["kept"]) == {"s", "r"}, rp
+        assert set(rp["added"]) == {"w", "wr"} and rp["dropped"] == [] and rp["rerun"] == [], rp
+        wr = node(job, "wr")["instances"]
+        assert sorted(os.path.basename(i["args"][0]) for i in wr) == ["node_a.py", "node_b.py"], wr
+        reused = [i for i in wr if i["attempts"][0].get("reused")]
+        assert len(reused) == 1 and reused[0]["args"][0].endswith("node_a.py"), "跑過的 node_a.py 直接用之前的收據"
+        assert len(agent.trajectory) - before == 4, "保留的節點不重跑；新的節點裡跑過的不重跑：只多跑 w 與 node_b.py"
+        g3 = {"goal": g1["goal"], "nodes": [dict(g1["nodes"][0], args=["handle_cmd", "src/beta", "-w", "--include", "*.py"]), g1["nodes"][1]]}
+        job = edg.Executor(agent, fixer=FakeFixer()).replan(job["id"], g3)
+        rp = job["replans"][-1]
+        assert rp["kept"] == [] and set(rp["rerun"]) == {"s", "r"} and set(rp["dropped"]) == {"w", "wr"}, rp
+        assert rp["replaced"]["s"]["state"] == "done" and rp["replaced"]["s"]["tool"] == "search_text", "原本的狀態記在 replans"
+        assert [os.path.basename(i["args"][0]) for i in node(job, "r")["instances"]] == ["node_b.py"]
+        assert node(job, "r")["instances"][0]["attempts"][0].get("reused"), "重排前跑過的（被拿掉的 wr）也算"
+        bad = edg.Executor(agent, fixer=FakeFixer()).replan(job["id"], {"goal": "g", "nodes": [{"id": "x", "tool": "nope_tool"}]})
+        assert bad["status"] == "invalid" and bad["problems"], bad
+        saved = json.load(open(os.path.join(agent.script_dir, "logs", "edg_jobs", job["id"], "job.json"), encoding="utf-8"))
+        assert saved["status"] == "invalid" and len(saved["replans"]) == 2, "沒通過檢查的圖不執行、不算一次重排"
+
     tests = [("檢查圖：id、依賴、循環、工具要寫收據、帶入的來源與欄位、判斷節點不被依賴、expect", t_validate),
              ("照圖執行、從收據帶入參數（一項一個實例）、判斷節點交回中階；走主對話同一條路（存檔、收據、軌跡）、job 存檔", t_chain_binding),
              ("守門照收據：expect（0 筆算不算答案）、complete（不完整算不合預期）", t_expect_and_complete),
@@ -376,6 +410,7 @@ def main():
              ("依賴的節點沒成功就跳過；不相干的節點照跑", t_blocked_and_independent),
              ("帶入的參數去重、實例的上限（要完整時不算做完）；同一個工具＋同樣的參數只跑一次", t_dedupe_cap_reuse),
              ("確認關卡：停下來（need_user）→ 同意後接回同一個節點；拒絕就往上報", t_guard_resume),
+             ("重排：照新的圖接著跑同一個工作；沒變的節點不重跑、跑過的工具＋參數直接用之前的收據；拿掉與重跑的狀態記在 replans", t_replan),
              ("修正的模型：prompt 在 prompts/edg/、schema、記進 calls.jsonl；回覆不是 JSON 就不修", t_model_fixer),
              ("第 1 級的真模型評測：每一題的圖都過得了檢查；核對收據的欄位與範圍（範圍放大要擋）；修不好的題目要往上交；階段驗證跟基準比", t_eval_cases)]
     passed = skipped = 0
