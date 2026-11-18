@@ -228,6 +228,10 @@ def main():
         assert ca({"name": "path", "type": "path"}, "src/beta/", work) == ("src/beta", None)
         assert "找不到" in ca({"name": "path", "type": "path"}, "nowhere", work)[1]
         assert ca({"name": "n", "type": "name"}, "a.b", work)[1] and ca({"name": "n", "type": "names"}, "a、b", work) == (["a", "b"], None)
+        words = {"name": "w", "type": "words"}
+        assert ca(words, "frame id、cam_driver", work) == (["frame id", "cam_driver"], None), "搜尋的字：英文的詞組中間可以有空白"
+        bad = ca(words, "a|b", work)[1]
+        assert bad and "不含 |" in bad and "不含空白" not in bad, bad
 
     def t_expand():
         nodes = [{"id": "f", "if": "files", "tool": "find_file", "args": ["{files}", "{path}"]},

@@ -56,7 +56,10 @@ package "prompts/（改字不用改程式；evals/integrity 檢查範本跟程�
       **mid/**（新架構的中階）：select.md（挑技能：先寫理解、
       問題要的是位置／數量／內容，再選一個或 none、out_of_domain）、
       contract.md（合約：每個參數抄一段原文、寫值）、
-      inputs.md（問題、領域、複合技能、參數與種類、沒過核對的標籤）
+      judge.md（判斷節點：看原文挑出回答問題的行、
+      從技能列的路選一條、填那條路的值）、
+      inputs.md（問題、領域、複合技能、參數與種類、
+      判斷的原文、之前挑出的行、找過的字、沒過核對的標籤）
     ]
   }
 }
@@ -71,7 +74,8 @@ package "skills_system/：也是模型會讀的" {
     **<領域>/SKILLS.md**（新架構，第一版 repo_analysis）：
     領域的說明（含不包含什麼）、複合技能與工具的清單
     **<領域>/<複合技能>.md**：說明、答得了哪幾種、〈什麼時候用〉、
-    參數的說明（〈骨架〉〈回退〉給程式排圖與換做法，不給模型）
+    參數的說明（〈骨架〉〈回退〉給程式排圖與換做法；
+    判斷節點的 goal、labels、每條路的 say 給判斷的模型）
   ]
 }
 
@@ -98,6 +102,8 @@ package "用到它們的 session" {
     **中階**（還沒接上主對話）：挑技能 mid_select_schema
     → 合約 mid_contract_schema（沒過核對的參數修一次）；
     程式核對之後照〈骨架〉排圖、交給低階執行器
+    → 判斷 mid_judge_schema（跑到判斷節點時；原文由程式
+    照收據從檔案讀，挑的行與值沒過核對的修一次）
   ]
 }
 
@@ -127,7 +133,8 @@ S_MID -[hidden]-> C_LIST
 legend bottom
   **用哪個模型**（獨立 session 一律關閉 thinking）
   ・主 session：主模型（Web 的模型設定，預設 gemma4:e4b）；提煉、滾動摘要：summary_model（AGENT_SUMMARY_MODEL，沒設定時跟著主模型）
-  ・第 1 級修正：EDG_MODEL（AGENT_EDG_MODEL，空＝主模型）；中階的挑技能與合約：MID_MODEL（AGENT_MID_MODEL，空＝主模型）
+  ・第 1 級修正：EDG_MODEL（AGENT_EDG_MODEL，空＝主模型）；中階的挑技能與合約：MID_MODEL（AGENT_MID_MODEL，空＝主模型）；
+    中階的判斷：MID_JUDGE_MODEL（AGENT_MID_JUDGE_MODEL，空＝MID_MODEL）
   ・附圖：VISION_MODEL
   範本的寫法：一個檔案好幾則時每則用一行 <!~-- @名稱 ~--> 開頭；{名稱} 是程式填的值（prompts/README.md）。
   改這些字＝改模型會讀的文字：跑對應的真模型評測、跟基準比；範例不用評測世界的名稱

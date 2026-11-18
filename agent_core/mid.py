@@ -471,7 +471,7 @@ def check_answer(p, answer, cwd):
     if t == "words":
         items = judge.words_of(a)
         ok = items and all(judge.WORD.match(x) and not x.startswith("-") for x in items)
-        return (items, None) if ok else (None, "每一個字不含空白與 |（好幾個用「、」分開）")
+        return (items, None) if ok else (None, "每一個字只用文字、數字與 . / : @ ~ -（英文的詞組中間可以有一個空白），不以 - 開頭、不含 | 與括號；好幾個用「、」分開")
     return a, None
 
 
