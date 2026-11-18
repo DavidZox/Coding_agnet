@@ -1,0 +1,1218 @@
+<!DOCTYPE html>
+<html lang="zh-TW" class="scroll-smooth dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>生產級多階層 OKF Agent 架構與防禦閉環系統總覽</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+                        mono: ['Fira Code', 'JetBrains Mono', 'Monaco', 'Consolas', 'monospace']
+                    },
+                    colors: {
+                        slate: {
+                            850: '#111827',
+                            900: '#0f172a',
+                            950: '#060a14',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Google Fonts & Lucide Icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #060a14; }
+        ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #334155; }
+
+        /* Glassmorphism Styles */
+        .glass-nav {
+            background: rgba(6, 10, 20, 0.85);
+            backdrop-filter: blur(16px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.78);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .glass-card {
+            background: rgba(15, 23, 42, 0.55);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .glass-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 32px -10px rgba(0, 0, 0, 0.6);
+        }
+        .text-gradient-hero {
+            background: linear-gradient(135deg, #ffffff 0%, #c7d2fe 45%, #a855f7 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-200 antialiased selection:bg-indigo-500 selection:text-white min-h-screen flex flex-col">
+
+    <!-- Sticky Navigation Bar -->
+    <nav class="sticky top-0 z-50 glass-nav px-4 lg:px-8 py-3.5 transition-all">
+        <div class="max-w-7xl mx-auto flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="p-2 bg-indigo-500/15 rounded-xl border border-indigo-500/30 text-indigo-400 shadow-lg shadow-indigo-500/10">
+                    <i data-lucide="cpu" class="w-5 h-5"></i>
+                </div>
+                <div>
+                    <span class="text-[10px] font-mono font-bold text-indigo-400 uppercase tracking-widest block">Unified Production Architecture</span>
+                    <h2 class="text-sm font-extrabold text-white tracking-wide">多階層 OKF Agent 架構與防禦閉環系統總覽</h2>
+                </div>
+            </div>
+
+            <!-- Desktop Navigation Links -->
+            <div class="hidden xl:flex items-center gap-1 text-xs font-medium">
+                <a href="#mod-1" class="px-3 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800/70 transition">一、總體架構與理論對照</a>
+                <a href="#mod-2" class="px-3 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800/70 transition">二、知識庫與 OKF 實戰</a>
+                <a href="#mod-3" class="px-3 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800/70 transition">三、子任務傳遞與 DAG</a>
+                <a href="#mod-4" class="px-3 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800/70 transition">四、三層異常與防禦矩陣</a>
+                <a href="#mod-5" class="px-3 py-1.5 rounded-lg text-amber-300 hover:bg-amber-500/10 transition">五、互動全鏈路演練沙盒</a>
+                <a href="#mod-6" class="px-3 py-1.5 rounded-lg text-emerald-300 hover:bg-emerald-500/10 transition">六、生產落地總結</a>
+            </div>
+
+            <!-- Mobile Menu Button & Status Badge -->
+            <div class="flex items-center gap-3">
+                <span class="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-mono font-medium">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                    Unified Spec v10.0
+                </span>
+                <button id="mobile-menu-toggle" class="xl:hidden p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-800">
+                    <i data-lucide="menu" class="w-5 h-5"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Mobile Dropdown Navigation -->
+        <div id="mobile-menu" class="hidden xl:hidden mt-3 pt-3 border-t border-slate-800/80 grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-xs font-medium">
+            <a href="#mod-1" class="mobile-link px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800">一、總體架構與理論對照</a>
+            <a href="#mod-2" class="mobile-link px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800">二、知識庫與 OKF 實戰</a>
+            <a href="#mod-3" class="mobile-link px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800">三、子任務傳遞與 DAG</a>
+            <a href="#mod-4" class="mobile-link px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800">四、三層異常與防禦矩陣</a>
+            <a href="#mod-5" class="mobile-link px-3 py-2 rounded-lg text-amber-300 hover:bg-slate-800">五、互動全鏈路演練沙盒</a>
+            <a href="#mod-6" class="mobile-link px-3 py-2 rounded-lg text-emerald-300 hover:bg-slate-800">六、生產落地總結</a>
+        </div>
+    </nav>
+
+    <!-- Hero Header Section -->
+    <header class="relative overflow-hidden py-16 px-6 lg:px-12 border-b border-slate-800/70 bg-gradient-to-b from-slate-900 via-slate-950 to-slate-950">
+        <div class="absolute top-0 right-1/4 w-[28rem] h-[28rem] bg-indigo-600/10 rounded-full blur-3xl pointer-events-none"></div>
+        <div class="absolute bottom-0 left-1/4 w-[28rem] h-[28rem] bg-purple-600/10 rounded-full blur-3xl pointer-events-none"></div>
+
+        <div class="max-w-6xl mx-auto space-y-6 relative z-10">
+            <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-indigo-950/80 text-indigo-300 border border-indigo-700/50 text-xs font-mono font-semibold">
+                <i data-lucide="layers" class="w-3.5 h-3.5 text-purple-400"></i>
+                Multi-Tier OKF &bull; HarnessMM EDG Alignment &bull; 3-Tier Defense Closed-Loop
+            </div>
+
+            <h1 class="text-3xl sm:text-4xl md:text-5xl font-black text-gradient-hero leading-tight tracking-tight">
+                生產級多階層 OKF Agent 架構與<br class="hidden sm:inline">三級防禦閉環系統總覽
+            </h1>
+
+            <p class="text-slate-300 text-base md:text-lg leading-relaxed max-w-4xl">
+                本系統總覽將<strong class="text-purple-300">「高-中-低三層 OKF 知識體系」</strong>、<strong class="text-amber-300">「子任務目標傳遞鏈與長上下文聚焦」</strong>、<strong class="text-cyan-300">「HarnessMM 可執行決策圖（EDG）與收據驗證」</strong>，以及<strong class="text-emerald-300">「12 種異常分類與三級防禦回退閉環」</strong>整合為一套嚴謹、零冗餘的企業級 AI Agent 工程架構藍圖。
+            </p>
+
+            <!-- Core Pillars Quick Badges -->
+            <div class="pt-4 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs font-mono">
+                <div class="px-4 py-3 rounded-xl bg-purple-950/40 border border-purple-500/30 text-purple-200 flex items-center gap-3">
+                    <i data-lucide="compass" class="w-5 h-5 text-purple-400 shrink-0"></i>
+                    <div>
+                        <strong class="block text-white">高階：全域路由層 (Orchestrator)</strong>
+                        <span class="text-[11px] text-purple-300/80">DOMAIN.md 宏觀分流與全域仲裁</span>
+                    </div>
+                </div>
+                <div class="px-4 py-3 rounded-xl bg-indigo-950/40 border border-indigo-500/30 text-indigo-200 flex items-center gap-3">
+                    <i data-lucide="git-pull-request" class="w-5 h-5 text-indigo-400 shrink-0"></i>
+                    <div>
+                        <strong class="block text-white">中階：戰略編排層 (Domain Worker)</strong>
+                        <span class="text-[11px] text-indigo-300/80">Skill Contract、SOP 與動態重規劃</span>
+                    </div>
+                </div>
+                <div class="px-4 py-3 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-emerald-200 flex items-center gap-3">
+                    <i data-lucide="terminal" class="w-5 h-5 text-emerald-400 shrink-0"></i>
+                    <div>
+                        <strong class="block text-white">低階：執行防禦層 (EDG Executor)</strong>
+                        <span class="text-[11px] text-emerald-300/80">沙盒自癒、Schema 攔截與收據驅動</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Container -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14 space-y-24 flex-grow">
+
+        <!-- ===================================================================== -->
+        <!-- MODULE 1: 總體架構與理論基石 (Architectural Overview & Alignment)     -->
+        <!-- ===================================================================== -->
+        <section id="mod-1" class="space-y-8 scroll-mt-24">
+            <div class="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-slate-800 pb-4">
+                <div>
+                    <span class="text-xs font-mono font-bold text-indigo-400 uppercase tracking-widest block">MODULE 01 // ARCHITECTURAL OVERVIEW</span>
+                    <h2 class="text-2xl md:text-3xl font-extrabold text-white mt-1 flex items-center gap-3">
+                        <i data-lucide="network" class="w-7 h-7 text-indigo-400"></i>
+                        一、 總體架構與學術／業界理論基石對照
+                    </h2>
+                </div>
+                <span class="text-xs font-mono text-indigo-300 bg-indigo-950/70 px-3 py-1 rounded-full border border-indigo-500/30">
+                    HarnessMM &amp; Industry Best Practices
+                </span>
+            </div>
+
+            <!-- 4 Core Theoretical Mechanisms from HarnessMM & Industry -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+                <div class="glass-card rounded-2xl p-5 border border-indigo-500/25 space-y-3">
+                    <div class="flex items-center justify-between">
+                        <span class="text-[11px] font-mono font-bold text-indigo-400 px-2 py-0.5 rounded bg-indigo-500/10 border border-indigo-500/30">HarnessMM // EDG</span>
+                        <i data-lucide="git-fork" class="w-4 h-4 text-indigo-400"></i>
+                    </div>
+                    <h3 class="text-sm font-bold text-white">可執行決策圖與字面閉包</h3>
+                    <p class="text-xs text-slate-300 leading-relaxed">
+                        以有向拓樸圖（EDG）鎖定解析後的動作與字面參數（Literal Arguments），靠工具回傳的<strong>執行收據（Receipts）</strong>驅動下一步，取代每步呼叫 LLM 慢速推理，大幅節省 Token。
+                    </p>
+                </div>
+
+                <div class="glass-card rounded-2xl p-5 border border-purple-500/25 space-y-3">
+                    <div class="flex items-center justify-between">
+                        <span class="text-[11px] font-mono font-bold text-purple-400 px-2 py-0.5 rounded bg-purple-500/10 border border-purple-500/30">HarnessMM // GDR &amp; CCS</span>
+                        <i data-lucide="repeat" class="w-4 h-4 text-purple-400"></i>
+                    </div>
+                    <h3 class="text-sm font-bold text-white">受保護決策重用與回調替代</h3>
+                    <p class="text-xs text-slate-300 leading-relaxed">
+                        透過 <strong>Guarded Decision Reuse</strong> 與 <strong>Certified Callback Substitution</strong>，在安全護欄保護下直接於原生介面執行確定性腳本，跳過重複推理回調。
+                    </p>
+                </div>
+
+                <div class="glass-card rounded-2xl p-5 border border-cyan-500/25 space-y-3">
+                    <div class="flex items-center justify-between">
+                        <span class="text-[11px] font-mono font-bold text-cyan-400 px-2 py-0.5 rounded bg-cyan-500/10 border border-cyan-500/30">Anthropic &amp; OpenAI</span>
+                        <i data-lucide="filter" class="w-4 h-4 text-cyan-400"></i>
+                    </div>
+                    <h3 class="text-sm font-bold text-white">Router 解耦與漸進式載入</h3>
+                    <p class="text-xs text-slate-300 leading-relaxed">
+                        對齊 Anthropic <em>Orchestrator-Worker</em> 解耦與 OpenAI 漸進式 Schema 載入原則，避免單一模型同時面對海量工具描述導致注意力稀釋（Attention Dilution）。
+                    </p>
+                </div>
+
+                <div class="glass-card rounded-2xl p-5 border border-emerald-500/25 space-y-3">
+                    <div class="flex items-center justify-between">
+                        <span class="text-[11px] font-mono font-bold text-emerald-400 px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30">AutoGen &amp; RSI</span>
+                        <i data-lucide="shield-check" class="w-4 h-4 text-emerald-400"></i>
+                    </div>
+                    <h3 class="text-sm font-bold text-white">伴侶規格書與沙盒隔離</h3>
+                    <p class="text-xs text-slate-300 leading-relaxed">
+                        對齊 HarnessMM <strong>Companion Specs（RSI 精煉）</strong>與 AutoGen <em>Planner / Sandbox Executor</em> 分離，將戰略 SOP 與底層 CLI 執行徹底解耦。
+                    </p>
+                </div>
+            </div>
+
+            <!-- Unified Master Comparison Matrix Table -->
+            <div class="glass-panel rounded-2xl border border-slate-800 overflow-hidden shadow-xl">
+                <div class="px-6 py-4 bg-slate-900/90 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2">
+                    <span class="text-xs font-mono font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                        <i data-lucide="table-2" class="w-4 h-4 text-indigo-400"></i>
+                        三層 OKF 架構 vs. HarnessMM 論文與業界一線標準對照矩陣
+                    </span>
+                    <span class="text-[11px] font-mono text-slate-400">Unified Architecture Alignment Matrix</span>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse text-xs md:text-sm">
+                        <thead>
+                            <tr class="bg-slate-950 border-b border-slate-800 text-slate-400 font-mono text-[11px]">
+                                <th class="p-4 font-bold w-1/6">架構層級 / 維度</th>
+                                <th class="p-4 font-bold w-1/3 text-indigo-300">自研多階層 OKF 系統設計</th>
+                                <th class="p-4 font-bold w-1/4 text-purple-300">HarnessMM 論文機制</th>
+                                <th class="p-4 font-bold w-1/4 text-cyan-300">業界一線大廠標準</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-800/70 text-slate-300">
+                            <tr class="hover:bg-slate-900/50 transition">
+                                <td class="p-4 font-mono font-bold text-purple-300 bg-purple-950/15">
+                                    【高階層】<br>全域路由層
+                                </td>
+                                <td class="p-4">
+                                    <strong class="text-white block mb-1">Orchestrator / <code>DOMAIN.md</code></strong>
+                                    檢索全域領域清單進行宏觀分流、提煉第一層子任務目標，並在跨領域衝突或越界時執行全局仲裁與重分流。
+                                </td>
+                                <td class="p-4">
+                                    <strong class="text-purple-200 block mb-1">高階領域配置 (Instructions)</strong>
+                                    界定任務宏觀範圍與代理人行為邊界，防止頂層決策發散。
+                                </td>
+                                <td class="p-4 font-mono text-xs">
+                                    <strong class="text-cyan-200 block mb-1">Anthropic Router Pattern</strong>
+                                    OpenAI Domain Classifier Agent（宏觀 Context 隔離）。
+                                </td>
+                            </tr>
+                            <tr class="hover:bg-slate-900/50 transition">
+                                <td class="p-4 font-mono font-bold text-indigo-300 bg-indigo-950/15">
+                                    【中階層】<br>戰略編排層
+                                </td>
+                                <td class="p-4">
+                                    <strong class="text-white block mb-1">Domain Worker / Skill Specs</strong>
+                                    定義 <code>Skill Contract</code>、<code>topology</code> 依賴與業務 SOP；動態編排 DAG，接收低階 Bubble Up 訊號並發起動態重規劃。
+                                </td>
+                                <td class="p-4">
+                                    <strong class="text-purple-200 block mb-1">Companion Specs (RSI 精煉)</strong>
+                                    提供最佳化領域指引、驗證規則與慢速模型（Slow Actor）重規劃知識庫。
+                                </td>
+                                <td class="p-4 font-mono text-xs">
+                                    <strong class="text-cyan-200 block mb-1">LangGraph StateGraph</strong>
+                                    Microsoft AutoGen Planner（狀態圖與條件路由）。
+                                </td>
+                            </tr>
+                            <tr class="hover:bg-slate-900/50 transition">
+                                <td class="p-4 font-mono font-bold text-emerald-300 bg-emerald-950/15">
+                                    【低階層】<br>執行防禦層
+                                </td>
+                                <td class="p-4">
+                                    <strong class="text-white block mb-1">EDG Executor / Atomic Tools</strong>
+                                    綁定字面參數與 CLI Flags，以 Schema 零 Token 驗證攔截；技術錯誤在沙盒內透過 <code># 異常</code> 進行 Local Reflection 自癒。
+                                </td>
+                                <td class="p-4">
+                                    <strong class="text-purple-200 block mb-1">EDG, GDR, CCS &amp; Guards</strong>
+                                    Literal Closure（字面閉包）、Public Guards 護欄驗證與 Receipts 收據驅動。
+                                </td>
+                                <td class="p-4 font-mono text-xs">
+                                    <strong class="text-cyan-200 block mb-1">OpenAI Strict Tools</strong>
+                                    AutoGen Sandboxed CodeExecutor（安全隔離執行）。
+                                </td>
+                            </tr>
+                            <tr class="hover:bg-slate-900/50 transition">
+                                <td class="p-4 font-mono font-bold text-amber-300 bg-amber-950/10">
+                                    狀態與回退<br>核心機制
+                                </td>
+                                <td class="p-4">
+                                    <strong class="text-white block mb-1">三級防禦閉環 &amp; 狀態分離</strong>
+                                    低階技術自癒 &rarr; 中階策略切換（Bubble Up）&rarr; 高階全域重分流，並保持 Runtime State 與圖結構分離。
+                                </td>
+                                <td class="p-4">
+                                    <strong class="text-purple-200 block mb-1">Receipts &amp; Guard Fallback</strong>
+                                    遇非零返回碼或護欄驗證失敗時，交還控制權並保留事件歷史收據。
+                                </td>
+                                <td class="p-4 font-mono text-xs">
+                                    <strong class="text-cyan-200 block mb-1">Circuit Breaker &amp; Checkpointing</strong>
+                                    任務帳本（Ledger）與斷點狀態持久化。
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===================================================================== -->
+        <!-- MODULE 2: 知識庫檔案體系與 OKF 規格書實戰 (KB Taxonomy & OKF Specs)  -->
+        <!-- ===================================================================== -->
+        <section id="mod-2" class="space-y-8 scroll-mt-24">
+            <div class="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-slate-800 pb-4">
+                <div>
+                    <span class="text-xs font-mono font-bold text-cyan-400 uppercase tracking-widest block">MODULE 02 // KNOWLEDGE BASE &amp; CONTRACTS</span>
+                    <h2 class="text-2xl md:text-3xl font-extrabold text-white mt-1 flex items-center gap-3">
+                        <i data-lucide="folder-tree" class="w-7 h-7 text-cyan-400"></i>
+                        二、 知識庫檔案體系、OKF 實戰範例與合約機制
+                    </h2>
+                </div>
+                <span class="text-xs font-mono text-cyan-300 bg-cyan-950/70 px-3 py-1 rounded-full border border-cyan-500/30">
+                    Hierarchical OKF &amp; Schema Guards
+                </span>
+            </div>
+
+            <!-- Directory Tree + Interactive OKF Code Viewer -->
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                <!-- Left 5 Cols: Directory Tree & Runtime State Separation -->
+                <div class="lg:col-span-5 space-y-6">
+                    <div class="glass-panel rounded-2xl p-6 border border-slate-800 space-y-4">
+                        <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                            <span class="text-xs font-mono font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-2">
+                                <i data-lucide="folder-git-2" class="w-4 h-4"></i>
+                                knowledge_base/ 階層目錄結構
+                            </span>
+                        </div>
+                        <pre class="bg-slate-950 p-4 rounded-xl border border-slate-800 font-mono text-xs text-slate-300 leading-relaxed overflow-x-auto"><code><span class="text-indigo-400 font-bold">knowledge_base/</span>
+├── <span class="text-purple-400 font-bold">DOMAIN.md</span>                   <span class="text-slate-500"># 【高階】全域領域分流清單</span>
+└── <span class="text-cyan-400 font-bold">robotics_infra/</span>             <span class="text-slate-500"># 【機器人與基建領域】</span>
+    ├── <span class="text-indigo-300 font-bold">robotics_diagnostics.md</span> <span class="text-slate-500"># 【中階】複合技能 SOP 合約</span>
+    └── <span class="text-emerald-400 font-bold">tools/</span>                  <span class="text-slate-500"># 【低階】原子工具箱</span>
+        ├── <span class="text-emerald-300">check_docker_status.md</span>
+        ├── <span class="text-emerald-300">ros2_node_list.md</span>
+        └── <span class="text-emerald-300 font-bold">ros2_topic_list.md</span>  <span class="text-slate-500"># 葉節點工具規格</span></code></pre>
+                    </div>
+
+                    <!-- Runtime State & Contract Governance Card -->
+                    <div class="glass-panel rounded-2xl p-6 border border-slate-800 space-y-4">
+                        <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                            <i data-lucide="shield-alert" class="w-4 h-4 text-amber-400"></i>
+                            合約雙層治理與運行時狀態分離
+                        </h3>
+                        <div class="space-y-3 text-xs text-slate-300">
+                            <div class="p-3 bg-slate-950 rounded-xl border border-indigo-500/20">
+                                <strong class="text-indigo-300 block mb-1">1. 中階定義合約 (Authoring &amp; Planning)</strong>
+                                規範 <code>Skill Contract</code>（必填參數、資料型態、預期輸出結構）、前置環境狀態確認及重規劃指引。
+                            </div>
+                            <div class="p-3 bg-slate-950 rounded-xl border border-emerald-500/20">
+                                <strong class="text-emerald-300 block mb-1">2. 低階零 Token 強制攔截 (Schema Enforcement)</strong>
+                                綁定字面參數與 CLI Flags（如 <code>--types</code>、<code>--filter</code>），以程式化 Schema/Pydantic 驗證，違規瞬間攔截不浪費 LLM Token。
+                            </div>
+                            <div class="p-3 bg-slate-950 rounded-xl border border-amber-500/20">
+                                <strong class="text-amber-300 block mb-1">3. 狀態與圖分離 (Runtime State vs. Graph)</strong>
+                                執行收據（Receipts）、事件歷史與任務帳本（Ledger/Memory）獨立儲存於 Runtime State，重規劃時無需重寫整張圖結構。
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right 7 Cols: Interactive OKF File Tabs -->
+                <div class="lg:col-span-7 glass-panel rounded-2xl p-6 border border-slate-800 flex flex-col justify-between space-y-4">
+                    <div class="space-y-4">
+                        <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+                            <span class="text-xs font-mono font-bold text-white flex items-center gap-2">
+                                <i data-lucide="file-code-2" class="w-4 h-4 text-indigo-400"></i>
+                                OKF 規格書實戰原始碼檢視器
+                            </span>
+                            <div class="flex flex-wrap gap-1.5 font-mono text-[11px]">
+                                <button onclick="switchOkfTab('high')" id="okf-tab-high" class="px-3 py-1.5 rounded-lg bg-purple-600/30 border border-purple-500 text-purple-200 font-bold transition">
+                                    高階 DOMAIN.md
+                                </button>
+                                <button onclick="switchOkfTab('mid')" id="okf-tab-mid" class="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200 transition">
+                                    中階 Skill Spec
+                                </button>
+                                <button onclick="switchOkfTab('low')" id="okf-tab-low" class="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200 transition">
+                                    低階 Tool OKF
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Code Display Area -->
+                        <div id="okf-code-container" class="bg-slate-950 rounded-xl p-5 border border-slate-800 font-mono text-xs overflow-x-auto">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+
+                    <div id="okf-code-note" class="p-3.5 rounded-xl bg-purple-950/20 border border-purple-500/30 text-xs text-purple-200 flex items-start gap-2.5">
+                        <i data-lucide="info" class="w-4 h-4 text-purple-400 shrink-0 mt-0.5"></i>
+                        <span id="okf-note-text">高階 DOMAIN.md 僅暴露領域邊界與入口技能，讓 Orchestrator 實現零噪音的第一層宏觀分流。</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===================================================================== -->
+        <!-- MODULE 3: 雙軌執行核心：子任務目標傳遞鏈與動態 DAG 編排               -->
+        <!-- ===================================================================== -->
+        <section id="mod-3" class="space-y-8 scroll-mt-24">
+            <div class="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-slate-800 pb-4">
+                <div>
+                    <span class="text-xs font-mono font-bold text-amber-400 uppercase tracking-widest block">MODULE 03 // CASCADING GOALS &amp; DYNAMIC DAG</span>
+                    <h2 class="text-2xl md:text-3xl font-extrabold text-white mt-1 flex items-center gap-3">
+                        <i data-lucide="git-merge" class="w-7 h-7 text-amber-400"></i>
+                        三、 雙軌執行核心：子任務目標傳遞鏈與動態 DAG 編排
+                    </h2>
+                </div>
+                <span class="text-xs font-mono text-amber-300 bg-amber-950/70 px-3 py-1 rounded-full border border-amber-500/30">
+                    Intent Preservation &amp; EDG Synthesis
+                </span>
+            </div>
+
+            <div class="glass-panel rounded-2xl p-6 md:p-8 border border-amber-500/30 space-y-8">
+                <!-- Two Core Tracks -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="bg-slate-950 p-6 rounded-xl border border-amber-500/30 space-y-3">
+                        <div class="flex items-center justify-between">
+                            <span class="px-2.5 py-1 rounded bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-mono font-bold">TRACK 01</span>
+                            <i data-lucide="arrow-down-right" class="w-5 h-5 text-amber-400"></i>
+                        </div>
+                        <h3 class="text-base font-bold text-white">子任務目標向下傳遞鏈 (Subtask Objective Cascading)</h3>
+                        <p class="text-xs text-slate-300 leading-relaxed">
+                            每一層向下一層派發任務時，均會提煉並鎖定專屬的<strong>「階段性子任務目標」</strong>（例如高階提煉「排查 ROS2 基礎設施」&rarr; 中階提煉「對 amr_07 執行相機 Topic 與節點聯防」），徹底杜絕多層轉譯造成的<strong>意圖漂移（Intent Drift）</strong>。
+                        </p>
+                    </div>
+
+                    <div class="bg-slate-950 p-6 rounded-xl border border-cyan-500/30 space-y-3">
+                        <div class="flex items-center justify-between">
+                            <span class="px-2.5 py-1 rounded bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-xs font-mono font-bold">TRACK 02</span>
+                            <i data-lucide="search-code" class="w-5 h-5 text-cyan-400"></i>
+                        </div>
+                        <h3 class="text-base font-bold text-white">長上下文精準聚焦解析 (Long-Context Targeted Parsing)</h3>
+                        <p class="text-xs text-slate-300 leading-relaxed">
+                            各層 Worker 同時攜帶<strong>「使用者原始長上下文問題」</strong>與上層子目標，針對當前階段所需參數進行局部聚焦抽取（精準抓出 <code>amr_07</code> 與 <code>--filter camera</code>），既不被雜訊干擾，也不遺失極微小的技術細節。
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Waterfall Architecture Diagram -->
+                <div class="bg-slate-950 p-6 rounded-xl border border-slate-800 font-mono text-xs space-y-3">
+                    <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+                        <span class="text-amber-400 font-bold text-[11px] uppercase tracking-wider flex items-center gap-2">
+                            <i data-lucide="workflow" class="w-4 h-4"></i>
+                            雙軌交織瀑布流與動態 DAG 生成拓樸 (Waterfall &amp; EDG Synthesis)
+                        </span>
+                        <span class="text-[10px] text-slate-500">Zero Context Loss Pipeline</span>
+                    </div>
+                    <div class="overflow-x-auto">
+<pre class="text-slate-300 leading-relaxed"><code>[使用者原始長上下文問題] (含背景噪音、目標容器 amr_07、關鍵字相機 camera)
+       │
+       ├─── (攜帶長上下文) ───► 【高階 DOMAIN.md】 ➔ 提煉子目標 1：「排查 robotics_infra 領域通訊與基礎設施」
+       │                           │
+       ├─── (攜帶長上下文) ───► 【中階 Skill SOP】  ➔ 提煉子目標 2：「amr_07 容器檢查 + 相機 Topic 與節點聯防」
+       │                           │
+       │                           ▼ (中階動態編排生成具體化 DAG / EDG 拓樸圖，取代每步慢速 LLM 對話)
+       │                    ┌─────────────────────────────────────────────────────────────────────────┐
+       │                    │  [Step 1: check_docker_status (amr_07)] (Auto-Patched 前置硬性依賴)       │
+       │                    │                 │  ( Receipt: PASS )                                    │
+       │                    │                 ▼                                                       │
+       └─── (聚焦參數抽取) ─┼─► [Step 2: ros2_topic_list (amr_07 --types --filter camera)]            │
+                            └─────────────────────────────────────────────────────────────────────────┘</code></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===================================================================== -->
+        <!-- MODULE 4: 三層異常分類學與三級防禦回退機制 (12 Exceptions & Matrix)   -->
+        <!-- ===================================================================== -->
+        <section id="mod-4" class="space-y-8 scroll-mt-24">
+            <div class="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-slate-800 pb-4">
+                <div>
+                    <span class="text-xs font-mono font-bold text-rose-400 uppercase tracking-widest block">MODULE 04 // 3-TIER EXCEPTION TAXONOMY</span>
+                    <h2 class="text-2xl md:text-3xl font-extrabold text-white mt-1 flex items-center gap-3">
+                        <i data-lucide="shield-alert" class="w-7 h-7 text-rose-400"></i>
+                        四、 三層異常分類學（12 大情境）與三級防禦回退閉環
+                    </h2>
+                </div>
+                <span class="text-xs font-mono text-rose-300 bg-rose-950/70 px-3 py-1 rounded-full border border-rose-500/30">
+                    12 Exception Patterns &amp; Recovery Loops
+                </span>
+            </div>
+
+            <!-- Layer Filter Tabs -->
+            <div class="flex flex-wrap items-center gap-2 font-mono text-xs">
+                <button onclick="filterExceptions('all')" id="exc-filter-all" class="px-4 py-2 rounded-xl bg-slate-800 border border-slate-600 text-white font-bold transition">
+                    全部顯示 (12 項)
+                </button>
+                <button onclick="filterExceptions('low')" id="exc-filter-low" class="px-4 py-2 rounded-xl bg-slate-900 border border-slate-800 text-emerald-400 hover:bg-emerald-950/40 transition">
+                    一、低階原子工具 (`# 異常` 4 項)
+                </button>
+                <button onclick="filterExceptions('mid')" id="exc-filter-mid" class="px-4 py-2 rounded-xl bg-slate-900 border border-slate-800 text-indigo-400 hover:bg-indigo-950/40 transition">
+                    二、中階複合技能 (`# 異常與策略回退` 4 項)
+                </button>
+                <button onclick="filterExceptions('high')" id="exc-filter-high" class="px-4 py-2 rounded-xl bg-slate-900 border border-slate-800 text-purple-400 hover:bg-purple-950/40 transition">
+                    三、高階全域規格 (`# 路由回退` 4 項)
+                </button>
+            </div>
+
+            <!-- 12 Exception Cards Container -->
+            <div id="exception-cards-grid" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Populated dynamically via JS for clean maintainability & filtering -->
+            </div>
+
+            <!-- LangGraph Conditional Edge Closed-Loop Diagram -->
+            <div class="glass-panel rounded-2xl p-6 border border-slate-800 font-mono text-xs space-y-3">
+                <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+                    <span class="text-indigo-400 font-bold text-[11px] uppercase tracking-wider flex items-center gap-2">
+                        <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                        LangGraph 風格：條件式邊緣路由與三級回退閉環 (Conditional Edge Closed-Loop)
+                    </span>
+                    <span class="text-[10px] text-slate-500">Bubble-Up &amp; Circuit Breaker</span>
+                </div>
+                <div class="overflow-x-auto">
+<pre class="text-slate-300 leading-relaxed"><code>[中階 Worker: 戰略 SOP 派發] ◄───────────────────────────────────────────────────────────┐
+         │                                                                               │ (重新分流)
+         ▼                                                                               │
+[Step 1: check_docker_status] ───► (PASS)                                                │
+         │                                                                               │
+         ▼                                                                               │
+[Step 2: ros2_topic_list (amr_07 --filter camera)]                                       │
+         │                                                                               │
+         ├─── (技術報錯: 參數缺失/逾時) ───► [Level 1 低階自癒: 沙盒修復參數重試] ──┐    │
+         │                                                                          │    │
+         └─── (業務死胡同: 僅有 /rosout)                                            │    │
+                   │                                                                │    │
+                   ▼ (Bubble Up 向上回退至中階)                                     │    │
+         [Level 2 中階對照 SOP 發起 Dynamic Replanning] ◄───────────────────────────┘    │
+                   │                                                                     │
+                   ├─── (領域內切換替代行為) ───► [Step 3: ros2_node_list] ➔ 成功解決！  │
+                   │                                                                     │
+                   └─── (領域越界 / 試錯熔斷) ──► [Level 3 高階重掃 DOMAIN.md / 優雅降級]┘</code></pre>
+                </div>
+            </div>
+
+            <!-- 3-Tier Defense Summary Matrix Table -->
+            <div class="glass-panel rounded-2xl border border-slate-800 overflow-hidden">
+                <div class="px-6 py-4 bg-slate-900 border-b border-slate-800 flex items-center justify-between">
+                    <span class="text-xs font-mono font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
+                        <i data-lucide="layers" class="w-4 h-4 text-purple-400"></i>
+                        三層異常分類與防禦回退機制總結對照表
+                    </span>
+                    <span class="text-[10px] font-mono text-slate-500">Complete Resilience Matrix</span>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse text-xs md:text-sm">
+                        <thead>
+                            <tr class="bg-slate-950 border-b border-slate-800 text-slate-400 font-mono text-[11px]">
+                                <th class="p-4 font-bold w-1/6">架構層級</th>
+                                <th class="p-4 font-bold w-1/5">規格書 / 元件定位</th>
+                                <th class="p-4 font-bold w-1/6 text-indigo-300">關注核心維度</th>
+                                <th class="p-4 font-bold w-1/4">應對的異常本質</th>
+                                <th class="p-4 font-bold text-emerald-400">觸發的自癒與回退機制</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-800/60 text-slate-300">
+                            <tr class="hover:bg-slate-900/50 transition">
+                                <td class="p-4 font-semibold text-emerald-300 bg-emerald-950/15 font-mono">
+                                    【低階層】<br><span class="text-[11px] text-slate-400 font-normal">Atomic Tool OKF</span>
+                                </td>
+                                <td class="p-4 font-mono text-xs font-bold text-white">專職腳本執行與沙盒防禦者</td>
+                                <td class="p-4 font-mono text-xs text-emerald-400 font-semibold">「技術執行」<br><span class="text-[11px] font-normal text-slate-400">(Syntax, CLI, Runtime)</span></td>
+                                <td class="p-4">參數少填、型別錯、語法錯、權限不足、連線拒絕、執行逾時、JSON 解析失敗。</td>
+                                <td class="p-4 font-mono text-xs text-emerald-300">
+                                    <strong class="text-emerald-400 block mb-1">Local Reflection（沙盒自癒）</strong>
+                                    在低階沙盒內直接修正參數、補齊 <code>--verbose</code> 日誌或重送指令。
+                                </td>
+                            </tr>
+                            <tr class="hover:bg-slate-900/50 transition">
+                                <td class="p-4 font-semibold text-indigo-300 bg-indigo-950/15 font-mono">
+                                    【中階層】<br><span class="text-[11px] text-slate-400 font-normal">Skill Spec (SOP)</span>
+                                </td>
+                                <td class="p-4 font-mono text-xs font-bold text-white">戰略家與流程動態編排者</td>
+                                <td class="p-4 font-mono text-xs text-indigo-400 font-semibold">「業務與戰略」<br><span class="text-[11px] font-normal text-slate-400">(SOP, DAG, Context)</span></td>
+                                <td class="p-4">業務假設失效（Exit 0 但無有效資料）、領域邊界越界、依賴鏈斷裂、局部試錯窒息。</td>
+                                <td class="p-4 font-mono text-xs text-indigo-300">
+                                    <strong class="text-indigo-400 block mb-1">Dynamic Replanning &amp; Bubble Up</strong>
+                                    切換替代行為、Auto-Patch 補齊依賴，或觸發熔斷並向上 Bubble Up 回報。
+                                </td>
+                            </tr>
+                            <tr class="hover:bg-slate-900/50 transition">
+                                <td class="p-4 font-semibold text-purple-300 bg-purple-950/15 font-mono">
+                                    【高階層】<br><span class="text-[11px] text-slate-400 font-normal">DOMAIN.md / Orchestrator</span>
+                                </td>
+                                <td class="p-4 font-mono text-xs font-bold text-white">全域總指揮與領域仲裁者</td>
+                                <td class="p-4 font-mono text-xs text-purple-400 font-semibold">「巨觀方向」<br><span class="text-[11px] font-normal text-slate-400">(Domain, Global Intent)</span></td>
+                                <td class="p-4">初始分流錯誤、跨領域資源衝突、宏觀意圖漂移、不可抗力系統級災難。</td>
+                                <td class="p-4 font-mono text-xs text-purple-300">
+                                    <strong class="text-purple-400 block mb-1">Domain Re-classification &amp; Degradation</strong>
+                                    清空受汙染上下文重新分流、全局優先權仲裁，或產出 Post-Mortem 報告引導人工介入。
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===================================================================== -->
+        <!-- MODULE 5: 互動式全鏈路演練沙盒 (Interactive Dual-Mode Simulator)      -->
+        <!-- ===================================================================== -->
+        <section id="mod-5" class="space-y-8 scroll-mt-24">
+            <div class="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-amber-900/60 pb-4">
+                <div>
+                    <span class="text-xs font-mono font-bold text-amber-400 uppercase tracking-widest block">MODULE 05 // INTERACTIVE EXECUTION SANDBOX</span>
+                    <h2 class="text-2xl md:text-3xl font-extrabold text-white mt-1 flex items-center gap-3">
+                        <i data-lucide="play-circle" class="w-7 h-7 text-amber-400"></i>
+                        五、 互動式全鏈路協作與三級防禦演練沙盒
+                    </h2>
+                </div>
+                <!-- Mode Switcher -->
+                <div class="flex items-center gap-2 bg-slate-900 p-1.5 rounded-xl border border-slate-800 font-mono text-xs">
+                    <button onclick="switchSimMode('modeA')" id="sim-mode-btn-a" class="px-3.5 py-2 rounded-lg bg-indigo-600 text-white font-bold shadow transition">
+                        模式 A：五階段全鏈路協作
+                    </button>
+                    <button onclick="switchSimMode('modeB')" id="sim-mode-btn-b" class="px-3.5 py-2 rounded-lg text-slate-400 hover:text-white transition">
+                        模式 B：三級防禦升級演練
+                    </button>
+                </div>
+            </div>
+
+            <!-- MODE A: 5-Stage End-to-End Multi-Skill Collaboration Walkthrough -->
+            <div id="sim-mode-a" class="glass-panel rounded-2xl p-6 md:p-8 border border-indigo-500/30 space-y-6">
+                <div class="p-4 rounded-xl bg-gradient-to-r from-indigo-950/60 via-slate-900 to-slate-950 border border-indigo-500/30 space-y-1.5">
+                    <span class="text-xs font-mono font-bold text-indigo-400 flex items-center gap-2">
+                        <i data-lucide="message-square" class="w-4 h-4"></i>
+                        真實多技能協作測試指令 (User Prompt)
+                    </span>
+                    <p class="text-slate-100 text-sm md:text-base font-semibold italic">
+                        「幫我檢查目前跑在機器人容器 amr_07 裡的 ROS2 系統，看看有沒有相機相關的 topic 正在發布？」
+                    </p>
+                </div>
+
+                <!-- 5 Stage Buttons -->
+                <div class="grid grid-cols-2 sm:grid-cols-5 gap-2.5 font-mono text-xs">
+                    <button onclick="switchStage(1)" id="btn-stage-1" class="p-3 rounded-xl bg-indigo-600/30 border border-indigo-500 text-indigo-200 font-bold text-left transition flex flex-col gap-1">
+                        <span class="text-[10px] text-indigo-400">STAGE 01</span>
+                        <span>全域分流</span>
+                    </button>
+                    <button onclick="switchStage(2)" id="btn-stage-2" class="p-3 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200 text-left transition flex flex-col gap-1">
+                        <span class="text-[10px] text-slate-500">STAGE 02</span>
+                        <span>領域局部點兵</span>
+                    </button>
+                    <button onclick="switchStage(3)" id="btn-stage-3" class="p-3 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200 text-left transition flex flex-col gap-1">
+                        <span class="text-[10px] text-slate-500">STAGE 03</span>
+                        <span>契約與依賴補齊</span>
+                    </button>
+                    <button onclick="switchStage(4)" id="btn-stage-4" class="p-3 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200 text-left transition flex flex-col gap-1">
+                        <span class="text-[10px] text-slate-500">STAGE 04</span>
+                        <span>動態 DAG 生成</span>
+                    </button>
+                    <button onclick="switchStage(5)" id="btn-stage-5" class="p-3 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200 text-left transition flex flex-col gap-1">
+                        <span class="text-[10px] text-slate-500">STAGE 05</span>
+                        <span>沙盒執行與回退</span>
+                    </button>
+                </div>
+
+                <!-- Stage Detail Output -->
+                <div id="stage-detail-display" class="bg-slate-950 rounded-xl p-6 border border-indigo-500/30 space-y-4">
+                    <!-- Injected by JS -->
+                </div>
+            </div>
+
+            <!-- MODE B: 3-Tier Escalation Protocol Visualizer -->
+            <div id="sim-mode-b" class="hidden glass-panel rounded-2xl p-6 md:p-8 border border-amber-500/30 space-y-8">
+                <div class="space-y-3">
+                    <span class="text-xs font-mono font-bold text-amber-300 block uppercase">選擇模擬的異常升級情境 (Select Escalation Scenario):</span>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <button onclick="runEscalationSim('syntax')" id="esc-btn-syntax" class="px-4 py-3.5 rounded-xl bg-emerald-950/60 border border-emerald-500/50 text-emerald-300 font-mono text-xs font-bold text-left transition flex items-center justify-between">
+                            <span>情境 A：低階語法少帶參數 (Level 1 自癒)</span>
+                            <i data-lucide="check-circle" class="w-4 h-4 shrink-0"></i>
+                        </button>
+                        <button onclick="runEscalationSim('business')" id="esc-btn-business" class="px-4 py-3.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 font-mono text-xs font-bold text-left hover:bg-slate-800 transition flex items-center justify-between">
+                            <span>情境 B：中階業務死胡同 (Level 2 切換行為)</span>
+                            <i data-lucide="arrow-right-circle" class="w-4 h-4 shrink-0"></i>
+                        </button>
+                        <button onclick="runEscalationSim('domain')" id="esc-btn-domain" class="px-4 py-3.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 font-mono text-xs font-bold text-left hover:bg-slate-800 transition flex items-center justify-between">
+                            <span>情境 C：領域誤判越界 (Level 3 重新分流)</span>
+                            <i data-lucide="alert-triangle" class="w-4 h-4 shrink-0"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Pipeline Status Box -->
+                <div class="bg-slate-950 rounded-2xl p-6 border border-slate-800 space-y-6">
+                    <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                        <span class="text-xs font-mono font-bold text-amber-400 flex items-center gap-2">
+                            <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+                            ESCALATION PROTOCOL TRACE
+                        </span>
+                        <span id="esc-status-badge" class="text-[10px] font-mono px-2.5 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">
+                            LEVEL 1 LOCAL REFLECTION
+                        </span>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div id="esc-step-1" class="p-4 rounded-xl bg-emerald-950/40 border border-emerald-500/50 space-y-2 transition-all">
+                            <div class="flex items-center justify-between text-xs font-mono font-bold text-emerald-400">
+                                <span>1. 低階原子沙盒</span>
+                                <i data-lucide="terminal" class="w-4 h-4"></i>
+                            </div>
+                            <h4 id="esc-step-1-title" class="text-xs font-bold text-white">沙盒捕捉 CLI 報錯</h4>
+                            <p id="esc-step-1-desc" class="text-[11px] text-slate-300 leading-relaxed"></p>
+                        </div>
+
+                        <div id="esc-step-2" class="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-2 opacity-40 transition-all">
+                            <div class="flex items-center justify-between text-xs font-mono font-bold text-indigo-400">
+                                <span>2. 中階戰略 SOP</span>
+                                <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                            </div>
+                            <h4 id="esc-step-2-title" class="text-xs font-bold text-slate-400">待命</h4>
+                            <p id="esc-step-2-desc" class="text-[11px] text-slate-400 leading-relaxed"></p>
+                        </div>
+
+                        <div id="esc-step-3" class="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-2 opacity-40 transition-all">
+                            <div class="flex items-center justify-between text-xs font-mono font-bold text-purple-400">
+                                <span>3. 高階全域路由</span>
+                                <i data-lucide="compass" class="w-4 h-4"></i>
+                            </div>
+                            <h4 id="esc-step-3-title" class="text-xs font-bold text-slate-400">待命</h4>
+                            <p id="esc-step-3-desc" class="text-[11px] text-slate-400 leading-relaxed"></p>
+                        </div>
+                    </div>
+
+                    <!-- Live Console Output -->
+                    <div class="bg-slate-900 p-4 rounded-xl border border-slate-800 font-mono text-xs space-y-1.5">
+                        <div class="text-[10px] text-slate-500 uppercase tracking-wider">Live Debug Terminal Log:</div>
+                        <div id="esc-console-log" class="text-emerald-400 space-y-1 leading-relaxed overflow-x-auto"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===================================================================== -->
+        <!-- MODULE 6: 架構總結與生產級落地藍圖 (Production Readiness Summary)     -->
+        <!-- ===================================================================== -->
+        <section id="mod-6" class="space-y-6 scroll-mt-24">
+            <div class="relative overflow-hidden rounded-3xl bg-gradient-to-r from-indigo-950/70 via-slate-900 to-purple-950/70 border border-indigo-500/40 p-8 md:p-10 shadow-2xl space-y-5">
+                <div class="flex items-center gap-2.5 text-emerald-400 text-xs font-mono font-bold uppercase tracking-wider">
+                    <i data-lucide="award" class="w-5 h-5"></i>
+                    <span>MODULE 06 // PRODUCTION READINESS &amp; CONCLUSION</span>
+                </div>
+                <h2 class="text-2xl md:text-3xl font-extrabold text-white">
+                    邁向企業級高韌性與 Token 極致效率的 Agent 閉環系統
+                </h2>
+                <p class="text-slate-200 text-sm md:text-base leading-relaxed max-w-4xl">
+                    透過將<strong>高階領域路由隔離（<code>DOMAIN.md</code>）</strong>、<strong>中階合約定義與戰略 SOP 動態編排（Skill Specs &amp; DAG）</strong>、<strong>低階字面閉包與收據驗證（EDG &amp; Receipts）</strong>，以及<strong>子任務目標向下傳遞鏈</strong>與<strong>三級防禦回退閉環</strong>深度融合，本架構在維持高度任務泛化能力的同時，實現了「低階技術錯沙盒內自癒、中階業務錯彈性切換行為、高階邊界錯全域重劃分流」的工業級可靠性標準。
+                </p>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="border-t border-slate-900 bg-slate-950 py-8 px-6 text-center text-xs text-slate-500 space-y-1.5">
+        <p class="font-medium text-slate-400">生產級多階層 OKF Agent 架構與防禦閉環系統總覽 &copy; 2026</p>
+        <p class="text-[11px] font-mono text-slate-600">Unified Architecture Specification &bull; HarnessMM EDG &amp; 3-Tier Defense Protocol</p>
+    </footer>
+
+    <!-- Interactive Application Logic -->
+    <script>
+        // 1. Mobile Navigation Toggle
+        const mobileMenuToggle = document.getElementById('mobile-menu-toggle');
+        const mobileMenu = document.getElementById('mobile-menu');
+        mobileMenuToggle.addEventListener('click', () => {
+            mobileMenu.classList.toggle('hidden');
+        });
+        document.querySelectorAll('.mobile-link').forEach(link => {
+            link.addEventListener('click', () => mobileMenu.classList.add('hidden'));
+        });
+
+        // 2. Module 2: OKF Code Viewer Data & Switcher
+        const okfCodeSamples = {
+            high: {
+                code: `<span class="text-purple-400 font-bold"># DOMAIN.md (全域領域分流清單 - Orchestrator 視角)</span>
+
+- <span class="text-indigo-300">**domain_id**</span>: \`robotics_infra\`
+  - <span class="text-indigo-300">**title**</span>: 機器人基礎設施與 ROS2 運行排查
+  - <span class="text-indigo-300">**description**</span>: 適用於 Docker 容器狀態、ROS2 網路通訊、節點崩潰、話題丟包與 Domain ID 異常的綜合領域。
+  - <span class="text-indigo-300">**entry_skills**</span>: 
+    - \`robotics_diagnostics\` (機器人通訊與節點健康診斷)
+
+- <span class="text-indigo-300">**domain_id**</span>: \`code_ast_tools\`
+  - <span class="text-indigo-300">**title**</span>: 源碼解析與靜態分析
+  - <span class="text-indigo-300">**description**</span>: 適用於 C++/Python 原始碼 AST 解析、記憶體洩漏與序列化語法審查。`,
+                note: "高階 DOMAIN.md 僅暴露領域邊界與入口技能，讓 Orchestrator 實現零噪音的第一層宏觀分流與子目標提煉。"
+            },
+            mid: {
+                code: `<span class="text-slate-500">---</span>
+<span class="text-cyan-400">type:</span> Skill
+<span class="text-cyan-400">title:</span> 機器人通訊與節點健康診斷
+<span class="text-cyan-400">domain:</span> robotics_infra
+<span class="text-cyan-400">dependencies:</span> ["docker", "ros2"]
+
+<span class="text-slate-500"># ─── 知識拓樸與依賴聲明 (Skill Contract Topology) ───</span>
+<span class="text-cyan-400">topology:</span>
+  <span class="text-indigo-300">parent_category:</span> system_operations
+  <span class="text-indigo-300">depends_on:</span>
+    - check_docker_status    <span class="text-slate-500"># 硬性前置：未選中時由系統 Auto-Patch 自動補齊</span>
+  <span class="text-indigo-300">sub_skills:</span>
+    - ros2_node_list         <span class="text-slate-500"># 子技能 1：查節點與 Domain ID</span>
+    - ros2_topic_list        <span class="text-slate-500"># 子技能 2：查話題與型別</span>
+<span class="text-slate-500">---</span>
+
+<span class="text-indigo-400 font-bold"># 策略與 SOP (Dynamic Replanning Guide)</span>
+1. 先確認目標容器正常運行（觸發 \`check_docker_status\`）。
+2. 檢索話題清單（\`ros2_topic_list\`），檢查是否有對應感測器話題（如 \`/camera\`）。
+3. <span class="text-amber-300">[異常與策略回退]</span> 若低階回傳僅有系統 \`/rosout\`（業務死胡同），中斷當前分支，立即切換行為呼叫 \`ros2_node_list\` 排查 Domain ID！`,
+                note: "中階 Skill Spec 定義抽象合約、依賴拓樸與戰略 SOP，是 DAG 動態規劃與接收低階 Bubble Up 重規劃的靈魂。"
+            },
+            low: {
+                code: `<span class="text-slate-500">---</span>
+<span class="text-emerald-400">type:</span> Tool
+<span class="text-emerald-400">title:</span> ROS2 話題列表
+<span class="text-emerald-400">domain:</span> robotics_infra
+<span class="text-emerald-400">version:</span> 1.6.1
+<span class="text-emerald-400">dependencies:</span> ["docker", "ros2"]
+<span class="text-slate-500">---</span>
+
+<span class="text-emerald-400 font-bold"># 語法 (Literal Closure &amp; CLI Flags)</span>
+\`EXECUTE: scripts/ROS2_topic_list_cmd.py [container_name] [--types] [--filter 關鍵字]...\`
+* \`container_name\`：目標容器名稱（由長上下文聚焦抽出，如 \`amr_07\`）。
+* \`--filter 關鍵字\`：只列名稱或型別含關鍵字的項目。
+
+<span class="text-emerald-400 font-bold"># 回傳 (Receipt Format)</span>
+\`[PASS] 容器 '<名稱>' 的 topic：共 N 個；ROS_DOMAIN_ID X\` + 清單。
+
+<span class="text-amber-400 font-bold"># 異常 (Local Reflection &amp; Escalation Trigger)</span>
+* 技術錯誤（少帶參數 / 逾時）→ 沙盒內依據語法修正參數後重試（Level 1 自癒）。
+* 只有系統 topic (\`/rosout\`) → 拋出 \`BUSINESS_DEADEND\` 訊號向上 Bubble Up 至中階切換 \`ROS2_node_list\`。`,
+                note: "低階 Tool OKF 專職腳本執行與字面參數綁定，技術報錯於沙盒內自癒，業務死胡同則精準拋出訊號觸發中階重規劃。"
+            }
+        };
+
+        function switchOkfTab(level) {
+            const tabs = {
+                high: { id: 'okf-tab-high', activeClass: 'px-3 py-1.5 rounded-lg bg-purple-600/30 border border-purple-500 text-purple-200 font-bold transition' },
+                mid:  { id: 'okf-tab-mid',  activeClass: 'px-3 py-1.5 rounded-lg bg-indigo-600/30 border border-indigo-500 text-indigo-200 font-bold transition' },
+                low:  { id: 'okf-tab-low',  activeClass: 'px-3 py-1.5 rounded-lg bg-emerald-600/30 border border-emerald-500 text-emerald-200 font-bold transition' }
+            };
+            const inactiveClass = 'px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200 transition';
+
+            Object.keys(tabs).forEach(k => {
+                document.getElementById(tabs[k].id).className = (k === level) ? tabs[k].activeClass : inactiveClass;
+            });
+
+            document.getElementById('okf-code-container').innerHTML = `<pre class="text-slate-300 leading-relaxed"><code>${okfCodeSamples[level].code}</code></pre>`;
+            document.getElementById('okf-note-text').innerText = okfCodeSamples[level].note;
+        }
+
+        // 3. Module 4: 12 Exceptions Data & Filter
+        const exceptionsData = [
+            // Low-Level (4)
+            {
+                tier: 'low', badge: 'LOW 01 // 語法與參數', color: 'emerald', icon: 'code-2',
+                title: '參數、型別與語法錯誤 (Parameter & Syntax Errors)',
+                trigger: '傳入 CLI 或底層腳本的參數格式不對、漏填必填參數，或傳入錯誤資料型別。',
+                log: `TypeError: missing required argument 'container_name'\nunrecognized arguments: --flg=fast`,
+                defenseTitle: '低階對策 (Local Reflection)',
+                defense: '檢視工具 EXECUTE: 語法規範，在沙盒內自動補齊或修正參數格式後發起第一層重試。'
+            },
+            {
+                tier: 'low', badge: 'LOW 02 // 環境與權限', color: 'emerald', icon: 'lock',
+                title: '系統環境與權限不足 (Environment & Permission)',
+                trigger: '底層依賴環境未啟動、指令不存在，或作業系統層面拒絕存取與連線拒絕。',
+                log: `zsh: command not found: ros2\nDocker daemon is not running / Connection refused`,
+                defenseTitle: '低階對策 (Local Reflection)',
+                defense: '識別環境阻礙，檢查連接埠、確認容器運行狀態或補上權限標籤後重新驗證。'
+            },
+            {
+                tier: 'low', badge: 'LOW 03 // 逾時與掛起', color: 'emerald', icon: 'timer',
+                title: '執行逾時與進程掛起 (Timeouts & Process Hangups)',
+                trigger: '腳本或網路請求（如 ROS2 Topic 輪詢）陷入無限等待，超過系統 Timeout 閾值。',
+                log: `Execution Timeout (exceeded 30s threshold)\nProcess 42102 terminated by SIGKILL`,
+                defenseTitle: '低階對策 (Local Reflection)',
+                defense: '沙盒強制終止掛起進程（SIGKILL），回報逾時異常並嘗試縮小過濾範圍重試。'
+            },
+            {
+                tier: 'low', badge: 'LOW 04 // 解析失敗', color: 'emerald', icon: 'file-json',
+                title: '輸出格式毀損與解析失敗 (Serialization Failures)',
+                trigger: '腳本雖回傳 Exit Code 0，但 Stdout 噴出亂碼、HTML 錯誤頁或毀損 JSON。',
+                log: `json.decoder.JSONDecodeError: Expecting value\nMalformed byte sequence in stdout`,
+                defenseTitle: '低階對策 (Local Reflection)',
+                defense: '檢查輸出重定向，或要求腳本加上除錯參數（如 --verbose）重新取得乾淨結構化日誌。'
+            },
+            // Mid-Level (4)
+            {
+                tier: 'mid', badge: 'MID 01 // 業務假設失效', color: 'indigo', icon: 'alert-circle',
+                title: '業務假設失效與語意不符 (Business Assumption Mismatch)',
+                trigger: '低階工具零報錯（Exit Code 0），但回傳內容在語意上為空或不符預期（如僅有系統 /rosout）。',
+                log: `Command succeeded (Exit Code 0), but semantic output empty.\nFilter: camera -> Match Count: 0 (Only /rosout)`,
+                defenseTitle: '中階對策 (Alternative Behavior Replanning)',
+                defense: '放棄當前無效工具分支，對照中階 Skill SOP 切換替代行為（如改呼叫 ros2_node_list 排查 Domain ID）。'
+            },
+            {
+                tier: 'mid', badge: 'MID 02 // 領域越界', color: 'indigo', icon: 'corner-up-right',
+                title: '領域邊界越界與分流誤判 (Domain Boundary Mismatch)',
+                trigger: '任務分流至當前領域，排查後發現根因不在本領域（如基建全綠，實為 C++ 源碼序列化寫錯）。',
+                log: `Infrastructure checks passed (Docker OK, ROS OK).\nTarget root cause identified outside domain boundaries.`,
+                defenseTitle: '中階對策 (Bubble Up Escalation)',
+                defense: '立即停止本領域無效嘗試，將乾淨排查結論向上 Bubble Up 回退給高階 Orchestrator 重新分流。'
+            },
+            {
+                tier: 'mid', badge: 'MID 03 // 依賴鏈斷裂', color: 'indigo', icon: 'link-2-off',
+                title: '複合工作流依賴鏈斷裂 (Workflow Dependency Break)',
+                trigger: '子工具可單獨運行，但整體業務流程的前置條件缺失或狀態不同步。',
+                log: `Prerequisite dependency missing or desynchronized.\nPre-flight check failed: Iceoryx shared memory not found.`,
+                defenseTitle: '中階對策 (Auto-Patching Gate)',
+                defense: '動態修改當前 DAG 拓樸結構，自動補齊（Auto-Patch）被遺漏的前置依賴工具節點並優先執行。'
+            },
+            {
+                tier: 'mid', badge: 'MID 04 // 試錯窒息', color: 'indigo', icon: 'rotate-ccw',
+                title: '戰略陷入無限迴圈與窒息 (Strategy Deadlock & Thrashing)',
+                trigger: '中階 Worker 在數種備用策略間反覆橫跳無法收斂，造成 Token 浪費與死鎖。',
+                log: `Maximum replanning retries exceeded without convergence (3/3).\nStrategy deadlock detected between Tool A and Tool B.`,
+                defenseTitle: '中階對策 (Circuit Breaker 硬性熔斷)',
+                defense: '觸發硬性熔斷器（Circuit Breaker），立即終止重試迴圈，壓縮上下文摘要後向上呈報。'
+            },
+            // High-Level (4)
+            {
+                tier: 'high', badge: 'HIGH 01 // 初始分流錯誤', color: 'purple', icon: 'split',
+                title: '初始全域分流完全錯誤 (Macro Domain Misclassification)',
+                trigger: 'Orchestrator 初始掃描 DOMAIN.md 誤判領域，導致中階 Worker 帶著錯誤假設白忙。',
+                log: `Sub-domain worker reported boundary mismatch.\nBubbled up failure from domain [robotics_infra].`,
+                defenseTitle: '高階對策 (Domain Re-classification)',
+                defense: '清空被汙染的局部上下文，帶著負向排除約束（-robotics_infra）重掃 DOMAIN.md，轉交正確領域（如 code_ast_tools）。'
+            },
+            {
+                tier: 'high', badge: 'HIGH 02 // 宏觀意圖漂移', color: 'purple', icon: 'disc',
+                title: '宏觀意圖漂移與目標失真 (Macro-Intent Drift)',
+                trigger: '歷經多層拆解與遞迴後，子任務執行方向逐漸偏離使用者最初核心訴求（Lost in Translation）。',
+                log: `Cumulative sub-task outputs failed to address primary intent.\nSemantic Drift Score > 0.65`,
+                defenseTitle: '高階對策 (Global Goal Realignment)',
+                defense: '將當前狀態強制與原始 User Prompt 對齊，若偵測到漂移則直接重置當前 DAG 並重新規劃。'
+            },
+            {
+                tier: 'high', badge: 'HIGH 03 // 跨領域資源衝突', color: 'purple', icon: 'swords',
+                title: '跨領域資源衝突與死鎖 (Cross-Domain Conflict)',
+                trigger: '任務橫跨多領域（如硬體重啟與網路權限修改），雙方策略互相排斥鎖死共用資源。',
+                log: `Cross-domain resource contention detected:\nDomain A [hardware] locked Port 8080 vs Domain B [network].`,
+                defenseTitle: '高階對策 (Global Priority Arbitration)',
+                defense: '行使總指揮全局仲裁權，依據優先權協議（Priority Protocol）強制規定資源釋放與調度順序。'
+            },
+            {
+                tier: 'high', badge: 'HIGH 04 // 災難性失敗', color: 'purple', icon: 'skull',
+                title: '災難性失敗與優雅降級 (Catastrophic Mission Failure)',
+                trigger: '所有分流、中階策略與低階自癒全數耗盡，遭遇物理斷線或硬體毀損等不可抗力。',
+                log: `Catastrophic system failure: All recovery loops exhausted.\nPhysical environment unreachable.`,
+                defenseTitle: '高階對策 (Graceful Degradation & Post-Mortem)',
+                defense: '安全熔斷停止盲目嘗試，產出高純度軌跡診斷總結報告（Post-Mortem Report）引導人工介入。'
+            }
+        ];
+
+        function filterExceptions(tier) {
+            const filterBtns = ['all', 'low', 'mid', 'high'];
+            filterBtns.forEach(t => {
+                const btn = document.getElementById(`exc-filter-${t}`);
+                if (t === tier) {
+                    btn.className = "px-4 py-2 rounded-xl bg-slate-800 border border-slate-500 text-white font-bold shadow transition";
+                } else {
+                    const colorText = t === 'low' ? 'text-emerald-400' : t === 'mid' ? 'text-indigo-400' : t === 'high' ? 'text-purple-400' : 'text-slate-300';
+                    btn.className = `px-4 py-2 rounded-xl bg-slate-900 border border-slate-800 ${colorText} hover:bg-slate-800/60 transition`;
+                }
+            });
+
+            const filtered = tier === 'all' ? exceptionsData : exceptionsData.filter(item => item.tier === tier);
+            const grid = document.getElementById('exception-cards-grid');
+
+            grid.innerHTML = filtered.map(item => `
+                <div class="glass-card hover:border-${item.color}-500/40 rounded-2xl p-6 border border-slate-800 space-y-4">
+                    <div class="flex items-center justify-between">
+                        <span class="px-2.5 py-1 rounded bg-${item.color}-500/10 border border-${item.color}-500/30 text-${item.color}-400 text-xs font-mono font-bold">${item.badge}</span>
+                        <i data-lucide="${item.icon}" class="w-5 h-5 text-${item.color}-400"></i>
+                    </div>
+                    <h3 class="text-base md:text-lg font-bold text-white">${item.title}</h3>
+                    <div class="space-y-1 text-xs">
+                        <span class="text-slate-400 font-semibold block">【觸發情境】</span>
+                        <p class="text-slate-300 leading-relaxed">${item.trigger}</p>
+                    </div>
+                    <div class="space-y-1">
+                        <span class="text-slate-400 text-[11px] font-mono font-semibold block">典型錯誤日誌範例：</span>
+                        <pre class="bg-slate-950 p-3 rounded-lg border border-slate-800 text-[11px] font-mono text-${item.color}-300 overflow-x-auto"><code>${item.log}</code></pre>
+                    </div>
+                    <div class="p-3 bg-${item.color}-950/30 rounded-xl border border-${item.color}-500/25 text-xs space-y-1">
+                        <span class="text-${item.color}-400 font-bold flex items-center gap-1.5">
+                            <i data-lucide="shield-check" class="w-4 h-4"></i> ${item.defenseTitle}
+                        </span>
+                        <p class="text-slate-200 leading-relaxed">${item.defense}</p>
+                    </div>
+                </div>
+            `).join('');
+
+            lucide.createIcons();
+        }
+
+        // 4. Module 5: Dual-Mode Simulator Logic
+        function switchSimMode(mode) {
+            const btnA = document.getElementById('sim-mode-btn-a');
+            const btnB = document.getElementById('sim-mode-btn-b');
+            const panelA = document.getElementById('sim-mode-a');
+            const panelB = document.getElementById('sim-mode-b');
+
+            if (mode === 'modeA') {
+                btnA.className = "px-3.5 py-2 rounded-lg bg-indigo-600 text-white font-bold shadow transition";
+                btnB.className = "px-3.5 py-2 rounded-lg text-slate-400 hover:text-white transition";
+                panelA.classList.remove('hidden');
+                panelB.classList.add('hidden');
+            } else {
+                btnB.className = "px-3.5 py-2 rounded-lg bg-amber-600 text-white font-bold shadow transition";
+                btnA.className = "px-3.5 py-2 rounded-lg text-slate-400 hover:text-white transition";
+                panelB.classList.remove('hidden');
+                panelA.classList.add('hidden');
+            }
+        }
+
+        // Mode A: 5-Stage Data
+        const stageData = {
+            1: {
+                title: "第一階段：高階全域分流 (Macro-Classification)",
+                sub: "STAGE 01 // ORCHESTRATOR ROUTING",
+                actor: "Main Session / Orchestrator",
+                desc: "Orchestrator 掃描全域 DOMAIN.md，精準判定使用者關於 amr_07 機器人與 ROS2 系統的詢問屬於 robotics_infra 領域，阻絕其他無關工具噪音。",
+                subtask: "【向下傳遞子目標 1】：向 robotics_infra 領域 Worker 發出指令：「請針對 amr_07 的 ROS2 基礎設施與相機 Topic 進行全域診斷」。",
+                action: "定調領域大方向，將任務與原始長上下文問題傳遞給 robotics_infra 領域 Worker。"
+            },
+            2: {
+                title: "第二階段：領域局部點兵 (Domain-Scoped Selection)",
+                sub: "STAGE 02 // DOMAIN WORKER SELECTION",
+                actor: "robotics_infra Worker",
+                desc: "robotics_infra 領域 Worker 載入該領域技能清單，選中中階複合技能 robotics_diagnostics（機器人通訊與節點健康診斷），獲取其戰略 SOP 與 topology 宣告。",
+                subtask: "【向下傳遞子目標 2】：提煉「amr_07 容器狀態檢查 + 相機 Topic 過濾檢索 + 活躍節點聯防」三合一診斷目標傳遞給 Contract Validator。",
+                action: "鎖定中階複合技能合約（Skill Contract）與子技能拓樸清單。"
+            },
+            3: {
+                title: "第三階段：Skill Contract 參數與依賴自動補齊 (Pre-flight Gate)",
+                sub: "STAGE 03 // CONTRACT & AUTO-PATCHING GATE",
+                actor: "Contract Validator",
+                desc: "Validator 結合長上下文抽出 container_name = 'amr_07' 與 filter = 'camera'；同時檢核 Frontmatter 發現硬性前置 depends_on: ['check_docker_status'] 尚未納入 ➔ 自動觸發 Auto-Patching 補齊前置依賴 SOP！",
+                subtask: "【向下傳遞子目標 3】：確認所有 required_parameters 齊備，組裝帶有前置依賴的完整執行契約。",
+                action: "完成零 Token Schema 參數檢核與缺失依賴自動補齊。"
+            },
+            4: {
+                title: "第四階段：動態 DAG 拓樸生成 (Dynamic EDG Synthesis)",
+                sub: "STAGE 04 // MODEL-GENERATED TOPOLOGY",
+                actor: "Planner / StateGraph Engine",
+                desc: "Planner 依據中階 SOP 與依賴關係，動態編排產出低階可執行決策圖（EDG）：[Step 1: check_docker_status (amr_07)] ➔ [Step 2: ros2_topic_list (amr_07 --types --filter camera)]。",
+                subtask: "【向下傳遞子目標 4】：將字面參數具體化（Literal Closure）的 DAG 執行清單派發至沙盒引擎。",
+                action: "產出以執行收據（Receipts）驅動的確定性有向拓樸圖。"
+            },
+            5: {
+                title: "第五階段：沙盒執行與雙層策略回退閉環 (Fallback & Replanning)",
+                sub: "STAGE 05 // SANDBOXED EXECUTION & BUBBLE-UP LOOP",
+                actor: "Sub-session Executor & Mid-Level Worker",
+                desc: "沙盒執行 check_docker_status 通過（Receipt: PASS），接著執行 ros2_topic_list 卻發現僅回傳系統 /rosout（遭遇業務死胡同）。低階拋出 BUSINESS_DEADEND 向上 Bubble Up 至中階 Worker；中階對照 SOP 立即發起 Replanning，切換替代行為激發 ros2_node_list 排查 Domain ID，成功鎖定節點孤立根因！",
+                subtask: "【最終高純度回報】：向使用者回報：「容器 amr_07 正常運行，但相機話題未發布，經回退排查發現 ROS_DOMAIN_ID 不一致導致節點孤立」。",
+                action: "成功觸發 Bubble Up 與動態策略切換閉環，化解業務死胡同！"
+            }
+        };
+
+        function switchStage(stageNum) {
+            for (let i = 1; i <= 5; i++) {
+                const btn = document.getElementById(`btn-stage-${i}`);
+                btn.className = (i === stageNum)
+                    ? "p-3 rounded-xl bg-indigo-600/30 border border-indigo-500 text-indigo-200 font-bold text-left transition flex flex-col gap-1 shadow-lg shadow-indigo-500/10"
+                    : "p-3 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200 text-left transition flex flex-col gap-1";
+            }
+            const data = stageData[stageNum];
+            document.getElementById('stage-detail-display').innerHTML = `
+                <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+                    <span class="text-xs font-mono font-bold text-indigo-400 flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full bg-indigo-400 animate-pulse"></span>
+                        ${data.sub}
+                    </span>
+                    <span class="text-[11px] bg-slate-900 px-2.5 py-1 rounded font-mono text-slate-400 border border-slate-800">Responsible: ${data.actor}</span>
+                </div>
+                <h4 class="text-base md:text-lg font-bold text-white">${data.title}</h4>
+                <p class="text-xs md:text-sm text-slate-300 leading-relaxed">${data.desc}</p>
+                <div class="p-3.5 bg-amber-950/25 rounded-xl text-xs font-mono text-amber-300 border border-amber-500/30 space-y-1">
+                    <strong class="text-amber-400 text-[10px] uppercase tracking-wider flex items-center gap-1.5">
+                        <i data-lucide="corner-down-right" class="w-3.5 h-3.5"></i>
+                        子任務目標向下傳遞內容 (Subtask Goal Passed Down):
+                    </strong>
+                    <p class="leading-relaxed">${data.subtask}</p>
+                </div>
+                <div class="p-3.5 bg-slate-900 rounded-xl text-xs font-mono text-emerald-300 border border-slate-800 space-y-1">
+                    <strong class="text-slate-400 block text-[10px] uppercase">階段產出與閉環狀態 (Stage Output):</strong>
+                    <p>${data.action}</p>
+                </div>
+            `;
+            lucide.createIcons();
+        }
+
+        // Mode B: 3-Tier Escalation Simulator
+        function runEscalationSim(scenario) {
+            const btns = {
+                syntax: document.getElementById('esc-btn-syntax'),
+                business: document.getElementById('esc-btn-business'),
+                domain: document.getElementById('esc-btn-domain')
+            };
+            Object.keys(btns).forEach(k => {
+                btns[k].className = "px-4 py-3.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 font-mono text-xs font-bold text-left hover:bg-slate-800 transition flex items-center justify-between";
+            });
+
+            const badge = document.getElementById('esc-status-badge');
+            const consoleLog = document.getElementById('esc-console-log');
+            const s1 = document.getElementById('esc-step-1');
+            const s2 = document.getElementById('esc-step-2');
+            const s3 = document.getElementById('esc-step-3');
+
+            if (scenario === 'syntax') {
+                btns.syntax.className = "px-4 py-3.5 rounded-xl bg-emerald-950/60 border border-emerald-500/50 text-emerald-300 font-mono text-xs font-bold text-left transition flex items-center justify-between shadow-lg shadow-emerald-500/10";
+                badge.className = "text-[10px] font-mono px-2.5 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/30";
+                badge.innerText = "LEVEL 1 LOCAL REFLECTION";
+
+                s1.className = "p-4 rounded-xl bg-emerald-950/40 border border-emerald-500/50 space-y-2 transition-all opacity-100";
+                s2.className = "p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-2 opacity-40 transition-all";
+                s3.className = "p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-2 opacity-40 transition-all";
+
+                document.getElementById('esc-step-1-title').innerText = "低階沙盒捕捉 CLI 報錯并自癒";
+                document.getElementById('esc-step-1-desc').innerText = "發現漏帶 container_name 參數，讀取低階 OKF # 異常 指引，沙盒內自動補齊 amr_07 重送修復成功！";
+                document.getElementById('esc-step-2-title').innerText = "無須觸發中階回退";
+                document.getElementById('esc-step-2-desc').innerText = "技術錯誤已在沙盒內部消化，不驚動中階戰略層。";
+                document.getElementById('esc-step-3-title').innerText = "無須觸發高階回退";
+                document.getElementById('esc-step-3-desc').innerText = "全域領域分流維持不變。";
+
+                consoleLog.className = "text-emerald-400 space-y-1 leading-relaxed";
+                consoleLog.innerHTML = `
+                    <div>[LOW-LEVEL SANDBOX] Executing: ros2_topic_list_cmd.py ... <span class="text-rose-400">FAIL (TypeError: missing container_name)</span></div>
+                    <div>[LEVEL 1 REFLECTION] Matched # 異常 rule -> Extracting 'amr_07' from context.</div>
+                    <div>[LEVEL 1 AUTO-RETRY] Executing: ros2_topic_list_cmd.py amr_07 --types ... <span class="text-emerald-400">SUCCESS (Receipt: PASS)</span></div>
+                    <div>[SYSTEM] Resolved inside Level 1 sandbox with zero escalation overhead.</div>
+                `;
+            } else if (scenario === 'business') {
+                btns.business.className = "px-4 py-3.5 rounded-xl bg-indigo-950/60 border border-indigo-500/50 text-indigo-300 font-mono text-xs font-bold text-left transition flex items-center justify-between shadow-lg shadow-indigo-500/10";
+                badge.className = "text-[10px] font-mono px-2.5 py-0.5 rounded bg-indigo-500/10 text-indigo-300 border border-indigo-500/30";
+                badge.innerText = "LEVEL 2 DYNAMIC REPLANNING";
+
+                s1.className = "p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-2 opacity-65 transition-all";
+                s2.className = "p-4 rounded-xl bg-indigo-950/40 border border-indigo-500/50 space-y-2 transition-all opacity-100";
+                s3.className = "p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-2 opacity-40 transition-all";
+
+                document.getElementById('esc-step-1-title').innerText = "低階零報錯但業務結果為空";
+                document.getElementById('esc-step-1-desc').innerText = "Exit Code 0 但僅回傳系統 /rosout，拋出 BUSINESS_DEADEND 向上 Bubble Up！";
+                document.getElementById('esc-step-2-title').innerText = "中階接收 Bubble Up 並切換行為";
+                document.getElementById('esc-step-2-desc').innerText = "對照中階 SOP 發起 Replanning，放棄 topic 查詢並切換呼叫 ros2_node_list 排查 Domain ID！";
+                document.getElementById('esc-step-3-title').innerText = "無須觸發高階回退";
+                document.getElementById('esc-step-3-desc').innerText = "領域內部重規劃成功定位問題。";
+
+                consoleLog.className = "text-indigo-300 space-y-1 leading-relaxed";
+                consoleLog.innerHTML = `
+                    <div>[LOW-LEVEL SANDBOX] ros2_topic_list amr_07 --filter camera -> <span class="text-emerald-400">Exit 0 (Only /rosout)</span></div>
+                    <div>[LOW-LEVEL GATE] Semantic empty output detected. Raising BUSINESS_DEADEND signal...</div>
+                    <div>[LEVEL 2 BUBBLE-UP] Mid-level Worker received signal! Aborting current DAG branch.</div>
+                    <div>[LEVEL 2 REPLANNING] Consulting Skill SOP -> Switching to Alternative Behavior: [ros2_node_list].</div>
+                    <div>[LEVEL 2 RESOLVED] Found ROS_DOMAIN_ID mismatch on /camera_driver node!</div>
+                `;
+            } else {
+                btns.domain.className = "px-4 py-3.5 rounded-xl bg-purple-950/60 border border-purple-500/50 text-purple-300 font-mono text-xs font-bold text-left transition flex items-center justify-between shadow-lg shadow-purple-500/10";
+                badge.className = "text-[10px] font-mono px-2.5 py-0.5 rounded bg-purple-500/10 text-purple-300 border border-purple-500/30";
+                badge.innerText = "LEVEL 3 GLOBAL RE-ROUTING";
+
+                s1.className = "p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-2 opacity-50 transition-all";
+                s2.className = "p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-2 opacity-65 transition-all";
+                s3.className = "p-4 rounded-xl bg-purple-950/40 border border-purple-500/50 space-y-2 transition-all opacity-100";
+
+                document.getElementById('esc-step-1-title').innerText = "底層基建檢查全數 PASS";
+                document.getElementById('esc-step-1-desc').innerText = "Docker 容器與 ROS2 節點狀態皆正常，但通訊反序列化仍失敗。";
+                document.getElementById('esc-step-2-title').innerText = "中階確認領域越界並呈報";
+                document.getElementById('esc-step-2-desc').innerText = "SOP 排查完畢確認非 robotics_infra 問題，將乾淨結論 Bubble Up 給高階總指揮。";
+                document.getElementById('esc-step-3-title').innerText = "高階清空上下文並重新分流";
+                document.getElementById('esc-step-3-desc').innerText = "Orchestrator 帶負向約束重掃 DOMAIN.md，精準轉交 code_ast_tools 審查 C++ 源碼！";
+
+                consoleLog.className = "text-purple-300 space-y-1 leading-relaxed";
+                consoleLog.innerHTML = `
+                    <div>[MID-LEVEL WORKER] Infra checks all green, root cause lies in C++ message serialization.</div>
+                    <div>[LEVEL 2 ESCALATION] Raising DOMAIN_BOUNDARY_MISMATCH to Orchestrator.</div>
+                    <div>[LEVEL 3 ORCHESTRATOR] Flushing polluted local context window...</div>
+                    <div>[LEVEL 3 RE-ROUTING] Re-scanning DOMAIN.md with negative constraint [-robotics_infra].</div>
+                    <div>[LEVEL 3 SUCCESS] Matched domain: [code_ast_tools]. Dispatching to C++ AST Analyzer!</div>
+                `;
+            }
+            lucide.createIcons();
+        }
+
+        // Initialize Default Views on Load
+        window.addEventListener('DOMContentLoaded', () => {
+            switchOkfTab('high');
+            filterExceptions('all');
+            switchStage(1);
+            runEscalationSim('syntax');
+            lucide.createIcons();
+        });
+    </script>
+</body>
+</html>

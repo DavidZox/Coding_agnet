@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="zh-TW" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>自研分層架構與 HarnessMM 論文對照系統性說明報告</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Inter Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0f6ff',
+                            100: '#e0edff',
+                            500: '#3b82f6',
+                            600: '#2563eb',
+                            700: '#1d4ed8',
+                            900: '#1e3a8a',
+                        },
+                        darkbg: '#0b0f17',
+                        cardbg: '#111827',
+                        cardborder: '#1f2937'
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0b0f17;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #1f2937;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #374151;
+        }
+        /* Glassmorphic effects */
+        .glass-panel {
+            background: rgba(17, 24, 39, 0.75);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .glass-nav {
+            background: rgba(11, 15, 23, 0.85);
+            backdrop-filter: blur(16px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        /* Code tag background */
+        code {
+            font-family: 'JetBrains Mono', monospace;
+        }
+    </style>
+</head>
+<body class="bg-darkbg text-gray-200 font-sans antialiased min-h-screen selection:bg-brand-500 selection:text-white">
+
+    <!-- Top Navigation Bar -->
+    <header class="sticky top-0 z-50 glass-nav transition-all duration-300">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <div class="flex items-center space-x-3">
+                    <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-brand-600 to-indigo-500 flex items-center justify-center text-white shadow-lg shadow-brand-500/20">
+                        <i class="fa-solid fa-diagram-project text-lg"></i>
+                    </div>
+                    <div>
+                        <span class="font-bold text-white text-base tracking-tight block">Agent Architecture Analysis</span>
+                        <span class="text-xs text-brand-300 font-mono font-medium">HarnessMM vs Self-Designed System</span>
+                    </div>
+                </div>
+                <nav class="hidden md:flex space-x-1 text-sm font-medium">
+                    <a href="#overview" class="px-3 py-2 rounded-lg text-gray-300 hover:text-white hover:bg-gray-800/60 transition">架構總覽</a>
+                    <a href="#mechanisms" class="px-3 py-2 rounded-lg text-gray-300 hover:text-white hover:bg-gray-800/60 transition">核心機制</a>
+                    <a href="#contracts" class="px-3 py-2 rounded-lg text-gray-300 hover:text-white hover:bg-gray-800/60 transition">技能合約</a>
+                    <a href="#specs" class="px-3 py-2 rounded-lg text-gray-300 hover:text-white hover:bg-gray-800/60 transition">規格拆解</a>
+                    <a href="#state-mgmt" class="px-3 py-2 rounded-lg text-gray-300 hover:text-white hover:bg-gray-800/60 transition">狀態與異常</a>
+                    <a href="#conclusion" class="px-3 py-2 rounded-lg text-gray-300 hover:text-white hover:bg-gray-800/60 transition">總結</a>
+                </nav>
+                <div class="md:hidden">
+                    <button id="mobile-menu-btn" class="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800">
+                        <i class="fa-solid fa-bars text-xl"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+        <!-- Mobile menu -->
+        <div id="mobile-menu" class="hidden md:hidden bg-cardbg border-b border-cardborder px-4 pt-2 pb-4 space-y-1">
+            <a href="#overview" class="block px-3 py-2 rounded-md text-base font-medium text-gray-300 hover:text-white hover:bg-gray-800">架構總覽</a>
+            <a href="#mechanisms" class="block px-3 py-2 rounded-md text-base font-medium text-gray-300 hover:text-white hover:bg-gray-800">核心機制</a>
+            <a href="#contracts" class="block px-3 py-2 rounded-md text-base font-medium text-gray-300 hover:text-white hover:bg-gray-800">技能合約</a>
+            <a href="#specs" class="block px-3 py-2 rounded-md text-base font-medium text-gray-300 hover:text-white hover:bg-gray-800">規格拆解</a>
+            <a href="#state-mgmt" class="block px-3 py-2 rounded-md text-base font-medium text-gray-300 hover:text-white hover:bg-gray-800">狀態與異常</a>
+            <a href="#conclusion" class="block px-3 py-2 rounded-md text-base font-medium text-gray-300 hover:text-white hover:bg-gray-800">總結</a>
+        </div>
+    </header>
+
+    <!-- Main Content Container -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-16">
+
+        <!-- Banner / Header Hero Section -->
+        <section class="relative overflow-hidden rounded-3xl glass-panel p-8 md:p-12 border border-cardborder">
+            <div class="absolute -top-24 -right-24 w-96 h-96 bg-brand-500/10 rounded-full blur-3xl pointer-events-none"></div>
+            <div class="absolute -bottom-24 -left-24 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl pointer-events-none"></div>
+            
+            <div class="relative z-10 max-w-4xl space-y-6">
+                <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-500/20 border border-blue-400/40 text-blue-300 text-xs font-semibold tracking-wider uppercase">
+                    <span class="w-2 h-2 rounded-full bg-blue-400 animate-pulse"></span>
+                    系統性說明報告 & Architectural Alignment
+                </div>
+                <h1 class="text-3xl md:text-5xl font-extrabold text-white tracking-tight leading-tight">
+                    自研分層架構與 <span class="bg-gradient-to-r from-blue-300 via-indigo-200 to-purple-300 bg-clip-text text-transparent font-black drop-shadow-sm">HarnessMM 論文</span> 深度對照說明
+                </h1>
+                <p class="text-gray-300 text-base md:text-lg leading-relaxed">
+                    本報告旨在深入拆解自研 Agent 控制系統與前沿學術論文《HarnessMM: Recursive Self-Improvement for Harness Token Efficiency》之核心概念對接。透過結構化有向圖、技能合約及多層次防禦機制，探討如何在兼顧 Token 執行效率的同時，鎖定邊界並提供企業級的高容錯能力。
+                </p>
+                <div class="flex flex-wrap gap-4 pt-2">
+                    <div class="flex items-center gap-2 text-xs font-mono text-gray-300 bg-gray-900/80 px-3 py-2 rounded-lg border border-gray-700">
+                        <i class="fa-solid fa-microchip text-blue-400"></i> Token Efficiency
+                    </div>
+                    <div class="flex items-center gap-2 text-xs font-mono text-gray-300 bg-gray-900/80 px-3 py-2 rounded-lg border border-gray-700">
+                        <i class="fa-solid fa-network-wired text-indigo-300"></i> Executable Decision Graphs
+                    </div>
+                    <div class="flex items-center gap-2 text-xs font-mono text-gray-300 bg-gray-900/80 px-3 py-2 rounded-lg border border-gray-700">
+                        <i class="fa-solid fa-shield-halved text-emerald-400"></i> Hierarchical Guardrails
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 1: 核心架構總覽 -->
+        <section id="overview" class="space-y-6">
+            <div class="flex items-center gap-3">
+                <div class="w-2 h-8 bg-brand-500 rounded-full"></div>
+                <h2 class="text-2xl md:text-3xl font-bold text-white tracking-tight">一、 核心架構總覽：三層式分工與學術對照</h2>
+            </div>
+            <p class="text-gray-300">
+                將自研架構之「高階 Orchestrator、中階 Worker/Specs、低階 Executor」三層設計與 HarnessMM 前沿框架進行比較：
+            </p>
+
+            <div class="overflow-x-auto rounded-2xl glass-panel border border-cardborder shadow-xl">
+                <table class="w-full text-left text-sm text-gray-200">
+                    <thead class="bg-gray-900/90 text-xs font-bold uppercase text-gray-300 border-b border-cardborder">
+                        <tr>
+                            <th scope="col" class="py-4 px-6 w-1/5">比較維度</th>
+                            <th scope="col" class="py-4 px-6 w-2/5 text-blue-300 font-bold">您的自研架構設計</th>
+                            <th scope="col" class="py-4 px-6 w-2/5 text-purple-300 font-bold">學術論文 (HarnessMM & 前沿 Agent)</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-cardborder">
+                        <tr class="hover:bg-gray-800/40 transition">
+                            <td class="py-4 px-6 font-semibold text-white flex items-center gap-2">
+                                <i class="fa-solid fa-bullseye text-blue-400"></i> 總體目標
+                            </td>
+                            <td class="py-4 px-6">
+                                分層管控、提升執行穩定性與容錯能力，同時兼顧運算效率。
+                            </td>
+                            <td class="py-4 px-6">
+                                透過 <span class="text-purple-200 font-bold">受保護的決策重用 (GDR)</span> 與 <span class="text-purple-200 font-bold">遞歸自我改進 (RSI)</span> 降低 Token 消耗，並維持或提升任務成功率。
+                            </td>
+                        </tr>
+                        <tr class="hover:bg-gray-800/40 transition">
+                            <td class="py-4 px-6 font-semibold text-white">
+                                <span class="inline-block px-2.5 py-1 rounded font-mono font-semibold text-xs bg-blue-500/20 text-blue-300 border border-blue-400/30">高階層級</span>
+                            </td>
+                            <td class="py-4 px-6 font-medium text-white">
+                                <strong class="text-blue-300">高階技能層 (Orchestrator)</strong>：透過檢索清單進行領域匹配與任務拆解。
+                            </td>
+                            <td class="py-4 px-6">
+                                <strong class="text-purple-300">領域與任務配置</strong>：由高階策略或指令集 (Instructions) 界定任務範圍與代理人行為邊界。
+                            </td>
+                        </tr>
+                        <tr class="hover:bg-gray-800/40 transition">
+                            <td class="py-4 px-6 font-semibold text-white">
+                                <span class="inline-block px-2.5 py-1 rounded font-mono font-semibold text-xs bg-indigo-500/20 text-indigo-300 border border-indigo-400/30">中階層級</span>
+                            </td>
+                            <td class="py-4 px-6 font-medium text-white">
+                                <strong class="text-blue-300">中階技能層 (Worker/Specs)</strong>：確認 <code class="bg-gray-800 px-2 py-0.5 rounded text-blue-300 border border-gray-700">skill contract</code> 與提供重規劃所需的背景規格書。
+                            </td>
+                            <td class="py-4 px-6">
+                                <strong class="text-purple-300">伴侶配置與規格 (Companion Specs)</strong>：透過反覆運算與訓練產生最佳化的提示詞、驗證規則與領域支援。
+                            </td>
+                        </tr>
+                        <tr class="hover:bg-gray-800/40 transition">
+                            <td class="py-4 px-6 font-semibold text-white">
+                                <span class="inline-block px-2.5 py-1 rounded font-mono font-semibold text-xs bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">低階層級</span>
+                            </td>
+                            <td class="py-4 px-6 font-medium text-white">
+                                <strong class="text-blue-300">低階技能層 (Executor/EDG)</strong>：組成有向拓樸圖，執行單一腳本與參數確認。
+                            </td>
+                            <td class="py-4 px-6">
+                                <strong class="text-purple-300">可執行決策圖 (EDGs)</strong>：儲存精確動作、字面參數 (Literal Arguments)、相依性與公開執行護欄 (Public Guards)。
+                            </td>
+                        </tr>
+                        <tr class="hover:bg-gray-800/40 transition">
+                            <td class="py-4 px-6 font-semibold text-white flex items-center gap-2">
+                                <i class="fa-solid fa-rotate-left text-amber-400"></i> 容錯與重規劃
+                            </td>
+                            <td class="py-4 px-6">
+                                <span class="text-amber-300 font-bold">三層回退機制</span>：低階出錯退回前一個成功節點 &rarr; 中階根據規格書重規劃 &rarr; 高階重新檢視領域。
+                            </td>
+                            <td class="py-4 px-6">
+                                <span class="text-purple-300 font-bold">Guard 觸發與 Fallback</span>：透過公開護欄驗證收據 (receipts)，失敗、未支援的證據或選擇器棄權時，將控制權交還給慢速模型 (Slow Actor) 進行修正。
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Section 2: 論文核心機制與自研架構深度對應 -->
+        <section id="mechanisms" class="space-y-6">
+            <div class="flex items-center gap-3">
+                <div class="w-2 h-8 bg-indigo-500 rounded-full"></div>
+                <h2 class="text-2xl md:text-3xl font-bold text-white tracking-tight">二、 論文核心機制與自研架構的深度對應</h2>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Card 1 -->
+                <div class="glass-panel p-6 rounded-2xl border border-cardborder hover:border-brand-500/40 transition duration-300 space-y-4">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-3">
+                            <div class="w-10 h-10 rounded-xl bg-blue-500/20 text-blue-300 flex items-center justify-center font-bold text-lg border border-blue-400/30">
+                                1
+                            </div>
+                            <h3 class="text-lg font-bold text-white">有向拓樸圖 (EDG) 與參數具體化</h3>
+                        </div>
+                        <span class="text-xs font-mono bg-blue-500/20 text-blue-300 px-2.5 py-1 rounded-full border border-blue-400/30 font-semibold">EDG Protocol</span>
+                    </div>
+                    <div class="space-y-3 text-sm">
+                        <div class="bg-gray-900/90 p-3.5 rounded-xl border border-gray-700">
+                            <span class="text-xs font-bold text-purple-300 block mb-1">論文觀點 (HarnessMM)</span>
+                            <p class="text-gray-300 text-xs leading-relaxed">
+                                傳統 Harness 在每個工具回傳後重新呼叫大模型進行慢速推理，浪費大量 Token。HarnessMM 透過 EDG 將已經解析好的動作、具體字面參數（Literal Arguments）及因果相依性（Dependencies）固定在圖結構中，後續靠工具回傳的「執行收據 (Receipts)」直接驅動下一步。
+                            </p>
+                        </div>
+                        <div class="bg-blue-950/40 p-3.5 rounded-xl border border-blue-500/30">
+                            <span class="text-xs font-bold text-blue-300 block mb-1">您的自研架構對應</span>
+                            <p class="text-gray-200 text-xs leading-relaxed">
+                                中階確認 <code class="text-blue-300 bg-gray-900 px-1 py-0.5 rounded">skill contract</code> 後，組合出低階技能執行時的<strong>有向拓樸圖</strong>。這完美對應了「以圖結構取代每次動態盲目對話」的設計理念，有效收斂模型發散並提升執行效率。
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Card 2 -->
+                <div class="glass-panel p-6 rounded-2xl border border-cardborder hover:border-indigo-500/40 transition duration-300 space-y-4">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-3">
+                            <div class="w-10 h-10 rounded-xl bg-indigo-500/20 text-indigo-300 flex items-center justify-center font-bold text-lg border border-indigo-400/30">
+                                2
+                            </div>
+                            <h3 class="text-lg font-bold text-white">決策重用與回調替代 (GDR & CCS)</h3>
+                        </div>
+                        <span class="text-xs font-mono bg-indigo-500/20 text-indigo-300 px-2.5 py-1 rounded-full border border-indigo-400/30 font-semibold">GDR / CCS</span>
+                    </div>
+                    <div class="space-y-3 text-sm">
+                        <div class="bg-gray-900/90 p-3.5 rounded-xl border border-gray-700">
+                            <span class="text-xs font-bold text-purple-300 block mb-1">論文觀點 (HarnessMM)</span>
+                            <p class="text-gray-300 text-xs leading-relaxed">
+                                系統利用 Guarded Decision Reuse (GDR) 啟動持久化決策，並透過 Certified Callback Substitution (CCS) 在原生介面上直接執行該動作，省去對應的慢速推理回調。
+                            </p>
+                        </div>
+                        <div class="bg-indigo-950/40 p-3.5 rounded-xl border border-indigo-500/30">
+                            <span class="text-xs font-bold text-indigo-300 block mb-1">您的自研架構對應</span>
+                            <p class="text-gray-200 text-xs leading-relaxed">
+                                低階技能層在實際執行單一腳本工具時，輸入參數與步驟均已確認，並在節點間依循圖結構運行，直接落實了「跳過重複推理、以結構化方式執行已知動作」的工程實踐。
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Card 3 -->
+                <div class="glass-panel p-6 rounded-2xl border border-cardborder hover:border-amber-500/40 transition duration-300 space-y-4">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-3">
+                            <div class="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-300 flex items-center justify-center font-bold text-lg border border-amber-400/30">
+                                3
+                            </div>
+                            <h3 class="text-lg font-bold text-white">錯誤回報、防護欄與多層次回退</h3>
+                        </div>
+                        <span class="text-xs font-mono bg-amber-500/20 text-amber-300 px-2.5 py-1 rounded-full border border-amber-400/30 font-semibold">Guards & Fallback</span>
+                    </div>
+                    <div class="space-y-3 text-sm">
+                        <div class="bg-gray-900/90 p-3.5 rounded-xl border border-gray-700">
+                            <span class="text-xs font-bold text-purple-300 block mb-1">論文觀點 (HarnessMM)</span>
+                            <p class="text-gray-300 text-xs leading-relaxed">
+                                當遇到非預期回傳、非零返回碼 (Nonzero Return Codes) 或護欄驗證失敗時，系統會觸發 Fallback，將控制權交還給推理模型。
+                            </p>
+                        </div>
+                        <div class="bg-amber-950/30 p-3.5 rounded-xl border border-amber-500/30">
+                            <span class="text-xs font-bold text-amber-300 block mb-1">您的自研架構對應</span>
+                            <p class="text-gray-200 text-xs leading-relaxed">
+                                當低階節點多次出錯，系統會「返回前一個成功執行的原子行為節點」，並透過中階背景規格書重新規劃；若仍無法解決，則一路往上退回至高階重新審視領域，具備強健的容錯能力。
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Card 4 -->
+                <div class="glass-panel p-6 rounded-2xl border border-cardborder hover:border-emerald-500/40 transition duration-300 space-y-4">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-3">
+                            <div class="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-300 flex items-center justify-center font-bold text-lg border border-emerald-400/30">
+                                4
+                            </div>
+                            <h3 class="text-lg font-bold text-white">背景規格書與遞歸自我改進 (RSI)</h3>
+                        </div>
+                        <span class="text-xs font-mono bg-emerald-500/20 text-emerald-300 px-2.5 py-1 rounded-full border border-emerald-400/30 font-semibold">RSI Strategy</span>
+                    </div>
+                    <div class="space-y-3 text-sm">
+                        <div class="bg-gray-900/90 p-3.5 rounded-xl border border-gray-700">
+                            <span class="text-xs font-bold text-purple-300 block mb-1">論文觀點 (HarnessMM)</span>
+                            <p class="text-gray-300 text-xs leading-relaxed">
+                                系統透過反覆訓練與驗證，精煉出最佳化的伴侶配置與規格，在部署前凍結以作為穩定引導依據。
+                            </p>
+                        </div>
+                        <div class="bg-emerald-950/30 p-3.5 rounded-xl border border-emerald-500/30">
+                            <span class="text-xs font-bold text-emerald-300 block mb-1">您的自研架構對應</span>
+                            <p class="text-gray-200 text-xs leading-relaxed">
+                                中階層的「背景技能規格書」平時提供穩定的執行指引，出錯時作為重規劃的核心知識庫，兼顧了泛化性與邊界控制。
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 3: 技能合約 Skill Contract 的職責分工與驗證機制 -->
+        <section id="contracts" class="space-y-6">
+            <div class="flex items-center gap-3">
+                <div class="w-2 h-8 bg-emerald-500 rounded-full"></div>
+                <h2 class="text-2xl md:text-3xl font-bold text-white tracking-tight">三、 技能合約 (Skill Contract) 的職責分工與驗證機制</h2>
+            </div>
+            
+            <div class="glass-panel p-6 md:p-8 rounded-2xl border border-cardborder space-y-8">
+                <div class="max-w-3xl">
+                    <h3 class="text-xl font-bold text-white mb-2">職責劃分哲學：中階定義，低階執行</h3>
+                    <p class="text-gray-300 text-sm">
+                        針對 Skill Contract 的確認與驗證，架構採用明確的職責劃分：「中階負責定義與撰寫，低階負責即時檢核與強制執行」。
+                    </p>
+                </div>
+
+                <!-- Workflow Flowchart -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 relative">
+                    <!-- Step 1 -->
+                    <div class="bg-gray-900/90 p-6 rounded-xl border border-gray-700 space-y-4 relative">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-bold font-mono px-3 py-1 rounded bg-indigo-500/25 text-indigo-300 border border-indigo-400/40">中階層 (Worker / Specs)</span>
+                            <i class="fa-solid fa-pen-ruler text-indigo-400 text-lg"></i>
+                        </div>
+                        <h4 class="text-lg font-bold text-white">負責「合約的定義與規劃」</h4>
+                        <ul class="text-xs text-gray-200 space-y-2 list-disc list-inside">
+                            <li><strong class="text-white">角色</strong>：規格制定者 (Authoring & Planning)</li>
+                            <li><strong class="text-white">職責</strong>：規範技能應該長什麼樣（例如必填參數、型態、預期輸出結構）。</li>
+                            <li><strong class="text-white">原因</strong>：中階具備領域知識，能在組裝有向圖時確保所選技能符合子任務需求。</li>
+                        </ul>
+                    </div>
+
+                    <!-- Step 2 -->
+                    <div class="bg-gray-900/90 p-6 rounded-xl border border-gray-700 space-y-4">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-bold font-mono px-3 py-1 rounded bg-emerald-500/25 text-emerald-300 border border-emerald-400/40">低階層 (Executor / Controller)</span>
+                            <i class="fa-solid fa-shield-cat text-emerald-400 text-lg"></i>
+                        </div>
+                        <h4 class="text-lg font-bold text-white">負責「合約的即時檢核與強制執行」</h4>
+                        <ul class="text-xs text-gray-200 space-y-2 list-disc list-inside">
+                            <li><strong class="text-white">角色</strong>：邊界檢查與防火牆 (Validation & Enforcement)</li>
+                            <li><strong class="text-white">職責</strong>：呼叫工具前，用程式化硬體邏輯（Schema 驗證）檢查輸入參數與前置條件。</li>
+                            <li><strong class="text-white">學術對應</strong>：正如 HarnessMM 指出：<em>"Literal closure is enforced by schema checks"</em>，直接以代碼驗證參數與 Guards。</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Two Advantages Cards -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-gray-800">
+                    <div class="flex items-start space-x-3 bg-blue-950/40 p-4 rounded-xl border border-blue-500/30">
+                        <div class="p-2 bg-blue-500/20 rounded-lg text-blue-300 mt-1 border border-blue-400/30">
+                            <i class="fa-solid fa-bolt text-base"></i>
+                        </div>
+                        <div>
+                            <h5 class="text-sm font-bold text-white">零 Token 消耗的高效攔截</h5>
+                            <p class="text-xs text-gray-300 mt-1">避免每次都讓 LLM 讀合約判斷參數是否正確。低階直接透過代碼（Pydantic/Schema）確認，省時且節省推理成本。</p>
+                        </div>
+                    </div>
+                    <div class="flex items-start space-x-3 bg-red-950/30 p-4 rounded-xl border border-red-500/30">
+                        <div class="p-2 bg-red-500/20 rounded-lg text-red-400 mt-1 border border-red-400/30">
+                            <i class="fa-solid fa-ban text-base"></i>
+                        </div>
+                        <div>
+                            <h5 class="text-sm font-bold text-white">嚴格的邊界防護 (Guard Enforcement)</h5>
+                            <p class="text-xs text-gray-300 mt-1">作為系統防火牆，一旦低階發現參數或工具收據不符，瞬間拒絕執行並將錯誤打包向上回報，防止污染後續環境。</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 4: 規格書的細緻劃分 -->
+        <section id="specs" class="space-y-6">
+            <div class="flex items-center gap-3">
+                <div class="w-2 h-8 bg-purple-500 rounded-full"></div>
+                <h2 class="text-2xl md:text-3xl font-bold text-white tracking-tight">四、 規格書的細緻劃分：中階介面與低階腳本的協作</h2>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Mid-Level Spec -->
+                <div class="glass-panel p-6 rounded-2xl border border-cardborder space-y-4">
+                    <div class="flex items-center space-x-3 border-b border-gray-800 pb-3">
+                        <div class="w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-300 flex items-center justify-center font-bold border border-indigo-400/30">
+                            <i class="fa-solid fa-code"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-base font-bold text-white">中階技能規格書</h3>
+                            <span class="text-xs text-indigo-300 font-mono font-semibold">Interface, Contract & State Verification</span>
+                        </div>
+                    </div>
+                    <div class="space-y-3 text-xs text-gray-200">
+                        <div class="p-3 bg-gray-900/80 rounded-xl border border-gray-800 space-y-1">
+                            <span class="font-bold text-white block">1. Skill Contract（技能合約）</span>
+                            <p class="text-gray-300">規範該技能所需的必填/選填輸入參數、資料型態以及預期的輸出 JSON 結構。</p>
+                        </div>
+                        <div class="p-3 bg-gray-900/80 rounded-xl border border-gray-800 space-y-1">
+                            <span class="font-bold text-white block">2. 當前狀態確認</span>
+                            <p class="text-gray-300">確認目前環境的 state 是否滿足執行該領域任務的前置條件。</p>
+                        </div>
+                        <div class="p-3 bg-gray-900/80 rounded-xl border border-gray-800 space-y-1">
+                            <span class="font-bold text-white block">3. 重規劃指引 (Re-planning Direction)</span>
+                            <p class="text-gray-300">低階報錯退回時，中階透過背景規格書理解合約何處被違反，進而調整策略。</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Low-Level Spec -->
+                <div class="glass-panel p-6 rounded-2xl border border-cardborder space-y-4">
+                    <div class="flex items-center space-x-3 border-b border-gray-800 pb-3">
+                        <div class="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-300 flex items-center justify-center font-bold border border-emerald-400/30">
+                            <i class="fa-solid fa-terminal"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-base font-bold text-white">低階技能規格書／執行層</h3>
+                            <span class="text-xs text-emerald-300 font-mono font-semibold">Scripts, Literal Arguments & Execution Flags</span>
+                        </div>
+                    </div>
+                    <div class="space-y-3 text-xs text-gray-200">
+                        <div class="p-3 bg-gray-900/80 rounded-xl border border-gray-800 space-y-1">
+                            <span class="font-bold text-white block">1. 具體字面參數 (Literal Arguments)</span>
+                            <p class="text-gray-300">將解析好的具體檔名、數值、字串直接綁定在有向圖節點（EDG）上。</p>
+                        </div>
+                        <div class="p-3 bg-gray-900/80 rounded-xl border border-gray-800 space-y-1">
+                            <span class="font-bold text-white block">2. 腳本與命令後綴 (CLI Flags & Options)</span>
+                            <p class="text-gray-300">明確定義工具腳本的實際用法與後綴細節控制，如 <code class="text-emerald-300 font-bold bg-gray-800 px-1 py-0.5 rounded">--create</code>、<code class="text-emerald-300 font-bold bg-gray-800 px-1 py-0.5 rounded">--cancel</code>、<code class="text-emerald-300 font-bold bg-gray-800 px-1 py-0.5 rounded">--force</code>。</p>
+                        </div>
+                        <div class="p-3 bg-gray-900/80 rounded-xl border border-gray-800 space-y-1">
+                            <span class="font-bold text-white block">3. 公開護欄與收據比對 (Guards & Receipts)</span>
+                            <p class="text-gray-300">利用返回碼 (Return Code) 與收據 (Receipts) 決定下一步是否放行或觸發退回。</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 5: 異常處置、運行時狀態與副作用管理 -->
+        <section id="state-mgmt" class="space-y-6">
+            <div class="flex items-center gap-3">
+                <div class="w-2 h-8 bg-amber-500 rounded-full"></div>
+                <h2 class="text-2xl md:text-3xl font-bold text-white tracking-tight">五、 異常處置、運行時狀態與副作用管理</h2>
+            </div>
+
+            <div class="glass-panel p-6 md:p-8 rounded-2xl border border-cardborder space-y-6">
+                <p class="text-gray-300 text-sm leading-relaxed">
+                    在架構發展的實務中，當低階節點多次出錯需要退回到上一個成功節點時，如何有效處理系統狀態與歷史至關重要。以下為結合記憶體與任務模板的關鍵設計：
+                </p>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <!-- Point 1 -->
+                    <div class="bg-gray-900/90 p-5 rounded-xl border border-gray-700 space-y-3">
+                        <div class="w-10 h-10 rounded-lg bg-blue-500/20 text-blue-300 flex items-center justify-center font-bold text-lg border border-blue-400/30">
+                            <i class="fa-solid fa-layer-group"></i>
+                        </div>
+                        <h4 class="text-base font-bold text-white">1. 狀態與歷史的分離</h4>
+                        <span class="text-xs font-mono text-blue-300 font-semibold block">Runtime State vs. Graph Content</span>
+                        <p class="text-xs text-gray-300 leading-relaxed">
+                            運行時狀態包含已完成的原生收據 (native receipts)、剩餘圖節點與公開事件歷史。執行推進時動態更新狀態，無需重寫整個圖架構。
+                        </p>
+                    </div>
+
+                    <!-- Point 2 -->
+                    <div class="bg-gray-900/90 p-5 rounded-xl border border-gray-700 space-y-3">
+                        <div class="w-10 h-10 rounded-lg bg-amber-500/20 text-amber-300 flex items-center justify-center font-bold text-lg border border-amber-400/30">
+                            <i class="fa-solid fa-triangle-exclamation"></i>
+                        </div>
+                        <h4 class="text-base font-bold text-white">2. 錯誤摘要與收據回報</h4>
+                        <span class="text-xs font-mono text-amber-300 font-semibold block">Receipts & Fallback Trigger</span>
+                        <p class="text-xs text-gray-300 leading-relaxed">
+                            遇到非零返回碼 (<code class="text-amber-300 font-bold bg-gray-800 px-1 py-0.5 rounded">nonzero return codes</code>) 或護欄驗證失敗時，將控制權連同錯誤摘要與執行收據交還給中階/慢速模型修復。
+                        </p>
+                    </div>
+
+                    <!-- Point 3 -->
+                    <div class="bg-gray-900/90 p-5 rounded-xl border border-gray-700 space-y-3">
+                        <div class="w-10 h-10 rounded-lg bg-purple-500/20 text-purple-300 flex items-center justify-center font-bold text-lg border border-purple-400/30">
+                            <i class="fa-solid fa-memory"></i>
+                        </div>
+                        <h4 class="text-base font-bold text-white">3. 記憶體與任務模板</h4>
+                        <span class="text-xs font-mono text-purple-300 font-semibold block">Memory & Ledger Templates</span>
+                        <p class="text-xs text-gray-300 leading-relaxed">
+                            透過結構化工作任務模板或應用程式記憶體 (Application memory) 保留關鍵變數與狀態變更，避免動態重規劃時上下文失控。
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 6: 結論 High-light Card -->
+        <section id="conclusion" class="space-y-6">
+            <div class="relative overflow-hidden rounded-3xl bg-gradient-to-r from-blue-950/80 via-indigo-950/80 to-purple-950/80 border border-blue-400/40 p-8 md:p-10 shadow-2xl">
+                <div class="relative z-10 space-y-4">
+                    <div class="flex items-center space-x-2 text-blue-300 text-sm font-bold uppercase tracking-wider">
+                        <i class="fa-solid fa-circle-check"></i>
+                        <span>六、 結語與架構展望</span>
+                    </div>
+                    <h3 class="text-2xl md:text-3xl font-bold text-white">
+                        邁向「企業級穩定生產」
+                    </h3>
+                    <p class="text-gray-200 text-sm md:text-base leading-relaxed">
+                        您的自研分層架構完美體現了現代 Agent 控制系統的演進方向。透過<strong>中階的規格與合約制定</strong>、<strong>低階的有向拓樸圖 (EDG) 與確定性腳本執行</strong>，再加上<strong>運行時狀態分離與多層次的錯誤回退迴圈</strong>，系統在維持高泛化性的同時，精準鎖定了執行邊界，並實現了顯著的 Token 節省與高容錯率。
+                    </p>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="border-t border-cardborder py-8 text-center text-xs text-gray-500">
+        <p>自研 Agent 分層架構與 HarnessMM 論文對照分析報告 &copy; 2026. Built with Tailwind CSS & Inter Font.</p>
+    </footer>
+
+    <!-- Mobile Menu Toggle Script -->
+    <script>
+        const btn = document.getElementById('mobile-menu-btn');
+        const menu = document.getElementById('mobile-menu');
+
+        btn.addEventListener('click', () => {
+            menu.classList.toggle('hidden');
+        });
+
+        // Close menu on link click
+        document.querySelectorAll('#mobile-menu a').forEach(link => {
+            link.addEventListener('click', () => {
+                menu.classList.add('hidden');
+            });
+        });
+    </script>
+</body>
+</html>
