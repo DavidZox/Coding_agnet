@@ -10,11 +10,17 @@ csv_query、file_ops、image_inspect 共用。只用標準庫。
 3. DEFAULT_EXCLUDES：search_text、find_file 預設略過的目錄（ROS 2 Workspace 的 build／install／log、.git、虛擬環境…）。
 4. newest_line()：「最新修改：A（時間）；其次：B、C」（list_dir、find_file 共用；數值由腳本算、模型照抄）。
 5. harness_logs_dir()：技能要寫的檔案（file_ops 的備份、stt_engine 的辨識結果）一律放 harness 的 logs/，不寫進使用者的目錄。
+6. 錯誤是 _receipt_common.ToolError（就是 str，另外帶收據用的種類）：找不到、種類不對、失效的連結＝args（換路徑就好），
+   沒有權限＝env（換參數修不好）。
 """
 import difflib
 import os
 import stat
+import sys
 import time
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _receipt_common import ToolError  # noqa: E402
 
 DEFAULT_EXCLUDES = ("build", "install", "log", ".git", "node_modules", "__pycache__", "venv", ".venv")
 _SKIP = set(DEFAULT_EXCLUDES)
@@ -152,30 +158,31 @@ def not_found(path, want="any", noun=None):
     container = (os.environ.get("TARGET_CONTAINER") or "").strip()
     if container and os.path.isabs(abs_path):
         msg += f"（如果這是容器 {container} 裡的路徑：本機技能看不到容器內，改用 docker_runcmd）"
-    return msg
+    return ToolError(msg, "args")
 
 
 def resolve(path, want="any", noun=None, dir_hint=None, file_hint=None):
     """模型給的路徑 → (絕對路徑, None) 或 (None, "[ERROR] …")。want：any／dir／file。
     檢查：存在（不存在時列相近的路徑）、種類（want=dir 卻是檔案時附 file_hint，反之附 dir_hint）、權限（目錄要能讀與進入、檔案要能讀）。"""
     if path is None or not str(path).strip():
-        return None, f"[ERROR] 沒有給{noun or _NOUN.get(want, '路徑')}。"
+        return None, ToolError(f"[ERROR] 沒有給{noun or _NOUN.get(want, '路徑')}。", "args")
     noun = noun or _NOUN.get(want, "路徑")
     abs_path = os.path.abspath(expand(path))
     if not os.path.exists(abs_path):
         if os.path.islink(abs_path):
-            return None, (f"[ERROR] {path} 是失效的連結（指向 {os.readlink(abs_path)}，那個路徑不存在）。"
-                          f"下一步：用 list_dir {display(os.path.dirname(abs_path))} 確認，或改用連結指向的實際位置")
+            return None, ToolError(f"[ERROR] {path} 是失效的連結（指向 {os.readlink(abs_path)}，那個路徑不存在）。"
+                                   f"下一步：用 list_dir {display(os.path.dirname(abs_path))} 確認，或改用連結指向的實際位置", "args")
         return None, not_found(path, want, noun)
     if want == "dir" and not os.path.isdir(abs_path):
-        return None, f"[ERROR] {path} 是檔案，不是目錄。下一步：" + (file_hint or "看檔案內容用 view_file；要列它所在的目錄用 list_dir "
-                                                               + display(os.path.dirname(abs_path)))
+        return None, ToolError(f"[ERROR] {path} 是檔案，不是目錄。下一步：" + (file_hint or "看檔案內容用 view_file；要列它所在的目錄用 list_dir "
+                                                                        + display(os.path.dirname(abs_path))), "args")
     if want == "file" and os.path.isdir(abs_path):
-        return None, f"[ERROR] {path} 是目錄，不是檔案。下一步：" + (dir_hint or f"看目錄內容用 list_dir {path}；找檔名用 find_file <關鍵字> {path}")
+        return None, ToolError(f"[ERROR] {path} 是目錄，不是檔案。下一步："
+                               + (dir_hint or f"看目錄內容用 list_dir {path}；找檔名用 find_file <關鍵字> {path}"), "args")
     mode = os.R_OK | (os.X_OK if os.path.isdir(abs_path) else 0)
     if not os.access(abs_path, mode):
-        return None, (f"[ERROR] 沒有權限讀取{noun}：{path}（{_perm_text(abs_path)}）。"
-                      f"下一步：改用有權限的路徑；一定要看這裡的內容就請使用者自己處理權限（技能不會用 sudo）")
+        return None, ToolError(f"[ERROR] 沒有權限讀取{noun}：{path}（{_perm_text(abs_path)}）。"
+                               f"下一步：改用有權限的路徑；一定要看這裡的內容就請使用者自己處理權限（技能不會用 sudo）", "env")
     return abs_path, None
 
 

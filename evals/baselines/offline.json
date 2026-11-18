@@ -5,9 +5,9 @@
   "total": 12
  },
  "chat_selftest": {
-  "label": "拿掉任務引擎與 Plan 模式（2026-11-18）",
-  "passed": 17,
-  "total": 17
+  "label": "收據（D10 第 1 步）（2026-11-18）",
+  "passed": 18,
+  "total": 18
  },
  "containers_sandbox": {
   "label": "第 4 階段（任務引擎，三次完整跑）（2026-10-24）",
@@ -40,9 +40,9 @@
   "total": 9
  },
  "skills": {
-  "label": "待辦 20、23（2026-10-25）",
-  "passed": 100,
-  "total": 100
+  "label": "收據（D10 第 1 步）（2026-11-18）",
+  "passed": 108,
+  "total": 108
  },
  "skills_sandbox": {
   "label": "待辦 20、23（2026-10-25）",

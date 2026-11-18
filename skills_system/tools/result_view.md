@@ -4,6 +4,8 @@ title: 讀工具結果存檔的一段原文或大綱
 description: 讀某個工具結果存檔的第 N 行起 M 行（行號＝提煉結果、result_grep 引用的行號），或用 --outline 看原文有哪幾節、各在第幾行。
 version: 2.0.0
 dependencies: []
+parameters: [{"name": "id", "required": true, "fetch": "result_list"}]
+receipt: {"counts": ["total_lines", "from?", "to?", "sections?"], "items": ["id?", "from?", "to?", "line?", "title?", "lines?"], "fields": ["id", "mode", "clipped_output?"]}
 ---
 
 # 用途

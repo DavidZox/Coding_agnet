@@ -38,4 +38,5 @@ python3 evals/phase_check.py --save-baseline evals/results/<時間>_phase_check 
 要留下整份舊的維運基準當參考，先在 json 裡把 `current` 複製成另一個 key（`phase4_start`、`phase4` 就是這樣留的）。
 
 最近的更新：第 5 階段（2026-10-25）更新了維運（三次完整跑，多了調查與報告一組；之前的 `current` 複製成 `todo25`）與 `task_selftest`（18）；主對話、提煉、數據分析沒有更新（結果見上表）。收尾（2026-11-17）：拿掉工作流引擎，`workflow.json` 與 `offline.json` 的 `workflow_selftest` 刪掉；`offline.json` 更新 `chat_selftest`、`task_selftest`、`integrity`；維運的 `current` 補上每一次的結果、拿掉 `totals`（設計筆記 2.25）；收尾的真模型評測（主對話 33/33、維運的檔案與調查每個情境都跟基準一樣）沒有更新真模型的基準。拿掉任務引擎與 Plan 模式（2026-11-18）：`offline.json` 的 `task_selftest` 刪掉，更新 `chat_selftest`（17）、`ops_selftest`（3）、`integrity`（8，範本的檢查改成每個模組各自核對）；真模型的基準沒有更新（之後的基準以新架構為主，設計筆記 2.26）。同一天加了 `repo_selftest`（7，真實專案評測的自我測試）；真實專案評測的
-真模型結果不存基準（現在的版本只量一次當對照，新架構每一版跑 3 次之後才存，設計筆記 2.27）。
+真模型結果不存基準（現在的版本只量一次當對照，新架構每一版跑 3 次之後才存，設計筆記 2.27）。收據（D10 第 1 步）：`skills` 108（多了
+`receipt` 一組 8 項）、`chat_selftest` 18（`t_receipts`）。

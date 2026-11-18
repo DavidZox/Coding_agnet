@@ -4,6 +4,8 @@ title: 在工具結果存檔裡搜關鍵字
 description: 在指定編號（或 latest／all）的工具結果存檔裡搜關鍵字（a|b 同義詞、正則、不分大小寫），回命中行與前後幾行；要找某個字串出現在哪幾行時用。
 version: 2.0.1
 dependencies: []
+parameters: [{"name": "id", "required": true, "fetch": "result_list"}, {"name": "keyword", "required": true, "ask": "要找的字"}]
+receipt: {"counts": ["hits", "files"], "items": ["id", "line"], "fields": ["per_file", "pattern", "ref", "timed_out", "clipped_output"]}
 ---
 
 # 用途

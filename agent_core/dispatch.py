@@ -1,12 +1,31 @@
-"""DispatchMixin：技能載入與派發——兩階段揭露（技能名稱回規格、腳本路徑才執行）、run_tool、_exec_script。"""
+"""DispatchMixin：技能載入與派發——兩階段揭露（技能名稱回規格、腳本路徑才執行）、run_tool、_exec_script。
+執行腳本時用 AGENT_RECEIPT_PATH 指定收據的檔案（skills_system/scripts/_receipt_common.py），執行完讀回 last_receipt；
+寫收據的腳本（第一版領域的技能）才有，其他的是 None。"""
+import json
 import os
 import shlex
 import subprocess
 import sys
+import tempfile
 from .config import SKILL_DOC_PREFIX, SKILL_LOADED_MARKER, TOOL_EXEC_TIMEOUT
 
-from . import prompt_files
+from . import prompt_files, skill_spec
 from .protocol import action_text, parse_agent_reply
+
+
+def _read_receipt(path):
+    """讀腳本寫的收據並刪掉檔案；沒有寫、或寫壞了（不是 JSON）回 None。"""
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        data = None
+    for p in (path, path + ".part"):
+        try:
+            os.remove(p)
+        except OSError:
+            pass
+    return data if isinstance(data, dict) else None
 
 
 def _d(key, /, **fields):
@@ -65,7 +84,7 @@ class DispatchMixin:
         if not os.path.exists(doc_path):
             return None
         with open(doc_path, "r", encoding="utf-8") as f:
-            return f.read()
+            return skill_spec.for_model(f.read())      # 給程式看的欄位（parameters、receipt）不給模型
 
     def _normalize_script_name(self, raw_token):
         """確保腳本檔名以 _cmd.py 結尾（例如 cd -> cd_cmd.py，find_file.py -> find_file_cmd.py）。"""
@@ -177,6 +196,7 @@ class DispatchMixin:
         parsed = ai_response if isinstance(ai_response, dict) else parse_agent_reply(ai_response)
         action = parsed.get("action")
         self.last_result_id = self.last_result_file = None   # 只有真的執行腳本（_record_trajectory）才會有存檔
+        self.last_receipt = None
         if not action:
             return None
 
@@ -284,6 +304,16 @@ class DispatchMixin:
         env.update(self.analysis_env())                  # 目前分析的數據、數據根目錄（ROS 2 數據技能省略數據路徑時用）
         if extra_env:
             env.update(extra_env)
+        fd, receipt_path = tempfile.mkstemp(prefix="agent_receipt_", suffix=".json")
+        os.close(fd)
+        os.remove(receipt_path)                          # 腳本有寫才會出現（沒寫收據的腳本：last_receipt 是 None）
+        env["AGENT_RECEIPT_PATH"] = receipt_path
+        try:
+            return self._run_script_process(script_name, script_path, clean_args, env)
+        finally:
+            self.last_receipt = _read_receipt(receipt_path)
+
+    def _run_script_process(self, script_name, script_path, clean_args, env):
         try:
             res = subprocess.run(
                 [sys.executable, script_path] + clean_args,

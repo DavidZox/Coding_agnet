@@ -4,6 +4,8 @@ title: AST 程式碼結構化閱讀
 description: 用 AST 讀一個 Python 檔的結構（常數、類別、函式的完整簽名、第一行 docstring、每個 def／class 的行號範圍），不必讀全文。
 version: 2.0.0
 dependencies: []
+parameters: [{"name": "path", "required": true, "fetch": "find_file <檔名>.py"}]
+receipt: {"counts": ["lines", "classes", "functions", "constants"], "items": ["name", "qualname", "kind", "async", "line", "start", "end", "parent", "private"], "fields": ["path", "constants"]}
 ---
 
 # 用途

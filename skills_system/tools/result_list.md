@@ -4,6 +4,8 @@ title: 工具結果存檔索引
 description: 列出最近的工具結果存檔（編號、時間、腳本、狀態、大小、當時的任務、提煉的回答）；檢索清單裡沒有相關的一筆、或要瀏覽更早的存檔時用。
 version: 1.1.0
 dependencies: []
+parameters: []
+receipt: {"counts": ["total", "all_sessions", "shown"], "items": ["id", "session", "script", "file"], "fields": ["scope"]}
 ---
 
 # 用途

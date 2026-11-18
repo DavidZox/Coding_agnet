@@ -13,6 +13,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _path_common as pc  # noqa: E402
+from _receipt_common import fail, main, result  # noqa: E402
 
 TIMEOUT_SECONDS = 5
 DEFAULT_NEWEST = 5
@@ -107,7 +108,24 @@ def _row(e):
     return f"{e['mode']} {e['size']:>10} {pc.fmt_time(e['mtime'])} {_display_name(e)}"
 
 
-def render(path, entries, keyword=None, newest=None, unreadable=0):
+def _receipt(abs_path, entries, shown, keyword, newest, unreadable):
+    """收據：列出的項目全部（不受 MAX_ROWS 限制；--newest 時是最新的 N 項），目錄在前、依名稱排序。"""
+    if newest:
+        picked = sorted(shown, key=lambda e: e["mtime"], reverse=True)[:newest]
+    else:
+        picked = sorted(shown, key=lambda e: (not e["is_dir"], e["name"].lower()))
+    n_dirs = sum(1 for e in entries if e["is_dir"])
+    counts = {"total": len(entries), "files": len(entries) - n_dirs, "dirs": n_dirs,
+              "links": sum(1 for e in entries if e["is_link"]), "unreadable": unreadable}
+    if keyword:
+        counts["matched"] = len(shown)
+    result("pass" if shown else "empty", counts=counts,
+           items=[{"path": os.path.join(abs_path, e["name"]), "name": e["name"], "kind": "dir" if e["is_dir"] else "file",
+                   "link": e["is_link"], "size": e["size"], "mtime": e["mtime"]} for e in picked],
+           path=abs_path, filter=keyword, newest=newest)
+
+
+def render(path, entries, keyword=None, newest=None, unreadable=0, abs_path=None):
     total = len(entries)
     n_dirs = sum(1 for e in entries if e["is_dir"])
     n_links = sum(1 for e in entries if e["is_link"])
@@ -121,6 +139,7 @@ def render(path, entries, keyword=None, newest=None, unreadable=0):
     tail = []
     if unreadable:
         tail.append(f"（另有 {unreadable} 項讀不到資訊，沒有列出）")
+    _receipt(abs_path or os.path.abspath(pc.expand(path)), entries, shown, keyword, newest, unreadable)
     if not shown:
         # 實測模型會用 list_dir --filter 在根目錄數「專案裡」的檔案，0 項就回報 0：明說這裡只看一層、指路 find_file
         return "\n".join([head, (f"（{path} 這一層沒有名稱含「{keyword}」的項目。注意：list_dir 不看子目錄，如果使用者問的是整個專案或所有子目錄，"
@@ -160,10 +179,10 @@ def _timeout_handler(signum, frame):
 def execute(argv):
     path, keyword, newest, err = parse_args(argv)
     if err:
-        return err
+        return fail(err, "args")
     abs_path, err = pc.resolve(path, "dir", file_hint=f"看檔案內容請用 view_file {path}")
     if err:
-        return err
+        return fail(err)
     shown_path = path if not path.startswith(("~", "$")) else abs_path
     if hasattr(signal, "SIGALRM"):
         signal.signal(signal.SIGALRM, _timeout_handler)
@@ -171,21 +190,17 @@ def execute(argv):
     try:
         entries, unreadable = scan(abs_path)
     except TimeoutError:
-        return (f"[ERROR] 目錄列表逾時（超過 {TIMEOUT_SECONDS} 秒）：目錄可能非常大，或在無回應的網路／掛載裝置上。"
-                f"下一步：改列較小的子目錄，或用 find_file 依名稱找。")
+        return fail(f"[ERROR] 目錄列表逾時（超過 {TIMEOUT_SECONDS} 秒）：目錄可能非常大，或在無回應的網路／掛載裝置上。"
+                    f"下一步：改列較小的子目錄，或用 find_file 依名稱找。", "timeout")
     except PermissionError:
-        return f"[ERROR] 沒有權限讀取目錄 {path}。下一步：改用有權限的目錄；一定要看這裡的內容就請使用者自己處理權限（技能不會用 sudo）。"
+        return fail(f"[ERROR] 沒有權限讀取目錄 {path}。下一步：改用有權限的目錄；一定要看這裡的內容就請使用者自己處理權限（技能不會用 sudo）。", "env")
     except OSError as e:
-        return f"[ERROR] 無法讀取目錄 {path}：{e}。下一步：確認路徑與裝置狀態，或改列別的目錄。"
+        return fail(f"[ERROR] 無法讀取目錄 {path}：{e}。下一步：確認路徑與裝置狀態，或改列別的目錄。", "env")
     finally:
         if hasattr(signal, "SIGALRM"):
             signal.alarm(0)
-    return render(shown_path, entries, keyword, newest, unreadable)
+    return render(shown_path, entries, keyword, newest, unreadable, abs_path)
 
 
 if __name__ == "__main__":
-    try:
-        print(execute(sys.argv[1:]))
-    except Exception as e:      # noqa: BLE001
-        print(f"[ERROR] list_dir 未預期的例外：{type(e).__name__}: {e}", file=sys.stderr)
-        sys.exit(1)
+    main(execute, "list_dir")

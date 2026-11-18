@@ -12,6 +12,7 @@
 - prompts/ 裡給模型的文字都讀得到（讀不到時程式不會報錯，只會默默變成空的）。
 - CLI 的主迴圈（真的 cli.main()）：會改變狀態的技能先問 y/n，n 不執行、y 才執行；
 - 說要去做卻沒有動作（「我會先查…」、action 是 null）：提醒一次；問使用者的、做過的事不提醒。
+- 收據（新架構 D4）：寫收據的腳本執行完讀得到收據、軌跡記摘要、存檔旁邊存一份、刪存檔時一起刪；規格裡給程式看的欄位不給模型。
 每一個情境都在臨時目錄複製一份專案，不碰正式的 logs/。"""
 import json
 import os
@@ -305,6 +306,39 @@ def main():
                 builtins.input = real_input
             return buf.getvalue(), asked
 
+        def t_receipts():
+            # last_receipt 是「這一次 run_tool」的收據（每次呼叫都重設，跟 last_result_id 一樣）：執行完馬上讀
+            text = agent.run_tool(step("scripts/ls_cmd.py", "agent_core"))
+            r = agent.last_receipt
+            assert r and r["tool"] == "list_dir" and r["status"] == "pass" and r["counts"]["files"] > 0, r
+            rec = agent.trajectory[-1]
+            assert rec["receipt"] == {k: r[k] for k in ("status", "error_kind", "counts", "truncated")}, rec.get("receipt")
+            side = os.path.join(agent.results_dir(), rec["result_file"][:-3] + ".receipt.json")
+            with open(side, encoding="utf-8") as f:
+                saved = json.load(f)
+            assert saved["id"] == rec["id"] and saved["items"] == r["items"], "收據的全文跟存檔放在一起"
+            assert text.startswith("[PASS] 目錄列表") and "receipt" not in text and '"counts"' not in text, "給模型的文字不含收據"
+            agent.run_tool(step("scripts/cat_cmd.py", "nope.txt"))
+            assert agent.last_receipt["status"] == "error" and agent.last_receipt["error_kind"] == "args", agent.last_receipt
+            agent.run_tool(step("scripts/cd_cmd.py", "agent_core"))
+            assert agent.last_receipt is None and "receipt" not in agent.trajectory[-1], "沒寫收據的腳本（還沒做收據的技能）是 None"
+            agent.run_tool(say("好"))
+            assert agent.last_receipt is None, "這一次沒有執行腳本"
+            agent.current_cwd = tmp
+            import agent_core.archive as archive
+            keep = archive.TOOL_RESULTS_KEEP
+            archive.TOOL_RESULTS_KEEP = 1
+            try:
+                removed = agent._prune_tool_results(agent.results_dir())
+            finally:
+                archive.TOOL_RESULTS_KEEP = keep
+            assert rec["result_file"] in removed and not os.path.exists(side), "刪存檔時收據一起刪"
+            with open(os.path.join(tmp, "skills_system", "tools", "search_text.md"), encoding="utf-8") as f:
+                raw = f.read()
+            doc = agent._load_skill_doc("search_text")
+            assert "\nparameters:" in raw and "\nreceipt:" in raw and "parameters:" not in doc and "receipt:" not in doc, doc[:300]
+            assert doc.startswith("---\ntype: Tool") and "# 語法" in doc
+
         def t_cli_guard():
             # CLI 的主迴圈（真的 cli.main()）：會改變狀態的技能先問 y/n；n 不執行、y 才執行，AI 依結果回答
             path = os.path.join(tmp, "config", "cam_cli.yaml")
@@ -336,6 +370,7 @@ def main():
                          ("🧠 模型設定：換主模型（摘要跟著換）、存檔與載入、thinking 只對支援的模型送、/model 與 /think", t_model_settings),
                          ("說要去做卻沒有動作（「我會先查…」）：提醒一次；問使用者的、做過的事不提醒", t_promise),
                          ("腳本 → 技能的對照：規格裡 EXECUTE 指令位置的腳本都對回那個技能（只提到的不算）", t_script_skill_map),
+                         ("收據：寫收據的腳本執行完讀得到、軌跡記摘要、存檔旁邊存一份、刪存檔時一起刪；規格裡給程式看的欄位不給模型", t_receipts),
                          ("CLI 的主迴圈：會改變狀態的技能先問 y/n，n 不執行、y 才執行", t_cli_guard)]:
             check(name, fn)
     finally:

@@ -10,6 +10,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _results_common import (clip, compile_pattern, current_session, describe, list_result_files, numbered, read_body, resolve_result,
                              results_dir, search_lines)
+import _receipt_common as receipt  # noqa: E402
 
 DEFAULT_CONTEXT, MAX_CONTEXT = 3, 10
 DEFAULT_MAX_HITS, MAX_MAX_HITS = 40, 200
@@ -87,12 +88,15 @@ def block_bounds(lines, i):
 
 
 def render_file(path, regex, ctx, budget_hits, block):
-    """回傳 (lines_out, n_hits, timed_out, shown)。行號是原文的行號（不含存檔的檔頭），result_view --from 可直接用。"""
+    """回傳 (lines_out, n_hits, timed_out, shown, 收據的命中)。行號是原文的行號（不含存檔的檔頭），result_view --from 可直接用；
+    收據的命中是這個檔案全部命中的行（存檔的編號、行號），不受 budget_hits 限制。"""
     meta, lines = read_body(path)
     hits, timed_out = search_lines(lines, regex)
     fn = os.path.basename(path)
+    rid = int(meta["id"]) if str(meta.get("id", "")).isdigit() else fn
+    found = [{"id": rid, "line": h + 1} for h in hits]
     if not hits:
-        return [f"{describe(meta, fn)}：0 行命中（原文共 {len(lines)} 行）"], 0, timed_out, 0
+        return [f"{describe(meta, fn)}：0 行命中（原文共 {len(lines)} 行）"], 0, timed_out, 0, found
     out = [f"{describe(meta, fn)}：命中 {len(hits)} 行（原文共 {len(lines)} 行）"
            + (f"，列出前 {min(len(hits), budget_hits)} 個" if len(hits) > budget_hits else "")]
     shown = 0
@@ -111,26 +115,30 @@ def render_file(path, regex, ctx, budget_hits, block):
             out.append(numbered(j + 1, clip(lines[j]), ">" if j == h else " "))
         last_end = max(last_end, e - 1)
         shown += 1
-    return out, len(hits), timed_out, shown
+    return out, len(hits), timed_out, shown, found
 
 
 def main(argv):
     opts, err = parse_args(argv)
     if err:
-        return err
+        return receipt.fail(err, "args")
     regex, err = compile_pattern(opts["pattern"])
     if err:
-        return err
+        return receipt.fail(err, "args")
     paths, err = target_files(opts["ref"])
     if err:
-        return err
+        return receipt.fail(err, "args")
     total_hits, budget = 0, opts["max_hits"]
-    sections, timed = [], False
+    sections, timed, found, per_file, searched = [], False, [], {}, 0
     for p in paths:
-        block, n, t, shown = render_file(p, regex, opts["ctx"], budget, opts["block"])
+        block, n, t, shown, hits = render_file(p, regex, opts["ctx"], budget, opts["block"])
         timed = timed or t
         total_hits += n
         budget -= shown
+        searched += 1
+        found += hits
+        if hits:
+            per_file[str(hits[0]["id"])] = n
         sections.append("\n".join(block))
         if budget <= 0:
             sections.append(f"（命中數達上限 {opts['max_hits']}，縮小關鍵字或加 --max）")
@@ -143,14 +151,14 @@ def main(argv):
     if timed:
         head += f"；⚠️ 比對超過時間預算，部分內容未搜完，請簡化關鍵字（避免複雜的正則）"
     text = "\n".join([head] + sections)
-    if len(text) > MAX_OUTPUT_CHARS:
+    clipped = len(text) > MAX_OUTPUT_CHARS
+    if clipped:
         text = text[:MAX_OUTPUT_CHARS] + f"\n（輸出達上限 {MAX_OUTPUT_CHARS} 字，縮小關鍵字、減少 -C 或 --max）"
+    receipt.result("pass" if total_hits else "empty", counts={"hits": total_hits, "files": len(paths)}, items=found,
+                   truncated=timed or searched < len(paths), per_file=per_file, pattern=opts["pattern"], ref=opts["ref"],
+                   timed_out=timed, clipped_output=clipped)
     return text
 
 
 if __name__ == "__main__":
-    try:
-        print(main(sys.argv[1:]))
-    except Exception as e:
-        print(f"[ERROR] result_grep 未預期的例外: {type(e).__name__}: {e}", file=sys.stderr)
-        sys.exit(1)
+    receipt.main(main, "result_grep")

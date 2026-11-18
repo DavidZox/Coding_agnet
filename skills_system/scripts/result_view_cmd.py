@@ -5,6 +5,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _results_common import clip, describe, numbered, outline, read_body, resolve_result
+import _receipt_common as receipt  # noqa: E402
 
 DEFAULT_LINES, MAX_LINES = 80, 300
 MAX_OUTPUT_CHARS = 12000
@@ -46,15 +47,18 @@ def parse_args(argv):
 def main(argv):
     opts, err = parse_args(argv)
     if err:
-        return err
+        return receipt.fail(err, "args")
     path, err = resolve_result(opts["ref"])
     if err:
-        return err
+        return receipt.fail(err, "args")
     meta, lines = read_body(path)
     total = len(lines)
+    rid = int(meta["id"]) if str(meta.get("id", "")).isdigit() else None
     title = f"{describe(meta, os.path.basename(path))}｜{meta.get('command') or ''}｜原文共 {total} 行"
     if opts["outline"]:
         ol = outline(lines)
+        receipt.result("pass" if ol else "empty", counts={"total_lines": total, "sections": len(ol)},
+                       items=[{"line": n, "title": t, "lines": k} for n, t, k in ol], id=rid, mode="outline")
         if not ol:
             return (f"[PASS] {title}；沒有章節標題（一行一筆的輸出），用 --from／--lines 分段看，"
                     f"或 result_grep <編號> \"<關鍵字>\" 找要的那幾行。")
@@ -62,7 +66,7 @@ def main(argv):
                          + [f"- 行 {n}：{t}（{k} 行）" for n, t, k in ol])
     start = opts["start"] or 1
     if start > total:
-        return f"[ERROR] 起始行 {start} 超過原文的總行數 {total}。下一步：改小 --from（原文從行 1 開始），或用 --outline 看各節的行號。"
+        return receipt.fail(f"[ERROR] 起始行 {start} 超過原文的總行數 {total}。下一步：改小 --from（原文從行 1 開始），或用 --outline 看各節的行號。", "args")
     end = min(total, start + opts["count"] - 1)
     head = (f"[PASS] {title}；顯示第 {start}～{end} 行"
             + (f"，之後還有 {total - end} 行（--from {end + 1} 繼續）" if end < total else "，已到最後一行") + "：")
@@ -71,14 +75,13 @@ def main(argv):
         out.append(f"當時的任務：{meta['task']}")
     out += [numbered(j, clip(lines[j - 1])) for j in range(start, end + 1)]
     text = "\n".join(out)
-    if len(text) > MAX_OUTPUT_CHARS:
+    clipped = len(text) > MAX_OUTPUT_CHARS
+    if clipped:
         text = text[:MAX_OUTPUT_CHARS] + f"\n（輸出達上限 {MAX_OUTPUT_CHARS} 字：減少 --lines，或從後面的行號用 --from 接著看）"
+    receipt.result("pass", counts={"total_lines": total, "from": start, "to": end}, items=[{"id": rid, "from": start, "to": end}],
+                   truncated=end < total or clipped, id=rid, mode="lines", clipped_output=clipped)
     return text
 
 
 if __name__ == "__main__":
-    try:
-        print(main(sys.argv[1:]))
-    except Exception as e:
-        print(f"[ERROR] result_view 未預期的例外: {type(e).__name__}: {e}", file=sys.stderr)
-        sys.exit(1)
+    receipt.main(main, "result_view")

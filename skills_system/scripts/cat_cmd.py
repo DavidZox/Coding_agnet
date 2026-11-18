@@ -10,6 +10,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _path_common as pc  # noqa: E402
+from _receipt_common import fail, main, result  # noqa: E402
 from _results_common import numbered  # noqa: E402
 
 MAX_LINES = 2000
@@ -135,17 +136,19 @@ def _tail(path, n, enc):
 def execute(argv):
     o, err = parse_args(argv)
     if err:
-        return err
+        return fail(err, "args")
     path = o["path"]
     abs_path, err = pc.resolve(path, "file", dir_hint=f"看目錄內容用 list_dir {path}；找檔名用 find_file <關鍵字> {path}")
     if err:
-        return err
+        return fail(err)
     if not os.path.isfile(abs_path):
-        return (f"[ERROR] {path} 不是一般檔案（裝置、socket 或 FIFO），讀取可能永遠等不到結束，已拒絕。"
-                f"下一步：確認路徑；要看裝置或程序的狀態請用 host_runcmd 的對應指令。")
+        return fail(f"[ERROR] {path} 不是一般檔案（裝置、socket 或 FIFO），讀取可能永遠等不到結束，已拒絕。"
+                    f"下一步：確認路徑；要看裝置或程序的狀態請用 host_runcmd 的對應指令。", "args")
     shown = path if not path.startswith(("~", "$")) else abs_path
     size = os.path.getsize(abs_path)
     if size == 0:
+        result("empty", counts={"total_lines": 0, "from": None, "to": None, "bytes": 0},
+               items=[{"path": abs_path, "from": None, "to": None}], path=abs_path, encoding=None, tail=False, limit=None, clipped_lines=False)
         return f"[PASS] 檔案內容 ({shown})：空檔案（0 bytes）"
     with open(abs_path, "rb") as f:
         head = f.read(8192)
@@ -155,16 +158,17 @@ def execute(argv):
     elif head.startswith(b"\xef\xbb\xbf"):
         enc = "utf-8-sig"
     elif b"\0" in head:
-        return (f"[ERROR] {shown} 是二進位檔（{size} bytes，含 NUL 位元組），view_file 只讀文字檔。下一步：{_binary_hint(abs_path)}。")
+        return fail(f"[ERROR] {shown} 是二進位檔（{size} bytes，含 NUL 位元組），view_file 只讀文字檔。下一步：{_binary_hint(abs_path)}。", "args")
     if enc == "utf-16":
         return _render_utf16(o, abs_path, shown)
     if o["tail"]:
         lines, total = _tail(abs_path, o["tail"], enc)
         if total is None:
-            return (f"[ERROR] {shown} 太大（{size} bytes），{COUNT_BUDGET_SECONDS} 秒內算不完行數。"
-                    f"下一步：用 search_text 找關鍵字，或用 --from N --lines M 看開頭的部分。")
+            return fail(f"[ERROR] {shown} 太大（{size} bytes），{COUNT_BUDGET_SECONDS} 秒內算不完行數。"
+                        f"下一步：用 search_text 找關鍵字，或用 --from N --lines M 看開頭的部分。", "timeout")
         start = total - len(lines) + 1
-        return _render(shown, lines, start, total, size, cut_reason=None, clipped=_clip_all(lines), tail=True)
+        return _render(shown, lines, start, total, size, cut_reason=None, clipped=_clip_all(lines), tail=True,
+                       abs_path=abs_path, encoding=enc)
     start = o["from"] or 1
     asked = o["lines"]
     limit = min(asked or MAX_LINES, MAX_LINES)
@@ -189,7 +193,7 @@ def execute(argv):
                 stop = "lines"
                 break
         if consumed < start:
-            return f"[ERROR] {shown} 只有 {consumed} 行，--from {start} 超過了。下一步：--from 1～{consumed}；看最後幾行用 --tail 50。"
+            return fail(f"[ERROR] {shown} 只有 {consumed} 行，--from {start} 超過了。下一步：--from 1～{consumed}；看最後幾行用 --tail 50。", "args")
         rest = _count_rest(f, t0)
     total = None if rest is None else consumed + rest
     end = start + len(out) - 1
@@ -198,7 +202,7 @@ def execute(argv):
         cut_reason = f"{MAX_CHARS} 字"
     elif stop == "lines" and (asked is None or asked > MAX_LINES) and (total is None or end < total):
         cut_reason = f"{MAX_LINES} 行"
-    return _render(shown, out, start, total, size, cut_reason, clipped, tail=False)
+    return _render(shown, out, start, total, size, cut_reason, clipped, tail=False, abs_path=abs_path, encoding=enc)
 
 
 def _clip_all(lines):
@@ -210,8 +214,13 @@ def _clip_all(lines):
     return clipped
 
 
-def _render(shown, lines, start, total, size, cut_reason, clipped, tail):
+def _render(shown, lines, start, total, size, cut_reason, clipped, tail, abs_path, encoding):
     end = start + len(lines) - 1
+    more_lines = total is None or end < total
+    result("pass", counts={"total_lines": total, "from": start, "to": end, "bytes": size},
+           items=[{"path": abs_path, "from": start, "to": end}], truncated=more_lines or clipped,
+           path=abs_path, encoding=encoding, tail=tail, limit={f"{MAX_LINES} 行": "lines", f"{MAX_CHARS} 字": "chars"}.get(cut_reason),
+           clipped_lines=clipped)
     tot = f"共 {total} 行" if total is not None else f"{size} bytes（總行數太多沒有算完）"
     head = f"[PASS] 檔案內容 ({shown})：{tot}，顯示第 {start}-{end} 行" if lines else f"[PASS] 檔案內容 ({shown})：{tot}"
     more = total is None or end < total
@@ -234,26 +243,22 @@ def _render(shown, lines, start, total, size, cut_reason, clipped, tail):
 def _render_utf16(o, abs_path, shown):
     size = os.path.getsize(abs_path)
     if size > 50 * 1024 * 1024:
-        return f"[ERROR] {shown} 是 UTF-16 編碼、{size} bytes，太大。下一步：請使用者轉成 UTF-8，或用 search_text 找關鍵字。"
+        return fail(f"[ERROR] {shown} 是 UTF-16 編碼、{size} bytes，太大。下一步：請使用者轉成 UTF-8，或用 search_text 找關鍵字。", "args")
     with open(abs_path, encoding="utf-16", errors="replace") as f:
         all_lines = f.read().splitlines()
     total = len(all_lines)
     if o["tail"]:
         lines = all_lines[-o["tail"]:]
         start = total - len(lines) + 1
-        return _render(shown, lines, start, total, size, None, _clip_all(lines), tail=True)
+        return _render(shown, lines, start, total, size, None, _clip_all(lines), tail=True, abs_path=abs_path, encoding="utf-16")
     start = o["from"] or 1
     if start > total:
-        return f"[ERROR] {shown} 只有 {total} 行，--from {start} 超過了。下一步：--from 1～{total}；看最後幾行用 --tail 50。"
+        return fail(f"[ERROR] {shown} 只有 {total} 行，--from {start} 超過了。下一步：--from 1～{total}；看最後幾行用 --tail 50。", "args")
     limit = min(o["lines"] or MAX_LINES, MAX_LINES)
     lines = all_lines[start - 1:start - 1 + limit]
     cut = f"{MAX_LINES} 行" if o["lines"] is None and start - 1 + limit < total else None
-    return _render(shown, lines, start, total, size, cut, _clip_all(lines), tail=False)
+    return _render(shown, lines, start, total, size, cut, _clip_all(lines), tail=False, abs_path=abs_path, encoding="utf-16")
 
 
 if __name__ == "__main__":
-    try:
-        print(execute(sys.argv[1:]))
-    except Exception as e:      # noqa: BLE001
-        print(f"[ERROR] view_file 未預期的例外：{type(e).__name__}: {e}", file=sys.stderr)
-        sys.exit(1)
+    main(execute, "view_file")

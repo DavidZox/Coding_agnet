@@ -4,6 +4,8 @@ title: 查看檔案內容
 description: 看本機文字檔（設定檔、log、腳本）的內容，每行附行號；可 --from／--lines 看一段、--tail 看最後幾行。
 version: 2.0.1
 dependencies: []
+parameters: [{"name": "path", "required": true, "fetch": "find_file <檔名>"}]
+receipt: {"counts": ["total_lines", "from", "to", "bytes"], "items": ["path", "from", "to"], "fields": ["path", "encoding", "tail", "limit", "clipped_lines"]}
 ---
 
 # 用途

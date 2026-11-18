@@ -1,4 +1,6 @@
-"""ArchiveMixin：工具回傳的原文存檔（logs/tool_results/<session>_<編號>_<腳本>.md）與 index.md。"""
+"""ArchiveMixin：工具回傳的原文存檔（logs/tool_results/<session>_<編號>_<腳本>.md）與 index.md。
+腳本有寫收據時（skills_system/scripts/_receipt_common.py），收據存成同名的 <…>.receipt.json，跟存檔一起刪。"""
+import json
 import os
 import re
 import threading
@@ -19,6 +21,19 @@ from .tool_use_index import result_kind
 ARCHIVE_LOCK = threading.RLock()
 
 
+def receipt_file(archive_name):
+    """存檔 <…>.md 的收據檔名 <…>.receipt.json（_results_common.FILE_RE 只認 .md，收據不會被當成存檔）。"""
+    return archive_name[:-3] + ".receipt.json"
+
+
+def _remove_with_receipt(d, fn):
+    os.remove(os.path.join(d, fn))
+    try:
+        os.remove(os.path.join(d, receipt_file(fn)))
+    except FileNotFoundError:
+        pass
+
+
 def _archived_names(d):
     """存檔目錄裡的存檔檔名，依（session, 編號）由舊到新排（檔名的文字排序在同一個 session 裡 #1000 會排在 #999 前面）。"""
     return [f[3] for f in _results_common.list_result_files(d)]
@@ -34,16 +49,16 @@ class ArchiveMixin:
         """既有存檔裡最大的編號（沒有存檔就 0）：__init__ 用它當 trajectory_seq 的起點，讓編號跨 session 不重複。"""
         return max((f[1] for f in _results_common.list_result_files(self.results_dir())), default=0)
 
-    def _archive_tool_result(self, record, output_text):
-        """把一次腳本執行的完整原始輸出寫成 logs/tool_results/<session>_<id>_<腳本>.md，並在 index.md 追加一行。
-        檔頭是簡單的 key: value（宿主機不一定有 PyYAML）。寫不進去不影響主流程（回傳 None）。"""
+    def _archive_tool_result(self, record, output_text, receipt=None):
+        """把一次腳本執行的完整原始輸出寫成 logs/tool_results/<session>_<id>_<腳本>.md，並在 index.md 追加一行；有收據時另存
+        <…>.receipt.json。檔頭是簡單的 key: value（宿主機不一定有 PyYAML）。寫不進去不影響主流程（回傳 None）。"""
         try:
             with ARCHIVE_LOCK:
-                return self._write_archive(record, output_text)
+                return self._write_archive(record, output_text, receipt)
         except OSError:
             return None
 
-    def _write_archive(self, record, output_text):
+    def _write_archive(self, record, output_text, receipt=None):
         """_archive_tool_result 的本體（呼叫端上鎖）。"""
         d = self.results_dir()
         os.makedirs(d, exist_ok=True)
@@ -58,6 +73,9 @@ class ArchiveMixin:
         ]
         with open(os.path.join(d, filename), "w", encoding="utf-8") as f:
             f.write("\n".join(header) + "\n" + output_text + ("\n" if not output_text.endswith("\n") else ""))
+        if receipt:
+            with open(os.path.join(d, receipt_file(filename)), "w", encoding="utf-8") as f:
+                json.dump({"id": record["id"], **receipt}, f, ensure_ascii=False)
         line = (f"#{record['id']} | {time.strftime('%Y-%m-%d %H:%M')} | {record['script']} | {record['status']} | "
                 f"{len(output_text)} 字 | {filename} | 任務：{task} | 回答：")   # 任務與回答整句照存、不截斷（result_list 直接列這一行）
         with open(os.path.join(d, TOOL_RESULTS_INDEX), "a", encoding="utf-8") as f:
@@ -78,12 +96,12 @@ class ArchiveMixin:
         while tools and (len(tools) > TOOL_RESULTS_KEEP or total > TOOL_RESULTS_MAX_MB * 1024 * 1024):
             fn = tools.pop(0)
             total -= sizes[fn]
-            os.remove(os.path.join(d, fn))
+            _remove_with_receipt(d, fn)
             removed.append(fn)
         for pool, keep in ((convs, CONVERSATION_SEGMENTS_KEEP), (visions, VISION_RESULTS_KEEP)):
             while len(pool) > max(keep, 1):
                 fn = pool.pop(0)
-                os.remove(os.path.join(d, fn))
+                _remove_with_receipt(d, fn)
                 removed.append(fn)
         if removed:
             index = os.path.join(d, TOOL_RESULTS_INDEX)

@@ -65,7 +65,10 @@ class TrajectoryMixin:
             "output_head": output_text[:TRAJECTORY_OUTPUT_HEAD],
             "task": self.current_task or "",
         }
-        record["result_file"] = self._archive_tool_result(record, output_text)
+        receipt = getattr(self, "last_receipt", None)      # 腳本寫的收據（dispatch._exec_script）：軌跡記摘要，全文跟存檔放在一起
+        if receipt:
+            record["receipt"] = {k: receipt.get(k) for k in ("status", "error_kind", "counts", "truncated")}
+        record["result_file"] = self._archive_tool_result(record, output_text, receipt)
         self.last_result_id = record["id"] if record["result_file"] else None
         self.last_result_file = record["result_file"]
         self.trajectory.append(record)

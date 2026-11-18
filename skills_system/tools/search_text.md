@@ -4,6 +4,8 @@ title: 檔案內容搜尋
 description: 在檔案「內部文字」裡搜關鍵字（a|b 同義詞、不分大小寫），命中依檔案分組、筆數由腳本算好。
 version: 2.0.2
 dependencies: ["grep"]
+parameters: [{"name": "keyword", "required": true, "ask": "要搜的字（使用者的問題裡沒有時才問）"}, {"name": "path", "required": false, "default": ".", "fetch": "find_file <目錄名稱>"}]
+receipt: {"counts": ["hits", "files"], "items": ["path", "line"], "fields": ["per_file", "pattern", "paths", "options", "excluded_dirs", "skipped", "timed_out"]}
 ---
 
 # 用途

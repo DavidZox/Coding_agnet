@@ -7,6 +7,7 @@
 現在：第一個參數是關鍵字、第二個是路徑（只有「第一個明顯是路徑、第二個不是」時才對調並註明）；路徑不存在回 [ERROR] 與相近的路徑，
 絕不改搜 .；關鍵字含 / 時比對整個路徑（-ipath）；含 * ? [ 時照萬用字元比對，否則是「名稱含關鍵字」；預設略過 build／install／log／.git
 等目錄（--all-dirs 取消）；沒有權限的目錄略過並計數；逾時保留已經找到的部分。
+收據（_receipt_common，欄位見規格的 receipt）：找到的每個項目（路徑、檔案或目錄），最多 KEEP_LIMIT 個。
 """
 import os
 import stat
@@ -14,6 +15,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _path_common as pc  # noqa: E402
+from _receipt_common import fail, main, result  # noqa: E402
 from _shell_common import run_shell  # noqa: E402
 
 TIMEOUT_SECONDS = 30
@@ -86,6 +88,9 @@ def parse_args(argv):
     return o, None
 
 
+_MATCH = {"名稱含": "contains", "名稱符合": "glob", "路徑含": "path"}   # 收據的 match：怎麼比對名稱
+
+
 def _name_test(keyword):
     """→ (find 的比對參數, 說明)。"""
     has_glob = any(c in keyword for c in "*?[")
@@ -100,13 +105,13 @@ def _name_test(keyword):
 def execute(argv):
     o, err = parse_args(argv)
     if err:
-        return err
+        return fail(err, "args")
     root, perr = pc.resolve(o["path"], "dir", noun="搜尋的目錄",
                             file_hint=f"find_file 要從目錄開始找；看這個檔案的內容用 view_file {o['path']}")
     if perr:
-        return perr
+        return fail(perr)
     if root in BLOCKED:
-        return f"[ERROR] 不從 {root} 開始找（整個系統太大、會卡住）。下一步：指定具體的目錄，例如 . 、~ 或專案目錄。"
+        return fail(f"[ERROR] 不從 {root} 開始找（整個系統太大、會卡住）。下一步：指定具體的目錄，例如 . 、~ 或專案目錄。", "args")
     shown_root = o["path"] if not o["path"].startswith(("~", "$")) else root
     excludes = pc.excludes_for([root], o["all_dirs"])
     test, how = _name_test(o["keyword"])
@@ -134,7 +139,7 @@ def execute(argv):
 
     r = run_shell(cmd, TIMEOUT_SECONDS, on_stdout_line=on_out, on_stderr_line=on_err)
     if r.spawn_error:
-        return f"[ERROR] find_file 沒辦法執行 find：{r.spawn_error}。下一步：請使用者確認系統有安裝 find（findutils）。"
+        return fail(f"[ERROR] find_file 沒辦法執行 find：{r.spawn_error}。下一步：請使用者確認系統有安裝 find（findutils）。", "env")
     return render(o, root, shown_root, found, count[0], perm, other, r, how, excludes)
 
 
@@ -153,9 +158,13 @@ def render(o, root, shown_root, found, total, perm, other, r, how, excludes):
         notes.append(f"預設略過 {'／'.join(excludes[:4])} 等目錄（要一起找加 --all-dirs）")
     note_line = f"（{'；'.join(notes)}）" if notes else ""
     if r.timed_out and not found:
-        return (f"[ERROR] 找{kw}逾時（{TIMEOUT_SECONDS} 秒內沒有找完，也還沒有找到任何一個；從 {shown_root} 開始）。"
-                f"下一步：從比較小的子目錄開始找、或用更精確的關鍵字（例如加副檔名）。" + note_line)
+        return fail(f"[ERROR] 找{kw}逾時（{TIMEOUT_SECONDS} 秒內沒有找完，也還沒有找到任何一個；從 {shown_root} 開始）。"
+                    f"下一步：從比較小的子目錄開始找、或用更精確的關鍵字（例如加副檔名）。" + note_line, "timeout")
+    fields = {"keyword": o["keyword"], "root": root, "match": _MATCH[how], "type": o["type"], "all_dirs": o["all_dirs"],
+              "excluded_dirs": list(excludes), "skipped": {"permission": len(perm), "read_errors": len(other)},
+              "timed_out": r.timed_out}
     if not found:
+        result("empty", counts={"total": 0, "files": 0, "dirs": 0}, **fields)
         out = [f"[PASS] 找不到{how}{kw}的檔案或目錄（0 個，從 {shown_root} 開始找）"]
         hints = []
         if "/" not in o["keyword"] and "." in o["keyword"] and not any(c in o["keyword"] for c in "*?["):
@@ -179,6 +188,9 @@ def render(o, root, shown_root, found, total, perm, other, r, how, excludes):
     n_dirs = sum(1 for _, d, _ in items if d)
     counted = len(items)
     over = total - counted                    # 超過 KEEP_LIMIT 沒保留的
+    result("pass", counts={"total": total, "files": counted - n_dirs, "dirs": n_dirs},
+           items=[{"path": os.path.abspath(p), "kind": "dir" if d else "file"} for p, d, _ in items],
+           truncated=r.timed_out or over > 0, **fields)
     kind = (f"{counted - n_dirs} 個檔案、{n_dirs} 個目錄" if not over
             else f"太多了，只保留先找到的 {counted} 個來排序，其中 {n_dirs} 個目錄")
     if r.timed_out:
@@ -210,8 +222,4 @@ def render(o, root, shown_root, found, total, perm, other, r, how, excludes):
 
 
 if __name__ == "__main__":
-    try:
-        print(execute(sys.argv[1:]))
-    except Exception as e:      # noqa: BLE001
-        print(f"[ERROR] find_file 未預期的例外：{type(e).__name__}: {e}", file=sys.stderr)
-        sys.exit(1)
+    main(execute, "find_file")

@@ -4,6 +4,8 @@ title: 查看目錄清單
 description: 列出本機某一層目錄（不含子目錄）並算好數量與最新修改；可 --filter 關鍵字計數、--newest 依修改時間排序。
 version: 1.5.0
 dependencies: []
+parameters: [{"name": "path", "required": false, "default": ".", "fetch": "find_file <目錄名稱>"}]
+receipt: {"counts": ["total", "files", "dirs", "links", "unreadable", "matched?"], "items": ["path", "name", "kind", "link", "size", "mtime"], "fields": ["path", "filter", "newest"]}
 ---
 
 # 用途

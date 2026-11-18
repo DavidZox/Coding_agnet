@@ -4,6 +4,8 @@ title: 檔案名稱搜尋
 description: 依「名稱關鍵字」遞迴找檔案與目錄；結果依目錄分組，標頭算好找到幾個並附最新修改。
 version: 2.0.0
 dependencies: ["find"]
+parameters: [{"name": "keyword", "required": true, "ask": "要找的名稱（使用者的問題裡沒有時才問）"}, {"name": "path", "required": false, "default": ".", "fetch": "find_file <目錄名稱>"}]
+receipt: {"counts": ["total", "files", "dirs"], "items": ["path", "kind"], "fields": ["keyword", "root", "match", "type", "all_dirs", "excluded_dirs", "skipped", "timed_out"]}
 ---
 
 # 用途

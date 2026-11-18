@@ -6,7 +6,7 @@
 | 組 | 不用模型 | 真模型／實機 | 測什麼 |
 |---|---|---|---|
 | `chat/` 主對話 | `selftest.py`、`extract_selftest.py`（工具回傳的提煉與存檔回查） | `run.py`（情境在 `scenarios.py`，`worker.py` 跑一個情境）、`perf_report.py`（KV cache 分析） | 選技能、兩階段揭露、大量回傳與回存檔查、執行前確認、記憶、程式把關（卡住、說做了卻沒做、說要做卻沒動作）、模型設定、CLI 主迴圈的確認關卡、對數據技能的路由；提煉的切段、核對、存檔、行號；兩種上下文模式比較 |
-| `skills/` 技能腳本 | `selftest.py`（每一組一個 `<組>_test.py`：fs、containers、rmf、data） | —（主對話真的用技能看 `chat/`、`ops/`） | 每個技能直接執行：[PASS] 與每一種 [ERROR] 的寫法（原因與下一步）、截斷的說明、不讀標準輸入、逾時；需要容器的在沙盒裡跑，沒有就略過（規範：`doc/技能撰寫規範.md`） |
+| `skills/` 技能腳本 | `selftest.py`（每一組一個 `<組>_test.py`：fs、containers、rmf、data、receipt） | —（主對話真的用技能看 `chat/`、`ops/`） | 每個技能直接執行：[PASS] 與每一種 [ERROR] 的寫法（原因與下一步）、截斷的說明、不讀標準輸入、逾時；需要容器的在沙盒裡跑，沒有就略過；第一版領域的技能的收據（`receipt`：每一種出口、數量跟文字一致、收據比文字完整、有沒有收據文字都一樣、規格跟腳本一致）（規範：`doc/技能撰寫規範.md`） |
 | `analysis/` 數據解析 | `selftest.py`（數據技能用錄下的真實輸出 `fixtures/`） | `regression.py`（回歸評分；數據分析全部由程式做，不需要 Ollama，要測試容器）、`tools_live.py`（在真的容器裡跑數據技能） | 事實的整理、重點、報告、主對話回答的核對；回歸評分只評事實 |
 | `datagen/` 隨機情境的錄製產生器 | `check_facts.py`（只驗程式那一層，需要容器） | 產生的錄製交給 `analysis/regression.py` | 六個開發中套件的模擬，評分標準由注入的事件自動產生（見 [`datagen/README.md`](datagen/README.md)） |
 | `ops/` 多步驟維運 | `selftest.py`（file_ops、維運技能的確認關卡、沙盒 daemon 怎麼起） | `run.py`（情境在 `dataset/`，在 Docker-in-Docker 沙盒裡真的執行；`worker.py` 跑一個情境） | 主對話用技能做完維運任務（2026-11-18 起沒有任務引擎，多步驟由主對話自己做）；狀態、回覆、禁止動作由程式計分 |
@@ -277,4 +277,4 @@ python3 evals/phase_check.py --save-baseline <結果目錄…> --label "第 N �
 - 近期加進來的案例：第 2 階段——提煉的真模型評測（〈提煉〉一節）、交握 status 連續幾次的判斷（`skills/rmf_test.py` 的 `t_sandbox_status_stable`）、
   數據技能的「不是錄製數據」判斷不擋任何一份真的錄製（`skills/data_test.py` 的 `t_not_recording_real_data`）、維運評測的 `logs/<情境>/`
   （每一步的紀錄）；第 4 階段——評測的完整性（`integrity`）、
-  數據分析的存檔只留最近幾次（`analysis_selftest`）；第 4 階段之後——`--until-done` 看得出卡住就提早結束、`--until-confirmed` 等授權有結果（`skills/rmf_test.py` 的 `t_until_done_stuck`、`t_until_confirmed`、`t_until_done_stuck_rules`）；2026-11-18——任務引擎與 Plan 模式拿掉（`task_selftest` 跟著拿掉），CLI 主迴圈的確認關卡改在 `chat_selftest` 測（`t_cli_guard`），範本的檢查改成每個 import 了 `prompt_files` 的模組各自核對（`integrity`，取代「至少 200 處」）；同一天——真實專案評測的自我測試（`repo_selftest`），完整性檢查也收它答案裡的名稱。
+  數據分析的存檔只留最近幾次（`analysis_selftest`）；第 4 階段之後——`--until-done` 看得出卡住就提早結束、`--until-confirmed` 等授權有結果（`skills/rmf_test.py` 的 `t_until_done_stuck`、`t_until_confirmed`、`t_until_done_stuck_rules`）；2026-11-18——任務引擎與 Plan 模式拿掉（`task_selftest` 跟著拿掉），CLI 主迴圈的確認關卡改在 `chat_selftest` 測（`t_cli_guard`），範本的檢查改成每個 import 了 `prompt_files` 的模組各自核對（`integrity`，取代「至少 200 處」）；同一天——真實專案評測的自我測試（`repo_selftest`），完整性檢查也收它答案裡的名稱；收據（D10 第 1 步）——`skills/receipt_test.py` 8 項、`chat_selftest` 的 `t_receipts`。

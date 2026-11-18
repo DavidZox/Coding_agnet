@@ -75,9 +75,12 @@ def main():
             is_doc = os.path.exists(os.path.join(agent.tools_dir, (token[:-3] if token.endswith(".md") else token) + ".md"))
             if not is_doc:
                 args = agent._parse_script_args(script, payload.split(maxsplit=1)[1] if len(payload.split(maxsplit=1)) > 1 else "")
+                receipt = agent.last_receipt or {}      # 寫收據的腳本（第一版領域的技能）才有
                 turn["tool_calls"].append({"script": script, "skill": skill_map.get(script), "args": args,
                                            "status": "ERROR" if result.lstrip().startswith(("[ERROR]", "[DENIED]")) else "PASS",
-                                           "head": result.strip().splitlines()[0][:200] if result.strip() else ""})
+                                           "head": result.strip().splitlines()[0][:200] if result.strip() else "",
+                                           "receipt": {k: receipt.get(k) for k in ("status", "error_kind", "counts", "truncated")}
+                                           if receipt else None})
             content = _content_for_context(result, agent.count_tokens(result), agent=agent, use_summary=True)
             agent.messages.append({"role": "user", "content": tool_result_message(content, parsed["action"])})
             if agent.stuck:

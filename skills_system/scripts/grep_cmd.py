@@ -8,6 +8,7 @@
 現在：關鍵字一律 `-E -e 關鍵字 --`（a|b 是同義詞；不是合法的正規表示式就改成照字面再搜一次並註明）；只接受少數幾個選項
 （不認識的回 [ERROR]）；預設略過 _path_common.DEFAULT_EXCLUDES 的目錄（--all-dirs 取消）；沒有權限的路徑略過並計數；
 每個檔案最多列 20 筆、總共 200 筆、單行 300 字，截掉的都寫明怎麼縮小；逾時保留已經找到的結果。
+收據（_receipt_common，欄位見規格的 receipt）：每個檔案的筆數（全部）、命中的行（路徑、行號；最多 RECEIPT_LINES 行）。
 """
 import os
 import re
@@ -15,6 +16,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _path_common as pc  # noqa: E402
+from _receipt_common import fail, main, result  # noqa: E402
 from _results_common import numbered  # noqa: E402
 from _shell_common import run_shell  # noqa: E402
 
@@ -25,6 +27,7 @@ MAX_CONTEXT = 5
 OTHER_FILES_SHOWN = 50                    # 「其他命中的檔案」最多列幾個
 FILES_MODE_SHOWN = 200                    # -l 最多列幾個檔案
 KEEP_LIMIT = 20000                        # 記憶體裡最多保留幾行（超過的檔案只計數）
+RECEIPT_LINES = 20000                     # 收據最多記幾個命中的行號（每個檔案的筆數照樣全部算）
 LINE_CHARS = 300
 BLOCKED = ("/", "/proc", "/sys", "/dev")
 USAGE = ('用法: scripts/grep_cmd.py "<關鍵字>" [路徑…] [選項]\n'
@@ -167,6 +170,7 @@ class Collector:
         self.per_file, self.ctx = per_file, ctx
         self.files = {}
         self.kept = 0
+        self.hit_lines = 0                    # 收據記了幾個命中的行號
 
     def on_line(self, raw):
         if raw == b"--":
@@ -182,9 +186,12 @@ class Collector:
         text = raw[nul + 1 + m.end():].decode("utf-8", errors="replace").rstrip("\r")
         f = self.files.get(path)
         if f is None:
-            f = self.files[path] = {"hits": 0, "kept_hits": 0, "last_kept_hit": None, "lines": []}
+            f = self.files[path] = {"hits": 0, "kept_hits": 0, "last_kept_hit": None, "lines": [], "hit_lines": []}
         if hit:
             f["hits"] += 1
+            if self.hit_lines < RECEIPT_LINES:
+                f["hit_lines"].append(ln)
+                self.hit_lines += 1
         if self.kept >= KEEP_LIMIT and not f["lines"]:      # 記憶體上限：之後的新檔案只計數（列在「其他命中的檔案」）
             return
         if hit and f["kept_hits"] < self.per_file:
@@ -249,12 +256,12 @@ def _binary_note(paths):
 def execute(argv):
     o, err = parse_args(argv)
     if err:
-        return err
+        return fail(err, "args")
     if o["pattern"] is None or o["pattern"] == "":
-        return f"[ERROR] 缺少要搜的關鍵字。下一步：第一個參數寫關鍵字、第二個寫路徑，例如 \"ERROR\" .\n{USAGE}"
+        return fail(f"[ERROR] 缺少要搜的關鍵字。下一步：第一個參數寫關鍵字、第二個寫路徑，例如 \"ERROR\" .\n{USAGE}", "args")
     if not o["paths"] and _looks_like_path(o["pattern"]) and os.path.isdir(pc.expand(o["pattern"])):
-        return (f"[ERROR] 只給了路徑 {o['pattern']}，缺少要搜的關鍵字。下一步：寫成 \"<關鍵字>\" {o['pattern']}；"
-                f"要列目錄內容請用 list_dir、找檔名請用 find_file。\n{USAGE}")
+        return fail(f"[ERROR] 只給了路徑 {o['pattern']}，缺少要搜的關鍵字。下一步：寫成 \"<關鍵字>\" {o['pattern']}；"
+                    f"要列目錄內容請用 list_dir、找檔名請用 find_file。\n{USAGE}", "args")
     if not o["paths"]:
         o["paths"] = ["."]
         o["notes"].append("沒有給路徑，搜目前工作目錄 .")
@@ -262,12 +269,13 @@ def execute(argv):
     for idx, p in enumerate(o["paths"]):
         ap, perr = pc.resolve(p, "any")
         if perr:
+            kind = perr.kind
             if idx == 0 and o["pattern"].lower() == "grep" and len(o["paths"]) >= 1:
                 perr += ("\n（第一個參數是要搜的關鍵字：你寫的是「grep」。search_text 不用寫 grep 指令本身，"
                          "直接寫 \"<關鍵字>\" <路徑>）")
-            return perr
+            return fail(perr, kind)
         if ap in BLOCKED:
-            return (f"[ERROR] 不搜 {ap}（整個系統或虛擬檔案系統太大、會卡住）。下一步：指定具體的目錄，例如 . 或專案的 src。")
+            return fail(f"[ERROR] 不搜 {ap}（整個系統或虛擬檔案系統太大、會卡住）。下一步：指定具體的目錄，例如 . 或專案的 src。", "args")
         resolved.append(ap)
     o["paths"] = [p if not p.startswith(("~", "$")) else pc.expand(p) for p in o["paths"]]
     per_file, total_cap = (PER_FILE_CTX, TOTAL_CTX) if o["ctx"] else (PER_FILE, TOTAL)
@@ -280,7 +288,7 @@ def execute(argv):
     r, perm, other = _run(o, pattern, o["fixed"], excludes, collector, TIMEOUT_SECONDS)
     fixed = o["fixed"]
     if r.spawn_error:
-        return f"[ERROR] search_text 沒辦法執行 grep：{r.spawn_error}。下一步：請使用者確認系統有安裝 grep。"
+        return fail(f"[ERROR] search_text 沒辦法執行 grep：{r.spawn_error}。下一步：請使用者確認系統有安裝 grep。", "env")
     if not fixed and r.rc == 2 and not collector.files and any(_REGEX_ERR.search(x) for x in other):
         reason = next(x for x in other if _REGEX_ERR.search(x)).split(":", 1)[-1].strip()
         o["notes"].append(f"關鍵字不是合法的正規表示式（{reason}），已改成照字面搜尋")
@@ -309,13 +317,14 @@ def render(o, col, r, perm, other, excludes, per_file, total_cap, fixed, single_
         tail_notes.append(f"只搜檔名符合 {'、'.join(o['include'])} 的檔案")
     if r.rc == 2 and not files and other and not perm:
         msg = "；".join(pc.clip(x, 200) for x in other[:3])
-        return (f"[ERROR] search_text 執行失敗（grep exit code 2）：{msg}。下一步：檢查關鍵字與路徑"
-                f"（關鍵字含特殊字元時加 -F 照字面搜尋）；路徑沒問題就把這個錯誤告訴使用者。\n{USAGE}")
+        return fail(f"[ERROR] search_text 執行失敗（grep exit code 2）：{msg}。下一步：檢查關鍵字與路徑"
+                    f"（關鍵字含特殊字元時加 -F 照字面搜尋）；路徑沒問題就把這個錯誤告訴使用者。\n{USAGE}", "args")
     notes = o["notes"] + tail_notes
     note_line = f"（{'；'.join(notes)}）" if notes else ""
     if r.timed_out and not files:
-        return (f"[ERROR] 搜尋{kw}逾時（{TIMEOUT_SECONDS} 秒內沒有搜完，也還沒有找到任何一筆；搜尋 {where}）。"
-                f"下一步：縮小範圍——指定子目錄或檔案、加 --include \"*.py\" 只搜某種檔案、或換更精確的關鍵字。" + note_line)
+        return fail(f"[ERROR] 搜尋{kw}逾時（{TIMEOUT_SECONDS} 秒內沒有搜完，也還沒有找到任何一筆；搜尋 {where}）。"
+                    f"下一步：縮小範圍——指定子目錄或檔案、加 --include \"*.py\" 只搜某種檔案、或換更精確的關鍵字。" + note_line, "timeout")
+    _receipt(o, files, r, perm, other, excludes, fixed)
     if not files:
         out = [f"[PASS] 找不到符合{kw}的內容（0 筆；搜尋 {where}，{how}）"]
         hints = []
@@ -385,9 +394,18 @@ def render(o, col, r, perm, other, excludes, per_file, total_cap, fixed, single_
     return "\n".join([head] + lines)
 
 
+def _receipt(o, files, r, perm, other, excludes, fixed):
+    """收據：每個檔案的筆數（全部）、命中的行（路徑、行號）；逾時沒搜完或行號超過 RECEIPT_LINES 時 truncated。"""
+    items = [{"path": os.path.abspath(p), "line": ln} for p, f in files for ln in f["hit_lines"]]
+    complete = all(len(f["hit_lines"]) == f["hits"] for _, f in files)
+    result("pass" if files else "empty", counts={"hits": sum(f["hits"] for _, f in files), "files": len(files)},
+           items=items, truncated=r.timed_out or not complete,
+           per_file={os.path.abspath(p): f["hits"] for p, f in files}, pattern=o["pattern"],
+           paths=[os.path.abspath(pc.expand(p)) for p in o["paths"]],
+           options={"word": o["word"], "fixed": fixed, "case": o["case"], "files_only": o["files"], "context": o["ctx"],
+                    "include": o["include"], "exclude_dir": o["exclude_dir"], "all_dirs": o["all_dirs"]},
+           excluded_dirs=list(excludes), skipped={"permission": len(perm), "read_errors": len(other)}, timed_out=r.timed_out)
+
+
 if __name__ == "__main__":
-    try:
-        print(execute(sys.argv[1:]))
-    except Exception as e:      # noqa: BLE001
-        print(f"[ERROR] search_text 未預期的例外：{type(e).__name__}: {e}", file=sys.stderr)
-        sys.exit(1)
+    main(execute, "search_text")

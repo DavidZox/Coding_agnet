@@ -127,6 +127,7 @@ class SkillAgent(ConversationMixin, PromptMixin, DispatchMixin, GuardMixin, Cont
         self._user_said = []            # 使用者每句話與時間（最多 200 則），壓縮時逐字保留原話用（_keep_user_words）
         self.last_result_id = None      # 最近一次 run_tool 存檔的結果編號（regard 規格載入時為 None），供摘要附註與 UI 顯示
         self.last_result_file = None
+        self.last_receipt = None        # 最近一次執行的腳本寫的收據（dispatch._exec_script；沒有寫收據的腳本是 None）
 
         # =========================
         # 🗜️ 滾動摘要與背景壓縮（雙水位線，見檔尾 SOFT_TOKEN_THRESHOLD / KEEP_RECENT_TOKENS 說明）

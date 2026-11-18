@@ -3,6 +3,8 @@
 
 簽名包含 / 前的位置參數、預設值、*args、* 之後的關鍵字參數、**kwargs、型別標註與回傳型別（以前只列一般參數）；常數包含
 有型別標註的（`X: int = 5`）；太長的值截斷。逾時 15 秒。
+收據（_receipt_common，欄位見規格的 receipt）：全部的 def／class（含 _ 開頭的私有項目、不受 MAX_ITEMS 限制）——名稱、所在的類別或函式、
+種類、行號範圍；程式拿搜尋命中的行號就查得到它在哪個函式裡。
 """
 import ast
 import os
@@ -11,6 +13,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _path_common as pc  # noqa: E402
+from _receipt_common import fail, main, result  # noqa: E402
 
 TIMEOUT_SECONDS = 15
 MAX_ITEMS = 400               # 最多列幾個 def／class
@@ -203,29 +206,66 @@ def _timeout_handler(signum, frame):
     raise TimeoutError
 
 
+def _definitions(tree):
+    """全部的 def／class（含私有、巢狀）：名稱、qualname、種類（class／method／function）、行號範圍（start 含 decorator）、所在的類別或函式。"""
+    out = []
+
+    def walk(node, stack):
+        for child in ast.iter_child_nodes(node):
+            if not isinstance(child, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+                walk(child, stack)
+                continue
+            is_class = isinstance(child, ast.ClassDef)
+            parent = stack[-1] if stack else None
+            out.append({"name": child.name, "qualname": ".".join([n for n, _ in stack] + [child.name]),
+                        "kind": "class" if is_class else ("method" if parent and parent[1] == "class" else "function"),
+                        "async": isinstance(child, ast.AsyncFunctionDef), "line": child.lineno,
+                        "start": min([child.lineno] + [d.lineno for d in child.decorator_list]),
+                        "end": getattr(child, "end_lineno", None) or child.lineno, "parent": parent[0] if parent else None,
+                        "private": child.name.startswith("_") and not (child.name.startswith("__") and child.name.endswith("__"))})
+            walk(child, stack + [(child.name, "class" if is_class else "function")])
+
+    walk(tree, [])
+    return out
+
+
+def _constants(tree):
+    out = []
+    for item in tree.body:
+        if isinstance(item, ast.Assign):
+            out += [{"name": t.id, "line": item.lineno} for t in item.targets if isinstance(t, ast.Name) and t.id.isupper()]
+        elif isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name) and item.target.id.isupper():
+            out.append({"name": item.target.id, "line": item.lineno})
+    return out
+
+
 def analyze_ast(file_path, show_docstrings=True, show_private=False):
     abs_path, err = pc.resolve(file_path, "file",
                                dir_hint=f"code_ast_reader 一次讀一個 .py 檔：先用 find_file \"*.py\" {file_path} 找出檔案，再對單一檔案執行")
     if err:
-        return err
+        return fail(err)
     if not _is_python(abs_path):
-        return (f"[ERROR] {file_path} 不是 Python 檔（副檔名不是 .py、第一行也不是 python 的 #!）。"
-                f"下一步：其他語言或設定檔用 view_file 看內容、search_text 找定義。")
+        return fail(f"[ERROR] {file_path} 不是 Python 檔（副檔名不是 .py、第一行也不是 python 的 #!）。"
+                    f"下一步：其他語言或設定檔用 view_file 看內容、search_text 找定義。", "args")
     try:
         with open(abs_path, "r", encoding="utf-8", errors="replace") as f:
             code = f.read()
     except OSError as e:
-        return f"[ERROR] 無法讀取 {file_path}：{e}。下一步：確認路徑與權限。"
+        return fail(f"[ERROR] 無法讀取 {file_path}：{e}。下一步：確認路徑與權限。", "env")
     n_lines = code.count("\n") + (0 if code.endswith("\n") or not code else 1)
     try:
         tree = ast.parse(code, filename=file_path)
     except SyntaxError as se:
         text = (se.text or "").strip()
-        return (f"[ERROR] {file_path} 有語法錯誤，無法解析：第 {se.lineno} 行 {se.msg}" + (f"（{_short(text, 120)}）" if text else "")
-                + f"。下一步：用 view_file {file_path} --from {max(1, (se.lineno or 1) - 5)} --lines 15 看那一段；"
-                  f"如果是 Python 2 的檔案，改用 search_text 找 def／class。")
+        return fail(f"[ERROR] {file_path} 有語法錯誤，無法解析：第 {se.lineno} 行 {se.msg}" + (f"（{_short(text, 120)}）" if text else "")
+                    + f"。下一步：用 view_file {file_path} --from {max(1, (se.lineno or 1) - 5)} --lines 15 看那一段；"
+                      f"如果是 Python 2 的檔案，改用 search_text 找 def／class。", "args")
     visitor = CodeASTVisitor(show_docstrings=show_docstrings, show_private=show_private)
     visitor.visit(tree)
+    defs, consts = _definitions(tree), _constants(tree)
+    result("pass", counts={"lines": n_lines, "classes": sum(1 for d in defs if d["kind"] == "class"),
+                           "functions": sum(1 for d in defs if d["kind"] != "class"), "constants": len(consts)},
+           items=defs, path=abs_path, constants=consts)
     head = f"[PASS] {file_path} 的結構：共 {n_lines} 行；{visitor.n_classes} 個類別、{visitor.n_funcs} 個函式／方法"
     if visitor.n_hidden:
         head += f"；{visitor.n_hidden} 個 _ 開頭的私有項目沒有列（要看加 --private）"
@@ -242,23 +282,22 @@ def analyze_ast(file_path, show_docstrings=True, show_private=False):
     return "\n".join([head] + out)
 
 
-if __name__ == "__main__":
+def execute(argv):
+    file_path, show_docstrings, show_private, err = parse_cli(argv)
+    if err:
+        return fail(err, "args")
+    if hasattr(signal, "SIGALRM"):
+        signal.signal(signal.SIGALRM, _timeout_handler)
+        signal.alarm(TIMEOUT_SECONDS)
     try:
-        file_path, show_docstrings, show_private, err = parse_cli(sys.argv[1:])
-        if err:
-            print(err)
-            sys.exit(0)
+        return analyze_ast(file_path, show_docstrings, show_private)
+    except TimeoutError:
+        return fail(f"[ERROR] 解析 {file_path} 逾時（超過 {TIMEOUT_SECONDS} 秒）：檔案可能非常大。"
+                    f"下一步：用 search_text \"def |class \" {file_path} 列出定義，或用 view_file --from 看需要的那一段。", "timeout")
+    finally:
         if hasattr(signal, "SIGALRM"):
-            signal.signal(signal.SIGALRM, _timeout_handler)
-            signal.alarm(TIMEOUT_SECONDS)
-        try:
-            print(analyze_ast(file_path, show_docstrings, show_private))
-        except TimeoutError:
-            print(f"[ERROR] 解析 {file_path} 逾時（超過 {TIMEOUT_SECONDS} 秒）：檔案可能非常大。"
-                  f"下一步：用 search_text \"def |class \" {file_path} 列出定義，或用 view_file --from 看需要的那一段。")
-        finally:
-            if hasattr(signal, "SIGALRM"):
-                signal.alarm(0)
-    except Exception as e:      # noqa: BLE001
-        print(f"[ERROR] code_ast_reader 未預期的例外：{type(e).__name__}: {e}", file=sys.stderr)
-        sys.exit(1)
+            signal.alarm(0)
+
+
+if __name__ == "__main__":
+    main(execute, "code_ast_reader")
