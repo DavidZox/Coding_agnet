@@ -1,6 +1,6 @@
 """GuardMixin：執行前關卡——會改變實體／外部狀態的技能，執行前一律由程式要求使用者確認（CLI 問 y/n、Web 顯示按鈕）。
 
-跟 Plan 模式的核准關卡同一個原則：確認由程式路徑保證，不靠模型記得要先問。判斷在這裡（guard_check），
+原則：確認由程式路徑保證，不靠模型記得要先問。判斷在這裡（guard_check），
 執行在 DispatchMixin.run_tool：沒有 approved=True 就不執行被擋的技能（CLI／Web 以外的呼叫端也一樣擋得住）。
 哪些技能要擋見 config.GUARDED_SKILLS；各技能的查詢用法放行（docker_runcmd／host_runcmd 的唯讀指令、workpackage_send --dry-run、
 docker_ctl status、ROS2_param get、rmf_handshake status…），參數一律照腳本自己的解析（_guard_parse）判斷，不另外解析。
@@ -214,7 +214,7 @@ class GuardMixin:
 
     def state_change_info(self, parsed):
         """這個 action 會不會改變實體／外部狀態（不看 /guard 開關）：回傳 None 或 {skill, script, command, reason}。
-        guard_check（執行前問使用者）與任務引擎（哪些步驟會改變狀態、worker 的動作有沒有核准）共用。"""
+        guard_check（執行前問使用者）用它；不看開關，所以評測也直接用它判斷。"""
         if not GUARDED_SKILLS:
             return None
         action = (parsed or {}).get("action") if isinstance(parsed, dict) else None
@@ -236,26 +236,17 @@ class GuardMixin:
         args = self._parse_script_args(script_name, remainder)
         if skill not in GUARDED_SKILLS or self._guard_exempt(skill, args):
             return None
-        if skill == "task_run":
-            # 開始：計畫的第一步就要改變狀態時，說明是整份計畫（核准＝計畫裡標明的狀態變更都核准了）；開頭只查詢的先做、要改的部分
-            # 查完再確認（--continue）。只查詢、規劃失敗、取消不用確認，task_run 自己回報
-            reason = self.task_guard_reason(remainder)
-            if reason is None:
-                return None
-        else:
-            reason = _GUARD_REASONS.get(skill, "這個技能會改變系統狀態")
-            if skill in ("docker_runcmd", "docker_ctl"):   # 實際會操作的容器（省略名稱、部分名稱時使用者看得到是哪一個）
-                container = self._guard_parse(skill, args).get("container")
-                if container:
-                    reason += f"；容器：{container}"
+        reason = _GUARD_REASONS.get(skill, "這個技能會改變系統狀態")
+        if skill in ("docker_runcmd", "docker_ctl"):   # 實際會操作的容器（省略名稱、部分名稱時使用者看得到是哪一個）
+            container = self._guard_parse(skill, args).get("container")
+            if container:
+                reason += f"；容器：{container}"
         return {"skill": skill or script_name, "script": script_name,
                 "command": f"scripts/{script_name} {remainder}".strip(), "reason": reason}
 
     @staticmethod
     def guard_prompt_text(info):
         """給使用者看的確認說明（CLI 印出、Web 顯示在確認列上方）。"""
-        if "\n" in info["reason"]:   # task_run：說明是整份計畫
-            return f"🛡️ AI 要執行會改變系統狀態的動作，需要你確認：\n- 技能：{info['skill']}\n{info['reason']}"
         return (f"🛡️ AI 要執行會改變系統狀態的動作，需要你確認：\n"
                 f"- 技能：{info['skill']}（{info['reason']}）\n"
                 f"- 指令：{info['command']}")

@@ -53,11 +53,15 @@ def urls():
 
 def up():
     r = host_docker("inspect", DIND, "--format", "{{.State.Running}}")
-    if r.returncode != 0:
+    running = r.returncode == 0 and r.stdout.strip() == "true"
+    if r.returncode == 0 and not running:
+        # 停著的容器刪掉重建，不用 docker start：/var/run 在容器的寫入層，上一次留下的 containerd.pid 會被新容器裡剛好同號的
+        # 程序「認領」，dockerd 以為 containerd 還在、等到逾時就結束（2026-11-18 連兩次「沙盒 daemon 沒有起來」，紀錄寫
+        # 「containerd is still running」→ timeout）。映像在 volume（<DIND>_data）裡，重建容器不用重拉、不用重建
+        host_docker("rm", "-f", DIND)
+    if not running:
         host_docker("run", "-d", "--privileged", "--name", DIND, "-e", "DOCKER_TLS_CERTDIR=", "-p", f"127.0.0.1:{DIND_PORT}:2375",
                     "-v", f"{DIND}_data:/var/lib/docker", "docker:27-dind")
-    elif r.stdout.strip() != "true":
-        host_docker("start", DIND)
     for _ in range(60):
         if sd("info").returncode == 0:
             break

@@ -17,9 +17,7 @@ def _d(key, /, **fields):
 # 腳本輸出最後幾行的狀態標記（見 _trailing_markers；規範見 doc/技能撰寫規範.md）：跟腳本共用同一份清單（_shell_common.protect_tail 也用它）
 from skills_system.scripts._shell_common import STATE_MARKERS  # noqa: E402
 
-# 任務引擎（agent_core/task_engine.py）：在 _run_tool_once 裡攔下、交給 TaskMixin
-TASK_PSEUDO_SCRIPTS = ("task_run_cmd.py",)
-# 數據分析（agent_core/analysis_job.py，全部由程式做）：同上，交給 AnalysisMixin
+# 數據分析（agent_core/analysis_job.py，全部由程式做）：在 _run_tool_once 裡攔下、交給 AnalysisMixin
 ANALYSIS_PSEUDO_SCRIPTS = ("analysis_run_cmd.py",)
 
 
@@ -239,13 +237,6 @@ class DispatchMixin:
             clean_args = self._parse_script_args(script_name, remainder)
             # 軌跡記錄用：執行「前」的狀態
             cwd_before, container_before, target_before = self.current_cwd, self.container_cwd, self.target_container
-            if script_name in TASK_PSEUDO_SCRIPTS:
-                # 偽技能（同 result_recall）：規劃與執行要呼叫模型，在本 process 內做（agent_core/task_engine.py）；腳本檔只是讓
-                # 存在性檢查與確認關卡（task_run）照常運作，所以攔在關卡之後。記一筆軌跡：報告有存檔編號，之後可以 result_recall；
-                # 每一步 worker 的工具輸出也各自記軌跡（#編號，報告裡的事實引用它們）
-                output_text = self.task_run(remainder)
-                self._record_trajectory(script_name, clean_args, output_text, cwd_before, container_before, target_before)
-                return output_text
             if script_name in ANALYSIS_PSEUDO_SCRIPTS:
                 # 偽技能：在本 process 內做（agent_core/analysis_job.py：job 資料夾、進度推到 Web 右欄、目前的數據同步）；
                 # 報告記一筆軌跡並存檔（#編號），之後可以 result_recall

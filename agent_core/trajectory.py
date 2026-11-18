@@ -64,8 +64,6 @@ class TrajectoryMixin:
             "status": status,
             "output_head": output_text[:TRAJECTORY_OUTPUT_HEAD],
             "task": self.current_task or "",
-            "task_job": ((getattr(self, "task_job", None) or {}).get("id")
-                         if (getattr(self, "task_job", None) or {}).get("status") == "running" else None),   # 任務引擎的 worker 做的
         }
         record["result_file"] = self._archive_tool_result(record, output_text)
         self.last_result_id = record["id"] if record["result_file"] else None
@@ -74,14 +72,14 @@ class TrajectoryMixin:
         self._append_trajectory_log(record)
         return record
 
-    def add_trajectory_boundary(self, reason, **extra):
-        """在軌跡記一個起點（/clear、計畫核准）；連續的起點只留一個。"""
+    def add_trajectory_boundary(self, reason):
+        """在軌跡記一個起點（/clear）；連續的起點只留一個。"""
         if not self.trajectory:
             return None  # 什麼都還沒執行（例如啟動時的 reset_conversation），不需要起點
-        if self.trajectory[-1]["kind"] == "boundary" and not extra:
-            return None  # 連續的一般起點只留一個；帶資料的起點（計畫核准）一律記
+        if self.trajectory[-1]["kind"] == "boundary":
+            return None  # 連續的起點只留一個
         record = {"id": self._next_id(), "kind": "boundary", "ts": time.strftime("%m-%d %H:%M:%S"),
-                  "reason": reason, **extra}
+                  "reason": reason}
         self.trajectory.append(record)
         self._append_trajectory_log(record)
         return record
@@ -111,13 +109,11 @@ class TrajectoryMixin:
         """/trajectory：列出本次 session 的軌跡（編號、成功／失敗、指令、所屬技能、起點）。"""
         if not self.trajectory:
             return "本次 session 尚未記錄任何腳本執行。"
-        labels = {"clear": "/clear", "plan_confirmed": "計畫核准"}
+        labels = {"clear": "/clear"}
         lines = ["🧭 操作軌跡（✅ 成功 / ❌ 失敗；#編號＝工具結果存檔的編號）："]
         for r in self.trajectory:
             if r["kind"] == "boundary":
                 label = labels.get(r["reason"], r["reason"])
-                if r.get("name"):
-                    label += f" {r['name']}"
                 lines.append(f"── 起點 #{r['id']}：{label}（{r['ts']}）──")
             else:
                 mark = "✅" if r["status"] == "PASS" else "❌"

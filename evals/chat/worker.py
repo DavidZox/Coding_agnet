@@ -131,23 +131,16 @@ def main():
     for spec in sc["turns"]:
         t0 = time.time()
         perf_before = len(agent.perf_calls)
-        agent.end_plan_for_new_task()
         agent.set_current_task(spec["user"])
         agent.messages.append({"role": "user", "content": spec["user"]})
         turn = {"user": spec["user"], "steps": [], "tool_calls": [], "guards": [], "final_reply": "", "hit_step_limit": False}
         for _ in range(MAX_STEPS):
-            parsed = agent.take_task_continuation()      # 任務引擎等確認：同 CLI／Web，不經過模型直接接著問
-            if parsed:
-                raw = parsed["raw"]
-            else:
-                raw = agent.ask_ai()
-                parsed = agent.parse_reply(raw)
+            raw = agent.ask_ai()
+            parsed = agent.parse_reply(raw)
             agent.messages.append({"role": "assistant", "content": raw})
             turn["steps"].append({"thought": parsed["thought"], "reply": parsed["reply"],
-                                  "action": action_text(parsed["action"]) if parsed["action"] else None, "valid": parsed["valid"],
-                                  "harness": bool(parsed.get("raw"))})
-            if not parsed.get("raw"):
-                turn["final_reply"] = parsed["reply"]
+                                  "action": action_text(parsed["action"]) if parsed["action"] else None, "valid": parsed["valid"]})
+            turn["final_reply"] = parsed["reply"]
             guard = agent.guard_check(parsed)
             if guard:
                 turn["guards"].append(guard)

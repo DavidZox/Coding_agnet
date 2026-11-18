@@ -13,12 +13,9 @@ from .flows import (
     _run_vision_subsession,
     apply_decision,
     build_stats,
-    clear_plan_for_new_task,
     DEFAULT_VISION_PROMPT,
-    handle_plan_response,
     run_analysis_turn,
     run_turn,
-    start_plan_flow,
 )
 from .state import (
     agent,
@@ -117,15 +114,14 @@ class ConsoleHandler(BaseHTTPRequestHandler):
         """推出最後一行 done：帶前端收尾要用的旗標與最新 stats。"""
         stream.done(
             awaiting_decision=awaiting_decision,
-            awaiting_plan=agent.plan_status() == "draft",
             pending_mode=pending["mode"] if awaiting_decision else None,
         )
 
     def _finish_turn(self, stream, awaiting_decision):
-        """回合真正結束（不在等決策、也沒有計畫待核准）時的收尾：先做軟水位檢查再送 done。
+        """回合真正結束（不在等決策）時的收尾：先做軟水位檢查再送 done。
         AI 的最終回覆事件早已串流到前端，這裡的壓縮不影響使用者看到答案的時間；
         /parallel_cal on 時壓縮在背景執行緒進行，done 會立刻送出。"""
-        if not awaiting_decision and agent.plan_status() != "draft":
+        if not awaiting_decision:
             after_turn_compression(
                 agent, state["parallel_cal"],
                 lambda text: stream.append({"channel": "system", "text": text}),
@@ -244,7 +240,7 @@ class ConsoleHandler(BaseHTTPRequestHandler):
         data = self._read_json()
         with lock:
             stream = self._begin_stream()
-            # ⏳ 偽技能（analysis_run、task_run）執行中的進度：推到右欄（analysis 的 worker 平行時由 analysis_job 上鎖後才呼叫）
+            # ⏳ 偽技能（analysis_run）執行中的進度：推到右欄（analysis 的 worker 平行時由 analysis_job 上鎖後才呼叫）
             agent.progress_callback = lambda text: stream.append({"channel": "progress", "text": text})
             try:
                 if self.path == "/api/send":
@@ -323,20 +319,6 @@ class ConsoleHandler(BaseHTTPRequestHandler):
             self._finish(stream, True)
             return
 
-        # 有計畫待核准時，輸入框的內容一律視為對計畫的回應（y／n／修改意見），
-        # 不當作新指令或 slash command 處理——跟 CLI 版 _run_plan_flow 的
-        # input() 迴圈行為一致。
-        if agent.plan_status() == "draft":
-            outcome = handle_plan_response(message, stream)
-            awaiting_decision = False
-            if outcome == "approved":
-                awaiting_decision = run_turn(stream)
-            if outcome == "edited":
-                self._finish(stream, False)  # 仍在規劃中，不算回合結束
-            else:
-                self._finish_turn(stream, awaiting_decision)  # 核准後跑完、或取消，都是回合結束
-            return
-
         if not message:
             if vision_session.count() == 0 and not pending_skill_names():
                 self._finish(stream, False)
@@ -348,7 +330,6 @@ class ConsoleHandler(BaseHTTPRequestHandler):
             # 📊 /analyze [問題]：直接交給數據分析（跟主模型選用 analysis_run 一樣，報告進主對話、可以接著追問）
             question = message[len("/analyze"):].strip()
             stream.append({"channel": "chat", "role": "user", "text": message, "tokens": agent.count_tokens(message)})
-            clear_plan_for_new_task(stream)
             agent.set_current_task(question or message)
             agent.messages.append({'role': 'user', 'content': question or prompt_files.load("harness/direct_commands.md", "analyze_default_question")})
             self._finish_turn(stream, run_analysis_turn(question, stream))
@@ -358,7 +339,7 @@ class ConsoleHandler(BaseHTTPRequestHandler):
             self._finish(stream, False)  # slash 指令不消耗附件
             return
 
-        # 📷📘 只有「新任務」才消費附件與手動載入的技能規格（slash 指令與計畫核准／修改意見不會）
+        # 📷📘 只有「新任務」才消費附件與手動載入的技能規格（slash 指令不會）
         attachments = vision_session.take_all_items()
         skill_items = take_all_pending_skills()
 
@@ -370,15 +351,12 @@ class ConsoleHandler(BaseHTTPRequestHandler):
             "skills": [name for name, _ in skill_items],
         })
 
-        # 新任務開始：任務引擎還沒接著問的確認不再自動接著問（見 clear_plan_for_new_task）
-        clear_plan_for_new_task(stream)
-
         # 記下使用者這句話（任務線：最近 3 句），跟 CLI 版（agent_core.cli.main）一致；
         # 獨立 session 摘要或 recall 時拿它當「使用者的目標」的一部分（見 SkillAgent._build_task_anchor_text）
         agent.set_current_task(message)
 
         # 有附加影像：先跑獨立視覺 sub-session，把分析結果以文字併入這次的使用者訊息，
-        # 之後不論是 plan 模式還是直接執行，主 Agent 拿到的都是「原文 + 影像分析」的純文字
+        # 主 Agent 拿到的是「原文 + 影像分析」的純文字
         content = _run_vision_subsession(message, attachments, stream) if attachments else message
 
         # 📘 手動載入的技能規格附在這則訊息後面（AI 可直接依規格裡的腳本路徑執行，省掉一輪「先載規格」）
@@ -395,11 +373,6 @@ class ConsoleHandler(BaseHTTPRequestHandler):
             # 📊 分析模式：問題直接交給數據分析（附圖的分析文字一起當成問題的一部分）；報告照一般工具結果進主對話
             agent.messages.append({'role': 'user', 'content': content})
             self._finish_turn(stream, run_analysis_turn(content, stream))
-            return
-
-        if state["plan_mode"]:
-            start_plan_flow(content, stream)
-            self._finish(stream, False)
             return
 
         agent.messages.append({'role': 'user', 'content': content})

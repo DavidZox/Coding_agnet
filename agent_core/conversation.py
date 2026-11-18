@@ -24,10 +24,7 @@ class ConversationMixin:
     def reset_conversation(self):
         self.begin_turn()
         self._analysis_ctx = None   # /clear：之後的回答不再對照上一份數據分析的報告（turn_guard.analysis_reply_check）
-        self.plan_clear()         # /clear 時一併清掉草稿與進行中的計畫，避免舊計畫殘留誤導新任務
-        self.task_job = None      # 同上：還沒開始、停下來等確認的任務（任務引擎）
-        self.task_pending_approval = None
-        self.current_task = None  # 同上，避免舊任務敘述殘留誤導下一次的摘要 session
+        self.current_task = None  # /clear：避免舊任務敘述殘留誤導下一次的摘要 session
         self.task_history = []
         self.add_trajectory_boundary("clear")  # 軌跡本身保留（/trajectory 仍看得到），只記一個起點
         # 原地替換而不重綁 list：背景壓縮執行緒若正在對舊 list 做原地刪除，不會操作到已被丟棄的物件

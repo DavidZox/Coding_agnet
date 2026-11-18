@@ -1,4 +1,4 @@
-"""CLI 介面（python3 Agent_Runner.py）：互動迴圈、slash 指令、Plan 模式的終端機流程。"""
+"""CLI 介面（python3 Agent_Runner.py）：互動迴圈、slash 指令。"""
 
 from . import prompt_files
 from .agent import SkillAgent
@@ -16,25 +16,6 @@ from .protocol import attach_skill_docs, is_exempt_result, tool_result_message
 from .turn import _append_discarded_tool_result, _content_for_context, after_turn_compression, context_kind, oversized_notice
 
 _DIRECT = "harness/direct_commands.md"   # /analyze 替使用者與 AI 放進主對話的那兩則
-
-
-def _run_plan_flow(agent, user_task=None):
-    """/plan 模式（草稿與規則在 agent_core/plan.py）：user_task 有值時先讓任務引擎規劃第一版草稿；接著等使用者
-    y 核准／n 取消／/plan 指令直接改／其他文字＝用說的改（AI 只提出要改哪幾條，harness 套用）。
-
-    安全設計：規劃階段自始至終不會呼叫 agent.run_tool()，也不碰主對話——確認關卡是靠「這個函式根本不執行工具」保證的。
-    回傳 True 代表使用者已核准（任務原文已加入主對話；接著的 execute_turn 一開始由 harness 直接請任務引擎照計畫做），False 代表取消。
-    """
-    if user_task is not None:
-        print("📝 規劃中（任務引擎的規劃，不進主對話）…")
-        print(f"\n📝 計畫草稿:\n{'-'*30}\n{agent.plan_start_draft(user_task)}\n{'-'*30}")
-    while True:
-        outcome, msg = agent.plan_handle_input(input("\n📝 計畫> "))
-        print(msg)
-        if outcome == "approved":
-            return True
-        if outcome == "rejected":
-            return False
 
 
 def _context_content_for_cli(agent, result, tool_tokens, use_summary):
@@ -99,7 +80,6 @@ def main():
     tool_summary_mode = TOOL_SUMMARY_DEFAULT  # 👈 工具回傳超過門檻時交給獨立 session 做任務導向摘要（預設開；/summarize off 改成只給成功／失敗）
     parallel_cal = PARALLEL_CAL_DEFAULT  # 👈 軟水位壓縮改在背景執行緒做（需 Ollama 有 ≥2 個 parallel slot 才真的平行）
     pending_skill_blocks = []  # 👈 /skill <名稱> 手動載入的技能規格，隨下一則新任務訊息一起送出
-    plan_mode = False  # 👈 開啟後，下一個新任務先規劃、經使用者核准後才執行；核准即自動退出
 
     print("\n" + "="*50)
     print("ROS 2 數據解析 Agent + Token Tracker 已啟動（/analyze [問題]＝數據分析：事實報告）")
@@ -113,27 +93,21 @@ def main():
         """一個回合：反覆 ask_ai → 執行前確認 → run_tool → 依 auto／hybrid／manual 決定結果怎麼加入，直到模型不再下 action；
         最後做軟水位檢查。模式變數（auto_mode 等）由外層的 slash 指令改，這裡只讀。"""
         while True:
-            # --- 🧭 任務引擎查完、要改的步驟等使用者確認（或 Plan 模式剛核准）：harness 直接接著做，不經過模型 ---
-            parsed = agent.take_task_continuation()
-            if parsed:
-                print(f"\n🧭 {parsed['reply']}（{parsed['action']['args']}）")
-                agent.messages.append({'role': 'assistant', 'content': parsed["raw"]})
-            else:
-                # --- 🧠 AI 推論 ---
-                ai_msg = agent.ask_ai()
-                ai_tokens = agent.last_ai_tokens(ai_msg)
-                agent.total_ai_tokens += ai_tokens
-                if agent.auto_cleared:
-                    print(f"🧹 上下文超過門檻，呼叫前先把 {agent.auto_cleared['results']} 則舊的工具回傳清成存檔編號"
-                          f"（騰出約 {agent.auto_cleared['tokens']} tokens，原文仍在存檔）。")
-                if agent.auto_compressed:
-                    print("📦 上下文超過門檻，呼叫前已自動壓縮並歸檔。")
-                parsed = agent.parse_reply(ai_msg)  # 回覆協議：顯示 reply／thought，執行只看 action
-                if agent.last_reply_retry:
-                    print(agent.last_reply_retry)
-                print(f"\n🧠 AI:\n{'-'*30}\n{agent.format_reply_for_console(parsed)}\n{'-'*30}")
-                print(f"📤 AI Tokens: {ai_tokens}")
-                agent.messages.append({'role': 'assistant', 'content': ai_msg})
+            # --- 🧠 AI 推論 ---
+            ai_msg = agent.ask_ai()
+            ai_tokens = agent.last_ai_tokens(ai_msg)
+            agent.total_ai_tokens += ai_tokens
+            if agent.auto_cleared:
+                print(f"🧹 上下文超過門檻，呼叫前先把 {agent.auto_cleared['results']} 則舊的工具回傳清成存檔編號"
+                      f"（騰出約 {agent.auto_cleared['tokens']} tokens，原文仍在存檔）。")
+            if agent.auto_compressed:
+                print("📦 上下文超過門檻，呼叫前已自動壓縮並歸檔。")
+            parsed = agent.parse_reply(ai_msg)  # 回覆協議：顯示 reply／thought，執行只看 action
+            if agent.last_reply_retry:
+                print(agent.last_reply_retry)
+            print(f"\n🧠 AI:\n{'-'*30}\n{agent.format_reply_for_console(parsed)}\n{'-'*30}")
+            print(f"📤 AI Tokens: {ai_tokens}")
+            agent.messages.append({'role': 'assistant', 'content': ai_msg})
 
             # --- 🛡️ 執行前關卡：會改變系統狀態的技能先問使用者（程式擋，不靠模型記得要問）---
             guard = agent.guard_check(parsed)
@@ -146,7 +120,7 @@ def main():
 
             # --- 🧰 TOOL 執行（只看 action 欄位，reply 裡的文字不會被執行）---
             result = agent.run_tool(parsed, approved=bool(guard))
-            for notice in agent.pop_notices():   # 計畫換下一步、連續失敗退出等
+            for notice in agent.pop_notices():   # 卡住偵測、背景壓縮完成等
                 print(notice)
             tool_tokens = 0
             if result:
@@ -233,7 +207,6 @@ def main():
                 import json as _json
                 question = user_msg.strip()[len("/analyze"):].strip()
                 agent.set_current_task(question or user_msg.strip())
-                agent.end_plan_for_new_task()
                 agent.messages.append({'role': 'user', 'content': question or prompt_files.load(_DIRECT, "analyze_default_question")})
                 # 「/analyze --data exp_x 問題」的選項照原樣交給 analysis_run（跟 Web 共用 analyze_command_args）
                 action = {"command": "scripts/analysis_run_cmd.py", "args": agent.analyze_command_args(question)}
@@ -317,30 +290,8 @@ def main():
                 pending_skill_blocks.append(block)
                 print(f"\n📘 已載入技能 {name} 的規格（≈{agent.count_tokens(block)} tokens），會隨你下一則訊息一起送出：\n{'-'*30}\n{block}\n{'-'*30}")
                 continue
-            if user_msg.lower() == '/plan on':
-                plan_mode = True
-                print("📝 已開啟 Plan 模式（下一個新任務會先規劃步驟，經你核准後才執行；核准後自動退出）")
-                continue
-            if user_msg.lower() == '/plan off':
-                plan_mode = False
-                print("📝 已關閉 Plan 模式（恢復直接執行）")
-                continue
             if user_msg.lower() == '/trajectory':
                 print(agent.format_trajectory())
-                continue
-            if user_msg.lower() == '/plan done':
-                if agent.plan:
-                    agent.plan_clear()
-                    print("✅ 已清除計畫草稿")
-                else:
-                    print("ℹ️ 目前沒有計畫草稿")
-                continue
-            # /plan add|insert|edit|del|move|show：使用者直接改草稿（不經過模型）；有草稿時進入核准流程
-            handled, plan_msg = agent.plan_edit_command(user_msg)
-            if handled:
-                print(plan_msg)
-                if agent.plan_status() == "draft" and _run_plan_flow(agent):
-                    execute_turn()
                 continue
             if user_msg.lower() == '/context_mode' or user_msg.lower().startswith('/context_mode '):
                 arg = user_msg[len('/context_mode'):].strip()
@@ -383,11 +334,6 @@ def main():
             agent.total_user_tokens += user_tokens
             print(f"📥 User Tokens: {user_tokens}")
 
-            # 新訊息：任務引擎還沒接著問的確認不再自動接著問（停下來的任務留著，要繼續由 AI 用 task_run --continue）
-            cleared_note = agent.end_plan_for_new_task()
-            if cleared_note:
-                print(cleared_note)
-
             # 記下使用者這句話（任務線：最近 3 句），獨立 session 摘要或 recall 時
             # 拿它當「使用者的目標」的一部分（見 _build_task_anchor_text）
             agent.set_current_task(user_msg)
@@ -400,16 +346,7 @@ def main():
                 print(f"📘 隨訊息載入 {len(pending_skill_blocks)} 份技能規格")
                 pending_skill_blocks.clear()
 
-            # --- 📝 PLAN 模式：先規劃、經使用者核准才進入下面的執行迴圈 ---
-            if plan_mode:
-                if not _run_plan_flow(agent, content):
-                    after_turn_compression(agent, parallel_cal, print)  # 取消也算回合結束
-                    continue  # 使用者取消了計畫，維持 Plan 模式，回到最上層等待新的輸入
-                # 核准即退出 Plan 模式：規劃階段結束，這個任務依計畫執行，下一個新任務直接執行
-                plan_mode = False
-                print("📝 計畫已核准，已自動退出 Plan 模式（要再規劃下一個任務請重新 /plan on）")
-            else:
-                agent.messages.append({'role': 'user', 'content': content})
+            agent.messages.append({'role': 'user', 'content': content})
 
             execute_turn()
 

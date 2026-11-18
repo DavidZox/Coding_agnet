@@ -21,8 +21,6 @@ SLASH_COMMANDS = [
     {"cmd": "/hybrid off", "desc": "關閉 Hybrid", "group": "模式開關"},
     {"cmd": "/summarize on", "desc": "超過門檻的工具回傳由獨立 session 依任務擷取重點（預設）", "group": "模式開關"},
     {"cmd": "/summarize off", "desc": "改為只給成功／失敗判定（不多花一次模型呼叫）", "group": "模式開關"},
-    {"cmd": "/plan on", "desc": "下一個新任務先由任務引擎規劃、你看過改過核准後照計畫做（核准後自動退出）", "group": "模式開關"},
-    {"cmd": "/plan off", "desc": "關閉 Plan 模式", "group": "模式開關"},
     {"cmd": "/parallel_cal on", "desc": "軟水位壓縮改在背景執行緒進行", "group": "模式開關"},
     {"cmd": "/parallel_cal off", "desc": "壓縮改回序列處理", "group": "模式開關"},
     {"cmd": "/context_mode harness", "desc": "上下文模式：harness 替模型做決定（大量回傳由獨立 session 擷取重點，預設）", "group": "模式開關"},
@@ -33,11 +31,6 @@ SLASH_COMMANDS = [
     {"cmd": "/skills", "desc": "列出所有可用技能", "group": "動作與查詢"},
     {"cmd": "/menu", "desc": "顯示完整指令說明", "group": "動作與查詢"},
     {"cmd": "/compress", "desc": "手動壓縮並歸檔目前的歷史對話", "group": "動作與查詢"},
-    {"cmd": "/plan done", "desc": "清除目前的計畫草稿", "group": "動作與查詢"},
-    {"cmd": "/plan add ", "desc": "計畫加一步（/plan add <技能>：<要做什麼>；沒有草稿時開一份新的）", "group": "動作與查詢", "args": True},
-    {"cmd": "/plan edit ", "desc": "改計畫的第 N 步（/plan edit <N> <技能>：<要做什麼>）", "group": "動作與查詢", "args": True},
-    {"cmd": "/plan del ", "desc": "刪計畫的第 N 步", "group": "動作與查詢", "args": True},
-    {"cmd": "/plan show", "desc": "顯示目前的計畫草稿", "group": "動作與查詢"},
     {"cmd": "/context_mode", "desc": "查看目前的上下文模式", "group": "動作與查詢"},
     {"cmd": "/trajectory", "desc": "列出本次 session 記錄到的腳本執行軌跡（步驟編號、成功／失敗）", "group": "動作與查詢"},
     {"cmd": "/objective set ", "desc": "設定 Sticky Objective（後面接內容）", "group": "動作與查詢", "args": True},
@@ -71,9 +64,6 @@ MENU_TEXT = """可用指令：
 /hybrid on / /hybrid off 切換 Hybrid 模式（每次工具結果都詢問是否加入上下文）
 /summarize on / /summarize off 切換工具回傳的任務導向摘要（見下方說明，預設開啟）
 /parallel_cal on / /parallel_cal off 切換平行壓縮（回合結束後的軟水位壓縮改在背景執行緒做，預設關閉）
-/plan on / /plan off    開啟 Plan 模式：下一個新任務會先由任務引擎規劃步驟，經你核准後才照計畫做；核准後自動退出（預設關閉）
-/plan done              清除目前的計畫草稿
-/plan add|insert|edit|del|move|show  直接改計畫草稿（不經過 AI），例：/plan add ROS2_topic_echo：讀 /odom 一筆
 /context_mode [模式]    查看或切換上下文模式：harness（預設）／claude_code，見下方說明
 /guard on / /guard off  執行前關卡（預設開啟）：會改變系統狀態的技能執行前先問你
 /objective set <內容>   設定 Sticky Objective（最高優先任務，會持續提醒 AI）
@@ -87,7 +77,7 @@ MENU_TEXT = """可用指令：
 ↑↓ 移動、Enter／Tab 選取、Esc 關閉，也可以繼續打字過濾。選指令只會填入輸入框、要再按
 Enter 才送出（避免誤點 /clear）；選技能等同 /skill <名稱>：規格立刻顯示在右欄、輸入框上方
 出現 📘 chip，下一則訊息送出時附在後面，AI 就能直接依規格裡的腳本路徑執行，省掉一輪
-「先載規格」。chip 可個別移除；slash 指令、計畫回應、工具決策不會消耗它。
+「先載規格」。chip 可個別移除；slash 指令、工具決策不會消耗它。
 
 標題列的 🧠 是主對話用的模型：點一下可以換模型，模型支援 thinking 時旁邊會有
 thinking 開關（Ollama 的 think 模式：先想再回答，比較慢；思考內容顯示在右欄的「🧠 模型的思考」卡片，不進對話）。
@@ -105,16 +95,6 @@ AI 的每一次回覆都是固定的 JSON（thought／reply／action），由 Ol
 （有 action 時附一行「▶ action」），右欄多一張灰色「💭 思考」卡片。系統只看 action 欄位決定要不要
 載入規格或執行腳本，reply 裡不論寫了什麼指令文字都不會被執行；回覆不是合法 JSON 時降級為純文字顯示、
 該輪不執行任何東西。
-
-開啟 /plan on 後，輸入新任務時 AI 不會馬上執行，而是由任務引擎列出步驟草稿（每一步的目標、技能、會不會改變狀態、
-做完怎麼檢查），草稿由系統保存、不進主對話。改草稿有兩種方式：直接下 /plan add／insert／edit／del／move（不經過 AI，最穩），
-或在輸入框用說的（例如「第二步改成先看 topic 清單」）——AI 只提出要改哪幾條，由系統套用，不會重寫整份。
-也可以不開 /plan on，直接 /plan add 一條條自己列。規劃與修改都不會呼叫任何工具。
-
-按「✅ 核准並執行」（或打 y）後，計畫裡標明會改變狀態的步驟就都核准了，任務引擎照這份計畫一步一步派執行者做、每一步由系統
-檢查（Plan 模式不會自己重排計畫），報告進主對話後 AI 依報告回答；同時自動退出 Plan 模式。
-不開 Plan 模式時，複雜的任務 AI 會用 task_run 交給同一個任務引擎：只查詢的步驟先做，查完照查到的事實排要改的步驟，
-要改的部分系統會直接請你確認。
 
 上下文模式（/context_mode）決定工具回傳怎麼進主對話，兩種都會把完整原文存成 #編號：
 - harness（預設，下一段的說明）：harness 替模型做決定，大量回傳由獨立 session 依問題擷取重點、附下一步建議。
@@ -148,7 +128,7 @@ web_console 那台機器的螢幕。送出訊息時，附加的影像先由獨�
 主 Agent（右欄會多一張「🖼️ 視覺分析」卡片），主對話本身維持純文字，不影響
 壓縮與 token 統計。視覺分析結果不套用工具回傳的精簡門檻（它是影像唯一的文字
 表示），超過門檻時卡片會標 ⚠️ 待確認提醒你留意長度。影像只在送出一次新任務時使用，送出後即清空；slash 指令
-與計畫核准／修改意見不會消耗附加的影像。只附圖不打字送出時，會用預設的
+不會消耗附加的影像。只附圖不打字送出時，會用預設的
 「請描述這些影像的內容」當作提示詞。
 
 Token 計量：AI 回覆與整體上下文大小以 Ollama 回報的精確值為準（eval_count／
@@ -231,25 +211,6 @@ def handle_slash_command(message, events):
     if lower == "/summarize off":
         state["tool_summary_mode"] = False
         events.append({"channel": "system", "text": "🧠 已關閉工具回傳的任務導向摘要：超過門檻的結果只給 AI 成功/失敗判定（不多花一次模型呼叫）"})
-        return True
-    if lower == "/plan on":
-        state["plan_mode"] = True
-        events.append({"channel": "system", "text": "📝 已開啟 Plan 模式（下一個新任務會先規劃步驟，經你核准後才執行；核准後自動退出）"})
-        return True
-    if lower == "/plan off":
-        state["plan_mode"] = False
-        events.append({"channel": "system", "text": "📝 已關閉 Plan 模式（恢復直接執行）"})
-        return True
-    if lower == "/plan done":
-        if agent.plan:
-            agent.plan_clear()
-            events.append({"channel": "system", "text": "✅ 已清除計畫草稿"})
-        else:
-            events.append({"channel": "system", "text": "ℹ️ 目前沒有計畫草稿"})
-        return True
-    handled, plan_msg = agent.plan_edit_command(text)   # /plan add|insert|edit|del|move|show：直接改草稿，不經過模型
-    if handled:
-        events.append({"channel": "plan", "text": plan_msg})
         return True
     if lower == "/context_mode" or lower.startswith("/context_mode "):
         arg = text[len("/context_mode"):].strip()

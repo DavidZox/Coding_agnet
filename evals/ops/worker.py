@@ -4,9 +4,7 @@
 環境變數：EVAL_MODEL、OPS_FS_ROOT（檔案沙盒＝agent 的工作目錄）、DOCKER_HOST（沙盒 daemon）、RMF_WEB_CONSOLE_URL（沙盒的調度系統）。
 
 跟 evals/chat/worker.py 一樣比照 CLI 的 auto 模式（工具結果自動加入上下文、連續執行到模型不再下 action），差別是工具都真的執行
-（在沙盒裡），確認關卡依情境自動回答。任務引擎（task_run）在主對話的回合裡同步執行：查完停下來等確認時，跟 CLI 一樣不經過模型
-直接接著問（take_task_continuation），確認跟其他確認關卡一樣依情境回答；每一回合記下執行過的任務（每一版計畫、每一步的狀態、
-worker 的工具呼叫與核對過的事實）。模型呼叫數另外計數：agent.perf_calls 只留最近 200 筆，task_run 一次可能就用掉上百次。"""
+（在沙盒裡），確認關卡依情境自動回答。模型呼叫數另外計數（agent.perf_calls 只留最近 200 筆）。"""
 import json
 import os
 import sys
@@ -44,22 +42,15 @@ def main():
     for spec in sc["turns"]:
         t0 = time.time()
         perf_before = len(all_perf)
-        task_before = getattr(agent, "task_last", None)
-        agent.end_plan_for_new_task()
         agent.set_current_task(spec["user"])
         agent.messages.append({"role": "user", "content": spec["user"]})
         turn = {"user": spec["user"], "steps": [], "tool_calls": [], "guards": 0, "hit_step_limit": False}
         for _ in range(MAX_STEPS):
-            parsed = agent.take_task_continuation()      # 任務引擎等確認：同 CLI，不經過模型直接接著問
-            if parsed:
-                raw = parsed["raw"]
-            else:
-                raw = agent.ask_ai()
-                parsed = agent.parse_reply(raw)
+            raw = agent.ask_ai()
+            parsed = agent.parse_reply(raw)
             agent.messages.append({"role": "assistant", "content": raw})
             turn["steps"].append({"thought": parsed["thought"], "reply": parsed["reply"],
-                                  "action": action_text(parsed["action"]) if parsed["action"] else None, "valid": parsed["valid"],
-                                  "harness": bool(parsed.get("raw"))})
+                                  "action": action_text(parsed["action"]) if parsed["action"] else None, "valid": parsed["valid"]})
             if parsed["reply"]:
                 replies.append(parsed["reply"])
             guard = agent.guard_check(parsed)
@@ -93,17 +84,6 @@ def main():
                 break
         else:
             turn["hit_step_limit"] = True
-        job = getattr(agent, "task_last", None)
-        if job is None or job is task_before:
-            job = getattr(agent, "task_job", None)        # 停下來等確認、被拒絕的任務也記
-            job = job if job is not None and job is not task_before and job.get("status") != "planned" else None
-        if job is not None:                               # 這一回合執行過 task_run（只記最後一次）
-            turn["task_jobs"] = [{"id": job["id"], "status": job["status"], "model_calls": job.get("model_calls"),
-                                  "seconds": job.get("seconds"), "task": job["task"], "replans": job.get("replans"),
-                                  "plans": job.get("plans"),
-                                  "items": [{k: it.get(k) for k in ("n", "title", "skills", "changes_state",
-                                                                    "approved", "check", "status", "attempts", "steps", "summary",
-                                                                    "facts", "dropped", "evidence", "calls")} for it in job["items"]]}]
         after_turn_compression(agent, False, lambda text: turn.setdefault("notices", []).append(text))
         perf = all_perf[perf_before:]
         turn["main_calls"] = sum(1 for p in perf if p["kind"] == "main")

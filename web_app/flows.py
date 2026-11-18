@@ -1,4 +1,4 @@
-"""回合流程：run_turn（ask_ai → run_tool 迴圈）、工具結果的決策、Plan 模式、技能草稿、附圖的視覺 sub-session、狀態列。"""
+"""回合流程：run_turn（ask_ai → run_tool 迴圈）、工具結果的決策、附圖的視覺 sub-session、狀態列。"""
 from vision import (
     DEFAULT_MODEL as VISION_MODEL,
     VisionError,
@@ -65,8 +65,6 @@ def build_stats():
         "guard": agent.guard_enabled,          # 執行前關卡（/guard on|off）
         "memory_dropped": agent.memory_dropped,
         "tool_summary_mode": state["tool_summary_mode"],
-        "plan_mode": state["plan_mode"],
-        "plan": agent.plan_stats(),   # 等核准的計畫草稿（/plan）
         "current_cwd": agent.current_cwd,
         "container_cwd": agent.container_cwd,
         "target_container": agent.target_container,
@@ -203,34 +201,6 @@ def _emit_reply_meta(parsed, events):
         events.append({"channel": "thought", "text": parsed["thought"]})
 
 
-def start_plan_flow(user_task, events):
-    """/plan 模式：任務引擎規劃第一版草稿（agent_core/plan.py；不進主對話），推到前端等使用者核准或修改。"""
-    events.append({"channel": "system", "text": "📝 規劃中（任務引擎的規劃，不進主對話）…"})
-    events.append({"channel": "plan", "text": agent.plan_start_draft(user_task)})
-
-
-def handle_plan_response(text, events):
-    """草稿等待核准時使用者的輸入（y／n／/plan 指令／用說的改，規則在 SkillAgent.plan_handle_input，與 CLI 共用）。
-
-    安全設計跟 CLI 版一致：這個函式從頭到尾不會呼叫 agent.run_tool()，確認關卡不依賴 AI 是否遵守「先別執行」的指示。
-    回傳 "approved" / "rejected" / "edited"。
-    """
-    outcome, msg = agent.plan_handle_input(text)
-    if outcome == "approved":
-        events.append({"channel": "system", "text": msg})
-        # 核准即退出 Plan 模式：Plan 模式的意義是「下一個新任務先規劃」，規劃階段到此結束。接著的 run_turn 一開始由 harness
-        # 直接請任務引擎照計畫做（take_task_continuation），報告進主對話後 AI 依報告回答
-        if state["plan_mode"]:
-            state["plan_mode"] = False
-            events.append({"channel": "system", "text": (
-                "📝 已自動退出 Plan 模式：這個任務依計畫執行；下一個新任務將直接執行（要再規劃請重新 /plan on）。")})
-    elif outcome == "rejected":
-        events.append({"channel": "system", "text": msg})
-    else:
-        events.append({"channel": "plan", "text": msg})
-    return outcome
-
-
 def _handle_tool_result(result, events):
     """run_tool 之後的共用處理（run_turn 與執行前關卡核准後的 apply_decision 都走這裡）：推卡片、超過門檻的提醒，
     再依模式決定結果怎麼進主對話。回傳 "end"（沒有工具結果，回合結束）／"continue"（auto：已加入，接著問 AI）
@@ -287,29 +257,23 @@ def run_turn(events):
     回傳 True 代表目前正在等待使用者決策（awaiting_decision；pending["mode"] 是 hybrid／manual／guard）。
     """
     for _ in range(MAX_AUTO_ITERATIONS):
-        # 🧭 任務引擎查完、要改的步驟等使用者確認（或 Plan 模式剛核准）：harness 直接接著做（下面的確認卡片照常），不經過模型
-        parsed = agent.take_task_continuation()
-        if parsed:
-            agent.messages.append({'role': 'assistant', 'content': parsed["raw"]})
-            events.append({"channel": "chat", "role": "assistant", "text": parsed["reply"], "action": action_text(parsed["action"])})
-        else:
-            ai_msg = agent.ask_ai()
-            ai_tokens = agent.last_ai_tokens(ai_msg)
-            agent.total_ai_tokens += ai_tokens
-            if agent.auto_cleared:
-                events.append({"channel": "system", "text": (
-                    f"🧹 上下文超過門檻，呼叫前先把 {agent.auto_cleared['results']} 則舊的工具回傳清成存檔編號"
-                    f"（騰出約 {agent.auto_cleared['tokens']} tokens，原文仍在存檔、AI 可取回）。")})
-            if agent.auto_compressed:
-                events.append({"channel": "system", "text": "📦 上下文超過門檻，呼叫前已自動壓縮並歸檔。"})
-            agent.messages.append({'role': 'assistant', 'content': ai_msg})
-            parsed = agent.parse_reply(ai_msg)  # 回覆協議：左欄顯示 reply，執行只看 action，reply 裡的指令文字不會被執行
-            _emit_reply_meta(parsed, events)
-            events.append({
-                "channel": "chat", "role": "assistant", "tokens": ai_tokens,
-                "text": parsed["reply"] or ("（本輪沒有文字回覆）" if parsed["action"] else "（空白回覆）"),
-                "action": action_text(parsed["action"]) if parsed["action"] else None,
-            })
+        ai_msg = agent.ask_ai()
+        ai_tokens = agent.last_ai_tokens(ai_msg)
+        agent.total_ai_tokens += ai_tokens
+        if agent.auto_cleared:
+            events.append({"channel": "system", "text": (
+                f"🧹 上下文超過門檻，呼叫前先把 {agent.auto_cleared['results']} 則舊的工具回傳清成存檔編號"
+                f"（騰出約 {agent.auto_cleared['tokens']} tokens，原文仍在存檔、AI 可取回）。")})
+        if agent.auto_compressed:
+            events.append({"channel": "system", "text": "📦 上下文超過門檻，呼叫前已自動壓縮並歸檔。"})
+        agent.messages.append({'role': 'assistant', 'content': ai_msg})
+        parsed = agent.parse_reply(ai_msg)  # 回覆協議：左欄顯示 reply，執行只看 action，reply 裡的指令文字不會被執行
+        _emit_reply_meta(parsed, events)
+        events.append({
+            "channel": "chat", "role": "assistant", "tokens": ai_tokens,
+            "text": parsed["reply"] or ("（本輪沒有文字回覆）" if parsed["action"] else "（空白回覆）"),
+            "action": action_text(parsed["action"]) if parsed["action"] else None,
+        })
 
         # 🛡️ 執行前關卡：先暫停，等使用者按「同意執行／拒絕」（apply_decision 的 guard 分支）才繼續
         guard = agent.guard_check(parsed)
@@ -398,11 +362,3 @@ def apply_decision(action, events):
         return "stop"
     _append_discarded_tool_result(agent)
     return "stop"
-
-
-def clear_plan_for_new_task(events):
-    """使用者送出新訊息時（見 SkillAgent.end_plan_for_new_task，與 CLI 共用）：任務引擎還沒接著問的確認不再自動接著問
-    （停下來的任務留著，使用者同意時 AI 用 task_run --continue）。"""
-    note = agent.end_plan_for_new_task()
-    if note:
-        events.append({"channel": "system", "text": note})

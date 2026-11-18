@@ -1,4 +1,4 @@
-"""PromptMixin：組 system prompt 與每次送出時附在最尾端的動態區，以及 Plan 模式的請求文字。
+"""PromptMixin：組 system prompt 與每次送出時附在最尾端的動態區。
 
 排列依「多久變一次」決定（Ollama 只重用跟上一次請求相同的開頭，從第一個不同的 token 開始全部重算）：
 - system prompt（get_system_prompt）只放不常變的：AGENT.md、目前上下文模式的規則、長期記憶、滾動摘要、
@@ -69,15 +69,6 @@ class PromptMixin:
         guide = (_sp("memory_guide"))
         note = "\n" + _sp("memory_dropped", count=dropped) if dropped else ""
         return guide + "\n" + "\n".join(kept) + note
-
-    # ---------------------------------------------------------------- 新的使用者訊息
-    def end_plan_for_new_task(self):
-        """使用者送出新訊息時（CLI／Web／評測共用）：任務引擎還沒接著問的確認（使用者先前捨棄了那份報告）不再自動接著問——
-        停下來等確認的任務本身留著，使用者同意時主對話用 task_run --continue。回傳要顯示給使用者的說明（沒有要說的回 None）。"""
-        if getattr(self, "task_pending_approval", None):
-            self.task_pending_approval = None
-            return "📝 停下來等確認的任務還留著：要繼續就跟 AI 說（task_run --continue），不要了就說取消。"
-        return None
 
     # ---------------------------------------------------------------- 各區塊
     def _build_objective_prompt(self):

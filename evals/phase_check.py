@@ -9,7 +9,7 @@
     python3 evals/phase_check.py --only ops,extract --model     # 只跑某幾項（名稱見 summary.md 的第一欄括號）
     python3 evals/phase_check.py --compare <結果目錄> [...]      # 不跑，只拿已經跑好的結果跟基準比（維運、主對話、提煉、數據分析回歸）
     python3 evals/phase_check.py --save-baseline <結果目錄> [...]  # 階段 commit 之後，用這幾次的結果更新基準（同一種的多個目錄合成一份）
-    python3 evals/phase_check.py --save-baseline <phase_check 目錄> --only skills,task_selftest,ops   # 只更新這幾項（其他的基準不動）
+    python3 evals/phase_check.py --save-baseline <phase_check 目錄> --only skills,chat_selftest,ops   # 只更新這幾項（其他的基準不動）
 
 結果在 evals/results/<時間>_phase_check/：summary.md（每一項一行：結果、基準、判定；要注意的逐項列出）、summary.json。
 容器與沙盒用完就關；logs/analysis_settings.json 測試前後比對，有變就還原。基準的格式與來源見 evals/baselines/README.md。"""
@@ -32,7 +32,6 @@ OFFLINE = [("skills", "技能自我測試", ["evals/skills/selftest.py"]),
            ("chat_selftest", "主對話自我測試", ["evals/chat/selftest.py"]),
            ("extract_selftest", "提煉自我測試", ["evals/chat/extract_selftest.py"]),
            ("ops_selftest", "維運自我測試", ["evals/ops/selftest.py"]),
-           ("task_selftest", "任務引擎自我測試（task_run、Plan 模式）", ["evals/task/selftest.py"]),
            ("analysis_selftest", "數據分析自我測試", ["evals/analysis/selftest.py"]),
            ("integrity", "評測的完整性（模型會讀的文字沒有評測世界的名稱）", ["evals/integrity/selftest.py"])]
 TEST_CONTAINER = "cah_analysis_test"

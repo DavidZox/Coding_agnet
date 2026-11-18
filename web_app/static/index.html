@@ -47,8 +47,6 @@
   .entry.summary.raw .tag, .entry.summary.doc .tag { color: #9d94b5; }
   .entry .result-link { display: block; margin-top: 4px; font-size: 12px; color: #8ab4f8; text-decoration: none; }
   .entry .result-link:hover { text-decoration: underline; }
-  .entry.plan { background: #16302c; border: 1px solid #2f6f5e; }
-  .entry.plan .tag { color: #4fd8ba; opacity: 1; }
   .entry.tool.oversized { border: 1px solid #b0873f; box-shadow: 0 0 0 1px #b0873f inset; }
   .entry.tool.oversized .tag { color: #e6b95c; opacity: 1; }
   .entry.tool.oversized.reviewed { border-color: #2f4a3a; box-shadow: none; opacity: 0.75; }
@@ -62,9 +60,9 @@
   .entry.summary.truncated { background: transparent; border: 1px dashed #b0873f; color: #d9c49a; padding: 4px 8px; font-size: 12px; }
   .entry.summary.truncated .tag { color: #e6b95c; }
   footer { border-top: 1px solid #3a3c40; padding: 10px 12px; background: #2b2d31; }
-  #decision-bar, #plan-bar, #guard-bar { display: none; margin-bottom: 8px; gap: 8px; align-items: center; font-size: 13px; flex-wrap: wrap; }
-  #decision-bar.show, #plan-bar.show, #guard-bar.show { display: flex; }
-  #decision-bar button, #plan-bar button, #guard-bar button { cursor: pointer; }
+  #decision-bar, #guard-bar { display: none; margin-bottom: 8px; gap: 8px; align-items: center; font-size: 13px; flex-wrap: wrap; }
+  #decision-bar.show, #guard-bar.show { display: flex; }
+  #decision-bar button, #guard-bar button { cursor: pointer; }
   .input-row { display: flex; gap: 8px; }
   textarea#msg {
     flex: 1; resize: none; height: 54px; background: #1e1f22; color: #e3e3e3;
@@ -74,7 +72,6 @@
   button:disabled { opacity: 0.5; cursor: not-allowed; }
   button.secondary { background: #4a4c50; }
   button.danger { background: #b0473f; }
-  button.plan-on { background: #2f9e58; }
 
   /* ===== 📷 影像附件 ===== */
   .entry.vision { background: #1f2b33; border: 1px solid #3d6b80; color: #cfe6f0; }
@@ -93,7 +90,7 @@
     background: #b0473f; color: white; font-size: 11px; line-height: 18px; text-align: center; cursor: pointer;
   }
   .input-row { position: relative; }
-  #attach-btn, #plan-btn { white-space: nowrap; }
+  #attach-btn { white-space: nowrap; }
   #attach-menu {
     display: none; position: absolute; bottom: 62px; left: 0; z-index: 100;
     background: #26282c; border: 1px solid #3a3c40; border-radius: 8px; padding: 6px;
@@ -240,7 +237,6 @@
     <span id="stat-model" title="主對話用的模型；點一下可以換模型與 thinking 開關" onclick="toggleModelPanel()">🧠 -</span>
     <span id="stat-mode">mode: manual</span>
     <span id="stat-cmode" title="上下文模式（/context_mode 切換）：harness＝大量回傳由獨立 session 擷取重點；claude_code＝原文進上下文，查不查細節由 AI 決定">ctx-mode: -</span>
-    <span id="stat-plan" title="計畫進度（/plan）"></span>
     <span id="stat-analysis" title="最近一次數據分析 job（點一下打開數據分析面板）" onclick="showTab('analysis')"></span>
     <span id="stat-data" title="目前分析的數據（CURRENT_ANALYSIS_DATA）：數據技能省略路徑時用；數據技能成功操作某份數據後自動帶入">data: -</span>
     <span id="stat-cwd">cwd: -</span>
@@ -280,11 +276,6 @@
     <button class="secondary" id="decision-n">🚫 捨棄</button>
     <button class="danger" id="decision-stop" onclick="sendDecision('stop')">⏹️ 停止本回合</button>
   </div>
-  <div id="plan-bar">
-    <span>📝 計畫草稿待你核准（核准後任務引擎照計畫做；下方可打 /plan add、/plan edit N、/plan del N 直接改，或用說的改——AI 只會改你提到的那幾條）：</span>
-    <button onclick="sendPlanDecision('y')">✅ 核准並執行</button>
-    <button class="danger" onclick="sendPlanDecision('n')">🚫 取消任務</button>
-  </div>
   <div id="attach-strip"><span id="attach-hint">📎 已附加影像（送出時一起分析）：</span></div>
   <div id="skill-strip"><span id="skill-hint">📘 已載入技能規格（隨下一則訊息一起送出）：</span></div>
   <div class="input-row">
@@ -294,7 +285,6 @@
       <button onclick="attachFromFile()">📁 選擇檔案</button>
     </div>
     <button class="secondary" id="attach-btn" title="附加影像：框選畫面或選擇檔案" onclick="toggleAttachMenu()">📷</button>
-    <button class="secondary" id="plan-btn" title="切換 Plan 模式：開啟後，下一個新任務會先規劃步驟、你核准才執行" onclick="togglePlanMode()">📝 Plan</button>
     <button class="secondary" id="analysis-btn" title="📊 分析模式：開啟後，送出的問題直接交給數據分析（程式量全部的事實、整理成事實報告，AI 依報告回答），數據用目前的數據" onclick="toggleAnalysisMode()">📊 分析</button>
     <textarea id="msg" placeholder="輸入訊息；打「/」選擇功能開關或手動載入技能規格...（Enter 送出，Shift+Enter 換行；📷 可附加影像）"></textarea>
     <button id="send-btn" onclick="sendMessage()">送出</button>
@@ -317,17 +307,14 @@ const msgBox = document.getElementById('msg');
 const sendBtn = document.getElementById('send-btn');
 const decisionBar = document.getElementById('decision-bar');
 const guardBar = document.getElementById('guard-bar');
-const planBar = document.getElementById('plan-bar');
 const attachStrip = document.getElementById('attach-strip');
 const attachMenu = document.getElementById('attach-menu');
 const attachBtn = document.getElementById('attach-btn');
-const planBtn = document.getElementById('plan-btn');
 const fileInput = document.getElementById('file-input');
 const analysisBtn = document.getElementById('analysis-btn');
 const analysisPanel = document.getElementById('analysis-panel');
 const DEFAULT_PLACEHOLDER = msgBox.placeholder;
-let planModeOn = false;  // updateStatus() 依 stats.plan_mode 同步；只用來決定按鈕外觀與切換方向
-let analysisModeOn = false;  // 同上，stats.analysis_mode
+let analysisModeOn = false;  // updateStatus() 依 stats.analysis_mode 同步；只用來決定按鈕外觀與切換方向
 
 function renderEntry(container, cls, tag, text, oversized) {
   const div = document.createElement('div');
@@ -400,14 +387,12 @@ function renderEvents(events) {
       renderEntry(toolLog, 'summary ' + kind, labels[kind] || labels.summary, ev.text);
     } else if (ev.channel === 'guard') {
       renderEntry(chatLog, 'guard', '🛡️ 執行前確認（下方按鈕：同意執行／拒絕）', ev.text);
-    } else if (ev.channel === 'plan') {
-      renderEntry(chatLog, 'plan', '📝 計畫', ev.text);
     } else if (ev.channel === 'system') {
       renderEntry(toolLog, 'system', '系統', ev.text);
     } else if (ev.channel === 'progress') {
-      // ⏳ 偽技能（analysis_run、task_run）執行中的進度：右欄的卡片；數據分析的進度另外讓面板切到那個 job
+      // ⏳ 偽技能（analysis_run）執行中的進度：右欄的卡片；數據分析的進度另外讓面板切到那個 job
       renderEntry(toolLog, 'analysis', '⏳ 執行進度', ev.text);
-      if (/^[📊🧭🔧💭▶✅❌🧩]/u.test(ev.text) && !ev.text.startsWith('🧭 ops')) noteAnalysisEvent(ev.text);
+      if (/^[📊🔧💭▶✅❌🧩]/u.test(ev.text)) noteAnalysisEvent(ev.text);
     }
   });
 }
@@ -420,19 +405,9 @@ function updateStatus(stats) {
     sm.textContent = '🧠 ' + stats.main_model + (stats.main_think ? ' · thinking' : '');
   }
   document.getElementById('stat-mode').textContent =
-    'mode: ' + stats.mode + (stats.parallel_cal ? ' · parallel_cal' : '') + (stats.plan_mode ? ' · plan' : '');
+    'mode: ' + stats.mode + (stats.parallel_cal ? ' · parallel_cal' : '');
   document.getElementById('stat-cmode').textContent =
     'ctx-mode: ' + (stats.context_mode || '-') + (stats.guard === false ? ' · ⚠️ guard off' : '');
-  planModeOn = !!stats.plan_mode;
-  planBtn.classList.toggle('plan-on', planModeOn);
-  planBtn.textContent = planModeOn ? '📝 Plan ✓' : '📝 Plan';
-  planBtn.title = planModeOn
-    ? '切換 Plan 模式：目前已開啟，點一下關閉（不影響已在等待核准的計畫）'
-    : '切換 Plan 模式：開啟後，下一個新任務會先規劃步驟、你核准才執行';
-  const planEl = document.getElementById('stat-plan');
-  const p = stats.plan;
-  planEl.textContent = p ? `📝 計畫草稿 ${p.total} 步` : '';
-  planEl.title = p ? '計畫草稿（/plan show 看詳細；核准後交給任務引擎照計畫做）：\n' + p.text : '';
   document.getElementById('stat-cwd').textContent = 'cwd: ' + stats.current_cwd;
   document.getElementById('stat-container').textContent = 'container: ' + (stats.target_container || '-');
   const workspaceEl = document.getElementById('stat-ros2-workspace');
@@ -501,20 +476,7 @@ function setBusy(busy) {
   sendBtn.disabled = busy;
   msgBox.disabled = busy;
   attachBtn.disabled = busy;
-  planBtn.disabled = busy;
   analysisBtn.disabled = busy;
-}
-
-async function togglePlanMode() {
-  setBusy(true);
-  try {
-    applyDone(await streamPost('/api/send', { message: planModeOn ? '/plan off' : '/plan on' }));
-  } catch (e) {
-    renderEntry(toolLog, 'system', '錯誤', '與伺服器的連線中斷：' + e);
-  } finally {
-    setBusy(false);
-    msgBox.focus();
-  }
 }
 
 function showDecisionBar(pendingMode) {
@@ -536,14 +498,6 @@ function hideDecisionBar() {
   guardBar.classList.remove('show');
 }
 
-function showPlanBar() {
-  planBar.classList.add('show');
-}
-
-function hidePlanBar() {
-  planBar.classList.remove('show');
-}
-
 function handleStreamMessage(msg) {
   if (msg.type === 'event') {
     renderEvents([msg.event]);
@@ -556,7 +510,7 @@ function handleStreamMessage(msg) {
 
 // 後端以 NDJSON（一行一個 JSON）串流回傳：每完成一次推論或工具執行就推一行，
 // 這裡邊收邊解析、立刻渲染，不用等整回合結束。最後一行 type === 'done'
-// 帶有 awaiting_decision / awaiting_plan / pending_mode / stats 等收尾資訊。
+// 帶有 awaiting_decision / pending_mode / stats 等收尾資訊。
 async function streamPost(url, body) {
   const res = await fetch(url, {
     method: 'POST',
@@ -592,7 +546,6 @@ async function streamPost(url, body) {
 function applyDone(data) {
   if (data.stats) updateStatus(data.stats);
   if (data.awaiting_decision) showDecisionBar(data.pending_mode);
-  if (data.awaiting_plan) showPlanBar();
 }
 
 async function sendMessage() {
@@ -602,7 +555,6 @@ async function sendMessage() {
   hideSlashMenu();
   setBusy(true);
   hideDecisionBar();
-  hidePlanBar();
   msgBox.value = '';
   try {
     applyDone(await streamPost('/api/send', { message: text }));
@@ -619,19 +571,6 @@ async function sendDecision(action) {
   hideDecisionBar();
   try {
     applyDone(await streamPost('/api/decision', { action }));
-  } catch (e) {
-    renderEntry(toolLog, 'system', '錯誤', '與伺服器的連線中斷：' + e);
-  } finally {
-    setBusy(false);
-    msgBox.focus();
-  }
-}
-
-async function sendPlanDecision(action) {
-  setBusy(true);
-  hidePlanBar();
-  try {
-    applyDone(await streamPost('/api/send', { message: action }));
   } catch (e) {
     renderEntry(toolLog, 'system', '錯誤', '與伺服器的連線中斷：' + e);
   } finally {

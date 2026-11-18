@@ -24,18 +24,16 @@ from .conversation import ConversationMixin
 from .dispatch import DispatchMixin
 from .guard import GuardMixin
 from .perf import PerfMixin
-from .plan import PlanMixin
 from .prompt import PromptMixin
-from .task_engine import TaskMixin
 from .tool_summary import ToolSummaryMixin
 from .tool_use_index import ToolUseIndexMixin
 from .trajectory import TrajectoryMixin
 from .turn_guard import TurnGuardMixin
 
 
-class SkillAgent(ConversationMixin, PromptMixin, DispatchMixin, GuardMixin, ContextModeMixin, PlanMixin,
+class SkillAgent(ConversationMixin, PromptMixin, DispatchMixin, GuardMixin, ContextModeMixin,
                  ToolSummaryMixin, ToolUseIndexMixin, ArchiveMixin, TrajectoryMixin, CompressionMixin,
-                 PerfMixin, TurnGuardMixin, TaskMixin, AnalysisMixin):
+                 PerfMixin, TurnGuardMixin, AnalysisMixin):
     def __init__(self, model="gemma4:e4b", max_history=None, summary_model=None):
         # max_history：訊息「則數」滑動視窗，預設停用（None）。上下文大小統一以 token 門檻
         # （TOKEN_THRESHOLD）觸發壓縮歸檔；這個參數只保留作為極端情境的保險絲，需要時再開。
@@ -79,9 +77,6 @@ class SkillAgent(ConversationMixin, PromptMixin, DispatchMixin, GuardMixin, Cont
         # 🔀 上下文管理模式（harness／claude_code，見 config.CONTEXT_MODES 與 context_mode.py）與 🛡️ 執行前關卡
         self.context_mode = CONTEXT_MODE_DEFAULT
         self.guard_enabled = GUARD_DEFAULT
-        # 📝 /plan 的草稿（plan.py）：任務引擎的計畫（job，status＝draft），使用者看、改、核准後交給任務引擎照計畫做；沒有草稿時 None
-        self.plan = None
-        self.plan_error = None   # 最近一次草稿的錯誤（規劃不出步驟、連不到 Ollama 等）
 
         if not os.path.exists(self.index_file):
             raise FileNotFoundError(f"找不到技能索引：{self.index_file}")
@@ -104,13 +99,6 @@ class SkillAgent(ConversationMixin, PromptMixin, DispatchMixin, GuardMixin, Cont
         self.last_clearing = None        # 最近一次清除舊工具回傳的統計 {results, tokens}
         self.last_tail_chars = 0         # 最近一次送出時動態區（build_state_tail）的字元數，context_tokens 估算用
         self._tokenize_unavailable = False
-
-        # 🧭 任務引擎（task_engine.py）：目前的任務（規劃好、執行中或停下來等確認）、最近一次結束的任務、等確認的工作編號
-        # （harness 在下一次問模型之前用 take_task_continuation 接著請使用者確認）
-        self.task_job = None
-        self.task_last = None
-        self.task_pending_approval = None
-        self._task_plan_failed = None
 
         # ⏱️ 模型呼叫耗時（perf.py）：主對話呼叫前 system prompt 有沒有變、歷史有沒有被改寫、中間跑了幾次獨立 session
         self.perf_calls = []
@@ -160,7 +148,7 @@ class SkillAgent(ConversationMixin, PromptMixin, DispatchMixin, GuardMixin, Cont
 
         # =========================
         # 🧭 操作軌跡：run_tool 每執行一支腳本就記一筆（指令、參數、當時的 cwd、成功／失敗、輸出開頭、存檔編號），
-        #   另有 kind="boundary" 的起點記錄（/clear、計畫核准）；同時追加到 logs/trajectory.jsonl（跨 session 的稽核記錄）。
+        #   另有 kind="boundary" 的起點記錄（/clear）；同時追加到 logs/trajectory.jsonl（跨 session 的稽核記錄）。
         # =========================
         self.session_id = time.strftime("%Y%m%d_%H%M%S")
         self.trajectory = []

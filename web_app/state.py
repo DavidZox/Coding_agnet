@@ -1,4 +1,4 @@
-"""全域狀態：單一 SkillAgent 實例、模式開關、待決策的工具結果、附件與手動載入的技能規格（計畫的草稿在 SkillAgent，plan.py）。
+"""全域狀態：單一 SkillAgent 實例、模式開關、待決策的工具結果、附件與手動載入的技能規格。
 其他模組 import 這裡的物件（都是可變的 dict／物件、沒有重新賦值），所以大家看到的是同一份狀態。"""
 import os
 import threading
@@ -35,7 +35,6 @@ state = {
     "auto_mode": False,
     "hybrid_mode": False,
     "tool_summary_mode": TOOL_SUMMARY_DEFAULT,  # 超過門檻的工具回傳交給獨立 session 做任務導向摘要（預設開）
-    "plan_mode": False,
     "parallel_cal": PARALLEL_CAL_DEFAULT,  # 軟水位壓縮改在背景執行緒做（/parallel_cal on|off）
     "analysis_mode": False,   # 📊 分析模式：輸入框的問題直接交給數據分析 analysis_run（/analysis_mode on|off、📊 按鈕）
 }

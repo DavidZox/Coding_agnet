@@ -1,9 +1,10 @@
-"""維運技能的離線自我測試：不需要 Ollama、不需要 docker。任務引擎（task_run、Plan 模式）的測試在 evals/task/selftest.py。
+"""維運技能的離線自我測試：不需要 Ollama、不需要 docker。
 
     python3 evals/ops/selftest.py
 
 - file_ops（建目錄、寫入含引號的內容、附加、取代要剛好一次、複製不覆蓋——目的已經一模一樣算成功、移動、備份、系統目錄不能寫、不提供刪除）；
-- 確認關卡：docker_ctl／ROS2_param／rmf_handshake 的唯讀用法不用問、會改變狀態的要問；task_run 的取消不用問。
+- 確認關卡：docker_ctl／ROS2_param／rmf_handshake 的唯讀用法不用問、會改變狀態的要問；
+- 維運沙盒的 daemon：停著的容器刪掉重建（不用 docker start，舊的 containerd.pid 會讓 daemon 起不來），跑著的不動、沒有的直接建。
 每一個情境都在臨時目錄複製一份專案，不碰正式的 logs/。"""
 import os
 import shutil
@@ -100,7 +101,7 @@ def t_guard_new_skills(agent, ollama, tmp, home):
     for cmd, args in [("scripts/docker_ctl_cmd.py", "status nav2"), ("scripts/docker_ctl_cmd.py", "logs nav2 --tail 20"),
                       ("scripts/docker_ctl_cmd.py", "env nav2 --grep ROS"), ("scripts/ROS2_param_cmd.py", "get /controller max_vel_x"),
                       ("scripts/ROS2_param_cmd.py", "list /controller"), ("scripts/rmf_handshake_cmd.py", "status tb1"),
-                      ("scripts/host_runcmd_cmd.py", '"ls -la"'), ("scripts/task_run_cmd.py", "--cancel")]:
+                      ("scripts/host_runcmd_cmd.py", '"ls -la"')]:
         assert info(cmd, args) is None, f"唯讀的用法不用確認：{cmd} {args}"
     for cmd, args, skill in [("scripts/docker_ctl_cmd.py", "restart nav2", "docker_ctl"), ("scripts/docker_ctl_cmd.py", "stop nav2", "docker_ctl"),
                              ("scripts/ROS2_param_cmd.py", "set /controller max_vel_x 0.5", "ROS2_param"),
@@ -112,11 +113,48 @@ def t_guard_new_skills(agent, ollama, tmp, home):
 
 
 # ---------------------------------------------------------------- 寫測試
+def t_sandbox_up():
+    """sandbox.up() 照容器的狀態決定怎麼起 daemon（假的 docker，不碰主機）。"""
+    sys.path.insert(0, os.path.join(HERE, "dataset", "sandbox"))
+    import sandbox
+    real = (sandbox.host_docker, sandbox.sd, sandbox.urls)
+    try:
+        for state, expect in (("false", ["rm", "run"]), ("true", []), (None, ["run"])):
+            calls = []
+
+            def host(*args, timeout=120, state=state, calls=calls):
+                calls.append(args[0])
+                ok = args[0] != "inspect" or state is not None
+                return subprocess.CompletedProcess(args, 0 if ok else 1, stdout=(state or "") + "\n", stderr="")
+            sandbox.host_docker = host
+            sandbox.sd = lambda *a, **k: subprocess.CompletedProcess(a, 0, stdout=("src" if "inspect" in a else ""), stderr="")
+            sandbox.urls = lambda: {}
+            real_walk, sandbox.os.walk = sandbox.os.walk, (lambda d: iter(()))
+            try:
+                sandbox.up()
+            finally:
+                sandbox.os.walk = real_walk
+            got = [c for c in calls if c != "inspect"]
+            assert got == expect, (state, calls)
+            assert "start" not in calls, "停著的容器不能直接 docker start"
+    finally:
+        sandbox.host_docker, sandbox.sd, sandbox.urls = real
+
+
 def main():
     results = []
     for name, fn in [("file_ops：建目錄、含引號的內容、附加、取代要剛好一次、複製不覆蓋、移動、備份、系統目錄、不提供刪除", t_file_ops),
                      ("新技能的確認關卡：唯讀的用法不用問、會改變狀態的要問", t_guard_new_skills)]:
         scenario(name, fn, results)
+    name = "維運沙盒的 daemon：停著的容器刪掉重建、跑著的不動、沒有的直接建（不用 docker start）"
+    try:
+        t_sandbox_up()
+        results.append((name, True, ""))
+        print(f"✅ {name}")
+    except Exception as e:
+        import traceback
+        results.append((name, False, traceback.format_exc()))
+        print(f"❌ {name}：{e}")
     failed = [r for r in results if not r[1]]
     for name, _, tb in failed:
         print(f"\n---- {name} ----\n{tb}")

@@ -5,9 +5,9 @@
   "total": 12
  },
  "chat_selftest": {
-  "label": "收尾：拿掉 /make_skill 與工作流引擎（2026-11-17）",
-  "passed": 20,
-  "total": 20
+  "label": "拿掉任務引擎與 Plan 模式（2026-11-18）",
+  "passed": 17,
+  "total": 17
  },
  "containers_sandbox": {
   "label": "第 4 階段（任務引擎，三次完整跑）（2026-10-24）",
@@ -25,14 +25,14 @@
   "total": 12
  },
  "integrity": {
-  "label": "收尾：拿掉 /make_skill 與工作流引擎（2026-11-17）",
+  "label": "拿掉任務引擎與 Plan 模式（2026-11-18）",
   "passed": 8,
   "total": 8
  },
  "ops_selftest": {
-  "label": "第 4 階段（任務引擎，三次完整跑）（2026-10-24）",
-  "passed": 2,
-  "total": 2
+  "label": "拿掉任務引擎與 Plan 模式（2026-11-18）",
+  "passed": 3,
+  "total": 3
  },
  "skills": {
   "label": "待辦 20、23（2026-10-25）",
@@ -43,11 +43,6 @@
   "label": "待辦 20、23（2026-10-25）",
   "passed": 27,
   "total": 27
- },
- "task_selftest": {
-  "label": "收尾：拿掉 /make_skill 與工作流引擎（2026-11-17）",
-  "passed": 18,
-  "total": 18
  },
  "tools_live:exp_5090_overheat": {
   "label": "第 4 階段（任務引擎，三次完整跑）（2026-10-24）",

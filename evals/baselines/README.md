@@ -5,7 +5,7 @@
 
 | 檔案 | 內容 | 目前的來源 |
 |---|---|---|
-| `offline.json` | 各組自我測試的通過數（`skills`、`chat_selftest`、`extract_selftest`、`ops_selftest`、`task_selftest`、`analysis_selftest`、`integrity`；凍結的工具另有 `skills_sandbox`、`containers_sandbox`、`data_live`、`tools_live:<數據>`） | 收尾（2026-11-17，拿掉 `/make_skill` 與工作流引擎之後）：`chat_selftest` 20、`task_selftest` 18、`integrity` 8；其他的是之前的（`skills` 100、`skills_sandbox` 27 是待辦 20、23 之後的） |
+| `offline.json` | 各組自我測試的通過數（`skills`、`chat_selftest`、`extract_selftest`、`ops_selftest`、`analysis_selftest`、`integrity`；凍結的工具另有 `skills_sandbox`、`containers_sandbox`、`data_live`、`tools_live:<數據>`） | 拿掉任務引擎與 Plan 模式之後（2026-11-18）：`chat_selftest` 17、`ops_selftest` 3（沙盒 daemon 怎麼起）、`integrity` 8（`task_selftest` 刪掉）；其他的是之前的（`skills` 100、`skills_sandbox` 27 是待辦 20、23 之後的） |
 | `ops_gemma4-26b.json` | 維運評測（沙盒裡真的執行，77 個情境：檔案與調查 23 個每個階段跑、凍結的工具 54 個 `--tools` 才跑）：`current.per` 每個情境的次數、通過、禁止動作、秒數中位數、**每一次的結果**（`results`，照跑的順序，1＝過）與是哪一次更新的（`since`）；總分由 `results` 算（名稱開頭 `ho_`＝保留、`inv_`＝調查與報告、其他＝主要），所以只跑一部分也能跟同一組情境比。比對只用 `current`，其他的 key 是之前的基準、只當參考（`todo25`、`todo20_23`、`phase4`、`phase4_start`、`phase3`、`reference_v5`，那些還是舊的格式） | 第 5 階段的三次完整跑（2026-10-25，`*_p5_r1～r3`）：主要 48／48／47、保留 18／20／19、調查與報告 5／5／5，禁止動作 0；收尾時從這三次的 `runs.jsonl` 補上 `results`（算回來的總分跟原本記的一樣） |
 | `chat_gemma4-e4b.json` | 主對話評測（假的外部世界、真模型）11 個情境，每個情境的次數與通過 | 第 4 階段結束的一次（×3：33/33；第 4 階段開始也是 33/33，第 2 階段兩次 32/33、33/33）。第 5 階段結束的一次 32/33（followup_in_context 一次，沒用到任務引擎），沒有拿來更新 |
 | `extract.json` | 提煉評測（`evals/extract/`）每個模型、每個情境：找到幾個、多列幾個、數量的說法對不對、秒數 | 第 2 階段 commit 之後各跑一次（26b 全對；e4b 的 recall_fleet_120 是 9/11：worker 漏一台、整合時拿掉一台——兩個條件一起篩對小模型難）；robot_heading 2026-10-24 加（26b 4/4；e4b 這一次 1/1，另外三次只過 1 次——小模型常漏掉要去的站，沒過時先看是不是這個）。第 4 階段沒有改提煉，結束時的一次 26b 全對、e4b fleet_40 6/7（一次讀完漏了 amr_24）、recall_fleet_120 10/11，沒有拿來更新；第 5 階段結束時一樣（26b 全對、e4b fleet_40 6/7、recall_fleet_120 10/11），沒有更新 |
@@ -32,9 +32,9 @@ python3 evals/phase_check.py --save-baseline evals/results/<時間>_phase_check 
 維運最好用 3 次以上的結果一起更新（`--save-baseline` 給好幾個 `_ops_` 目錄會合成一份）；只換這次有跑的情境，沒跑的情境的基準不動
 （只跑檔案與調查時，凍結的工具那 54 個照舊）。
 
-只更新其中幾項時加 `--only`，其他的基準不動：名稱是 summary.md 第一欄括號裡的 key（`skills`、`task_selftest`、`chat`、`ops`、`ops_tools`…），
+只更新其中幾項時加 `--only`，其他的基準不動：名稱是 summary.md 第一欄括號裡的 key（`skills`、`chat_selftest`、`chat`、`ops`、`ops_tools`…），
 有冒號的取冒號前面（`tools_live`、`analysis`、`extract`；跑的時候數據分析回歸叫 `analysis_regression`，這裡是 `analysis`）。
 
 要留下整份舊的維運基準當參考，先在 json 裡把 `current` 複製成另一個 key（`phase4_start`、`phase4` 就是這樣留的）。
 
-最近的更新：第 5 階段（2026-10-25）更新了維運（三次完整跑，多了調查與報告一組；之前的 `current` 複製成 `todo25`）與 `task_selftest`（18）；主對話、提煉、數據分析沒有更新（結果見上表）。收尾（2026-11-17）：拿掉工作流引擎，`workflow.json` 與 `offline.json` 的 `workflow_selftest` 刪掉；`offline.json` 更新 `chat_selftest`、`task_selftest`、`integrity`；維運的 `current` 補上每一次的結果、拿掉 `totals`（設計筆記 2.25）；收尾的真模型評測（主對話 33/33、維運的檔案與調查每個情境都跟基準一樣）沒有更新真模型的基準。
+最近的更新：第 5 階段（2026-10-25）更新了維運（三次完整跑，多了調查與報告一組；之前的 `current` 複製成 `todo25`）與 `task_selftest`（18）；主對話、提煉、數據分析沒有更新（結果見上表）。收尾（2026-11-17）：拿掉工作流引擎，`workflow.json` 與 `offline.json` 的 `workflow_selftest` 刪掉；`offline.json` 更新 `chat_selftest`、`task_selftest`、`integrity`；維運的 `current` 補上每一次的結果、拿掉 `totals`（設計筆記 2.25）；收尾的真模型評測（主對話 33/33、維運的檔案與調查每個情境都跟基準一樣）沒有更新真模型的基準。拿掉任務引擎與 Plan 模式（2026-11-18）：`offline.json` 的 `task_selftest` 刪掉，更新 `chat_selftest`（17）、`ops_selftest`（3）、`integrity`（8，範本的檢查改成每個模組各自核對）；真模型的基準沒有更新（之後的基準以新架構為主，設計筆記 2.26）。

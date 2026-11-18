@@ -1,7 +1,7 @@
 """回覆協議與訊息包裝：解析主模型的 JSON 回覆、把工具結果包成主對話訊息、判斷回傳是不是規格文件或已提煉的結果。"""
 import json
 import os
-from .config import ANALYSIS_REPORT_HEAD, SKILL_DOC_PREFIX, TASK_REPORT_HEADS, TOOL_RESULT_FRAME, TOOL_SUMMARY_TAG
+from .config import ANALYSIS_REPORT_HEAD, SKILL_DOC_PREFIX, TOOL_RESULT_FRAME, TOOL_SUMMARY_TAG
 from . import prompt_files
 
 _FRAME = "harness/tool_results.md"   # 工具結果的框架句（【系統回傳】是程式認的標記，留在程式）
@@ -108,6 +108,5 @@ def is_exempt_result(result, tool_tokens):
     TOOL_SUMMARY_TAG 開頭）——後者再摘要一次只會摘要的摘要、多一次模型呼叫。所有腳本輸出（包括分析型的
     --watch／--duration／語義地圖）都走同一套規則——超過門檻就交給獨立 session 做任務導向擷取。
     CLI／Web 的 ⚠️ 標記與 _content_for_context 共用這個判斷。"""
-    # analysis_run 的事實報告（ANALYSIS_REPORT_HEAD 開頭）同理：它本身就是程式整理好、有編號的事實；task_run 的報告也是
-    # （每一步的結果、核對過的事實，TASK_REPORT_HEADS 開頭）
-    return is_skill_doc_result(result) or result.startswith((TOOL_SUMMARY_TAG, ANALYSIS_REPORT_HEAD) + TASK_REPORT_HEADS)
+    # analysis_run 的事實報告（ANALYSIS_REPORT_HEAD 開頭）同理：它本身就是程式整理好、有編號的事實
+    return is_skill_doc_result(result) or result.startswith((TOOL_SUMMARY_TAG, ANALYSIS_REPORT_HEAD))

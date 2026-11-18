@@ -154,7 +154,7 @@ def _is_load(call):
 def template_uses():
     """程式用到的範本 → (uses, unresolved)。uses：[(程式:行, 範本路徑, 段名, {程式填的名稱})]；段名是 None＝整份檔案。
     看得懂的寫法：prompt_files.load(路徑, 段名, 名稱=…)、模組裡「return prompt_files.load(路徑, key, **fields)」的小函式（_t、_x…）
-    加上段名；路徑、段名可以是字串、模組常數或 a if … else b。整份檔案用 f-string 組路徑的（orchestra/{name}）不算看不懂。"""
+    加上段名；路徑、段名可以是字串、模組常數或 a if … else b。整份檔案用 f-string 組路徑的（extract/{name}）不算看不懂。"""
     uses, unresolved = [], []
     for d in CODE_DIRS:
         for path in sorted(glob.glob(os.path.join(PROJECT, d, "*.py"))):
@@ -187,7 +187,7 @@ def template_uses():
                         helpers[fn.name] = paths[0]
                         inside.add(id(c))
                     elif isinstance(c.args[0], ast.JoinedStr) and len(c.args) == 1:
-                        inside.add(id(c))          # 整份檔案、路徑用 f-string 組的小函式（_read("planner.md")）
+                        inside.add(id(c))          # 整份檔案、路徑用 f-string 組的小函式（read_prompt("worker.md")）
             for c in ast.walk(tree):
                 if not isinstance(c, ast.Call) or id(c) in inside:
                     continue
@@ -212,6 +212,24 @@ def template_uses():
                     continue
                 uses += [(where, p, s, names) for p in paths for s in secs]
     return uses, unresolved
+
+
+def unparsed_importers():
+    """import 了 prompt_files、檢查卻一處 prompt_files.load 都沒看到的模組（解析的寫法跟程式對不上了），與 import 它的模組數。
+    取代以前的「至少 200 處」：用到的數量會隨程式增減（2026-11-18 拿掉任務引擎少了四十幾處），每個模組各自核對才不靠門檻。"""
+    importers, seen = set(), set()
+    for d in CODE_DIRS:
+        for path in sorted(glob.glob(os.path.join(PROJECT, d, "*.py"))):
+            rel = os.path.relpath(path, PROJECT)
+            for n in ast.walk(ast.parse(_read(rel))):
+                if isinstance(n, ast.ImportFrom) and (any(a.name == "prompt_files" for a in n.names)
+                                                      or (n.module or "").endswith("prompt_files")):
+                    importers.add(rel)
+                elif isinstance(n, ast.Import) and any(a.name.endswith("prompt_files") for a in n.names):
+                    importers.add(rel)
+                elif isinstance(n, ast.Call) and _is_load(n):
+                    seen.add(rel)
+    return sorted(importers - seen), len(importers)
 
 
 # ---------------------------------------------------------------- 沒人用的程式
@@ -379,7 +397,8 @@ def main():
         finally:
             sys.path.remove(PROJECT)
         uses, unresolved = template_uses()
-        assert len(uses) > 200, f"只找到 {len(uses)} 處用到範本：檢查的寫法跟程式對不上了"
+        missing, importers = unparsed_importers()
+        assert importers and not missing, f"這幾個模組 import 了 prompt_files，檢查卻看不到它怎麼讀範本（寫法跟程式對不上了）：{missing}"
         assert not unresolved, "這幾處的範本路徑或段名靜態看不出來（段名用字串常數，或 a if … else b）：\n" + "\n".join(unresolved)
         bad = []
         for where, rel, sec, names in uses:

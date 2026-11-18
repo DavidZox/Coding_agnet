@@ -6,8 +6,7 @@ import os
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # 給模型的文字都在 prompts/（可以直接改，不用改程式；讀法見 agent_core/prompt_files.py，各檔案給誰見 prompts/README.md）：
 # AGENT.md（主對話的 system prompt）、Memory.md（長期記憶）、context_modes/（兩種上下文模式的規則）、harness/（主對話的 system prompt
-# 與動態區裡程式組的部分、程式核對後的提醒、工具結果的包裝）、summary/（滾動摘要）、extract/（工具回傳的提煉）、orchestra/（任務引擎：
-# 規劃、worker、類型）、vision/（附圖的影像提取）
+# 與動態區裡程式組的部分、程式核對後的提醒、工具結果的包裝）、summary/（滾動摘要）、extract/（工具回傳的提煉）、vision/（附圖的影像提取）
 PROMPTS_DIR = os.path.join(PROJECT_ROOT, "prompts")
 
 
@@ -210,13 +209,13 @@ TOOL_CLEARED_TAG = "[tool result - 已清除]"       # 被清成佔位的舊回�
 
 # =========================================================
 # 🛡️ 執行前關卡：會改變實體／外部狀態的技能，執行前一律由程式要求使用者確認（不靠模型記得要問）。
-# 跟 Plan 模式同一個原則：關卡由程式路徑保證——run_tool 沒拿到 approved=True 就不執行這些技能。
+# 關卡由程式路徑保證：run_tool 沒拿到 approved=True 就不執行這些技能。
 # docker_runcmd 的指令若被判定為唯讀（ls、cat、ros2 topic echo…，見 guard.is_readonly_shell）則放行；
 # workpackage_send 加 --dry-run 只顯示不送，也放行。change_dir／docker_open 只改 harness 自己的狀態，不擋。
 # AGENT_GUARDED_SKILLS 可覆寫清單（逗號分隔，none＝全部不擋）；/guard off 只對目前 session 關閉。
 # =========================================================
 _GUARDED_DEFAULT = ("workpackage_send,workpackage_cancel,overpending_cancel,docker_est,docker_runcmd,"
-                    "host_runcmd,docker_ctl,file_ops,ROS2_param,ROS2_topic_pub,ROS2_domain_id,ROS2_workspace_env,rmf_handshake,task_run")
+                    "host_runcmd,docker_ctl,file_ops,ROS2_param,ROS2_topic_pub,ROS2_domain_id,ROS2_workspace_env,rmf_handshake")
 _guarded_env = os.environ.get("AGENT_GUARDED_SKILLS", _GUARDED_DEFAULT).strip()
 GUARDED_SKILLS = set() if _guarded_env.lower() in ("", "none", "off") else {s.strip() for s in _guarded_env.split(",") if s.strip()}
 GUARD_DEFAULT = os.environ.get("AGENT_GUARD", "1").strip().lower() not in ("0", "off", "false", "no")
@@ -244,18 +243,6 @@ TOOL_EXEC_TIMEOUT = 600
 # =========================================================
 MAIN_THINK_DEFAULT = os.environ.get("AGENT_MAIN_THINK", "").strip().lower() in ("1", "on", "true", "yes")
 MODEL_SETTINGS_NAME = "model_settings.json"   # logs/ 下：Web Console 設定的主對話模型與 thinking 開關，重開也記得
-
-# 🧭 任務引擎（agent_core/task_engine.py，task_run 偽技能；Plan 模式也用它）：規劃 → 程式檢查 → 先查 → 依事實重排 → 確認 → 每一步一個
-# worker → 程式檢查 → 程式寫報告。類型（profile）在 prompts/orchestra/profiles/；每一次的計畫、每一步、每一次模型呼叫存在
-# logs/task_jobs/<編號>/
-TASK_MAX_ITEMS = 6                       # 計畫最多幾步（小模型規劃太多步時後面的步驟品質差，也難確認）
-TASK_WORKER_MAX_STEPS = 10               # 每一步的 worker 最多幾輪（每輪一個動作）
-TASK_MAX_REPLANS = 2                     # 一個任務最多重排幾次（先查完一次、某一步失敗一次）
-TASK_JOBS_DIRNAME = "task_jobs"
-TASK_JOBS_KEEP = int(os.environ.get("AGENT_TASK_JOBS_KEEP", "300"))
-# task_run 的報告固定以這幾個開頭：程式整理好的（每一步的結果、核對過的事實），跟 analysis_run 的事實報告一樣不再交給提煉
-# （is_exempt_result），主對話直接收到完整的報告
-TASK_REPORT_HEADS = ("[PASS] 任務", "[PASS] ⏸️ 任務", "[ERROR] 任務")
 
 # =========================================================
 # 📊 數據分析（agent_core/analysis_job.py，analysis_run 技能）：只要有 .mcap 就能用的事實報告——量到什麼、什麼時候、Log 說了什麼，

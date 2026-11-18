@@ -17,7 +17,7 @@ rectangle NodeUser #F5F5F5 [
     附圖（Web：框選螢幕或上傳；CLI 沒有附圖）
   * 顯示：reply；每次工具回傳兩張卡——完整原文（#編號）
     與「AI 實際收到的內容」；視覺分析卡（#編號）；
-    決策／Plan 按鈕
+    決策按鈕
 ]
 
 rectangle NodeVision #DDEEF6 [
@@ -47,8 +47,7 @@ rectangle NodeAgent #D1E5F0 [
   * 依上下文模式決定工具回傳怎麼進主對話：
     harness＝獨立 session 提煉重點（長的切段、每段一個 worker、再整合）；
     claude_code＝原文（太大保留頭尾，註明中間有哪幾節）
-  * 替模型維護狀態：工作目錄、目標容器、任務線；
-    任務停下來等確認時，harness 直接接著問（不經過模型）
+  * 替模型維護狀態：工作目錄、目標容器、任務線
   * 上下文超過水位就壓成滾動摘要（使用者原話逐字保留、
     被壓掉的對話存檔）
   * 附圖：主對話只收到 [vision result] 文字（附存檔編號），
@@ -74,15 +73,6 @@ rectangle NodeSub #FCE5CD [
      每一步寫的名稱與數值由程式核對；全部存在 extract_jobs/）
   * 滾動壓縮 summarize_messages：舊對話 → 融合摘要
   * 視覺 sub-session：在 vision/（附圖 → 結構化提取），同樣做完即丟
-  * 任務引擎 task_run（Plan 模式的草稿也是它）：先選類型（維運／調查
-    只查不改／整理報告），規劃 session 拆成 2～6 步（技能、
-    會不會改變狀態、怎麼檢查），程式檢查計畫；先查的做完照事實重排，
-    要改的停下來確認
-  * 任務引擎的 worker：每一步一個乾淨的 session，事實附 #編號
-    （程式核對）；做完由程式跑檢查，沒過換一個重試；
-    worker 說沒完成、檢查出錯時，對照目標問一次（只填兩個欄位）
-  * 任務引擎的整合（調查、整理報告、要寫報告檔時）：依核對過的事實
-    寫結論或報告，每一則附 #編號（程式核對）；報告檔由程式寫、讀回比對
 ]
 
 rectangle NodeSkills #D5E8D4 [
@@ -91,9 +81,9 @@ rectangle NodeSkills #D5E8D4 [
   * SKILLS.md：一行一個技能（常駐 system prompt）
   * tools/<name>.md：規格（按需載入）
   * 偽技能（規格在 tools/，在本程式內執行）：result_recall、
-    analysis_run（數據分析，全部由程式做）、task_run（多步驟的任務：任務引擎）
+    analysis_run（數據分析，全部由程式做）
   * scripts/<name>_cmd.py：真正執行的腳本
-  * 檔案系統／存檔回查／記憶／多步驟任務（harness 的重點）；
+  * 檔案系統／存檔回查／記憶（harness 的重點）；
     容器與 ROS2／調度系統／數據解析／多模態凍結（2026-11-17 起不再開發）
   * image_inspect：對影像檔路徑呼叫 vision.analyze()，
     結果跟一般工具回傳一樣存檔、提煉
@@ -123,9 +113,6 @@ rectangle NodeStore #E1D5E7 [
     每次模型呼叫的 prompt 與回覆（留最近 500 次）
   * analysis_jobs/<編號>/：每一次數據分析的事實、重點、報告與進度
     （留最近 300 次）
-  * task_jobs/<編號>/：每一次任務的每一版計畫、每一步的狀態與
-    核對過的事實、檢查、每次模型呼叫的 prompt 與回覆、報告
-    （Plan 模式的草稿也在這裡；留最近 300 次）
   * trajectory.jsonl（操作軌跡）、summary_*.md／.json（滾動摘要＋
     使用者原話）、perf.jsonl（每次模型呼叫的耗時）
   * prompts/Memory.md（長期記憶，整份常駐；記憶只寫這裡）
@@ -136,7 +123,7 @@ NodeAgent -up-> NodeUser : reply、原文卡片、\nAI 實際收到的內容
 NodeAgent -right-> NodeLLM : system prompt + 對話歷史
 NodeLLM -left-> NodeAgent : {thought, reply, action}
 NodeAgent -[#996633]right-> NodeSub : 原文 + 使用者問題 +\n檢索清單／舊對話／軌跡
-NodeSub -[#996633]left-> NodeAgent : 重點 + 下一步建議／\n新摘要／草稿
+NodeSub -[#996633]left-> NodeAgent : 重點 + 下一步建議／\n新摘要
 NodeUser -[#1F77B4,bold]right-> NodeVision : **附圖＋使用者的說明（Web）**
 NodeVision -[#1F77B4,bold]down-> NodeAgent : **[vision result] 提取文字**\n（併進那則使用者訊息）\n＋存成 #編號〔附圖分析〕
 NodeAgent -down-> NodeSkills : 技能名稱 → 回規格文件（不執行）
@@ -164,11 +151,7 @@ note bottom of NodeWorld
   容器與主機的非唯讀指令、重啟容器、
   改 ROS 2 參數、發布 Topic…）執行前一律
   由程式請使用者確認（run_tool 沒有
-  approved 就不執行）；task_run
-  列出會改變狀態的步驟、核准一次（先查完
-  再確認要改的；worker 只能做核准的）；
-  Plan 模式：規劃階段不呼叫 run_tool，
-  核准＝整份計畫的狀態變更都核准。
+  approved 就不執行）。
 end note
 
 @enduml
