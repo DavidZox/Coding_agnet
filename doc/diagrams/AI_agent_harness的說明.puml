@@ -17,7 +17,7 @@ rectangle NodeUser #F5F5F5 [
     附圖（Web：框選螢幕或上傳；CLI 沒有附圖）
   * 顯示：reply；每次工具回傳兩張卡——完整原文（#編號）
     與「AI 實際收到的內容」；視覺分析卡（#編號）；
-    決策／Plan／make_skill 按鈕
+    決策／Plan 按鈕
 ]
 
 rectangle NodeVision #DDEEF6 [
@@ -43,8 +43,7 @@ rectangle NodeAgent #D1E5F0 [
     工作目錄、目標容器、目前的數據每次接在最後一則訊息後（動態區）
   * 呼叫主 session，**只看 action** 派發；
     會改變實體狀態的動作先由程式請使用者確認
-  * 執行腳本 → 記軌跡 → 原文存檔 #編號；
-    每則訊息另留一份對話紀錄（/make_skill 用，壓縮與 /clear 都不影響）
+  * 執行腳本 → 記軌跡 → 原文存檔 #編號
   * 依上下文模式決定工具回傳怎麼進主對話：
     harness＝獨立 session 提煉重點（長的切段、每段一個 worker、再整合）；
     claude_code＝原文（太大保留頭尾，註明中間有哪幾節）
@@ -75,11 +74,8 @@ rectangle NodeSub #FCE5CD [
      每一步寫的名稱與數值由程式核對；全部存在 extract_jobs/）
   * 滾動壓縮 summarize_messages：舊對話 → 融合摘要
   * 視覺 sub-session：在 vision/（附圖 → 結構化提取），同樣做完即丟
-  * /make_skill 草擬：整段對話＋工具回傳＋操作軌跡 → 工作流的規格
-    （步驟：執行既有技能／檢查／確認／告知；不產生腳本）
-  * 工作流的判斷點：只填這一步要的值、或選分支（其他由程式推進）
   * 任務引擎 task_run（Plan 模式的草稿也是它）：先選類型（維運／調查
-    只查不改／整理報告），規劃 session 拆成 2～6 步（技能或一個工作流、
+    只查不改／整理報告），規劃 session 拆成 2～6 步（技能、
     會不會改變狀態、怎麼檢查），程式檢查計畫；先查的做完照事實重排，
     要改的停下來確認
   * 任務引擎的 worker：每一步一個乾淨的 session，事實附 #編號
@@ -94,14 +90,11 @@ rectangle NodeSkills #D5E8D4 [
   ----
   * SKILLS.md：一行一個技能（常駐 system prompt）
   * tools/<name>.md：規格（按需載入）
-  * workflows/<name>.md：工作流（會重複做的多步驟流程；程式照步驟
-    執行技能、做完了沒由程式判斷；workflow_run、/workflow、
-    Agent_Runner.py --workflow；/make_skill 產生的也是）
   * 偽技能（規格在 tools/，在本程式內執行）：result_recall、
-    workflow_run、analysis_run（數據分析，全部由程式做）、
-    task_run（多步驟的任務：任務引擎）
+    analysis_run（數據分析，全部由程式做）、task_run（多步驟的任務：任務引擎）
   * scripts/<name>_cmd.py：真正執行的腳本
-  * 檔案系統／容器與 ROS2／調度系統／多模態／存檔回查／記憶
+  * 檔案系統／存檔回查／記憶／多步驟任務（harness 的重點）；
+    容器與 ROS2／調度系統／數據解析／多模態凍結（2026-11-17 起不再開發）
   * image_inspect：對影像檔路徑呼叫 vision.analyze()，
     結果跟一般工具回傳一樣存檔、提煉
   * 慣例（doc/技能撰寫規範.md）：第一行 [PASS]／[ERROR]（[ERROR] 附下一步）；
@@ -128,8 +121,6 @@ rectangle NodeStore #E1D5E7 [
     可以 result_recall；原圖不保存，保留上限另計（100 份）
   * extract_jobs/<編號>/：每一次提煉的切段、每段的結果與核對、整合、
     每次模型呼叫的 prompt 與回覆（留最近 500 次）
-  * workflow_jobs/<編號>/：每一次工作流的步驟、判斷點的模型呼叫
-    （每一步的輸出照常存成 #編號；留最近 300 次）
   * analysis_jobs/<編號>/：每一次數據分析的事實、重點、報告與進度
     （留最近 300 次）
   * task_jobs/<編號>/：每一次任務的每一版計畫、每一步的狀態與
@@ -173,11 +164,9 @@ note bottom of NodeWorld
   容器與主機的非唯讀指令、重啟容器、
   改 ROS 2 參數、發布 Topic…）執行前一律
   由程式請使用者確認（run_tool 沒有
-  approved 就不執行）；task_run、workflow_run
-  列出會改變狀態的步驟、核准一次（task_run
-  先查完再確認要改的；worker 只能做核准的；
-  workflow_run 執行時用真的值再判斷，沒核准過的
-  會改變狀態的步驟停下來再問）；
+  approved 就不執行）；task_run
+  列出會改變狀態的步驟、核准一次（先查完
+  再確認要改的；worker 只能做核准的）；
   Plan 模式：規劃階段不呼叫 run_tool，
   核准＝整份計畫的狀態變更都核准。
 end note

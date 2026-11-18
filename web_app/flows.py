@@ -90,8 +90,6 @@ def build_stats():
         "main_model": agent.model,             # 🧠 主對話的模型與 thinking（「🧠 模型」設定、/model、/think）
         "main_think": bool(agent.main_think),
         "summary_model": agent.summary_model,
-        "skill_model": agent.skill_model,
-        "skill_draft": agent.pending_skill_draft["name"] if agent.pending_skill_draft else None,
         "parallel_cal": state["parallel_cal"],
         "analysis_mode": state.get("analysis_mode", False),   # 📊 分析模式
         "analysis": _analysis_header(),                         # 最近一次數據分析 job
@@ -233,28 +231,6 @@ def handle_plan_response(text, events):
     return outcome
 
 
-def handle_skill_draft_response(text, events):
-    """處理使用者對待決定技能草稿的回應（比照計畫核准）：y 核准並註冊、n／空白取消、其他文字＝修改意見重擬。
-    狀態在 agent.pending_skill_draft（與 CLI 共用）。回傳 "registered" / "cancelled" / "revised" / "failed"
-    （失敗時草稿仍待決定，例如草稿還引用了不存在的腳本）。"""
-    choice = text.strip()
-    lower = choice.lower()
-    if lower == "y":
-        ok, msg = agent.approve_skill_draft()
-        events.append({"channel": "system", "text": msg})
-        return "registered" if ok else "failed"
-    if choice == "" or lower in ("n", "no"):
-        events.append({"channel": "system", "text": agent.cancel_skill_draft()})
-        return "cancelled"
-    events.append({"channel": "system", "text": "🧩 依修改意見重新草擬技能…"})
-    draft, err = agent.revise_skill_draft(choice)
-    if err:
-        events.append({"channel": "system", "text": f"⚠️ {err}（上一版草稿仍待決定）"})
-        return "failed"
-    events.append({"channel": "skilldraft", "name": draft["name"], "text": agent.skill_draft_preview(draft)})
-    return "revised"
-
-
 def _handle_tool_result(result, events):
     """run_tool 之後的共用處理（run_turn 與執行前關卡核准後的 apply_decision 都走這裡）：推卡片、超過門檻的提醒，
     再依模式決定結果怎麼進主對話。回傳 "end"（沒有工具結果，回合結束）／"continue"（auto：已加入，接著問 AI）
@@ -374,26 +350,6 @@ def run_analysis_turn(question, events, data=None):
         {"thought": prompt_files.load("harness/direct_commands.md", "analyze_thought"), "reply": reply, "action": action}, ensure_ascii=False)})
     events.append({"channel": "chat", "role": "assistant", "text": reply, "action": action_text(action)})
     outcome = _handle_tool_result(agent.run_tool({"action": action}, approved=True), events)
-    if outcome == "continue":
-        return run_turn(events)
-    return outcome == "await"
-
-
-def run_workflow_turn(args, events):
-    """🧩 /workflow <名稱> 名稱=值 …：不經過主模型選擇，直接執行使用者指定的工作流（同主模型呼叫 workflow_run 的 action，跟 CLI 共用
-    agent_core/workflow_cmd.begin）。會改變狀態的步驟照常推確認卡片（pending guard，核准後 apply_decision 執行）；報告照一般工具結果
-    進主對話，之後主模型依報告回答、可以接著追問。回傳是否在等使用者決策。"""
-    from agent_core import workflow_cmd
-    parsed, guard, note = workflow_cmd.begin(agent, args)
-    if note:
-        events.append({"channel": "system", "text": note})
-    events.append({"channel": "chat", "role": "assistant", "text": parsed["reply"], "action": action_text(parsed["action"])})
-    if guard:
-        pending.update(mode="guard", parsed=parsed, guard=guard)
-        events.append({"channel": "guard", "text": agent.guard_prompt_text(guard),
-                       "skill": guard["skill"], "command": guard["command"]})
-        return True
-    outcome = _handle_tool_result(agent.run_tool(parsed, approved=True), events)
     if outcome == "continue":
         return run_turn(events)
     return outcome == "await"

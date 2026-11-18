@@ -1,6 +1,5 @@
 """常數與環境變數：水位、門檻、檔名、標記。其他模組都從這裡取值，調設定只要看這一個檔案。"""
 import os
-import re
 
 
 # 專案根目錄（prompts/、skills_system/、logs/ 所在）：agent_core/ 的上一層
@@ -8,7 +7,7 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # 給模型的文字都在 prompts/（可以直接改，不用改程式；讀法見 agent_core/prompt_files.py，各檔案給誰見 prompts/README.md）：
 # AGENT.md（主對話的 system prompt）、Memory.md（長期記憶）、context_modes/（兩種上下文模式的規則）、harness/（主對話的 system prompt
 # 與動態區裡程式組的部分、程式核對後的提醒、工具結果的包裝）、summary/（滾動摘要）、extract/（工具回傳的提煉）、orchestra/（任務引擎：
-# 規劃、worker、類型）、workflow/（工作流的判斷點）、make_skill/（草擬工作流）、vision/（附圖的影像提取）
+# 規劃、worker、類型）、vision/（附圖的影像提取）
 PROMPTS_DIR = os.path.join(PROJECT_ROOT, "prompts")
 
 
@@ -103,20 +102,12 @@ SUMMARY_MODEL = os.environ.get("AGENT_SUMMARY_MODEL", "").strip() or None
 # /parallel_cal 的預設值（CLI 與 Web Console 啟動時的初始狀態），可用 AGENT_PARALLEL_CAL=1 開啟。
 PARALLEL_CAL_DEFAULT = os.environ.get("AGENT_PARALLEL_CAL", "").strip().lower() in ("1", "on", "true", "yes")
 
-# 🧩 make_skill：把使用者引導 Agent「做對」的一段對話（使用者的話、AI 的判斷、工具回傳）整理成工作流的規格
-# （SkillAgent.start_skill_draft 起）。不產生腳本：執行步驟只呼叫既有技能的腳本，其餘是檢查、確認、告知。
-# 草擬用的模型預設同摘要模型（AGENT_SUMMARY_MODEL，再退回主模型）；這是離線、一次性的工作，要從整段對話推論流程，
-# 記憶體夠的話建議用 AGENT_SKILL_MODEL 指定較大的模型（例如 gemma4:26b）。模型只填 JSON，排版由程式做。
-SKILL_MODEL = os.environ.get("AGENT_SKILL_MODEL", "").strip() or None
-MAKE_SKILL_MAX_PREDICT = 4000
-# 交給草擬 session 的對話紀錄上限（tokens）：超過時先縮短工具回傳（保留頭尾），還不夠才從最舊的訊息開始省略
-MAKE_SKILL_TRANSCRIPT_TOKENS = int(os.environ.get("AGENT_MAKE_SKILL_TRANSCRIPT_TOKENS", "16000"))
 TRAJECTORY_LOG = "trajectory.jsonl"   # logs/ 下的軌跡稽核記錄（每次腳本執行一行，跨 session 追加；已 .gitignore）
 
 # 📄 工具結果存檔：每次腳本執行的完整原始輸出都存成 logs/tool_results/<session>_<id>_<腳本>.md（key: value 檔頭 + 原文），
 # 並在 index.md 記一行（編號、時間、腳本、狀態、大小、任務、摘要回答）。摘要只讀頭尾、主對話只拿重點，被省略的細節不再是黑洞：
 # 模型用 result_list／result_grep／result_view 三個技能回查，不必重跑觀察型工具。技能規格文件不存（它不是執行結果）。
-# 編號＝軌跡 id，啟動時從既有存檔的最大編號續編（跨 session 不重複，見 _max_archived_id），/make_skill 與稽核對得上。
+# 編號＝軌跡 id，啟動時從既有存檔的最大編號續編（跨 session 不重複，見 _max_archived_id），跟軌跡的稽核記錄對得上。
 # 保留最近 N 個檔且總大小不超過上限，超過刪最舊的。
 TOOL_RESULTS_DIRNAME = "tool_results"
 TOOL_RESULTS_INDEX = "index.md"
@@ -137,12 +128,7 @@ TOOL_USE_INDEX_HINT_TARGET = 60   # prompt 要求的描述長度（中文字數�
 # 看舊存檔的衍生輸出：不記進檢索清單（會跟原本那筆重複佔位，recall 到它只拿得到部分內容）
 DERIVED_RESULT_SCRIPTS = {"result_grep_cmd.py", "result_view_cmd.py", "result_list_cmd.py", "result_recall_cmd.py"}
 TASK_HISTORY_KEEP = 3   # 任務線：摘要錨點帶最近幾則使用者訊息（使用者回答追問時，最新一句往往只是關鍵字，原本要做什麼在前一句）
-TRAJECTORY_OUTPUT_HEAD = 300          # 每筆軌跡保留的輸出開頭字元數（讓草擬模型知道結果長什麼樣）
-SKILL_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{1,40}$")
-# 會改變狀態（建容器、送工單、寫記憶、切換目錄／容器）的技能：工作流草稿的步驟用到它們時，預覽會提醒（執行時照常確認）
-NON_READONLY_SKILLS = {"docker_est", "workpackage_send", "workpackage_cancel", "overpending_cancel", "modify_memory", "change_dir", "docker_open",
-                       "docker_ctl", "file_ops", "ROS2_param", "ROS2_topic_pub", "rmf_handshake", "host_runcmd", "task_run",
-                       "mcap_recorder", "mcap_slicer", "ROS2_domain_id", "ROS2_workspace_env", "workflow_run"}
+TRAJECTORY_OUTPUT_HEAD = 300          # 每筆軌跡保留的輸出開頭字元數（稽核時看得出結果長什麼樣；完整的在工具結果存檔）
 
 # 使用者角色但實為工具回傳的訊息前綴（見 _split_for_compression 的配對規則）
 TOOL_RESULT_PREFIXES = ("[tool result]",)
@@ -230,8 +216,7 @@ TOOL_CLEARED_TAG = "[tool result - 已清除]"       # 被清成佔位的舊回�
 # AGENT_GUARDED_SKILLS 可覆寫清單（逗號分隔，none＝全部不擋）；/guard off 只對目前 session 關閉。
 # =========================================================
 _GUARDED_DEFAULT = ("workpackage_send,workpackage_cancel,overpending_cancel,docker_est,docker_runcmd,"
-                    "host_runcmd,docker_ctl,file_ops,ROS2_param,ROS2_topic_pub,ROS2_domain_id,ROS2_workspace_env,rmf_handshake,task_run,"
-                    "workflow_run")
+                    "host_runcmd,docker_ctl,file_ops,ROS2_param,ROS2_topic_pub,ROS2_domain_id,ROS2_workspace_env,rmf_handshake,task_run")
 _guarded_env = os.environ.get("AGENT_GUARDED_SKILLS", _GUARDED_DEFAULT).strip()
 GUARDED_SKILLS = set() if _guarded_env.lower() in ("", "none", "off") else {s.strip() for s in _guarded_env.split(",") if s.strip()}
 GUARD_DEFAULT = os.environ.get("AGENT_GUARD", "1").strip().lower() not in ("0", "off", "false", "no")
@@ -260,25 +245,16 @@ TOOL_EXEC_TIMEOUT = 600
 MAIN_THINK_DEFAULT = os.environ.get("AGENT_MAIN_THINK", "").strip().lower() in ("1", "on", "true", "yes")
 MODEL_SETTINGS_NAME = "model_settings.json"   # logs/ 下：Web Console 設定的主對話模型與 thinking 開關，重開也記得
 
-# 🧩 工作流（agent_core/workflow.py、workflow_spec.py；workflow_run 偽技能）：skills_system/workflows/<名稱>.md 的步驟由程式推進，
-# 模型只在判斷點（填這一步的值、選分支）出手；每一次的步驟、判斷點的模型呼叫存在 logs/workflow_jobs/<編號>/
-WORKFLOW_JOBS_DIRNAME = "workflow_jobs"
-WORKFLOW_JOBS_KEEP = int(os.environ.get("AGENT_WORKFLOW_JOBS_KEEP", "300"))
-WORKFLOW_CONTEXT_CHARS = int(os.environ.get("AGENT_WORKFLOW_CONTEXT_CHARS", "3000"))   # 判斷點看前面每一步的輸出最多幾字（完整的在存檔）
-WORKFLOWS_ENABLED = os.environ.get("AGENT_WORKFLOWS", "1").strip() != "0"   # 0：不列工作流、不接受 workflow_run（評測「沒有工作流」的對照）
-# workflow_run 的報告固定以這幾個開頭（agent_core/workflow.py 的報告、列表、取消都用它們）：跟 analysis_run 的事實報告一樣是程式整理好的，
-# 不再交給提煉 session（is_exempt_result），主對話直接收到完整的報告（2026-10-23 實測：一份 1000 字的報告被提煉了一次，多一次模型呼叫）
-WORKFLOW_REPORT_HEADS = ("[PASS] 工作流 ", "[PASS] ⏸️ 工作流 ", "[ERROR] 工作流 ")
-
 # 🧭 任務引擎（agent_core/task_engine.py，task_run 偽技能；Plan 模式也用它）：規劃 → 程式檢查 → 先查 → 依事實重排 → 確認 → 每一步一個
-# worker（或一個工作流）→ 程式檢查 → 程式寫報告。類型（profile）在 prompts/orchestra/profiles/；每一次的計畫、每一步、每一次模型呼叫存在
+# worker → 程式檢查 → 程式寫報告。類型（profile）在 prompts/orchestra/profiles/；每一次的計畫、每一步、每一次模型呼叫存在
 # logs/task_jobs/<編號>/
 TASK_MAX_ITEMS = 6                       # 計畫最多幾步（小模型規劃太多步時後面的步驟品質差，也難確認）
 TASK_WORKER_MAX_STEPS = 10               # 每一步的 worker 最多幾輪（每輪一個動作）
 TASK_MAX_REPLANS = 2                     # 一個任務最多重排幾次（先查完一次、某一步失敗一次）
 TASK_JOBS_DIRNAME = "task_jobs"
 TASK_JOBS_KEEP = int(os.environ.get("AGENT_TASK_JOBS_KEEP", "300"))
-# task_run 的報告固定以這幾個開頭：程式整理好的（每一步的結果、核對過的事實），不再交給提煉（is_exempt_result）
+# task_run 的報告固定以這幾個開頭：程式整理好的（每一步的結果、核對過的事實），跟 analysis_run 的事實報告一樣不再交給提煉
+# （is_exempt_result），主對話直接收到完整的報告
 TASK_REPORT_HEADS = ("[PASS] 任務", "[PASS] ⏸️ 任務", "[ERROR] 任務")
 
 # =========================================================

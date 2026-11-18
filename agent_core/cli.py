@@ -1,4 +1,4 @@
-"""CLI 介面（python3 Agent_Runner.py）：互動迴圈、slash 指令、Plan 模式與 /make_skill 的終端機流程。"""
+"""CLI 介面（python3 Agent_Runner.py）：互動迴圈、slash 指令、Plan 模式的終端機流程。"""
 
 from . import prompt_files
 from .agent import SkillAgent
@@ -53,41 +53,6 @@ def _context_content_for_cli(agent, result, tool_tokens, use_summary):
     else:
         print(f"🧠 主對話收到：完整原文（≈{tool_tokens} tokens，未縮減）")
     return content
-
-def _run_make_skill_flow(agent, arg_text):
-    """CLI 的 /make_skill：讀這段對話草擬工作流 → 預覽 → y 核准／n 取消／其他文字＝修改意見重擬。
-    與 Web 的 handle_skill_draft_response 用同一套 SkillAgent 狀態機。"""
-    parts = arg_text.split()
-    if not parts:
-        print("用法：/make_skill <技能名稱> [範圍：省略＝上一個起點之後的對話；或軌跡編號 3-7、3,5,8；或 all]；"
-              "/trajectory 可查編號")
-        return
-    name, spec = parts[0], (parts[1] if len(parts) > 1 else None)
-    print(f"🧩 正在讀這段對話與工具回傳，草擬工作流 {name}（模型 {agent.skill_model}）…")
-    draft, err = agent.start_skill_draft(name, spec)
-    if err:
-        print(f"⚠️ {err}")
-        return
-    print(agent.skill_draft_preview(draft))
-    while True:
-        choice = input("\n核准並註冊(y) / 取消(n) / 直接輸入修改意見: ").strip()
-        lower = choice.lower()
-        if lower == 'y':
-            ok, msg = agent.approve_skill_draft()
-            print(msg)
-            if ok:
-                return
-            continue
-        if choice == "" or lower in ('n', 'no'):
-            print(agent.cancel_skill_draft())
-            return
-        print("🧩 依修改意見重新草擬…")
-        draft, err = agent.revise_skill_draft(choice)
-        if err:
-            print(f"⚠️ {err}")
-            continue
-        print(agent.skill_draft_preview(draft))
-
 
 def _handle_analysis_command(agent, text):
     """CLI 的 /analysis 系列設定（/analyze 要跑一個回合，在 main() 處理；Web 是 web_app/analysis.py）。回傳 True＝已處理。"""
@@ -285,30 +250,6 @@ def main():
                 continue
             if _handle_analysis_command(agent, user_msg.strip()):   # 📊 /analysis、/analysis_data、/analysis_root…
                 continue
-            if user_msg.strip().lower() == "/workflow" or user_msg.strip().lower().startswith("/workflow "):
-                # 🧩 使用者直接指定工作流（不經過模型選擇；跟 Web 共用 workflow_cmd）：會改變狀態的照常確認，報告進主對話後 AI 依報告回答
-                from . import workflow_cmd
-                kind, arg = workflow_cmd.parse(user_msg.strip()[len("/workflow"):])
-                if kind != "run":
-                    print(workflow_cmd.list_text(agent) if kind == "list" else workflow_cmd.show_text(agent, arg) if kind == "show" else arg)
-                    continue
-                parsed, guard, cleared_note = workflow_cmd.begin(agent, arg)
-                if cleared_note:
-                    print(cleared_note)
-                if guard:
-                    print(f"\n{agent.guard_prompt_text(guard)}")
-                    if input("確定執行？(y/n): ").strip().lower() != 'y':
-                        agent.messages.append({'role': 'user', 'content': tool_result_message(agent.guard_denied_text(guard), parsed["action"])})
-                        print("🚫 已拒絕，這個工作流沒有執行。")
-                        continue
-                result = agent.run_tool(parsed, approved=True)
-                print(f"\n🚀 系統回傳:\n{'-'*30}\n{result}\n{'-'*30}")
-                tokens = agent.count_tokens(result)
-                agent.total_tool_tokens += tokens
-                agent.messages.append({'role': 'user', 'content': tool_result_message(
-                    _context_content_for_cli(agent, result, tokens, tool_summary_mode), parsed["action"])})
-                execute_turn()
-                continue
             if user_msg.lower() == '/clear':
                 agent.reset_conversation()
                 print("🧹 記憶已清空。")
@@ -386,9 +327,6 @@ def main():
                 continue
             if user_msg.lower() == '/trajectory':
                 print(agent.format_trajectory())
-                continue
-            if user_msg.lower() == '/make_skill' or user_msg.lower().startswith('/make_skill '):
-                _run_make_skill_flow(agent, user_msg[len('/make_skill'):].strip())
                 continue
             if user_msg.lower() == '/plan done':
                 if agent.plan:

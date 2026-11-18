@@ -420,7 +420,7 @@ def t_status_until_done():
 def t_until_done_stuck():
     """--until-done 看得出不會自己往下走就提早結束（2026-10-24 以前一律等滿 300 秒：一直回 no 的機器人、完成訊號遺失）：
     完成訊號遺失、閒著的機器人一直不接授權 → 寫原因與下一步；第一次授權沒回應之後照常的、走很慢（在動）的照常等。
-    第一行不能有「已完成」（工作流的檢查看這三個字）"""
+    第一行不能有「已完成」（主對話與報告會照抄第一行）"""
     robots = [dict(ROBOTS3[0], behavior="lost_fin"), dict(ROBOTS3[1], behavior="lost_yes_once"), dict(ROBOTS3[2], behavior="busy"),
               {"id": "tb4", "station": "a4", "behavior": "slow"}]
     pk = [pkg("WP_F", "tb1", "a3"), pkg("WP_Y", "tb2", "a7"), pkg("WP_B", "tb3", "a6"), pkg("WP_S", "tb4", "a8")]

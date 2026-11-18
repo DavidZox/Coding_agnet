@@ -16,10 +16,8 @@ from .flows import (
     clear_plan_for_new_task,
     DEFAULT_VISION_PROMPT,
     handle_plan_response,
-    handle_skill_draft_response,
     run_analysis_turn,
     run_turn,
-    run_workflow_turn,
     start_plan_flow,
 )
 from .state import (
@@ -120,7 +118,6 @@ class ConsoleHandler(BaseHTTPRequestHandler):
         stream.done(
             awaiting_decision=awaiting_decision,
             awaiting_plan=agent.plan_status() == "draft",
-            awaiting_skill_draft=agent.pending_skill_draft is not None,
             pending_mode=pending["mode"] if awaiting_decision else None,
         )
 
@@ -247,7 +244,7 @@ class ConsoleHandler(BaseHTTPRequestHandler):
         data = self._read_json()
         with lock:
             stream = self._begin_stream()
-            # ⏳ 偽技能（analysis_run、task_run、workflow_run）執行中的進度：推到右欄（analysis 的 worker 平行時由 analysis_job 上鎖後才呼叫）
+            # ⏳ 偽技能（analysis_run、task_run）執行中的進度：推到右欄（analysis 的 worker 平行時由 analysis_job 上鎖後才呼叫）
             agent.progress_callback = lambda text: stream.append({"channel": "progress", "text": text})
             try:
                 if self.path == "/api/send":
@@ -340,13 +337,6 @@ class ConsoleHandler(BaseHTTPRequestHandler):
                 self._finish_turn(stream, awaiting_decision)  # 核准後跑完、或取消，都是回合結束
             return
 
-        # 有技能草稿待決定時，輸入框的內容一律視為對草稿的回應（y／t／n／修改意見），
-        # 與計畫核准同一種處理方式；這裡不呼叫模型的主對話，也不消耗附件與待送技能規格。
-        if agent.pending_skill_draft:
-            handle_skill_draft_response(message, stream)
-            self._finish(stream, False)
-            return
-
         if not message:
             if vision_session.count() == 0 and not pending_skill_names():
                 self._finish(stream, False)
@@ -363,15 +353,6 @@ class ConsoleHandler(BaseHTTPRequestHandler):
             agent.messages.append({'role': 'user', 'content': question or prompt_files.load("harness/direct_commands.md", "analyze_default_question")})
             self._finish_turn(stream, run_analysis_turn(question, stream))
             return
-
-        if message.lower() == "/workflow" or message.lower().startswith("/workflow "):
-            # 🧩 /workflow <名稱> 名稱=值 …：使用者直接指定工作流（不經過模型選擇）；列出、看步驟在 handle_slash_command
-            from agent_core import workflow_cmd
-            kind, args = workflow_cmd.parse(message[len("/workflow"):])
-            if kind == "run":
-                stream.append({"channel": "chat", "role": "user", "text": message, "tokens": agent.count_tokens(message)})
-                self._finish_turn(stream, run_workflow_turn(args, stream))
-                return
 
         if handle_slash_command(message, stream):
             self._finish(stream, False)  # slash 指令不消耗附件

@@ -99,7 +99,7 @@ class ArchiveMixin:
         「回答」欄填視覺模型的重點，並記進工具使用檢索清單（描述是視覺模型寫的 index_hint，system prompt 顯示時標〔附圖分析〕）。
         以前視覺分析只併進那一則使用者訊息：訊息被壓縮或換了 session 之後，main session 與獨立 session 都找不到它，也沒辦法
         像工具回傳一樣 result_recall。原圖不存（只存給決策 AI 看的文字），所以 recall 時只能根據這份文字回答（見 _result_recall）。
-        不記進操作軌跡：它不是執行腳本，/make_skill 不該把它當成一個步驟。回傳編號；寫不進去回 None（不影響主流程）。"""
+        不記進操作軌跡：它不是執行腳本。回傳編號；寫不進去回 None（不影響主流程）。"""
         if not str(text or "").strip():
             return None
         rid = self._next_id()
@@ -163,7 +163,7 @@ class ArchiveMixin:
 
     def result_text(self, ref):
         """存檔的工具結果 → 原文（不含檔頭；跟執行當下拿到的輸出一樣）；ref 是編號或存檔的路徑，找不到回 None。
-        工作流停在【確認】之後接著做、任務引擎核對引用前面各步輸出的事實時，從這裡讀回原文（記憶體裡沒有了）。"""
+        任務引擎核對引用前面各步輸出的事實時，從這裡讀回原文（記憶體裡沒有了）。"""
         ref = str(ref or "").strip()
         path = ref if os.path.isabs(ref) else self.result_file_path(ref) if ref else None
         if not path or not os.path.exists(path):

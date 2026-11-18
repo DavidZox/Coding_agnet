@@ -5,9 +5,9 @@
   "total": 12
  },
  "chat_selftest": {
-  "label": "第 4 階段（任務引擎，三次完整跑）（2026-10-24）",
-  "passed": 22,
-  "total": 22
+  "label": "收尾：拿掉 /make_skill 與工作流引擎（2026-11-17）",
+  "passed": 20,
+  "total": 20
  },
  "containers_sandbox": {
   "label": "第 4 階段（任務引擎，三次完整跑）（2026-10-24）",
@@ -25,9 +25,9 @@
   "total": 12
  },
  "integrity": {
-  "label": "把程式裡給模型的字搬進 prompts/：範本跟程式對得上、讀範本（2026-10-25）",
-  "passed": 6,
-  "total": 6
+  "label": "收尾：拿掉 /make_skill 與工作流引擎（2026-11-17）",
+  "passed": 8,
+  "total": 8
  },
  "ops_selftest": {
   "label": "第 4 階段（任務引擎，三次完整跑）（2026-10-24）",
@@ -45,7 +45,7 @@
   "total": 27
  },
  "task_selftest": {
-  "label": "第 5 階段（2026-10-25）",
+  "label": "收尾：拿掉 /make_skill 與工作流引擎（2026-11-17）",
   "passed": 18,
   "total": 18
  },
@@ -58,10 +58,5 @@
   "label": "第 4 階段（任務引擎，三次完整跑）（2026-10-24）",
   "passed": 24,
   "total": 24
- },
- "workflow_selftest": {
-  "label": "第 4 階段（任務引擎，三次完整跑）（2026-10-24）",
-  "passed": 14,
-  "total": 14
  }
 }

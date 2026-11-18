@@ -3,12 +3,12 @@ import os
 import shlex
 import subprocess
 import sys
-from .config import SKILL_DOC_PREFIX, SKILL_LOADED_MARKER, TOOL_EXEC_TIMEOUT, WORKFLOWS_ENABLED
+from .config import SKILL_DOC_PREFIX, SKILL_LOADED_MARKER, TOOL_EXEC_TIMEOUT
 
 from . import prompt_files
-from .protocol import action_text, doc_type, parse_agent_reply
+from .protocol import action_text, parse_agent_reply
 
-# 流程技能（/make_skill 依對話整理的規格，沒有自己的腳本）載入後，下一步怎麼做：照步驟一步一步來
+
 def _d(key, /, **fields):
     """prompts/harness/skill_docs.md 的一則：載入規格時系統加在前面的那句話。"""
     return prompt_files.load("harness/skill_docs.md", key, **fields)
@@ -21,19 +21,6 @@ from skills_system.scripts._shell_common import STATE_MARKERS  # noqa: E402
 TASK_PSEUDO_SCRIPTS = ("task_run_cmd.py",)
 # 數據分析（agent_core/analysis_job.py，全部由程式做）：同上，交給 AnalysisMixin
 ANALYSIS_PSEUDO_SCRIPTS = ("analysis_run_cmd.py",)
-# 工作流（agent_core/workflow.py）：同上，交給 WorkflowMixin
-WORKFLOW_PSEUDO_SCRIPTS = ("workflow_run_cmd.py",)
-
-
-def workflow_next_step(name, doc):
-    """模型用工作流的名稱當技能載入時：說明要用 workflow_run 執行（需要的資訊照規格的「需要的資訊」）。"""
-    need = []
-    for ln in doc.splitlines():
-        ln = ln.strip()
-        if ln.startswith("* `{") and "}`" in ln:
-            key = ln[4:ln.index("}`")]
-            need.append(_d("workflow_input", key=key) + (_d("workflow_input_optional") if "選填" in ln else ""))
-    return _d("workflow_next", name=name, inputs=" ".join(need))
 
 
 class DispatchMixin:
@@ -69,8 +56,7 @@ class DispatchMixin:
         if doc is None:
             return None
         name = skill_name[:-3] if skill_name.endswith(".md") else skill_name
-        how = workflow_next_step(name, doc) if doc_type(doc) == "Workflow" else _d("manual_how")   # 工作流：用 workflow_run，不是照腳本
-        return _d("manual", marker=SKILL_LOADED_MARKER, prefix=SKILL_DOC_PREFIX, name=name, how=how, doc=doc.rstrip())
+        return _d("manual", marker=SKILL_LOADED_MARKER, prefix=SKILL_DOC_PREFIX, name=name, how=_d("manual_how"), doc=doc.rstrip())
 
     def _load_skill_doc(self, skill_name):
         """若 skill_name 對應到 tools/<skill_name>.md，回傳其內容；否則回傳 None。
@@ -79,10 +65,6 @@ class DispatchMixin:
             skill_name = skill_name[:-3]
         doc_path = os.path.join(self.tools_dir, f"{skill_name}.md")
         if not os.path.exists(doc_path):
-            wf_path = os.path.join(self.base_path, "workflows", f"{skill_name}.md")   # 工作流：模型直接用它的名稱當技能
-            if WORKFLOWS_ENABLED and os.path.exists(wf_path) and not skill_name.startswith("_"):
-                with open(wf_path, "r", encoding="utf-8") as f:
-                    return f.read()
             return None
         with open(doc_path, "r", encoding="utf-8") as f:
             return f.read()
@@ -207,10 +189,6 @@ class DispatchMixin:
             remainder = parts[1] if len(parts) > 1 else ""
 
             skill_doc = self._load_skill_doc(raw_token)
-            if skill_doc is not None and doc_type(skill_doc) == "Workflow":
-                name = raw_token[:-3] if raw_token.endswith(".md") else raw_token
-                print(f"📖 Agent 選擇工作流: {name}（載入工作流的規格，尚未執行）")
-                return _d("loaded_workflow", prefix=SKILL_DOC_PREFIX, name=name, next=workflow_next_step(name, skill_doc), doc=skill_doc)
             if skill_doc is not None:
                 print(f"📖 Agent 選擇技能索引: {raw_token}（載入規格文件，尚未執行）")
                 # 回給模型的這段話是兩階段流程裡最關鍵的一句：實測 JSON 協議下小模型載完規格容易停下來解釋規格或
@@ -266,13 +244,6 @@ class DispatchMixin:
                 # 存在性檢查與確認關卡（task_run）照常運作，所以攔在關卡之後。記一筆軌跡：報告有存檔編號，之後可以 result_recall；
                 # 每一步 worker 的工具輸出也各自記軌跡（#編號，報告裡的事實引用它們）
                 output_text = self.task_run(remainder)
-                self._record_trajectory(script_name, clean_args, output_text, cwd_before, container_before, target_before)
-                return output_text
-            if script_name in WORKFLOW_PSEUDO_SCRIPTS:
-                # 偽技能：工作流由程式照步驟推進（agent_core/workflow.py），判斷點要呼叫模型；每一步的輸出各自記軌跡（#編號），
-                # 整份報告也記一筆
-                output_text = (self.workflow_run(remainder) if WORKFLOWS_ENABLED else
-                               "[ERROR] 這個環境關閉了工作流（AGENT_WORKFLOWS=0）：用技能一步一步做，或用 task_run。")
                 self._record_trajectory(script_name, clean_args, output_text, cwd_before, container_before, target_before)
                 return output_text
             if script_name in ANALYSIS_PSEUDO_SCRIPTS:

@@ -49,8 +49,6 @@
   .entry .result-link:hover { text-decoration: underline; }
   .entry.plan { background: #16302c; border: 1px solid #2f6f5e; }
   .entry.plan .tag { color: #4fd8ba; opacity: 1; }
-  .entry.skilldraft { background: #26203a; border: 1px solid #6d5aa8; font-family: "Cascadia Code", Consolas, monospace; font-size: 12px; }
-  .entry.skilldraft .tag { color: #c4b0ff; opacity: 1; font-family: inherit; }
   .entry.tool.oversized { border: 1px solid #b0873f; box-shadow: 0 0 0 1px #b0873f inset; }
   .entry.tool.oversized .tag { color: #e6b95c; opacity: 1; }
   .entry.tool.oversized.reviewed { border-color: #2f4a3a; box-shadow: none; opacity: 0.75; }
@@ -64,9 +62,9 @@
   .entry.summary.truncated { background: transparent; border: 1px dashed #b0873f; color: #d9c49a; padding: 4px 8px; font-size: 12px; }
   .entry.summary.truncated .tag { color: #e6b95c; }
   footer { border-top: 1px solid #3a3c40; padding: 10px 12px; background: #2b2d31; }
-  #decision-bar, #plan-bar, #skill-draft-bar, #guard-bar { display: none; margin-bottom: 8px; gap: 8px; align-items: center; font-size: 13px; flex-wrap: wrap; }
-  #decision-bar.show, #plan-bar.show, #skill-draft-bar.show, #guard-bar.show { display: flex; }
-  #decision-bar button, #plan-bar button, #skill-draft-bar button, #guard-bar button { cursor: pointer; }
+  #decision-bar, #plan-bar, #guard-bar { display: none; margin-bottom: 8px; gap: 8px; align-items: center; font-size: 13px; flex-wrap: wrap; }
+  #decision-bar.show, #plan-bar.show, #guard-bar.show { display: flex; }
+  #decision-bar button, #plan-bar button, #guard-bar button { cursor: pointer; }
   .input-row { display: flex; gap: 8px; }
   textarea#msg {
     flex: 1; resize: none; height: 54px; background: #1e1f22; color: #e3e3e3;
@@ -287,11 +285,6 @@
     <button onclick="sendPlanDecision('y')">✅ 核准並執行</button>
     <button class="danger" onclick="sendPlanDecision('n')">🚫 取消任務</button>
   </div>
-  <div id="skill-draft-bar">
-    <span>🧩 有工作流的草稿待你決定（也可以直接在下方輸入修改意見送出，系統會重擬）：</span>
-    <button onclick="sendSkillDraftDecision('y')">✅ 核准並註冊</button>
-    <button class="danger" onclick="sendSkillDraftDecision('n')">🚫 取消草稿</button>
-  </div>
   <div id="attach-strip"><span id="attach-hint">📎 已附加影像（送出時一起分析）：</span></div>
   <div id="skill-strip"><span id="skill-hint">📘 已載入技能規格（隨下一則訊息一起送出）：</span></div>
   <div class="input-row">
@@ -325,7 +318,6 @@ const sendBtn = document.getElementById('send-btn');
 const decisionBar = document.getElementById('decision-bar');
 const guardBar = document.getElementById('guard-bar');
 const planBar = document.getElementById('plan-bar');
-const skillDraftBar = document.getElementById('skill-draft-bar');
 const attachStrip = document.getElementById('attach-strip');
 const attachMenu = document.getElementById('attach-menu');
 const attachBtn = document.getElementById('attach-btn');
@@ -410,12 +402,10 @@ function renderEvents(events) {
       renderEntry(chatLog, 'guard', '🛡️ 執行前確認（下方按鈕：同意執行／拒絕）', ev.text);
     } else if (ev.channel === 'plan') {
       renderEntry(chatLog, 'plan', '📝 計畫', ev.text);
-    } else if (ev.channel === 'skilldraft') {
-      renderEntry(chatLog, 'skilldraft', `🧩 技能草稿 ${ev.name}（待你決定：核准／取消，或送出修改意見）`, ev.text);
     } else if (ev.channel === 'system') {
       renderEntry(toolLog, 'system', '系統', ev.text);
     } else if (ev.channel === 'progress') {
-      // ⏳ 偽技能（analysis_run、task_run、workflow_run）執行中的進度：右欄的卡片；數據分析的進度另外讓面板切到那個 job
+      // ⏳ 偽技能（analysis_run、task_run）執行中的進度：右欄的卡片；數據分析的進度另外讓面板切到那個 job
       renderEntry(toolLog, 'analysis', '⏳ 執行進度', ev.text);
       if (/^[📊🧭🔧💭▶✅❌🧩]/u.test(ev.text) && !ev.text.startsWith('🧭 ops')) noteAnalysisEvent(ev.text);
     }
@@ -554,14 +544,6 @@ function hidePlanBar() {
   planBar.classList.remove('show');
 }
 
-function showSkillDraftBar() {
-  skillDraftBar.classList.add('show');
-}
-
-function hideSkillDraftBar() {
-  skillDraftBar.classList.remove('show');
-}
-
 function handleStreamMessage(msg) {
   if (msg.type === 'event') {
     renderEvents([msg.event]);
@@ -611,7 +593,6 @@ function applyDone(data) {
   if (data.stats) updateStatus(data.stats);
   if (data.awaiting_decision) showDecisionBar(data.pending_mode);
   if (data.awaiting_plan) showPlanBar();
-  if (data.awaiting_skill_draft) showSkillDraftBar();
 }
 
 async function sendMessage() {
@@ -622,7 +603,6 @@ async function sendMessage() {
   setBusy(true);
   hideDecisionBar();
   hidePlanBar();
-  hideSkillDraftBar();
   msgBox.value = '';
   try {
     applyDone(await streamPost('/api/send', { message: text }));
@@ -650,20 +630,6 @@ async function sendDecision(action) {
 async function sendPlanDecision(action) {
   setBusy(true);
   hidePlanBar();
-  try {
-    applyDone(await streamPost('/api/send', { message: action }));
-  } catch (e) {
-    renderEntry(toolLog, 'system', '錯誤', '與伺服器的連線中斷：' + e);
-  } finally {
-    setBusy(false);
-    msgBox.focus();
-  }
-}
-
-// 🧩 技能草稿的決定跟計畫一樣走 /api/send：有草稿待決定時，輸入框的內容一律視為對草稿的回應
-async function sendSkillDraftDecision(action) {
-  setBusy(true);
-  hideSkillDraftBar();
   try {
     applyDone(await streamPost('/api/send', { message: action }));
   } catch (e) {

@@ -6,20 +6,8 @@
 <!-- @issue_unknown_skills -->
 第 {n} 步的技能 {skills} 不在技能清單裡（只能用清單裡的名稱）
 
-<!-- @issue_no_workflow -->
-第 {n} 步的工作流 {workflow} 不存在（只能用工作流清單裡的名稱，或改用技能）
-
-<!-- @issue_workflow_confirm -->
-第 {n} 步的工作流 {workflow} 有【確認】、會停下來等使用者，不能放進計畫：改用技能
-
-<!-- @issue_workflow_args -->
-第 {n} 步的工作流 {workflow}：{error}
-
-<!-- @issue_workflow_in_goal -->
-第 {n} 步的目標寫了工作流 {workflows}，但沒有填 workflow：要用工作流就填 workflow 與 workflow_args（skills 給空的），不用的話目標不要寫工作流的名稱
-
 <!-- @issue_no_skills -->
-第 {n} 步沒有列出要用的技能（或工作流）
+第 {n} 步沒有列出要用的技能
 
 <!-- @issue_write_needs_file_ops -->
 第 {n} 步要寫進 {path}，skills 要列 file_ops（不然執行時不能寫）
@@ -52,10 +40,7 @@ output 的 path「{path}」不是檔案的路徑：寫要建立或附加的檔�
 output 的 {path} 已經存在，mode 是 write 會整份換掉：使用者要加一筆（記一筆、附加）就用 append；確定要整份換掉才用 write
 
 <!-- @issue_output_written_by_step -->
-第 {n} 步要自己寫 {path}，但這個檔案已經寫在 output、系統最後會依核對過的事實寫：拿掉這一步（或改成只收集要寫進去的資料）；那一步是工作流、會自己寫這個檔的話，output 的 path 給空字串
-
-<!-- @issue_output_dropped -->
-第 {n} 步會自己寫 {path}：系統不另外寫報告（同一個檔不寫兩次）
+第 {n} 步要自己寫 {path}，但這個檔案已經寫在 output、系統最後會依核對過的事實寫：拿掉這一步（或改成只收集要寫進去的資料）
 
 <!-- @issue_output_needs_steps -->
 要寫 {path}，但沒有收集資料的步驟：先排查詢的步驟，系統最後依查到的事實寫
@@ -63,9 +48,6 @@ output 的 {path} 已經存在，mode 是 write 會整份換掉：使用者要�
 <!-- @plan_user -->
 【技能清單】
 {skills}
-
-【工作流清單】（整件事或其中一段正好是其中一個時，那一步寫 workflow）
-{workflows}
 
 【目前狀態】
 {ENV}
@@ -109,9 +91,6 @@ output 的 {path} 已經存在，mode 是 write 會整份換掉：使用者要�
 【技能清單】
 {skills}
 
-【工作流清單】
-{workflows}
-
 【目前狀態】
 {ENV}
 
@@ -153,23 +132,6 @@ output 的 {path} 已經存在，mode 是 write 會整份換掉：使用者要�
 
 <!-- @facts_none -->
 （還沒有）
-
-<!-- @wf_catalog_item -->
-- {name}：{description}
-  workflow_args：
-{inputs}
-
-<!-- @wf_catalog_input -->
-    {name}=…{optional}：{description}
-
-<!-- @wf_catalog_optional -->
-（選填）
-
-<!-- @wf_catalog_no_inputs -->
-    （不用）
-
-<!-- @wf_catalog_none -->
-（沒有）
 
 <!-- @check_error_ask -->
 【使用者的任務】{task}

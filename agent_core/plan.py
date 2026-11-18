@@ -84,17 +84,14 @@ class PlanMixin:
         self.plan["issues"] = issues
 
     def _plan_make_item(self, skill, goal, n):
-        raw = {"title": goal[:30], "goal": goal, "skills": [skill] if skill else [], "workflow": "", "workflow_args": "",
-               "changes_state": False, "check": None}
-        if skill and self.load_workflow(skill):        # 「/plan add stuck_package_fix：wp_id=WP_1」→ 工作流的步驟
-            raw.update(skills=[], workflow=skill, workflow_args=goal if "=" in goal else "")
+        raw = {"title": goal[:30], "goal": goal, "skills": [skill] if skill else [], "changes_state": False, "check": None}
         it, _ = self._task_item(raw, n)
         return it
 
     def _parse_step_text(self, text):
-        """「技能：要做什麼」／「技能 要做什麼」→ (技能或工作流, 要做什麼)；開頭不是技能或工作流的名稱就當成不指定技能的一步。"""
+        """「技能：要做什麼」／「技能 要做什麼」→ (技能, 要做什麼)；開頭不是技能的名稱就當成不指定技能的一步。"""
         text = " ".join(str(text or "").split())
-        names = sorted(set(self.task_skill_names()) | {w["name"] for w in self.list_workflows()}, key=len, reverse=True)
+        names = sorted(set(self.task_skill_names()), key=len, reverse=True)
         for name in names:
             if text == name or text.startswith((name + "：", name + ":", name + " ")):
                 return name, text[len(name):].lstrip("：: ").strip() or name
@@ -108,7 +105,7 @@ class PlanMixin:
         goal = " ".join(str(op.get("goal") or "").split())[:600]
         skill = str(op.get("skill") or "").strip()
         new = self._plan_make_item(skill, goal or skill, n or len(items) + 1) if (goal or skill) else None
-        label = lambda it: f"{'工作流 ' + it['workflow'] if it['workflow'] else ('、'.join(it['skills']) or '（不指定技能）')}：{it['goal']}"   # noqa: E731
+        label = lambda it: f"{'、'.join(it['skills']) or '（不指定技能）'}：{it['goal']}"   # noqa: E731
         if kind in ("add", "insert") and new is None:
             return f"{kind}：沒有內容，略過"
         if kind == "add":
@@ -179,8 +176,7 @@ class PlanMixin:
     def _plan_revise(self, feedback):
         """自然語言的修改意見：規劃 session 只輸出操作（add／insert／edit／delete／move），harness 套用。"""
         system = prompt_files.load(_PLAN_EDIT, "system")   # 文字在 prompts/orchestra/plan_edit.md
-        user = prompt_files.load(_PLAN_EDIT, "user", skills=self._task_catalog(), workflows=self._task_workflow_catalog(),
-                                 draft=self.plan_text(), feedback=feedback)
+        user = prompt_files.load(_PLAN_EDIT, "user", skills=self._task_catalog(), draft=self.plan_text(), feedback=feedback)
         _, data = self._task_call(self.plan, "plan_edit", [{"role": "system", "content": system}, {"role": "user", "content": user}],
                                   PLAN_OPS_SCHEMA, num_predict=2048)
         ops = [o for o in (data or {}).get("ops") or [] if isinstance(o, dict)]

@@ -101,7 +101,7 @@ def main():
             turn["task_jobs"] = [{"id": job["id"], "status": job["status"], "model_calls": job.get("model_calls"),
                                   "seconds": job.get("seconds"), "task": job["task"], "replans": job.get("replans"),
                                   "plans": job.get("plans"),
-                                  "items": [{k: it.get(k) for k in ("n", "title", "skills", "workflow", "workflow_args", "changes_state",
+                                  "items": [{k: it.get(k) for k in ("n", "title", "skills", "changes_state",
                                                                     "approved", "check", "status", "attempts", "steps", "summary",
                                                                     "facts", "dropped", "evidence", "calls")} for it in job["items"]]}]
         after_turn_compression(agent, False, lambda text: turn.setdefault("notices", []).append(text))

@@ -129,7 +129,6 @@ class ContextModeMixin:
                 body = f"{TOOL_CLEARED_TAG}\n" + _r("cleared", tokens=tokens, rid=rid, what=_r("cleared_what", what=what) if what else "")
                 new = "\n".join(x for x in ("[tool result]", frame, body, tail) if x)
                 replacement = {'role': self.messages[i]['role'], 'content': new}
-                self._transcript_replaced(self.messages[i], replacement)   # 對話紀錄留的是清除前的原文
                 self.messages[i] = replacement
                 freed += tokens - self.count_tokens(new)
                 cleared += 1

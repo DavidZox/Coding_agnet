@@ -1,16 +1,6 @@
-使用者用 /analyze、/workflow 直接指定時（不經過主模型選擇），harness 替使用者與 AI 放進主對話的那兩則訊息——之後的回合 AI 看得到
-這是使用者指定的（agent_core/workflow_cmd.py；/analyze 在 agent_core/cli.py 與 web_app/flows.py，兩邊的 reply 原本就寫得不一樣，
-照原樣各留一則）。還有數據分析報告最後一行的回答規則（agent_core/analysis_job.py；開頭的「（依這份報告回答使用者」是程式認的標記，
+使用者用 /analyze 直接指定時（不經過主模型選擇），harness 替使用者與 AI 放進主對話的那兩則訊息——之後的回合 AI 看得到
+這是使用者指定的（agent_core/cli.py 與 web_app/flows.py，兩邊的 reply 原本就寫得不一樣，照原樣各留一則）。還有數據分析報告最後一行的回答規則（agent_core/analysis_job.py；開頭的「（依這份報告回答使用者」是程式認的標記，
 留在程式裡）。{名稱} 是程式填的值。
-
-<!-- @workflow_user -->
-（我用 /workflow 直接執行工作流：{args}。執行完照報告告訴我結果；停在【確認】或沒有完成時說明卡在哪裡、接下來可以怎麼做。）
-
-<!-- @workflow_thought -->
-使用者用 /workflow 直接指定要執行的工作流，照使用者給的參數執行
-
-<!-- @workflow_reply -->
-照你指定的執行工作流：{args}
 
 <!-- @analyze_default_question -->
 這段錄製期間發生了哪些狀態變化？

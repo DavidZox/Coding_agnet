@@ -1,19 +1,18 @@
 # 評測（evals）
 
-評測依對象分成七組，外加每個階段結束時跑的總執行器（`phase_check.py`，見最後一節）。**不用模型**的自我測試（假的 `ollama.chat` 照劇本回答，或直接執行腳本，幾秒到一分多鐘）改程式之後先跑；**真模型／實機**的評測要 Ollama、容器或沙盒。
+評測依對象分成八組，外加每個階段結束時跑的總執行器（`phase_check.py`，見最後一節）。**不用模型**的自我測試（假的 `ollama.chat` 照劇本回答，或直接執行腳本，幾秒到一分多鐘）改程式之後先跑；**真模型／實機**的評測要 Ollama、容器或沙盒。
 每一次都在臨時目錄複製一份專案來跑，不碰正式的 `logs/` 與 `prompts/Memory.md`（數據分析回歸例外：job 照常寫進正式的 `logs/analysis_jobs/`，評分從那裡讀）；結果寫到 `evals/results/`（已在 `.gitignore`）。
 
 | 組 | 不用模型 | 真模型／實機 | 測什麼 |
 |---|---|---|---|
-| `chat/` 主對話 | `selftest.py`、`extract_selftest.py`（工具回傳的提煉與存檔回查） | `run.py`（情境在 `scenarios.py`，`worker.py` 跑一個情境）、`perf_report.py`（KV cache 分析） | 選技能、兩階段揭露、大量回傳與回存檔查、執行前確認、記憶、程式把關（卡住、說做了卻沒做、說要做卻沒動作）、模型設定、Web／CLI 的 `/workflow`、`task_run` 與 Plan 模式、對數據技能的路由；提煉的切段、核對、存檔、行號；兩種上下文模式比較 |
+| `chat/` 主對話 | `selftest.py`、`extract_selftest.py`（工具回傳的提煉與存檔回查） | `run.py`（情境在 `scenarios.py`，`worker.py` 跑一個情境）、`perf_report.py`（KV cache 分析） | 選技能、兩階段揭露、大量回傳與回存檔查、執行前確認、記憶、程式把關（卡住、說做了卻沒做、說要做卻沒動作）、模型設定、`task_run` 與 Plan 模式、對數據技能的路由；提煉的切段、核對、存檔、行號；兩種上下文模式比較 |
 | `skills/` 技能腳本 | `selftest.py`（每一組一個 `<組>_test.py`：fs、containers、rmf、data） | —（主對話真的用技能看 `chat/`、`ops/`） | 每個技能直接執行：[PASS] 與每一種 [ERROR] 的寫法（原因與下一步）、截斷的說明、不讀標準輸入、逾時；需要容器的在沙盒裡跑，沒有就略過（規範：`doc/技能撰寫規範.md`） |
 | `analysis/` 數據解析 | `selftest.py`（數據技能用錄下的真實輸出 `fixtures/`） | `regression.py`（回歸評分；數據分析全部由程式做，不需要 Ollama，要測試容器）、`tools_live.py`（在真的容器裡跑數據技能） | 事實的整理、重點、報告、主對話回答的核對；回歸評分只評事實 |
 | `datagen/` 隨機情境的錄製產生器 | `check_facts.py`（只驗程式那一層，需要容器） | 產生的錄製交給 `analysis/regression.py` | 六個開發中套件的模擬，評分標準由注入的事件自動產生（見 [`datagen/README.md`](datagen/README.md)） |
-| `ops/` 多步驟維運 | `selftest.py`（file_ops、維運技能的確認關卡） | `run.py`（情境在 `dataset/`，在 Docker-in-Docker 沙盒裡真的執行；`worker.py` 跑一個情境） | 主對話用技能、工作流、任務引擎做完維運任務；狀態、回覆、禁止動作由程式計分 |
-| `task/` 任務引擎 | `selftest.py`（假模型、真的本機檔案技能） | —（真模型用 `ops/run.py`，調查與整理報告是 `--set inv`） | task_run 與 Plan 模式：類型、規劃的程式檢查、先查再確認、worker 的權限、事實的核對、對照目標（worker 說沒完成、檢查出錯）、失敗後重排、工作流的步驟、整合與出處的核對、程式寫報告檔、存檔 |
-| `integrity/` 評測的完整性 | `selftest.py` | — | 模型會讀的文字（prompt、技能說明、工作流、程式回給模型的字）沒有評測世界的名稱（從評測的來源自動取）；`prompts/` 的範本跟程式對得上；沒人用的程式 |
+| `ops/` 多步驟維運 | `selftest.py`（file_ops、維運技能的確認關卡） | `run.py`（情境在 `dataset/`，在 Docker-in-Docker 沙盒裡真的執行；`worker.py` 跑一個情境） | 主對話用技能、任務引擎做完維運任務；狀態、回覆、禁止動作由程式計分 |
+| `task/` 任務引擎 | `selftest.py`（假模型、真的本機檔案技能） | —（真模型用 `ops/run.py`，調查與整理報告是 `--set inv`） | task_run 與 Plan 模式：類型、規劃的程式檢查、先查再確認、worker 的權限、事實的核對、對照目標（worker 說沒完成、檢查出錯）、失敗後重排、計畫的步驟只有技能、整合與出處的核對、程式寫報告檔、存檔 |
+| `integrity/` 評測的完整性 | `selftest.py` | — | 模型會讀的文字（prompt、技能說明、程式回給模型的字）沒有評測世界的名稱（從評測的來源自動取）；`prompts/` 的範本跟程式對得上；沒人用的程式 |
 | `extract/` 提煉 | —（不用模型的在 `chat/extract_selftest.py`） | `run.py`（情境在 `cases.py`：程式產生已知答案的長輸出；`worker.py` 跑一個情境） | 工具回傳的提煉與 result_recall：找到幾個、多列幾個、數量的說法、切幾段讀幾段、程式拿掉幾條 |
-| `workflow/` 工作流 | `selftest.py`（規格驗證、跟 SKILLS.md 對得上、引號規則、推進、分支、【確認】、會改變狀態的步驟一定經過確認、不用互動的入口、/make_skill） | `sandbox.py`（沙盒裡直接執行工作流，用維運情境計分；`sandbox_worker.py` 跑一個案例） | 程式照步驟推進、判斷點只填值與選分支、做完了沒由程式判斷 |
 
 改程式之後先跑不用模型的自我測試：
 
@@ -21,7 +20,7 @@
 PY=~/aiagent_venv_env/.venv/bin/python     # 有 ollama 套件的 Python
 $PY evals/phase_check.py                   # 下面這幾組一次跑完、跟基準比（約 2 分鐘，見最後一節）
 $PY evals/chat/selftest.py && $PY evals/chat/extract_selftest.py && $PY evals/analysis/selftest.py && $PY evals/ops/selftest.py \
-  && $PY evals/task/selftest.py && $PY evals/workflow/selftest.py && $PY evals/integrity/selftest.py
+  && $PY evals/task/selftest.py && $PY evals/integrity/selftest.py
 $PY evals/skills/selftest.py               # 技能腳本（需要容器的情境沒有沙盒就略過）；只跑某幾組：selftest.py fs containers rmf data
 ```
 
@@ -127,7 +126,7 @@ python3 evals/chat/run.py --modes harness --only analysis_route_diagnose,analysi
 python3 evals/analysis/regression.py --run --runs 2 --container cah_analysis_test --cases-file <cases.json> \
     [--data-root <容器內路徑>] --out evals/results/<名稱>   # 回歸評分（不呼叫模型，一份約 2 秒）
 python3 evals/analysis/regression.py --score-file <runs.json> --out evals/results/<名稱>   # 只評分已經跑過的 job
-python3 evals/phase_check.py --live --only analysis_regression   # 產生器 s1／s2／s3＋這台的實錄一次跑完，跟基準比
+python3 evals/phase_check.py --tools --only analysis_regression   # 產生器 s1／s2／s3＋這台的實錄一次跑完，跟基準比
 python3 evals/datagen/generate.py --set s2 --seed 2 --n 60      # 隨機情境的錄製＋評分標準（見 evals/datagen/README.md）
 python3 evals/datagen/check_facts.py test_data/recordings/gen/s2/cases.json   # 產生的數據：只驗程式那一層（不呼叫模型）
 ```
@@ -191,7 +190,7 @@ python3 evals/task/selftest.py      # 離線（約 10 秒）：假模型照劇�
 測 harness 的程式把關（模型能力用 `ops/run.py` 量）：規劃的程式檢查與修正（技能不存在、會改變狀態的標記、查詢的步驟不用檢查、
 停著的容器排在啟動之前、使用者提到手冊卻沒有先讀、要寫檔卻沒列 file_ops）；做不了的計畫不執行；第一步就要改時確認關卡是整份計畫；**先查再確認**（開頭的查詢直接做 → 照事實重排 →
 停下來 → harness 用 `take_task_continuation` 接著問）；worker 的權限（沒核准的 [DENIED]、這一步不能用的技能）與重試；**事實的核對**
-（名稱與數值要在引用的 #編號 的輸出裡——這一步的、或這個任務前面各步的（讀回存檔），對不上的交回改一次、還是不行就拿掉）；**對照目標**（worker 說沒有完成、做完之後的檢查回 [ERROR] 時問一次做到了沒有：做到了不重試，沒做到照舊重試——檢查出錯時只看系統記下的動作，worker 只建了目錄就說報告寫好了會被重做，計畫寫錯的檢查不會多跑 worker）；失敗後重排（Plan 模式不重排）；工作流的步驟；Plan 模式的
+（名稱與數值要在引用的 #編號 的輸出裡——這一步的、或這個任務前面各步的（讀回存檔），對不上的交回改一次、還是不行就拿掉）；**對照目標**（worker 說沒有完成、做完之後的檢查回 [ERROR] 時問一次做到了沒有：做到了不重試，沒做到照舊重試——檢查出錯時只看系統記下的動作，worker 只建了目錄就說報告寫好了會被重做，計畫寫錯的檢查不會多跑 worker）；失敗後重排（Plan 模式不重排）；計畫的步驟只有技能（以前的工作流名稱當成不認識的技能交回修）；Plan 模式的
 草稿、指令、用說的改、核准後照計畫做；存檔與保留上限；**類型**（沒指定時選一個、調查與整理報告附維運的領域知識、只查不改的類型要改狀態就不執行）；
 **整合**（每一則附出處、程式核對，對不上的只交回那幾則改一次；整合不出內容不算完成）；**報告檔由程式寫**（查完整合 → 確認時附上內容 →
 file_ops 寫、讀回比對；附加保留原本的）；檢查要找的字就在檢查的參數裡（待辦 26）。CLI 與 Web 的回合（確認卡片、y/n）在 `chat/selftest.py`。
@@ -202,9 +201,9 @@ file_ops 寫、讀回比對；附加保留原本的）；檢查要找的字就�
 python3 evals/integrity/selftest.py   # 離線（幾秒）
 ```
 
-模型會讀的文字——`prompts/`（長期記憶除外）、`SKILLS.md`、技能規格、工作流、`agent_core/`、`vision/`、`web_app/` 與技能腳本回給模型的字串（docstring 與註解不算）——
+模型會讀的文字——`prompts/`（長期記憶除外）、`SKILLS.md`、技能規格、`agent_core/`、`vision/`、`web_app/` 與技能腳本回給模型的字串（docstring 與註解不算）——
 不能有評測世界獨有的名稱：機器人、工作包、站點與語意名稱、容器、映像、檔案沙盒的路徑、設定名稱、錯誤碼、數據的編號，**從評測的來源自動取**
-（`ops/dataset/`、`chat/scenarios.py`、`workflow/sandbox.py`），新增情境不用改它；調度系統本身的協定名稱（distribute、threshold_recovery_sec…）
+（`ops/dataset/`、`chat/scenarios.py`），新增情境不用改它；調度系統本身的協定名稱（distribute、threshold_recovery_sec…）
 與 `/opt/ros` 不算。2026-10-24 加的：範例正好是評測的答案時（`file_ops` 的範例＝fs_edit_param、`mcap_slicer` 的 `--at +15.5`＝主對話評測要的 15.5），
 評測量到的是會不會抄範例。
 
@@ -233,50 +232,29 @@ python3 evals/extract/run.py --model gemma4:e4b --runs 3 --only fleet_80,recall_
   程式核對拿掉幾條、整合有沒有修正、秒數。每一次的提煉存檔（`logs/extract_jobs/<編號>/`）留在結果目錄的 `logs/<情境>_<第幾次>/`。
 - 2026-10-23 的基準：26b 全對（8～14 秒）；e4b 前四個全對，recall_fleet_120 9/11（worker 漏一台、整合時拿掉一台）。
 
-## 工作流（`workflow/`）
-
-```bash
-python3 evals/workflow/selftest.py                               # 離線（假模型、假技能，幾秒鐘）
-python3 evals/workflow/sandbox.py --model gemma4:26b              # 沙盒裡直接執行每一個工作流（不經過主對話），約 2 分鐘
-python3 evals/workflow/sandbox.py --model gemma4:e4b --only wf_config_edit --runs 3
-AGENT_WORKFLOWS=0 python3 evals/ops/run.py --only cx_fin_and_note --tag nowf     # 主對話「沒有工作流」的對照
-```
-
-- 離線：`skills_system/workflows/` 每一份都驗證得過（腳本存在、分支往後、dependencies 與 changes_state 一致）、跟 SKILLS.md〈工作流〉對得上；
-  值放進命令的引號規則（file_ops 解析回來一字不差）；完成訊號遺失的整條路（程式選分支、判斷點只填機器人與紀錄、成功判準程式跑）、
-  其他原因提早結束、選填略過、判斷點填不出值就停、[ERROR] 時改一次值、【確認】停下來與 `--continue`（接著做時前面步驟的輸出從存檔讀回原文）、比不出分支時交給模型、參數與確認關卡、
-  **會改變狀態的步驟一定經過確認**（確認關卡用真的值判斷；假的值看不出來的當成會改、規格的核對擋下宣告不會改卻會發布的；確認漏了的步驟執行時停下來、
-  `--continue` 確認後用同一個值執行；2026-11-17 第 6 階段）、dispatch 的接法、/make_skill 產生工作流（呼叫語法的提示不在字的中間截斷）。
-- 離線也測 `/workflow`（`agent_core/workflow_cmd.py`）：列出、看步驟；不用互動的入口沒給 `--yes` 不執行會改變狀態的、結束碼
-  （完成／提早結束 0、沒有完成 1、停在【確認】2、要核准 3、沒有執行 4）、`--continue`、命令列參數；報告不交給提煉（程式整理好的報告直接進主對話）；
-  `Agent_Runner.py --workflow` 真的當成一個行程跑（`OLLAMA_HOST` 指到沒有服務的位址，證明不需要模型）。
-  Web 與 CLI 的 `/workflow`（確認卡片／y、n，核准才改、拒絕不改，報告完整進主對話）在 `chat/selftest.py` 的 `t_workflow_web`、`t_workflow_cli`。
-- 沙盒：`CASES` 每一個案例用一個維運情境的世界與檢查（回覆＝工作流的報告），另外核對工作流結束的狀態（完成／提早結束）；
-  `checks_only` 只算跟這個工作流有關的檢查（禁止動作照樣全部算）。執行走不用互動的入口（`workflow_cmd.run_headless … yes`＝
-  `Agent_Runner.py --workflow … --yes`，之後心跳定期跑工作流的同一條路）。結果在 `evals/results/<時間>_workflow_sandbox_<模型>[_<tag>]/`，
-  每一次的 job（判斷點的模型呼叫）在 `logs/<案例>_<第幾次>/`。phase_check 的 `--model` 會跑 26b、e4b 各 2 次（`workflow`）。
-
 ## 持續驗證：每個階段結束時（`phase_check.py`）
 
 ```bash
-python3 evals/phase_check.py                  # 離線（約 2 分鐘）：七組自我測試與評測的完整性
-python3 evals/phase_check.py --live           # 再加上要容器／沙盒、不呼叫模型的（約 15 分鐘）：調度技能接沙盒、容器技能接開發用沙盒、
+python3 evals/phase_check.py                  # 離線（約 2 分鐘）：六組自我測試與評測的完整性（凍結的工具的自我測試也跑）
+python3 evals/phase_check.py --model          # 再加上 harness 的真模型評測（約 30 分鐘）：提煉（26b、e4b）、主對話（e4b 11 個情境 ×3）、
+                                              #   維運的檔案與調查（26b 23 個：檔案 12、保留組的檔案 4、調查與報告 7）
+python3 evals/phase_check.py --tools          # 凍結的工具（選用；不呼叫模型，約 15 分鐘）：調度技能接沙盒、容器技能接開發用沙盒、
                                               #   數據技能接測試容器、數據技能實機、數據分析回歸（產生器 s1／s2／s3、實錄 ×2）
-python3 evals/phase_check.py --live --model   # 再加上真模型（約 1 小時）：提煉（26b、e4b）、主對話（e4b 11 個情境 ×3）、
-                                              #   工作流沙盒（26b、e4b 各 7 個案例 ×2）、維運（26b 77 個：主要 50、保留 20、調查與報告 7）
+python3 evals/phase_check.py --tools --model  # 再加上維運的其他情境（26b 54 個：容器、ROS 2、調度交握、複合任務與它們的保留組）
 python3 evals/phase_check.py --model --only ops,extract     # 只跑某幾項（名稱見下面）；--no-offline 不跑離線的
 python3 evals/phase_check.py --compare <結果目錄…>          # 不跑，只拿已經跑好的結果跟基準比
 python3 evals/phase_check.py --save-baseline <結果目錄…> --label "第 N 階段（<commit>）" [--only <項目>]   # 階段 commit 之後更新基準
 ```
 
-- `--only` 的名稱：離線 `skills`、`chat_selftest`、`extract_selftest`、`ops_selftest`、`task_selftest`、`analysis_selftest`、`workflow_selftest`、`integrity`；
-  `--live` 的 `skills_sandbox`、`containers_sandbox`、`data_live`、`tools_live`、`analysis_regression`；`--model` 的 `extract`、`chat`、`workflow`、`ops`。
-  `--save-baseline` 的 `--only` 用 summary.md 第一欄括號裡的名稱，有冒號的取冒號前面（`analysis`、`tools_live`、`extract`、`workflow`），見 [`baselines/README.md`](baselines/README.md)。
+- `--only` 的名稱：離線 `skills`、`chat_selftest`、`extract_selftest`、`ops_selftest`、`task_selftest`、`analysis_selftest`、`integrity`；
+  `--tools` 的 `skills_sandbox`、`containers_sandbox`、`data_live`、`tools_live`、`analysis_regression`；`--model` 的 `extract`、`chat`、`ops`
+  （維運的檔案與調查），加 `--tools` 時另有 `ops_tools`（維運的其他情境）。
+  `--save-baseline` 的 `--only` 用 summary.md 第一欄括號裡的名稱，有冒號的取冒號前面（`analysis`、`tools_live`、`extract`），見 [`baselines/README.md`](baselines/README.md)。
 - 跟 `evals/baselines/` 逐項比（怎麼比、什麼時候更新見 [`baselines/README.md`](baselines/README.md)），結果在
   `evals/results/<時間>_phase_check/summary.md`：每一項一行（結果、基準、判定 ✅／⚠️／❌），要注意的逐項列出——沒過的測試、比基準差的情境、
   禁止動作、變慢超過 2 倍的情境。
 - 容器與沙盒用完就關（`cah_ops_dind`、`cah_dev_dind`、`cah_analysis_test`）；`logs/analysis_settings.json` 測試前後比對，有變就還原。
 - 近期加進來的案例：第 2 階段——提煉的真模型評測（〈提煉〉一節）、交握 status 連續幾次的判斷（`skills/rmf_test.py` 的 `t_sandbox_status_stable`）、
   數據技能的「不是錄製數據」判斷不擋任何一份真的錄製（`skills/data_test.py` 的 `t_not_recording_real_data`）、維運評測的 `logs/<情境>/`
-  （每一步的紀錄）；第 3 階段——工作流的自我測試（`workflow_selftest`）與沙盒測試（`workflow:<模型>`）；第 4 階段——評測的完整性（`integrity`）、
+  （每一步的紀錄）；第 4 階段——評測的完整性（`integrity`）、
   任務引擎與 Plan 模式（`task_selftest`；CLI／Web 的回合在 `chat_selftest`）、數據分析的存檔只留最近幾次（`analysis_selftest`）；第 4 階段之後——`--until-done` 看得出卡住就提早結束、`--until-confirmed` 等授權有結果（`skills/rmf_test.py` 的 `t_until_done_stuck`、`t_until_confirmed`、`t_until_done_stuck_rules`）、任務引擎的 worker 說沒有完成時對照目標問一次（`task/selftest.py` 的 `t_goal_check`）、做完之後的檢查回 [ERROR] 時對照目標問一次（`t_check_error`）。

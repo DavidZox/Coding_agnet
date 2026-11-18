@@ -1,15 +1,14 @@
-# Data Analysis Agent（ROS 2／MCAP 數據解析與維運助理）
+# Agent Harness（本地模型；目前重點：找檔案、文件與程式分析）
 
-以本地 Ollama 模型（預設 `gemma4:e4b`）為核心的機器人助理，有 CLI 與 Web 兩種介面；決策模型只用本地模型（離線的工廠環境）。
+以本地 Ollama 模型（預設 `gemma4:e4b`）為核心的 agent harness，有 CLI 與 Web 兩種介面；決策模型只用本地模型（離線的工廠環境）。
 
-- **數據解析**（`analysis_run`）：把一段 ROS 2 錄製（.mcap 與 /rosout）整理成**事實報告**——量到什麼、什麼時候、Log 說了什麼。
-  報告全部由程式產生（事實不會錯），AI 依報告回答、討論，要細看時自己用數據技能；只要有 .mcap 就能用；不判斷原因（原因要對照源碼另外分析）。
-- **機器人維運**：檔案系統、Docker 容器、容器內的 ROS 2、fih_rmf_system 的調度系統；會重複做的流程寫成**工作流**（`workflow_run`：
-  程式照步驟做、模型只在判斷點出手、做完了沒由程式判斷，例如工作包卡住的處理、改設定、派工並確認跑完），其他複雜的任務交給
-  **任務引擎**（`task_run`）：先規劃、先查清楚，要改變狀態的步驟給使用者確認，再一步一步派執行者做、每一步由程式檢查與核對事實；
-  類型有維運、調查（只查不改）、整理報告，調查與報告最後整合成每一則都核對過出處的結論或報告，報告檔由程式寫入、讀回比對。
-  Plan 模式（`/plan on`）用同一個引擎：使用者先看、改計畫，核准後照計畫做。
-- **視覺**：Web 附圖（框選螢幕或上傳）、`image_inspect` 技能、獨立的框選小工具。
+- **harness 本身**（2026-11-17 起的重點，目標是找檔案、文件與程式分析做到穩定）：一次一個動作的主對話迴圈、會改變狀態的動作先問使用者
+  （確認關卡）、**多段處理長內容**（太長的工具輸出由程式切段、每段一個 worker 提煉、每條事實附行號由程式核對）、**存檔與回顧**（每次的
+  原文存成 `#編號`，之後用 `result_recall` 等回到原文）、**任務引擎**（`task_run`：orchestrator 規劃、每一步一個 worker、程式檢查與核對事實；
+  類型有維運、調查（只查不改）、整理報告，調查與報告整合成每一則都核對過出處的結論或報告）。Plan 模式（`/plan on`）用同一個引擎。
+- **凍結的工具**（照現在的樣子保留、能用，不再開發；〈[架構說明 §14](doc/架構說明.md#14-凍結的工具2026-11-17-起不再開發)〉）：
+  ROS 2／MCAP 的數據解析（`analysis_run`：程式整理的事實報告）、機器人維運（Docker 容器、容器內的 ROS 2、fih_rmf_system 的調度系統）、
+  視覺（Web 附圖、`image_inspect`、框選小工具）與語音轉文字。
 
 核心想法是**模型不寫程式、只挑技能**：可用的能力是一份技能索引，加上按需載入的規格與既有腳本；會改變實體狀態的動作（派工單、
 建容器、容器內非唯讀的指令…）執行前一律由程式請使用者確認。
@@ -24,7 +23,6 @@
 ```bash
 python3 web_console.py      # Web：http://127.0.0.1:8765（只綁本機）
 python3 Agent_Runner.py     # CLI
-python3 Agent_Runner.py --workflow <名稱> 名稱=值 … [--yes]   # 不用互動執行一次工作流（排程、之後的心跳用；結束碼見架構說明 14.1）
 python3 -m vision.sniper    # 獨立的「截圖 → 框選 → 視覺推論」小工具：http://127.0.0.1:8766
 ```
 
@@ -37,17 +35,16 @@ Web 左欄是對話，右欄是系統與工具回傳（另一個分頁是「📊
 | `/auto on`、`/hybrid on` | 工具結果自動加入、連續執行到做完（Web 最多 25 輪）／每次問要不要加入 |
 | `/plan on` | 下一個任務先由 AI 列步驟草稿，核准（y）後才執行；`/plan add`、`/plan edit N`… 直接改草稿 |
 | `/analyze [問題]`、`/analysis_help` | 數據分析（見下面）／數據分析的全部指令 |
-| `/workflow`、`/workflow show <名稱>`、`/workflow <名稱> 名稱=值 …` | 列出工作流／看步驟／直接執行（不經過 AI 選擇；會改變狀態的步驟照常請你確認，報告進對話、AI 依報告回答）；停在【確認】時 `/workflow --continue`／`--cancel` |
 | `/context_mode harness`、`/context_mode claude_code` | 切換上下文模式（見〈[架構說明 1.1](doc/架構說明.md#11-兩種上下文模式context_mode-harnessclaude_code)〉） |
 | `/guard on`、`/guard off` | 執行前確認的開關（預設開；關閉只限這次執行） |
-| `/skill <名稱>`、`/skills`、`/make_skill <名稱>` | 手動載入某技能的規格／列出所有技能／把做對的對話整理成工作流 |
+| `/skill <名稱>`、`/skills` | 手動載入某技能的規格／列出所有技能 |
 | `/compress`、`/clear`、`/menu` | 手動壓縮上下文／清空對話／列出全部指令 |
 
 常用的環境變數：`WEB_CONSOLE_MODEL`（Web 的主模型，預設 `gemma4:e4b`；在 🧠 設定過之後以畫面上的為準）、`AGENT_NUM_CTX`（context
 上限，預設 32768）、`AGENT_CONTEXT_MODE`、`RMF_WEB_CONSOLE_URL`（預設 `http://localhost:8020`）、`VISION_MODEL`。全部的常數與環境變數見
 〈[架構說明 §10](doc/架構說明.md#10-常數與環境變數)〉。
 
-## 數據解析（`analysis_run`）
+## 數據解析（`analysis_run`；凍結）
 
 **怎麼用**
 1. **設定**：右欄「📊 數據分析」→ ⚙️ 設定：預設容器（數據技能都在容器內執行）、數據根目錄（空白＝在容器的 /workspace 底下找
@@ -108,18 +105,17 @@ Web 左欄是對話，右欄是系統與工具回傳（另一個分頁是「📊
 
 | 分類 | 技能 |
 |---|---|
-| ROS 2 數據解析 | `analysis_run`（程式整理的事實報告）、`mcap_recorder`、`rosout_parser`、`mcap_analyzer`、`mcap_feature_measure`、`mcap_slicer` |
+| ROS 2 數據解析（凍結） | `analysis_run`（程式整理的事實報告）、`mcap_recorder`、`rosout_parser`、`mcap_analyzer`、`mcap_feature_measure`、`mcap_slicer` |
 | 檔案系統 | `list_dir`、`search_text`、`find_file`、`change_dir`、`view_file`、`code_ast_reader`、`host_runcmd`、`file_ops`、`csv_query` |
-| 容器 | `docker_containers`、`docker_images`、`docker_est`、`docker_open`、`docker_runcmd`、`docker_ctl`、`ROS2_workspace_env` |
-| ROS 2（容器內） | `ROS2_domain_id`、`ROS2_topic_list`、`ROS2_topic_echo`、`ROS2_node_list`、`ROS2_node_info`、`ROS2_param`、`ROS2_topic_pub` |
-| 調度系統 | `workpackage_send`、`workpackage_status`、`workpackage_cancel`、`overpending_cancel`、`semantic_map`、`rmf_handshake` |
-| 工作流（`skills_system/workflows/`） | `workflow_run`：`stuck_package_fix`、`config_edit`、`dispatch_and_confirm`、`container_restart_verify`、`reassign_package` |
+| 容器（凍結） | `docker_containers`、`docker_images`、`docker_est`、`docker_open`、`docker_runcmd`、`docker_ctl`、`ROS2_workspace_env` |
+| ROS 2（容器內，凍結） | `ROS2_domain_id`、`ROS2_topic_list`、`ROS2_topic_echo`、`ROS2_node_list`、`ROS2_node_info`、`ROS2_param`、`ROS2_topic_pub` |
+| 調度系統（凍結） | `workpackage_send`、`workpackage_status`、`workpackage_cancel`、`overpending_cancel`、`semantic_map`、`rmf_handshake` |
 | 多步驟任務 | `task_run`（任務引擎：選類型 → 規劃 → 先查 → 依查到的事實重排 → 確認要改的步驟 → 每一步派 worker、程式檢查與核對事實 → 調查與報告整合成核對過出處的結論、報告檔由程式寫） |
-| 多模態 | `stt_engine`、`image_inspect` |
+| 多模態（凍結） | `stt_engine`、`image_inspect` |
 | 工具結果存檔 | `result_recall`、`result_grep`、`result_view`、`result_list` |
 | 記憶 | `modify_memory`（用法寫在 `prompts/AGENT.md` 的記憶協議，不列在索引） |
 
-索引在 [`skills_system/SKILLS.md`](skills_system/SKILLS.md)，每個技能的規格在 `skills_system/tools/<name>.md`、工作流在 `skills_system/workflows/<名稱>.md`；各技能的參數與重點見
+索引在 [`skills_system/SKILLS.md`](skills_system/SKILLS.md)，每個技能的規格在 `skills_system/tools/<name>.md`；各技能的參數與重點見
 〈[設計筆記 §3](doc/設計筆記與已知限制.md#3-技能清單全部功能)〉。
 
 ## 評測
@@ -130,10 +126,9 @@ Web 左欄是對話，右欄是系統與工具回傳（另一個分頁是「📊
 | 技能腳本 | `evals/skills/selftest.py`（需要容器的在沙盒裡跑，沒有就略過） | — |
 | 數據解析 | `evals/analysis/selftest.py`、`evals/datagen/check_facts.py` | `evals/analysis/regression.py`（這台的實錄與隨機情境產生器 `evals/datagen/` 的錄製；不呼叫模型，要容器）、`evals/analysis/tools_live.py` |
 | 多步驟維運 | `evals/ops/selftest.py`（維運技能）、`evals/task/selftest.py`（任務引擎、Plan 模式） | `evals/ops/run.py`（Docker-in-Docker 沙盒裡真的執行） |
-| 工作流 | `evals/workflow/selftest.py` | `evals/workflow/sandbox.py`（沙盒裡直接執行工作流） |
 | 提煉 | `evals/chat/extract_selftest.py` | `evals/extract/run.py`（已知答案的長輸出） |
 | 評測的完整性 | `evals/integrity/selftest.py`（模型會讀的文字沒有評測世界的名稱） | — |
-| 每個階段結束 | `evals/phase_check.py`（離線） | `evals/phase_check.py --live --model`（跟 `evals/baselines/` 逐項比） |
+| 每個階段結束 | `evals/phase_check.py`（離線） | `evals/phase_check.py --model`（harness 的真模型評測，跟 `evals/baselines/` 逐項比；凍結的工具加 `--tools`） |
 
 怎麼跑、情境清單、怎麼讀報表見〈[評測](evals/README.md)〉。
 
@@ -141,10 +136,10 @@ Web 左欄是對話，右欄是系統與工具回傳（另一個分頁是「📊
 
 ```
 Coding_agnet/            （資料夾名稱沿用；原本的 coding agent 已移到 ~/Coding_agent_harness）
-├── Agent_Runner.py      CLI 入口（實作在 agent_core/cli.py；--workflow 是不用互動的入口）
+├── Agent_Runner.py      CLI 入口（實作在 agent_core/cli.py）
 ├── web_console.py       Web 入口（實作在 web_app/）
 ├── agent_core/          核心：SkillAgent（由各 mixin 組成）、回覆協議、常數；analysis_job.py＝數據解析、extract.py＝工具回傳的提煉、
-│                        workflow*.py＝工作流、task_engine.py＝任務引擎（task_run、Plan 模式）
+│                        task_engine.py＝任務引擎（task_run、Plan 模式）
 ├── web_app/             Web 介面（純標準庫）：回合流程、slash 指令、HTTP、static/index.html；analysis.py＝📊 面板的後端
 ├── prompts/             給模型的文字，全部在這裡（可以直接改，不用改程式；README.md＝每個檔案給誰、範本的寫法）
 │   ├── AGENT.md         主對話的 system prompt
@@ -155,25 +150,23 @@ Coding_agnet/            （資料夾名稱沿用；原本的 coding agent 已�
 │   ├── extract/         工具回傳的提煉：worker、整合、user 訊息的標籤
 │   ├── orchestra/       任務引擎：規劃、worker、整合（synthesizer.md）、引擎組進去的字（engine.md）、Plan 模式的修改；
 │   │                    profiles/＝任務的類型（ops＝維運、investigate＝調查、report＝整理報告）
-│   ├── workflow/        工作流的判斷點（填值、選分支）
-│   ├── make_skill/      /make_skill 草擬工作流
 │   └── vision/          附圖的影像提取
-├── skills_system/       技能：SKILLS.md（索引）、tools/（規格）、scripts/（腳本與共用模組）、workflows/（工作流）
+├── skills_system/       技能：SKILLS.md（索引）、tools/（規格）、scripts/（腳本與共用模組）
 ├── vision/              視覺模態：擷取、推論、提取、Web 的框選（web/）、sniper.py（獨立的框選小工具）
-├── evals/               評測：chat/、skills/、analysis/、datagen/、ops/、task/、workflow/、extract/、integrity/、phase_check.py、baselines/；
+├── evals/               評測：chat/、skills/、analysis/、datagen/、ops/、task/、extract/、integrity/、phase_check.py、baselines/；
 │                        results/（.gitignore）
 ├── doc/                 文件；diagrams/（圖的 .puml）、images/（產生的 PNG）、archive/（第一～九輪的根因版本，只供閱讀）
 ├── test_data/           實機錄製、正確答案、回歸工具（只在本機，.gitignore）
-└── logs/                執行時產生：工具回傳存檔、檢索清單、軌跡、摘要、extract_jobs/、analysis_jobs/、workflow_jobs/、task_jobs/
+└── logs/                執行時產生：工具回傳存檔、檢索清單、軌跡、摘要、extract_jobs/、analysis_jobs/、task_jobs/
                          （.gitignore）
 ```
 
 ## 文件
 
-- 〈[架構說明](doc/架構說明.md)〉：每個模組負責什麼、一回合怎麼跑、狀態存在哪裡、要改某件事該看哪裡；數據解析在 §13、工作流在 §14
+- 〈[架構說明](doc/架構說明.md)〉：每個模組負責什麼、一回合怎麼跑、狀態存在哪裡、要改某件事該看哪裡；數據解析在 §13、凍結的工具在 §14、任務引擎在 §15
 - 〈[設計筆記與已知限制](doc/設計筆記與已知限制.md)〉：各機制的理由與實測數據、完整技能清單、已知限制、未來方向
-- 〈[技能撰寫規範](doc/技能撰寫規範.md)〉、〈[工作流撰寫規範](doc/工作流撰寫規範.md)〉：新增或修改技能腳本與工作流的規則與怎麼測
-- 〈[待辦清單](doc/待辦清單.md)〉：已記錄、還沒做的——架構整合剩下的階段（第 4～6 階段）與數據解析、技能的下一步
+- 〈[技能撰寫規範](doc/技能撰寫規範.md)〉：新增或修改技能腳本的規則與怎麼測
+- 〈[待辦清單](doc/待辦清單.md)〉：已記錄、還沒做的——harness 的穩定化（目前的重點）、凍結的工具的下一步
 - 〈[長期願景](doc/長期願景.md)〉：AGV/AMR 車隊調度場景的構想、心跳機制與定時任務要注意的事
 - 〈[評測](evals/README.md)〉、〈[隨機情境的錄製產生器](evals/datagen/README.md)〉
 - 圖的來源在 `doc/diagrams/`，怎麼重新產生見〈[文件導覽](doc/README.md)〉

@@ -14,9 +14,8 @@
 - 檢查出錯（[ERROR]）：對照目標問一次做到了沒有（只看系統記下的動作與檢查的輸出）——沒做到跟檢查沒過一樣重試，做到了算完成、標明沒有驗證；
 - 失敗：自動模式重排剩下的步驟（那一步標成「重排了」）；Plan 模式不重排、停下來；
 - 程式看得出的前提：在停著的容器裡做事排在啟動它之前、使用者提到手冊卻沒有先讀；規劃看得到每個容器的狀態；
-- 做不了的計畫（要改變狀態卻沒有技能、列的技能都不存在、工作流的參數不對）修一次還是這樣就不執行；要寫檔卻沒列 file_ops 交回修；
-- 工作流的步驟：交給工作流的執行器（它的每一步當事實）；有【確認】、不存在、參數不對的不能放進計畫；整件事就是一個工作流時交回主對話；
-  工作流的名稱寫在 skills、參數用逗號隔開的照整理；目標寫了工作流卻沒填 workflow 交回修；
+- 做不了的計畫（要改變狀態卻沒有技能、列的技能都不存在）修一次還是這樣就不執行；要寫檔卻沒列 file_ops 交回修；
+- 計畫的每一步只有技能（2026-11 拿掉工作流）：規劃的 schema 沒有工作流的欄位、規劃看不到工作流；以前的工作流名稱當成不認識的技能交回修；
 - Plan 模式：任務引擎規劃草稿、/plan add／edit／move／del、用說的改（只套用操作）、核准後照計畫做（不再確認、不重排）、取消；
 - 存檔只留最近幾次；/clear 清掉還沒開始、等確認的任務。
 每一個情境都在臨時目錄複製一份專案，不碰正式的 logs/。"""
@@ -30,34 +29,6 @@ import tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROJECT = os.path.dirname(os.path.dirname(HERE))
 COPY = ["agent_core", "skills_system", "prompts"]
-
-NOTE_WF = """---
-type: Workflow
-title: 附加一行紀錄
-description: 在紀錄檔最後附加一行，再讀回來確認（測試用）
-version: 0.1.0
-dependencies: ["file_ops", "view_file"]
-changes_state: true
----
-# 用途
-測試用。
-
-# 需要的資訊
-* `{file}`：紀錄檔
-* `{text}`：要附加的字
-
-# 步驟
-1. 【執行】附加到 {file}：`EXECUTE: scripts/file_ops_cmd.py append {file} --text "{text}"`　檢查：輸出有「已附加」
-2. 【執行】讀回來：`EXECUTE: scripts/cat_cmd.py {file}`　檢查：輸出有「{text}」
-
-# 成功判準
-* 第 2 步的輸出有「{text}」
-
-# 異常與注意事項
-* 測試用。
-"""
-CONFIRM_WF = NOTE_WF.replace("title: 附加一行紀錄", "title: 有確認的").replace(
-    "2. 【執行】讀回來", "2. 【確認】要不要接著讀回來\n3. 【執行】讀回來").replace("第 2 步的輸出", "第 3 步的輸出")
 
 
 class FakeTask:
@@ -170,9 +141,8 @@ def fact(text, ref="LAST"):
     return {"text": text, "ref": ref}
 
 
-def item(title, goal, skills, changes=False, check=None, workflow="", wargs=""):
-    return {"title": title, "goal": goal, "skills": skills, "workflow": workflow, "workflow_args": wargs, "changes_state": changes,
-            "check": check}
+def item(title, goal, skills, changes=False, check=None):
+    return {"title": title, "goal": goal, "skills": skills, "changes_state": changes, "check": check}
 
 
 def plan(*items, summary="測試計畫", report="修改前後的值"):
@@ -190,9 +160,6 @@ def scenario(name, fn, results):
     tmp = tempfile.mkdtemp(prefix="task_selftest_")
     for it in COPY:
         shutil.copytree(os.path.join(PROJECT, it), os.path.join(tmp, it), ignore=shutil.ignore_patterns("__pycache__", "drafts"))
-    for wf_name, text in (("note_append", NOTE_WF), ("confirm_test", CONFIRM_WF)):
-        with open(os.path.join(tmp, "skills_system", "workflows", f"{wf_name}.md"), "w", encoding="utf-8") as f:
-            f.write(text)
     home = os.path.join(tmp, "work")
     os.makedirs(os.path.join(home, "config"))
     os.makedirs(os.path.join(home, "notes"))
@@ -572,7 +539,7 @@ def t_failure_replan(agent, ollama, tmp, home):
 
 # ---------------------------------------------------------------- 程式看得出的前提
 def t_broken_plans(agent, ollama, tmp, home):
-    """修一次還是有做不了的步驟（要改變狀態卻沒有技能、列的技能都不存在、工作流的參數不對）：不執行、回錯誤；要寫檔卻沒列 file_ops 交回修；
+    """修一次還是有做不了的步驟（要改變狀態卻沒有技能、列的技能都不存在）：不執行、回錯誤；要寫檔卻沒列 file_ops 交回修；
     Plan 模式的草稿有做不了的步驟時不能核准"""
     nothing = item("派工作包", "派 p0 到 p2 的工作包給 amr_07", [], True)
     ghost = item("看設定", "看 config/cam.yaml", ["no_such_skill"])
@@ -633,58 +600,23 @@ def t_preconditions(agent, ollama, tmp, home):
     assert "使用者提到「手冊」：先排一步找到並讀那份文件" in fake.plan_msgs[1][1]["content"] and not job["issues"], job["issues"]
 
 
-# ---------------------------------------------------------------- 工作流的步驟
-def t_workflow_items(agent, ollama, tmp, home):
-    wf_item = item("附加紀錄", "在 notes/a.md 附加 hello", [], workflow="note_append", wargs="file=notes/a.md text=hello")
-    p = plan(wf_item, item("看目錄", "看 notes", ["list_dir"]))
-    fake = FakeTask([p], [step("scripts/ls_cmd.py", "notes"), done("notes 有 a.md", [fact("a.md")])])
+# ---------------------------------------------------------------- 計畫的步驟只有技能（2026-11 拿掉工作流）
+def t_skills_only(agent, ollama, tmp, home):
+    from agent_core.schemas import TASK_PLAN_SCHEMA
+    props = TASK_PLAN_SCHEMA["properties"]["items"]["items"]["properties"]
+    assert set(props) == {"title", "goal", "skills", "changes_state", "check"}, sorted(props)
+    # 以前的工作流名稱、workflow_run 寫在 skills：跟其他不存在的名稱一樣交回修；修一次還是這樣、又要改變狀態＝做不了的步驟
+    old = item("改設定", "把 config/cam.yaml 的 exposure 改成 20", ["config_edit", "workflow_run"], True)
+    fake = FakeTask([plan(old, item("看", "看 config/cam.yaml", ["view_file"]))] * 2)
     ollama.chat = fake
-    act = task("在 notes/a.md 記一行 hello，再看 notes")
-    guard = agent.guard_check(act)
-    assert guard and "工作流 note_append file=notes/a.md text=hello" in guard["reason"], guard
-    it = agent.task_job["items"][0]
-    assert it["workflow"] == "note_append" and it["changes_state"] and it["skills"] == ["file_ops", "view_file"], it
-    rep = agent.run_tool(act, approved=True)
-    assert rep.startswith("[PASS] 任務完成（2/2 步") and "hello" in read(os.path.join(home, "notes", "a.md")), rep
-    assert "1. ✅ 附加紀錄：[PASS] 工作流 note_append（附加一行紀錄）完成" in rep and re.search(r"附加到 notes/a\.md：\[PASS\] 已附加.*（#\d+）", rep), rep
-    assert "text=…：要附加的字" in fake.plan_msgs[0][1]["content"], "規劃看得到工作流每個參數的說明（格式、例子）"
-    assert agent.task_last["items"][0]["workflow_job"], "工作流的紀錄在 workflow_jobs"
-    facts = agent.task_last["items"][0]["facts"]
-    assert any("讀回來" in f["text"] and "hello" in f["text"] for f in facts), "工作流每一步的事實有輸出開頭的幾行（不只「執行完成」那一行）"
-    # 工作流自己會寫 output 的檔：交回修；修一次還是這樣就不另外寫報告（以前同一個檔寫兩次——2026-10-25 cx_restart_verify）
-    both = dict(plan(item("附加紀錄", "在 notes/e.md 附加 hello", [], workflow="note_append", wargs="file=notes/e.md text=hello"),
-                     item("看目錄", "看 notes", ["list_dir"])), output={"path": "notes/e.md", "mode": "append"})
-    fake = FakeTask([both, both], [step("scripts/ls_cmd.py", "notes"), done("notes 有 e.md", [fact("e.md")])])
-    ollama.chat = fake
-    rep = agent.run_tool(task("在 notes/e.md 記一行 hello，再看 notes"), approved=True)
-    job = agent.task_last
-    assert "第 1 步要自己寫 notes/e.md" in fake.plan_msgs[1][1]["content"] and job["output"] is None, job.get("issues")
-    assert any("系統不另外寫報告" in x for x in job["issues"]) and not [x for x in job["items"] if x.get("kind") == "report"], job["issues"]
-    assert read(os.path.join(home, "notes", "e.md")).count("hello") == 1 and rep.startswith("[PASS] 任務完成（2/2 步"), rep
-    # 不能放進計畫的：有【確認】、不存在、參數不對；整件事就是一個工作流 → 直接用 workflow_run
-    bad = plan(item("有確認", "x", [], workflow="confirm_test", wargs="file=notes/a.md text=x"),
-               item("沒有這個", "x", [], workflow="no_such_wf"), item("少參數", "x", [], workflow="note_append", wargs="file=notes/a.md"))
-    fake = FakeTask([bad, bad])
-    ollama.chat = fake
-    job, err = agent.task_plan("測試不合法的工作流步驟")
-    fix = fake.plan_msgs[1][1]["content"]
-    assert "工作流 confirm_test 有【確認】" in fix and "工作流 no_such_wf 不存在" in fix and "少了必填的：text" in fix, fix[-900:]
-    assert "confirm_test" not in fake.plan_msgs[0][1]["content"], "有【確認】的工作流不列給規劃看"
-    fake = FakeTask([plan(wf_item)])
-    ollama.chat = fake
-    out = agent.run_tool(task("在 notes/a.md 記一行 hello"))
-    assert out.startswith("[ERROR] 這個任務正好是工作流 note_append") and "workflow_run note_append file=notes/a.md text=hello" in out, out
-    # 規劃常見的寫法：工作流的名稱寫在 skills、參數用逗號隔開 → 程式整理成工作流的步驟；目標寫了工作流卻沒填 workflow → 交回修
-    loose = item("附加紀錄", "在 notes/b.md 附加 hi", ["note_append"], wargs="file=notes/b.md, text=hi,")
-    named = item("用工作流記", "用 note_append 工作流在 notes/c.md 記一行", ["file_ops"], True)
-    fake = FakeTask([plan(loose, named), plan(loose, item("記一行", "在 notes/c.md 記一行 x", ["file_ops"], True))])
-    ollama.chat = fake
-    job, err = agent.task_plan("在 notes 記兩行")
-    it = job["items"][0]
-    assert it["workflow"] == "note_append" and it["inputs"]["file"] == "notes/b.md" and it["inputs"]["text"] == "hi", it
-    from agent_core.task_engine import _clean_wf_args
-    assert _clean_wf_args("file=notes/d.md text=hello world, x") == "file=notes/d.md 'text=hello world x'", "值有空白沒加引號：接起來"
-    assert "目標寫了工作流 note_append，但沒有填 workflow" in fake.plan_msgs[1][1]["content"], fake.plan_msgs[1][1]["content"][-600:]
+    job, err = agent.task_plan("把 exposure 改成 20")
+    assert job is None and err.startswith("[ERROR] 規劃出來的計畫有做不了的步驟（第 1 步"), err
+    assert "第 1 步的技能 config_edit、workflow_run 不在技能清單裡" in fake.plan_msgs[1][1]["content"], fake.plan_msgs[1][1]["content"][-600:]
+    assert "工作流" not in fake.plan_msgs[0][1]["content"], "規劃看不到工作流"
+    # /plan add 開頭不是技能的名稱：當成不指定技能的一步（整句是目標）
+    ok, _ = agent.plan_edit_command("/plan add config_edit：改 exposure")
+    it = agent.plan["items"][-1]
+    assert ok and it["skills"] == [] and it["goal"] == "config_edit：改 exposure", it
 
 
 # ---------------------------------------------------------------- Plan 模式
@@ -705,8 +637,6 @@ def t_plan_mode(agent, ollama, tmp, home):
     assert ok and agent.plan["items"][2]["changes_state"] and agent.plan["items"][2]["skills"] == ["file_ops"], agent.plan["items"]
     assert agent.plan_edit_command("/plan move 3 1")[0] and agent.plan["items"][0]["skills"] == ["file_ops"]
     assert agent.plan_edit_command("/plan move 1 3")[0] and [it["n"] for it in agent.plan["items"]] == [1, 2, 3]
-    assert agent.plan_edit_command("/plan add note_append：file=notes/b.md text=hi")[0] and agent.plan["items"][3]["workflow"] == "note_append"
-    assert agent.plan_edit_command("/plan del 4")[0] and len(agent.plan["items"]) == 3
     outcome, msg = agent.plan_handle_input("第二步改成看 config 目錄")
     assert outcome == "edited" and agent.plan["items"][1]["skills"] == ["list_dir"] and "改第 2 步" in msg, msg
     assert agent.plan_handle_input("/plan edit 2 file_ops：把 config/cam.yaml 的 exposure 從 10 改成 20")[0] == "edited"
@@ -988,7 +918,7 @@ def main():
                      ("失敗：自動模式重排剩下的步驟（那一步標成重排了）；Plan 模式不重排", t_failure_replan),
                      ("前提：停著的容器排在啟動之前、容器停著卻要進去、使用者提到手冊卻沒先讀；規劃看得到容器的狀態", t_preconditions),
                      ("做不了的計畫不執行（要改卻沒有技能、技能都不存在）；要寫檔卻沒列 file_ops 交回修；Plan 模式擋核准", t_broken_plans),
-                     ("工作流的步驟：交給工作流的執行器；有【確認】、不存在、參數不對的不能放；整件事就是一個工作流時交回主對話；名稱寫在 skills、參數用逗號的照整理", t_workflow_items),
+                     ("計畫的每一步只有技能：schema 沒有工作流的欄位、規劃看不到工作流；以前的工作流名稱當成不認識的技能交回修；/plan add 開頭不是技能的當成不指定技能", t_skills_only),
                      ("Plan 模式：任務引擎規劃草稿、/plan 指令、用說的改、核准後照計畫做（不再確認、不重排）、取消、自己列", t_plan_mode),
                      ("存檔只留最近幾次；/clear 清掉等確認的任務；參數錯誤、沒有這個類型", t_keep_and_clear),
                      ("類型：沒指定時選一個（記在 calls.jsonl）；調查、整理報告附維運的領域知識；只查不改的類型要改狀態就不執行；指定了不再選", t_profiles),

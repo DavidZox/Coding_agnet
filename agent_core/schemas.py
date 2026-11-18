@@ -1,10 +1,10 @@
-"""給 Ollama format= 的 JSON schema：主對話回覆、滾動摘要、工具摘要、技能草稿。"""
+"""給 Ollama format= 的 JSON schema：主對話回覆、滾動摘要、工具摘要、任務引擎、數據分析。"""
 
 
 # 🧷 回覆協議：模型每次回覆都是一個 JSON 物件 {thought, reply, action}。執行與否只看 action 欄位，
 # reply 裡不論寫了什麼（包括解釋、舉例時抄出來的 `EXECUTE: ...` 字串）都不會被執行——這是「實體隔離」：
 # 給人看的文字與給系統執行的指令分開存放，不再用文字比對從回覆裡找指令。以 Ollama 的 format= schema 強制
-# 結構（與摘要、make_skill 同一機制），小模型不需要自律「解釋時不要輸出指令」。
+# 結構（與摘要同一機制），小模型不需要自律「解釋時不要輸出指令」。
 # action 為 null 或 {"command": 技能名稱｜規格標明的腳本路徑, "args": 參數字串}；args 是字串而不是物件，
 # 因為所有技能腳本都吃位置參數、規格文件的寫法也是位置參數，這樣既有的 tools/*.md 一份都不用改：
 # 規格裡的 `EXECUTE: <路徑> <參數>` 範例就對應 command=<路徑>、args=<參數>。
@@ -25,64 +25,11 @@ AGENT_REPLY_SCHEMA = {
     "required": ["thought", "reply", "action"],
 }
 
-# /make_skill 的工作流草稿（Ollama format=）：欄位意義見 SkillAgent._make_skill_prompts，驗證見 _normalize_skill_draft。
-# 欄位順序＝生成順序：先讀完對話寫用途，再逐條列出使用者的要求（requirements），然後才寫需要的資訊與步驟——實測
-# 直接寫步驟時，e4b 與 26b 都會漏掉使用者說過的條件（「低電量的車不要派任務」「派之前先跟我確認」）；
-# 最後才寫標題與索引描述（根據寫好的內容總結）。
-# 陣列與字串都有上限（同視覺提取的教訓：小模型偶爾會在陣列或字串裡失控，有上限就一定是合法的 JSON）。
-MAKE_SKILL_STEP_KINDS = ["執行", "確認", "檢查", "告知"]
-
 
 def _text(n):
+    """字串欄位都有上限（同視覺提取的教訓：小模型偶爾會在陣列或字串裡失控，有上限就一定是合法的 JSON）。"""
     return {"type": "string", "maxLength": n}
 
-
-MAKE_SKILL_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "purpose": _text(400),
-        "requirements": {
-            "type": "array",
-            "maxItems": 8,
-            "items": {
-                "type": "object",
-                "properties": {"said": _text(150), "rule": _text(150), "step": {"type": "integer"}},
-                "required": ["said", "rule", "step"],
-            },
-        },
-        "inputs": {
-            "type": "array",
-            "maxItems": 8,
-            "items": {
-                "type": "object",
-                "properties": {"name": _text(40), "description": _text(120), "source": _text(80), "example": _text(120)},
-                "required": ["name", "description", "source", "example"],
-            },
-        },
-        "steps": {
-            "type": "array",
-            "maxItems": 15,
-            "items": {
-                "type": "object",
-                "properties": {
-                    "kind": {"type": "string", "enum": MAKE_SKILL_STEP_KINDS},
-                    "instruction": _text(300),
-                    "skill": _text(40),
-                    "command": _text(300),
-                    "on_failure": _text(200),
-                },
-                "required": ["kind", "instruction", "skill", "command", "on_failure"],
-            },
-        },
-        "success_criteria": _text(200),
-        "pitfalls": {"type": "array", "maxItems": 8, "items": _text(150)},
-        "title": _text(30),
-        "description": _text(100),
-        "category": _text(40),
-    },
-    "required": ["purpose", "requirements", "inputs", "steps", "success_criteria", "pitfalls", "title", "description",
-                 "category"],
-}
 
 # 融合摘要的 JSON schema：交給 Ollama 的 format= 做結構化輸出，再由 _render_summary_markdown 排版。
 SUMMARY_SCHEMA = {
@@ -177,9 +124,8 @@ PLAN_OPS_SCHEMA = {
 
 
 # 🧭 任務引擎（agent_core/task_engine.py）的規劃 session。欄位順序＝生成順序：先寫對任務的理解（要查什麼、要改什麼、
-# 使用者有沒有說先確認），再列步驟，最後寫要回報的重點——同 MAKE_SKILL_SCHEMA 的教訓，直接列步驟時小模型會漏掉條件。
-# 每一步：技能（skills），或整段正好是一個工作流（workflow＋workflow_args，skills 留空）；check：做完那一步用哪個唯讀技能確認
-# （技能、參數、輸出要出現的字樣），只有查詢的步驟填 null。
+# 使用者有沒有說先確認），再列步驟，最後寫要回報的重點——實測直接列步驟時，小模型會漏掉使用者說過的條件。
+# 每一步：技能（skills）；check：做完那一步用哪個唯讀技能確認（技能、參數、輸出要出現的字樣），只有查詢的步驟填 null。
 _TASK_CHECK = {
     "type": "object",
     "properties": {"skill": _text(40), "args": _text(300), "expect": _text(120)},
@@ -192,12 +138,10 @@ _TASK_ITEM = {
         "title": _text(60),
         "goal": _text(600),
         "skills": {"type": "array", "maxItems": 5, "items": _text(40)},
-        "workflow": _text(60),
-        "workflow_args": _text(400),
         "changes_state": {"type": "boolean"},
         "check": {"anyOf": [{"type": "null"}, _TASK_CHECK]},
     },
-    "required": ["title", "goal", "skills", "workflow", "workflow_args", "changes_state", "check"],
+    "required": ["title", "goal", "skills", "changes_state", "check"],
 }
 
 # 使用者要把結果寫成檔案（報告、紀錄、交班）時的檔案與寫法：不排寫檔的步驟，系統最後依核對過的內容寫（path 空的＝不用寫檔）

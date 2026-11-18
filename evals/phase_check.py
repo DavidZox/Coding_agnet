@@ -1,14 +1,15 @@
 """每個階段結束時的持續驗證：跑一組固定的檢查，跟 evals/baselines/ 的基準逐項比，列出退步、變慢、禁止動作。
 
-    python3 evals/phase_check.py                  # 離線（約 2 分鐘）：技能、主對話、提煉、維運、任務引擎、數據分析、工作流的自我測試，評測的完整性
-    python3 evals/phase_check.py --live           # 再加上要容器／沙盒、不呼叫模型的（約 10 分鐘）：技能接沙盒、數據技能實機、數據分析回歸
-    python3 evals/phase_check.py --model          # 再加上真模型（約 1 小時）：提煉（26b、e4b）、主對話（e4b 11 個情境 ×3）、
-                                                  #   工作流沙盒（26b、e4b 各 7 個案例 ×2）、維運（26b 77 個：主要 50、保留 20、調查與報告 7）
-    python3 evals/phase_check.py --live --model   # 全部
+    python3 evals/phase_check.py                  # 離線（約 2 分鐘）：技能、主對話、提煉、維運、任務引擎、數據分析的自我測試，評測的完整性
+                                                  #   （凍結的工具的自我測試也跑：harness 改壞它們還是擋得到）
+    python3 evals/phase_check.py --model          # 再加上 harness 的真模型評測（約 30 分鐘）：提煉（26b、e4b）、主對話（e4b 11 個情境 ×3）、
+                                                  #   維運的檔案與調查（26b 23 個：檔案 12、保留組的檔案 4、調查與報告 7）
+    python3 evals/phase_check.py --tools          # 凍結的工具（選用，2026-11 起不再開發）：技能接沙盒、容器技能、數據技能實機、數據分析回歸
+    python3 evals/phase_check.py --tools --model  # 再加上維運的其他情境（26b 54 個：容器、ROS 2、調度交握、複合任務與它們的保留組）
     python3 evals/phase_check.py --only ops,extract --model     # 只跑某幾項（名稱見 summary.md 的第一欄括號）
     python3 evals/phase_check.py --compare <結果目錄> [...]      # 不跑，只拿已經跑好的結果跟基準比（維運、主對話、提煉、數據分析回歸）
     python3 evals/phase_check.py --save-baseline <結果目錄> [...]  # 階段 commit 之後，用這幾次的結果更新基準（同一種的多個目錄合成一份）
-    python3 evals/phase_check.py --save-baseline <phase_check 目錄> --only skills,workflow_selftest,workflow   # 只更新這幾項（其他的基準不動）
+    python3 evals/phase_check.py --save-baseline <phase_check 目錄> --only skills,task_selftest,ops   # 只更新這幾項（其他的基準不動）
 
 結果在 evals/results/<時間>_phase_check/：summary.md（每一項一行：結果、基準、判定；要注意的逐項列出）、summary.json。
 容器與沙盒用完就關；logs/analysis_settings.json 測試前後比對，有變就還原。基準的格式與來源見 evals/baselines/README.md。"""
@@ -33,15 +34,20 @@ OFFLINE = [("skills", "技能自我測試", ["evals/skills/selftest.py"]),
            ("ops_selftest", "維運自我測試", ["evals/ops/selftest.py"]),
            ("task_selftest", "任務引擎自我測試（task_run、Plan 模式）", ["evals/task/selftest.py"]),
            ("analysis_selftest", "數據分析自我測試", ["evals/analysis/selftest.py"]),
-           ("workflow_selftest", "工作流自我測試", ["evals/workflow/selftest.py"]),
            ("integrity", "評測的完整性（模型會讀的文字沒有評測世界的名稱）", ["evals/integrity/selftest.py"])]
 TEST_CONTAINER = "cah_analysis_test"
 LIVE_DATA = ["/workspace/experiment_logs/gen/s1/gen_s1_005", "/workspace/experiment_logs/exp_5090_overheat"]
 CHAT_SCENARIOS = ("fleet_battery,fleet_followup,followup_in_context,cross_session_recall,compare_two_archives,count_from_script,"
                   "current_state_rerun,memory_stale_state,error_recovery,guard_dispatch,containers_basic")
 EXTRACT_MODELS = ("gemma4:26b", "gemma4:e4b")
-WORKFLOW_MODELS = ("gemma4:26b", "gemma4:e4b")
 OPS_MODEL, CHAT_MODEL = "gemma4:26b", "gemma4:e4b"
+# 維運情境分兩部分（2026-11 起 harness 是重點、其他工具凍結）：harness＝檔案（含保留組的檔案）與調查、整理報告（任務引擎），每個階段都跑；
+# 凍結的工具＝容器、ROS 2、調度交握、複合任務與它們的保留組，--tools 才跑
+OPS_HARNESS_DOMAINS, OPS_TOOLS_DOMAINS = "fs,investigate,report", "docker,ros2,handshake,complex"
+_OPS_HARNESS_PREFIX = ("fs_", "ho_fs_", "inv_")
+_OPS_PARTS = {"harness": ("ops", "維運：檔案與調查"), "tools": ("ops_tools", "維運：凍結的工具（容器、ROS 2、調度、複合）"),
+              "all": ("ops_all", "維運（全部）")}
+_OPS_GROUPS = (("main", "主要"), ("holdout", "保留"), ("inv", "調查與報告"))
 _COUNTS = re.compile(r"(\d+)/(\d+) 通過(?:，(\d+) 個略過)?")
 _REPORT = re.compile(r"報表：(\S+)/report\.md")
 
@@ -98,7 +104,8 @@ def suite_offline(only):
     return [selftest(k, t, s) for k, t, s in OFFLINE if not only or k in only]
 
 
-def suite_live(only):
+def suite_tools(only):
+    """凍結的工具（容器、沙盒、數據；不呼叫模型）：--tools 才跑。"""
     res = []
     want = lambda k: not only or k in only   # noqa: E731
     if want("skills_sandbox"):
@@ -163,7 +170,7 @@ def analysis_regression():
     return out
 
 
-def suite_model(only):
+def suite_model(only, tools=False):
     res = []
     want = lambda k: not only or k in only   # noqa: E731
     if want("extract"):
@@ -175,21 +182,20 @@ def suite_model(only):
         rc, out = run([PY, "evals/chat/run.py", "--modes", "harness", "--runs", "3", "--only", CHAT_SCENARIOS, "--model", CHAT_MODEL,
                        "--tag", "phase"], timeout=7200)
         res.append(chat_result([report_dir(out)]) if report_dir(out) else {"key": "chat", "title": "主對話", "kind": "chat", "error": out[-600:]})
-    if want("workflow"):
-        try:
-            for model in WORKFLOW_MODELS:
-                rc, out = run([PY, "evals/workflow/sandbox.py", "--model", model, "--runs", "2", "--tag", "phase"], timeout=3600)
-                res.append(workflow_result(report_dir(out), model) if report_dir(out) else
-                           {"key": f"workflow:{model}", "title": f"工作流沙盒（{model}）", "kind": "workflow", "error": out[-600:]})
-        finally:
-            docker("stop", "cah_ops_dind")
     if want("ops"):
-        try:
-            rc, out = run([PY, "evals/ops/run.py", "--model", OPS_MODEL, "--set", "all", "--tag", "phase"], timeout=3 * 3600)
-        finally:
-            docker("stop", "cah_ops_dind")
-        res.append(ops_result([report_dir(out)]) if report_dir(out) else {"key": "ops", "title": "維運", "kind": "ops", "error": out[-600:]})
+        res.append(run_ops("harness", OPS_HARNESS_DOMAINS))
+    if tools and want("ops_tools"):
+        res.append(run_ops("tools", OPS_TOOLS_DOMAINS))
     return res
+
+
+def run_ops(part, domains):
+    try:
+        rc, out = run([PY, "evals/ops/run.py", "--model", OPS_MODEL, "--set", "all", "--domain", domains, "--tag", "phase"], timeout=3 * 3600)
+    finally:
+        docker("stop", "cah_ops_dind")
+    key, title = _OPS_PARTS[part]
+    return ops_result([report_dir(out)]) if report_dir(out) else {"key": key, "title": title, "kind": "ops", "error": out[-600:]}
 
 
 # ================================================================ 讀結果
@@ -199,14 +205,16 @@ def _jsonl(path):
 
 
 def ops_stats(dirs):
-    """每個情境：runs、passed、forbidden、每次的秒數（中位數）。"""
+    """每個情境：runs、passed、forbidden、每一次的結果（results：照目錄的順序，1＝過；基準用它算「同一組情境每一次的總分」）、
+    秒數的中位數。"""
     per = {}
     for d in dirs:
         for r in _jsonl(os.path.join(d, "runs.jsonl")):
-            s = per.setdefault(r["scenario"], {"runs": 0, "passed": 0, "forbidden": 0, "seconds": []})
+            s = per.setdefault(r["scenario"], {"runs": 0, "passed": 0, "forbidden": 0, "results": [], "seconds": []})
             s["runs"] += 1
             s["passed"] += int(bool(r["score"]["passed"]))
             s["forbidden"] += int(bool(r["score"]["forbidden"]))
+            s["results"].append(int(bool(r["score"]["passed"])))
             s["seconds"].append(r.get("wall_seconds") or r.get("seconds") or 0)
     for s in per.values():
         s["median_s"] = round(statistics.median(s["seconds"]), 1) if s["seconds"] else 0
@@ -219,8 +227,16 @@ def ops_group(scenario):
     return "inv" if scenario.startswith("inv_") else "holdout" if scenario.startswith("ho_") else "main"
 
 
+def ops_part(scenarios):
+    """這組維運情境是哪一部分：harness（檔案、調查與報告）、tools（凍結的工具）、all（兩種都有，例如以前的完整跑）。"""
+    kinds = {sc.startswith(_OPS_HARNESS_PREFIX) for sc in scenarios}
+    return "harness" if kinds == {True} else "tools" if kinds == {False} else "all"
+
+
 def ops_result(dirs):
-    return {"key": "ops", "title": f"維運（{OPS_MODEL}，主要 50＋保留 20＋調查與報告）", "kind": "ops", "dirs": dirs, "per": ops_stats(dirs)}
+    per = ops_stats(dirs)
+    key, title = _OPS_PARTS[ops_part(per)]
+    return {"key": key, "title": f"{title}（{OPS_MODEL}，{len(per)} 個情境）", "kind": "ops", "dirs": dirs, "per": per}
 
 
 def chat_result(dirs):
@@ -232,24 +248,6 @@ def chat_result(dirs):
             s["runs"] += 1
             s["passed"] += int(bool(r.get("passed")))
     return {"key": "chat", "title": f"主對話（{CHAT_MODEL}，{len(per)} 個情境）", "kind": "chat", "dirs": dirs, "per": per}
-
-
-def workflow_result(d, model=None):
-    """工作流的沙盒測試（evals/workflow/sandbox.py）：每個案例的次數、通過（情境的檢查＋結束的狀態）、禁止動作、秒數中位數、判斷點的模型呼叫。"""
-    per = {}
-    for r in _jsonl(os.path.join(d, "runs.jsonl")):
-        model = model or r.get("model")
-        s = per.setdefault(r["case"], {"runs": 0, "passed": 0, "forbidden": 0, "model_calls": 0, "seconds": []})
-        s["runs"] += 1
-        s["passed"] += int(bool(r.get("passed")))
-        s["forbidden"] += int(bool((r.get("score") or {}).get("forbidden")))
-        s["model_calls"] += int(r.get("model_calls") or 0)
-        s["seconds"].append(r.get("wall_seconds") or 0)
-    for s in per.values():
-        s["median_s"] = round(statistics.median(s["seconds"]), 1) if s["seconds"] else 0
-        del s["seconds"]
-    return {"key": f"workflow:{model}", "title": f"工作流沙盒（{model}，{len(per)} 個案例）", "kind": "workflow", "model": model,
-            "dirs": [d], "per": per}
 
 
 def extract_result(d, model=None):
@@ -299,8 +297,6 @@ def classify(d):
         return "ops"
     if "_extract_" in base:
         return "extract"
-    if "_workflow_sandbox_" in base:
-        return "workflow"
     if base.startswith("analysis_"):
         return "analysis"
     p = os.path.join(d, "runs.jsonl")
@@ -327,14 +323,15 @@ def from_dirs(dirs):
                     groups.setdefault("chat", []).extend(r.get("dirs") or [])
                 else:
                     res.append(r)
-    if groups.get("ops"):
-        res.append(ops_result(groups["ops"]))
+    parts = {}
+    for d in groups.get("ops", []):   # 同一部分（檔案與調查、凍結的工具、全部）的目錄合成一份
+        parts.setdefault(ops_part({r["scenario"] for r in _jsonl(os.path.join(d, "runs.jsonl"))}), []).append(d)
+    for dirs in parts.values():
+        res.append(ops_result(dirs))
     if groups.get("chat"):
         res.append(chat_result(groups["chat"]))
     for d in groups.get("extract", []):
         res.append(extract_result(d))
-    for d in groups.get("workflow", []):
-        res.append(workflow_result(d))
     for d in groups.get("analysis", []):
         name = os.path.basename(d.rstrip("/")).split("_")[-1]
         name = f"gen_{name}" if name.startswith("s") else name
@@ -376,14 +373,14 @@ def compare(r):
         return compare_extract(r)
     if kind == "analysis":
         return compare_analysis(r)
-    if kind == "workflow":
-        return compare_workflow(r)
     return "—", "—", "?", []
 
 
 def compare_ops(r):
-    base = load_baseline(f"ops_{OPS_MODEL.replace(':', '-')}") or {}
-    ref = base.get("current", {}).get("per", {})
+    """每個情境跟基準比（通過率、禁止動作、變慢）；總分跟「基準裡同一組情境每一次的總分」比——基準的每個情境記了每一次的結果，
+    所以只跑一部分（檔案與調查、凍結的工具、--only）也比得準。"""
+    base = (load_baseline(f"ops_{OPS_MODEL.replace(':', '-')}") or {}).get("current") or {}
+    ref = base.get("per", {})
     per = r["per"]
     notes = []
     for sc, s in sorted(per.items()):
@@ -400,23 +397,22 @@ def compare_ops(r):
                 notes.append(f"{sc}：變慢 {s['median_s']} 秒（基準中位數 {b['median_s']} 秒）")
         else:
             notes.append(f"{sc}：基準裡沒有這個情境（新情境）")
-    def tot(p, group):
-        rs = [s for k, s in p.items() if ops_group(k) == group]
-        return sum(s["passed"] for s in rs), sum(s["runs"] for s in rs)
-    mp, mr = tot(per, "main")
-    hp, hr = tot(per, "holdout")
-    ip, ir = tot(per, "inv")
-    text = (f"主要 {mp}/{mr}、保留 {hp}/{hr}" + (f"、調查與報告 {ip}/{ir}" if ir else "")
+    cur = {g: [s for k, s in per.items() if ops_group(k) == g] for g, _ in _OPS_GROUPS}
+    text = ("、".join(f"{name} {sum(s['passed'] for s in cur[g])}/{sum(s['runs'] for s in cur[g])}" for g, name in _OPS_GROUPS if cur[g])
             + f"；禁止動作 {sum(s['forbidden'] for s in per.values())} 次")
-    bt = base.get("current", {}).get("totals")
-    n_inv = len([k for k in (base.get("current", {}).get("per") or {}) if ops_group(k) == "inv"])
-    btxt = (f"主要 {'、'.join(map(str, bt['main']))}／50、保留 {'、'.join(map(str, bt['holdout']))}／20"
-            + (f"、調查與報告 {'、'.join(map(str, bt['inv']))}／{n_inv}" if bt.get("inv") else "")
-            + f"（{base['current'].get('label', '')}）" if bt else "（沒有基準）")
-    single_run = all(s["runs"] == 1 for s in per.values())
-    if bt and single_run and (mp < min(bt["main"]) or hp < min(bt["holdout"]) or (bt.get("inv") and ir and ip < min(bt["inv"]))):
-        notes.insert(0, f"總分低於基準的最低分（主要 {min(bt['main'])}、保留 {min(bt['holdout'])}"
-                        + (f"、調查與報告 {min(bt['inv'])}" if bt.get("inv") else "") + "）")
+    same = [sc for sc in per if (ref.get(sc) or {}).get("results")]
+    n = min((len(ref[sc]["results"]) for sc in same), default=0)
+    if not n:
+        return text, "（沒有基準）", ("⚠️" if notes else "✅"), notes
+    bt = {g: [sum(ref[sc]["results"][i] for sc in same if ops_group(sc) == g) for i in range(n)] for g, _ in _OPS_GROUPS}
+    size = {g: sum(1 for sc in same if ops_group(sc) == g) for g, _ in _OPS_GROUPS}
+    btxt = ("、".join(f"{name} {'、'.join(map(str, bt[g]))}／{size[g]}" for g, name in _OPS_GROUPS if size[g])
+            + f"（同一組情境；{base.get('label', '')}）")
+    if all(per[sc]["runs"] == 1 for sc in same):
+        low = [(name, sum(per[sc]["passed"] for sc in same if ops_group(sc) == g), min(bt[g])) for g, name in _OPS_GROUPS if size[g]]
+        low = [x for x in low if x[1] < x[2]]
+        if low:
+            notes.insert(0, "總分低於基準（同一組情境）的最低分：" + "、".join(f"{name} {got} < {least}" for name, got, least in low))
     return text, btxt, ("⚠️" if notes else "✅"), notes
 
 
@@ -432,30 +428,6 @@ def compare_chat(r):
     p, n = sum(s["passed"] for s in r["per"].values()), sum(s["runs"] for s in r["per"].values())
     bp, bn = sum(b["passed"] for b in base.values()), sum(b["runs"] for b in base.values())
     return f"{p}/{n}", (f"{bp}/{bn}" if base else "（沒有基準）"), ("⚠️" if notes else "✅"), notes
-
-
-def compare_workflow(r):
-    """工作流的步驟由程式推進，模型只在判斷點出手：通過率比基準低（跑好幾次時低超過 1/3；只跑一次時基準大多會過的這次沒過）、
-    有禁止動作、變慢都列出來。"""
-    base = ((load_baseline("workflow") or {}).get("models") or {}).get(r["model"], {})
-    notes = []
-    for case, s in sorted(r["per"].items()):
-        b = base.get(case)
-        if s["forbidden"]:
-            notes.append(f"{case}：禁止動作 {s['forbidden']} 次")
-        if not b:
-            notes.append(f"{case}：基準裡沒有（新案例）")
-            continue
-        rate, rate_b = s["passed"] / s["runs"], b["passed"] / b["runs"]
-        if (s["runs"] == 1 and not s["passed"] and rate_b >= 0.75) or (s["runs"] > 1 and rate + 0.34 < rate_b):
-            notes.append(f"{case}：{s['passed']}/{s['runs']} 過（基準 {b['passed']}/{b['runs']}）")
-        if s["median_s"] > max(2 * b["median_s"], b["median_s"] + 30):
-            notes.append(f"{case}：變慢 {s['median_s']} 秒（基準中位數 {b['median_s']} 秒）")
-    p, n = sum(s["passed"] for s in r["per"].values()), sum(s["runs"] for s in r["per"].values())
-    calls = sum(s["model_calls"] for s in r["per"].values())
-    bp, bn = sum(b["passed"] for b in base.values()), sum(b["runs"] for b in base.values())
-    return (f"{p}/{n}；判斷點的模型呼叫 {calls} 次", (f"{bp}/{bn}；{sum(b['model_calls'] for b in base.values())} 次" if base else "（沒有基準）"),
-            ("⚠️" if notes else "✅"), notes)
 
 
 def compare_extract(r):
@@ -514,16 +486,14 @@ def save_baseline(results, label):
         if r.get("error") or r.get("skipped"):
             continue
         if r["kind"] == "ops":
-            old = load_baseline(f"ops_{OPS_MODEL.replace(':', '-')}") or {}
-            totals = {"main": [], "holdout": [], "inv": []}
-            for d in r["dirs"]:
-                rows = _jsonl(os.path.join(d, "runs.jsonl"))
-                for group in totals:
-                    g = [x for x in rows if ops_group(x["scenario"]) == group]
-                    if g:
-                        totals[group].append(sum(1 for x in g if x["score"]["passed"]))
-            old["current"] = {"label": label, "date": stamp, "dirs": [os.path.basename(d) for d in r["dirs"]], "totals": totals, "per": r["per"]}
-            write(f"ops_{OPS_MODEL.replace(':', '-')}", old)
+            # 只換這次有跑的情境（只跑一部分時不會蓋掉另一部分的基準）；每個情境記下每一次的結果與是哪一次更新的
+            name = f"ops_{OPS_MODEL.replace(':', '-')}"
+            old = load_baseline(name) or {}
+            per = dict((old.get("current") or {}).get("per") or {})
+            for sc, st in r["per"].items():
+                per[sc] = dict(st, since=f"{label}（{stamp}）")
+            old["current"] = {"label": label, "date": stamp, "dirs": [os.path.basename(d) for d in r["dirs"]], "per": per}
+            write(name, old)
         elif r["kind"] == "chat":
             write(f"chat_{CHAT_MODEL.replace(':', '-')}", {"label": label, "date": stamp, "dirs": [os.path.basename(d) for d in r["dirs"]],
                                                            "per": r["per"]})
@@ -532,11 +502,6 @@ def save_baseline(results, label):
             old["models"][r["model"]] = r["per"]
             old.setdefault("labels", {})[r["model"]] = f"{label}（{stamp}，{os.path.basename(r['dirs'][0])}）"
             write("extract", old)
-        elif r["kind"] == "workflow":
-            old = load_baseline("workflow") or {"models": {}}
-            old["models"][r["model"]] = r["per"]
-            old.setdefault("labels", {})[r["model"]] = f"{label}（{stamp}，{os.path.basename(r['dirs'][0])}）"
-            write("workflow", old)
         elif r["kind"] == "analysis":
             old = load_baseline("analysis") or {"sets": {}}
             name = r["key"].split(":", 1)[1]
@@ -560,7 +525,7 @@ def write_summary(results, out_dir, args):
             details.append(f"### {r.get('title', r['key'])}\n" + "\n".join(f"- {n}" for n in notes[:40]))
     head = "✅ 沒有退步" if all(v in ("✅", "⏭️") for v in verdicts) else "⚠️ 有要注意的項目（見下面）" if "❌" not in verdicts else "❌ 有測試沒過或執行失敗"
     lines = [f"# 階段驗證（{time.strftime('%Y-%m-%d %H:%M')}）：{head}", "",
-             f"- 跑了：{'離線' if not args.compare else '只比對已有的結果'}{'＋實機' if args.live else ''}{'＋真模型' if args.model else ''}"
+             f"- 跑了：{'離線' if not args.compare else '只比對已有的結果'}{'＋凍結的工具' if args.tools else ''}{'＋真模型' if args.model else ''}"
              + (f"（只有 {args.only}）" if args.only else ""), "",
              "| 項目 | 結果 | 基準 | 判定 |", "|---|---|---|---|", *rows, ""]
     if details:
@@ -576,7 +541,7 @@ def write_summary(results, out_dir, args):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--live", action="store_true")
+    ap.add_argument("--tools", action="store_true", help="也跑凍結的工具（容器、沙盒、數據；加 --model 時再加維運的其他情境）")
     ap.add_argument("--model", action="store_true")
     ap.add_argument("--no-offline", action="store_true", help="不跑離線的自我測試")
     ap.add_argument("--only", default="", help="只跑這幾項（逗號分隔，例如 skills,ops,extract）")
@@ -587,7 +552,7 @@ def main():
     if args.save_baseline:
         results = from_dirs(args.save_baseline)
         only = set(x for x in args.only.split(",") if x)
-        if only:   # 只更新這幾項（名稱同 --only；workflow、extract、analysis、tools_live 這種有冒號的看冒號前面）
+        if only:   # 只更新這幾項（名稱同 --only；extract、analysis、tools_live 這種有冒號的看冒號前面）
             results = [r for r in results if r["key"] in only or r["key"].split(":")[0] in only]
         save_baseline(results, args.label or "手動更新")
         return 0
@@ -601,10 +566,10 @@ def main():
     try:
         if not args.no_offline:
             results += suite_offline(only)
-        if args.live:
-            results += suite_live(only)
+        if args.tools:
+            results += suite_tools(only)
         if args.model:
-            results += suite_model(only)
+            results += suite_model(only, tools=args.tools)
     finally:
         if backup is not None and open(SETTINGS, encoding="utf-8").read() != backup:
             with open(SETTINGS, "w", encoding="utf-8") as f:

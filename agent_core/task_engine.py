@@ -1,15 +1,15 @@
-"""TaskMixin：通用的任務引擎（task_run 偽技能）——規劃 → 程式檢查計畫 → 每一步一個 worker（或一個工作流）→ 程式檢查 → 程式寫報告。
+"""TaskMixin：通用的任務引擎（task_run 偽技能）——規劃 → 程式檢查計畫 → 每一步一個 worker → 程式檢查 → 程式寫報告。
 
 「類型」（profile）是 prompts/orchestra/profiles/<名稱>.md：規劃與執行要知道的領域知識（第一個是維運 ops）；規劃與執行的通則在
-prompts/orchestra/planner.md、worker.md。task_run 的腳本檔只讓存在性檢查與確認關卡照常運作，執行在 harness 的 process 裡（同 workflow_run）。
+prompts/orchestra/planner.md、worker.md。task_run 的腳本檔只讓存在性檢查與確認關卡照常運作，執行在 harness 的 process 裡（同 analysis_run）。
 
     task_run [--profile <類型>] "<任務>"     規劃並執行（任務照使用者的原話）
     task_run --continue [<工作>]             停下來等確認的任務接著做（確認關卡列出接下來要改的步驟）
     task_run --cancel [<工作>]               不做了
 
 流程（都在主對話的一個工具呼叫裡同步做）：
-1. 規劃：規劃 session（format=TASK_PLAN_SCHEMA）把任務拆成 2～6 步：目標、技能（或一個工作流）、會不會改變狀態、做完怎麼檢查。
-   規劃看得到技能與工作流的清單、工作目錄、目標容器、每個容器現在的狀態。程式檢查（_task_issues）：技能與工作流存在、工作流的參數、
+1. 規劃：規劃 session（format=TASK_PLAN_SCHEMA）把任務拆成 2～6 步：目標、技能、會不會改變狀態、做完怎麼檢查。
+   規劃看得到技能的清單、工作目錄、目標容器、每個容器現在的狀態。程式檢查（_task_issues）：技能存在、
    會改變狀態的標記、檢查的寫法、要在停著的容器裡做的事、使用者提到的文件（手冊、規定…）有沒有先讀——有問題把具體的問題交回修一次。
 2. 先查：計畫開頭只查詢的步驟直接做（不用確認）；做完把核對過的事實交回規劃 session 重排剩下的步驟（照查到的事實排要改的部分）。
 3. 確認：要改變狀態的步驟還沒核准 → 停下來（awaiting_approval），報告列出要改的部分；harness 不經過模型直接用 task_run --continue
@@ -17,7 +17,7 @@ prompts/orchestra/planner.md、worker.md。task_run 的腳本檔只讓存在性�
 4. 執行：每一步派一個乾淨的 worker（任務、這一步的目標、前面各步核對過的事實、這一步技能的規格），跟主對話一樣的 JSON 協議一步一步
    用技能；沒有核准的狀態變更一律 [DENIED]。做完回報結果與事實，每條事實附出處（工具結果的 #編號）：程式核對事實裡的名稱與數值
    在那份輸出裡找得到（extract.missing_tokens），對不上的交回改一次、還是不行就拿掉。worker 說做完後由程式跑這一步的檢查；沒過換一個
-   worker 帶著原因重試一次。工作流的步驟交給工作流的執行器（agent_core/workflow.py），它的報告就是這一步的結果。
+   worker 帶著原因重試一次。
 5. 失敗：重試還是沒做完 → 把事實與失敗的原因交回規劃 session 重排剩下的步驟（一個任務最多重排 TASK_MAX_REPLANS 次）；重排出新的
    會改變狀態的步驟時再停下來確認。
 6. 報告（程式寫，不再交給提煉）：每一步的結果、核對過的事實（#編號）、檢查。存檔 logs/task_jobs/<編號>/：job.json（每一版計畫、
@@ -33,7 +33,6 @@ import re
 import time
 
 from . import prompt_files
-from . import workflow_spec as ws
 from .config import (GUARDED_SKILLS, NUM_CTX, PROMPTS_DIR, SKILL_DOC_PREFIX, TASK_JOBS_DIRNAME, TASK_JOBS_KEEP, TASK_MAX_ITEMS,
                      TASK_MAX_REPLANS, TASK_WORKER_MAX_STEPS)
 from .extract import missing_tokens
@@ -55,8 +54,8 @@ TASK_ALWAYS_READ = {"list_dir", "find_file", "search_text", "view_file", "csv_qu
                     "docker_ctl", "docker_runcmd", "host_runcmd", "ROS2_topic_list", "ROS2_topic_echo", "ROS2_node_list",
                     "ROS2_node_info", "ROS2_param", "ROS2_domain_id", "workpackage_status", "semantic_map", "rmf_handshake",
                     "docker_open"}
-# worker 不能用的：任務引擎自己、工作流（計畫裡寫成工作流的步驟，由程式執行）、記憶、麥克風、看存檔（worker 看得到自己的輸出）
-_NOT_FOR_WORKERS = {"task_run", "workflow_run", "modify_memory", "stt_engine", "result_recall", "result_grep", "result_view", "result_list"}
+# worker 不能用的：任務引擎自己、記憶、麥克風、看存檔（worker 看得到自己的輸出）
+_NOT_FOR_WORKERS = {"task_run", "modify_memory", "stt_engine", "result_recall", "result_grep", "result_view", "result_list"}
 # 在容器「裡面」做事的技能：容器停著時做不了（計畫的前提檢查）
 _IN_CONTAINER = {"docker_runcmd", "ROS2_topic_list", "ROS2_topic_echo", "ROS2_node_list", "ROS2_node_info", "ROS2_param", "ROS2_topic_pub",
                  "ROS2_domain_id", "ROS2_workspace_env", "mcap_recorder", "mcap_analyzer", "mcap_feature_measure", "mcap_slicer",
@@ -109,27 +108,6 @@ def _task_broken(items):
     return [it for it in items if it.get("broken")]
 
 
-def _clean_wf_args(text):
-    """workflow_args 的寫法整理（2026-10-24 實測規劃的寫法）：
-    - 用逗號或分號隔開參數（`file=a.yaml, robot=x`）：值的結尾多了一個逗號——拿掉每一段結尾的 ，；,;（值中間的照留：stops=p0,p2）；
-    - 值裡有空白卻沒加引號（`check_command=grep fps /etc/camera.conf expect=…`）：沒有「名稱=」的片段接到前一個值後面。
-    引號不成對、開頭就沒有「名稱=」的照原樣交給工作流的參數檢查回報。"""
-    import shlex
-    try:
-        toks = shlex.split(text or "")
-    except ValueError:
-        return (text or "").strip()
-    out = []
-    for t in (t.rstrip(",;，；") for t in toks):
-        if not t:
-            continue
-        if re.match(r"[A-Za-z_][A-Za-z0-9_]*=", t) or not out or "=" not in out[-1]:
-            out.append(t)
-        else:
-            out[-1] += " " + t
-    return shlex.join(out)
-
-
 def _steps_text(items):
     return "；".join(f"第 {it['n']} 步 {it['title']}" for it in items)
 
@@ -141,12 +119,9 @@ def _mentions_change(text):
     return False
 
 
-def _writes_path(it, path, definite=False):
-    """這一步自己會寫這個檔。definite＝一定會寫：工作流的參數裡有這個路徑（工作流照規格寫，規劃拿不掉）；
-    不是 definite 時也算用寫檔的技能、目標裡寫了這個路徑的（可能是備份、讀，只當成交回規劃的提醒）。"""
-    if it.get("workflow"):
-        return path in " ".join([it.get("workflow_args") or ""] + [str(v) for v in (it.get("inputs") or {}).values()])
-    return not definite and bool(set(it["skills"]) & _WRITE_SKILLS) and path in f"{it['title']} {it['goal']}"
+def _writes_path(it, path):
+    """這一步可能自己寫這個檔：用寫檔的技能、目標裡寫了這個路徑（也可能是備份、讀，只當成交回規劃的提醒）。"""
+    return bool(set(it["skills"]) & _WRITE_SKILLS) and path in f"{it['title']} {it['goal']}"
 
 
 def _expect_in_args(check):
@@ -310,18 +285,6 @@ class TaskMixin:
     def _task_catalog(self):
         return "\n".join(f"- {s['name']}：{s['description']}" for s in self.list_skills() if s["name"] not in _NOT_FOR_WORKERS)
 
-    def _task_workflow_catalog(self):
-        """給規劃看的工作流：用途與每個參數的說明（格式、例子）。2026-10-24 只列參數名稱時，規劃照抄來源的寫法——CSV 的
-        `home;a3` 當成 stops（要逗號隔開）、`backup=robots.yaml.bak`（要的是副檔名 .bak）——工作流第一步就失敗或建錯檔。"""
-        lines = []
-        for wf in self.list_workflows():
-            if any(s["kind"] == "確認" for s in wf["steps"]):
-                continue                             # 有【確認】的工作流會停下來等使用者，不放進計畫
-            need = "\n".join(_t("wf_catalog_input", name=i["name"], optional=_t("wf_catalog_optional") if i["optional"] else "",
-                                 description=_one_line(i["description"], 160)) for i in wf["inputs"])
-            lines.append(_t("wf_catalog_item", name=wf["name"], description=wf["description"], inputs=need or _t("wf_catalog_no_inputs")))
-        return "\n".join(lines) or _t("wf_catalog_none")
-
     def _task_containers(self):
         """每個容器現在的狀態 {名稱: 狀態}（docker ps -a）；docker 不能用時回 (None, 原因)。"""
         try:
@@ -380,8 +343,8 @@ class TaskMixin:
 
     # ---------------------------------------------------------------- 計畫：清理與程式檢查
     def _task_item(self, raw, n, profile=None):
-        """模型（或使用者）給的一步 → 清理過的 item 與問題清單。做不了的一步標 broken（工作流不存在、有【確認】、參數不對；
-        要改變狀態卻沒有可以用的技能；列的技能全都不存在；只查不改的類型裡要改變狀態）：修一次還是這樣，整份計畫不執行（_task_broken）。"""
+        """模型（或使用者）給的一步 → 清理過的 item 與問題清單。做不了的一步標 broken（要改變狀態卻沒有可以用的技能；
+        列的技能全都不存在；只查不改的類型裡要改變狀態）：修一次還是這樣，整份計畫不執行（_task_broken）。"""
         it, issues = self._task_item_raw(raw, n)
         if profile and not profile.get("changes_state", True) and it["changes_state"]:
             if it.get("changes_by") == "words":
@@ -396,49 +359,20 @@ class TaskMixin:
     def _task_item_raw(self, raw, n):
         issues = []
         names = set(self.task_skill_names())
-        workflows = {w["name"] for w in self.list_workflows()}
         title = _one_line(raw.get("title"), 60)
         goal = _one_line(raw.get("goal"), 600)
-        wf_name = str(raw.get("workflow") or "").strip()
-        wf_args = _clean_wf_args(str(raw.get("workflow_args") or ""))
         raw_skills = [str(s).strip() for s in raw.get("skills") or [] if str(s).strip()]
         skills, unknown = [], []
         for s in raw_skills:
             s = s[len("scripts/"):] if s.startswith("scripts/") else s
             s = self._script_skill_map().get(s, s) if s.endswith(".py") else s
-            if s == "workflow_run" and not wf_name:
-                continue
-            if s in workflows and not wf_name:
-                wf_name = s                          # 工作流的名稱寫在 skills（2026-10-24 實測常見）：當成工作流的步驟
-                continue
-            if s and s not in skills and s not in workflows:
+            if s and s not in skills:
                 (skills if s in names else unknown).append(s)
-        it = {"n": n, "title": title or goal[:30], "goal": goal or title, "skills": skills, "workflow": "", "workflow_args": "",
-              "inputs": {}, "changes_state": bool(raw.get("changes_state")), "check": None, "approved": False, "status": "pending",
+        it = {"n": n, "title": title or goal[:30], "goal": goal or title, "skills": skills,
+              "changes_state": bool(raw.get("changes_state")), "check": None, "approved": False, "status": "pending",
               "summary": "", "facts": [], "dropped": [], "attempts": 0, "steps": 0, "evidence": "", "calls": []}
         if unknown:
             issues.append(_t("issue_unknown_skills", n=n, skills='、'.join(unknown)))
-        if wf_name:
-            wf = self.load_workflow(wf_name)
-            if not wf:
-                issues.append(_t("issue_no_workflow", n=n, workflow=wf_name))
-            elif any(s["kind"] == "確認" for s in wf["steps"]):
-                issues.append(_t("issue_workflow_confirm", n=n, workflow=wf_name))
-            else:
-                action, _, values, err = self._wf_parse_args(f"{wf_name} {wf_args}")
-                inputs, err2 = (None, err) if err else self._wf_check_inputs(wf, values)
-                if err2:
-                    issues.append(_t("issue_workflow_args", n=n, workflow=wf_name, error=_one_line(err2, 300)))
-                else:
-                    it.update(workflow=wf_name, workflow_args=wf_args, inputs=inputs,
-                              skills=list((wf.get("meta") or {}).get("dependencies") or []),
-                              changes_state=bool(self._wf_segment(wf, 1, inputs)))
-            if not it["workflow"]:
-                it["broken"] = True
-            return it, issues
-        mentioned = [w for w in workflows if re.search(rf"(?<![\w]){re.escape(w)}(?![\w])", f"{title} {goal}")]
-        if mentioned:
-            issues.append(_t("issue_workflow_in_goal", n=n, workflows='、'.join(mentioned)))
         if not skills:
             if it["changes_state"] or (raw_skills and unknown):
                 it["broken"] = True              # 要改變狀態卻沒有技能、列的技能全都不存在：worker 做不了
@@ -474,7 +408,7 @@ class TaskMixin:
     def _task_clean(self, data, start=1, profile=None):
         items, issues = [], []
         for raw in (data or {}).get("items") or []:
-            if not isinstance(raw, dict) or not (raw.get("title") or raw.get("goal") or raw.get("workflow")):
+            if not isinstance(raw, dict) or not (raw.get("title") or raw.get("goal")):
                 continue
             it, problems = self._task_item(raw, start + len(items), profile)
             items.append(it)
@@ -513,7 +447,7 @@ class TaskMixin:
             verb = "附加到" if out["mode"] == "append" else "寫成"
             items.append({"n": len(items) + 1, "kind": REPORT_KIND, "title": f"把報告{verb} {out['path']}"[:60],
                           "goal": f"系統依前面各步核對過的事實整理報告，{verb} {out['path']}（每一則附出處，程式核對）",
-                          "skills": ["file_ops"], "workflow": "", "workflow_args": "", "inputs": {}, "changes_state": True,
+                          "skills": ["file_ops"], "changes_state": True,
                           "check": None, "approved": False, "status": "pending", "summary": "", "facts": [], "dropped": [],
                           "attempts": 0, "steps": 0, "evidence": "", "calls": [], "output": dict(out)})
         job["items"] = items
@@ -526,7 +460,7 @@ class TaskMixin:
             names = sorted(containers, key=len, reverse=True)
             mention = lambda it: [c for c in names if re.search(rf"(?<![\w.-]){re.escape(c)}(?![\w.-])", text_of(it))]   # noqa: E731
             for i, it in enumerate(items):
-                if it["workflow"] or not set(it["skills"]) & _IN_CONTAINER:
+                if not set(it["skills"]) & _IN_CONTAINER:
                     continue
                 for c in mention(it):
                     if containers[c]["running"]:
@@ -587,12 +521,6 @@ class TaskMixin:
             score = lambda its, iss: (len(_task_broken(its)), len(iss))   # noqa: E731  做不了的步驟少的優先，再看問題的數量
             if items2 and score(items2, issues2) <= score(items, issues):
                 data, items, issues, output = data2, items2, issues2, output2
-        writers = [it for it in items if output and _writes_path(it, output["path"], definite=True)]
-        if writers:
-            # 修一次之後還是有步驟自己寫這個檔（多半是工作流自己會寫紀錄，規劃拿不掉）：不另外寫報告，不然同一個檔寫兩次
-            # （2026-10-25 階段驗證 cx_restart_verify：container_restart_verify 工作流記了一筆，程式又附加了一份）
-            issues.append(_t("issue_output_dropped", n=writers[0]["n"], path=output["path"]))
-            output = None
         return data, items, issues, output
 
     def task_plan(self, task, profile_name=None, mode="auto"):
@@ -621,7 +549,7 @@ class TaskMixin:
             except OSError:
                 pass
         self._task_note(job, f"🧭 任務（{profile['title']}）：規劃中…")
-        user = _t("plan_user", skills=self._task_catalog(), workflows=self._task_workflow_catalog(), task=task)   # {ENV}：_task_plan_call 換
+        user = _t("plan_user", skills=self._task_catalog(), task=task)   # {ENV}：_task_plan_call 換
         data, items, issues, output = self._task_plan_call(job, profile, user, "plan")
         job["seconds"] += round(time.time() - t0, 1)
         job.update(items=items, issues=issues, status="draft" if mode == "plan" else "planned", output=output,
@@ -646,9 +574,6 @@ class TaskMixin:
                           f"這次沒有執行任何步驟。下一步：這個任務直接用技能一步一步做，或把要做的事說得更具體再交給 task_run。")
         if mode == "auto" and len(items) == 1:
             it = items[0]
-            if it["workflow"]:
-                return None, (f"[ERROR] 這個任務正好是工作流 {it['workflow']}，不需要規劃：直接 workflow_run {it['workflow']} {it['workflow_args']}"
-                              f"（系統會請使用者確認，不用先問）。")
             # 一步就做得完的任務不需要規劃（實測：主對話把「先不要修改、查原因」當成要先看計畫，規劃出一步就停下來問使用者）
             return None, (f"[ERROR] 這個任務一步就做得完，不需要規劃：直接用 {'、'.join(it['skills']) or '對應的技能'} 做"
                           f"（{it['goal']}），不用先問使用者。")
@@ -664,7 +589,7 @@ class TaskMixin:
         rest = [it for it in job["items"] if it["status"] == "pending" and it.get("kind") != REPORT_KIND]
         self._task_note(job, f"🧭 {why}：照前面查到的事實重排剩下的步驟…")
         out = job.get("output")
-        user = _t("replan_user", skills=self._task_catalog(), workflows=self._task_workflow_catalog(), task=job["task"],
+        user = _t("replan_user", skills=self._task_catalog(), task=job["task"],
                   done=self._task_facts_text(done), why=why,
                   rest="\n".join(_t("replan_rest_item", title=it["title"], goal=it["goal"]) for it in rest) or _t("replan_rest_none"),
                   output=_t("replan_output", path=out["path"], mode=out["mode"]) if out else _t("replan_output_none"))
@@ -692,10 +617,7 @@ class TaskMixin:
         if it.get("kind") == REPORT_KIND:
             return f"{it['n']}. {it['title']}（⚠️ 會改變狀態；系統依核對過的事實寫，寫完讀回來比對）\n   {it['goal']}"
         mark = "⚠️ 會改變狀態" if it["changes_state"] else "只查詢"
-        if it["workflow"]:
-            how = f"工作流 {it['workflow']} {it['workflow_args']}".strip()
-        else:
-            how = f"技能：{'、'.join(it['skills']) or '—'}"
+        how = f"技能：{'、'.join(it['skills']) or '—'}"
         chk = (f"；做完檢查：{it['check']['skill']} {it['check']['args']} 要看到「{it['check']['expect']}」" if it.get("check") else "")
         return f"{it['n']}. {it['title']}（{mark}；{how}{chk}）\n   {it['goal']}"
 
@@ -959,7 +881,7 @@ class TaskRun:
         return self.a._task_facts_text(done) if done else ""
 
     def prior_rids(self, it):
-        """這個任務前面做過的工具結果編號（前面各步、這一步之前的嘗試：worker 執行過的、工作流每一步的輸出）——worker 看得到前面各步的事實
+        """這個任務前面做過的工具結果編號（前面各步、這一步之前的嘗試：worker 執行過的）——worker 看得到前面各步的事實
         與 #編號，回報時常引用它們（例如只整理前面結果的步驟），核對時讀回存檔的原文。"""
         rids = set()
         for x in self.job["items"]:
@@ -970,8 +892,6 @@ class TaskRun:
         return rids
 
     def do_item(self, it):
-        if it["workflow"]:
-            return self.do_workflow(it)
         prev_failure = None
         while it["attempts"] < 2:
             it["attempts"] += 1
@@ -1007,37 +927,6 @@ class TaskRun:
             # 不擋下後面的步驟，標成「檢查沒過」交給主對話與使用者確認
             it["status"] = "unverified"
             prev_failure = retry
-
-    def do_workflow(self, it):
-        """工作流的步驟：交給工作流的執行器（它自己推進、檢查、存檔），報告的每一步當這一步的事實（#編號是那一步的輸出）。"""
-        a = self.a
-        wf = a.load_workflow(it["workflow"])
-        it["attempts"] += 1
-        if not wf:
-            it.update(status="failed", summary=f"工作流 {it['workflow']} 不存在")
-            return
-        store = a._workflow_store()
-        wjob = {"id": store.new_id(wf["name"]), "spec": wf, "inputs": it["inputs"], "given": {}, "status": "running", "cursor": 1,
-                "steps": {str(s["n"]): {"status": "pending"} for s in wf["steps"]}, "notes": [], "created": time.strftime("%Y-%m-%d %H:%M:%S"),
-                "model": a.model, "seconds": 0.0, "model_calls": 0, "task_job": self.job["id"],
-                # 任務的確認核准了這一步＝核准規劃時看到的那幾個會改變狀態的步驟；執行時才看得出要改的，工作流會停下來（這一步算沒做成）
-                "approved": [s["n"] for s in a._wf_segment(wf, 1, it["inputs"])] if it.get("approved") else []}
-        from .workflow import WorkflowRun
-        report = WorkflowRun(a, wjob).run()
-        it["workflow_job"] = wjob["id"]
-        it["steps"] += wjob.get("model_calls", 0)
-        self.job["model_calls"] = self.job.get("model_calls", 0) + wjob.get("model_calls", 0)
-        facts = []
-        for s in wf["steps"]:
-            st = wjob["steps"][str(s["n"])]
-            if s["kind"] == "執行" and st.get("rid") and st.get("status") == "done":
-                # 輸出的開頭幾行（第一行常只是「執行完成」，值在下一行：2026-10-25 container_restart_verify 的 grep max_size）
-                lines = [ln.strip() for ln in (a.result_text(st["rid"]) or "").splitlines() if ln.strip()]
-                head = " ".join(lines[:3]) if lines else st.get("head")
-                facts.append({"text": f"{ws.show(s['title'], it['inputs'])}：{_one_line(head, 240)}", "ref": str(st["rid"])})
-        it["facts"] = facts[:8]
-        it["summary"] = _one_line(report.splitlines()[0] if report else "", 400)
-        it["status"] = {"done": "done", "ended": "done", "unverified": "unverified"}.get(wjob["status"], "failed")
 
     def check(self, it):
         """worker 回報完成後由程式跑 check（唯讀技能）：輸出要找得到 expect（正規表示式，不合法就當字串；不分大小寫）。
@@ -1086,7 +975,7 @@ class TaskRun:
 
     # ------------------------------------------------ 整合（Synthesizer）：依核對過的事實寫結論或報告，每一則附出處、程式核對
     def job_rids(self):
-        """這個任務做過的工具結果編號（worker 與工作流每一步的輸出、程式跑的檢查）：整合只能引用這些。"""
+        """這個任務做過的工具結果編號（worker 的輸出、程式跑的檢查）：整合只能引用這些。"""
         rids = set()
         for x in self.job["items"]:
             rids |= {str(c["rid"]) for c in x.get("calls") or [] if c.get("rid")}

@@ -16,12 +16,12 @@ harness 送給模型的字都在這裡：改字不用改程式，存檔之後下
 | `harness/state_tail.md` | 動態區：目前狀態（工作目錄、容器、Workspace、目前的數據）、Objective | `prompt.build_state_tail`、`analysis_job.analysis_state_line` |
 | `harness/tool_results.md` | 每一則工具結果的框架句、使用者捨棄結果的通知、沒有提煉時只給成功／失敗的那一則 | `protocol.tool_result_message`、`turn.py` |
 | `harness/raw_results.md` | claude_code 模式：原文太長時中間省略的說明、清除舊回傳的佔位 | `context_mode.py` |
-| `harness/skill_docs.md` | 用技能（或工作流）名稱當 action 時，規格前面那句「這一輪只是載入規格、下一輪要做什麼」 | `dispatch.py` |
+| `harness/skill_docs.md` | 用技能名稱當 action 時，規格前面那句「這一輪只是載入規格、下一輪要做什麼」 | `dispatch.py` |
 | `harness/reminders.md` | 程式核對後的提醒：同樣的動作一直失敗、沒動作卻說做了或說要做、依數據報告回答時寫成因果或寫錯事實、空白回覆 | `turn_guard.py`、`conversation.ask_ai` |
 | `harness/followup.md` | 提煉結果最後的下一步建議（還要哪幾份存檔、沒讀到的段落、缺口、已經回答） | `tool_summary._followup_guidance` |
 | `harness/extract_anchor.md` | 交給提煉的「使用者想知道什麼」：這一步的目的、recall 的問題與每份存檔的背景 | `tool_summary.py` |
 | `harness/anchor.md` | 交給獨立 session 的「使用者的目標」（Objective、最新一句、任務線） | `prompt._build_task_anchor_text` |
-| `harness/direct_commands.md` | `/analyze`、`/workflow` 替使用者與 AI 放進主對話的訊息；數據分析報告最後的回答規則 | `workflow_cmd.py`、`cli.py`、`web_app/` |
+| `harness/direct_commands.md` | `/analyze` 替使用者與 AI 放進主對話的訊息；數據分析報告最後的回答規則 | `cli.py`、`web_app/` |
 | `harness/attachments.md` | Web：只附圖或只載入技能沒打字時的訊息、影像分析接在訊息後面的說明 | `web_app/flows.py`、`state.py` |
 | `summary/rolling.md` | 滾動摘要 session | `compression._summary_prompts` |
 | `extract/worker.md`、`synthesizer.md` | 工具回傳的提煉：分段的 worker、整合（規則） | `extract.py` |
@@ -30,8 +30,6 @@ harness 送給模型的字都在這裡：改字不用改程式，存檔之後下
 | `orchestra/profiles/<類型>.md` | 任務的類型：ops 維運、investigate 調查（只查不改）、report 整理報告。「# 規劃」給規劃、「# 執行」給 worker、「# 整合」給整合；frontmatter 的 `changes_state`、`synthesis`、`knowledge`（另外附上哪個類型的〈規劃〉〈執行〉當領域知識） | `task_engine.parse_profile` |
 | `orchestra/engine.md` | 任務引擎組進去的部分：選類型、規劃與重排的 user 訊息、程式檢查計畫的問題、worker 的說明與提醒、對照目標的兩個問題、事實核對交回改、重試的原因、整合的 user 訊息與核對交回改 | `task_engine.py` |
 | `orchestra/plan_edit.md` | Plan 模式用說的改草稿（只輸出要套用的操作） | `plan._plan_revise` |
-| `workflow/fill.md`、`check.md`、`inputs.md` | 工作流的判斷點：填值、選分支（規則）；user 訊息的標籤與選項 | `workflow.py` |
-| `make_skill/draft.md` | `/make_skill` 草擬工作流 | `make_skill._make_skill_prompts` |
 | `vision/extraction.md` | Web 附圖的影像提取（視覺模型的 system、純文字的退路、user 訊息） | `vision/extraction.py` |
 
 ## 範本的寫法
@@ -44,7 +42,7 @@ harness 送給模型的字都在這裡：改字不用改程式，存檔之後下
 
 ## 不在這裡的（留在程式裡）
 
-- **程式的輸出**：工具與技能的結果（`[PASS]`／`[ERROR]`／`[DENIED]` 與下一步，照〈技能撰寫規範〉）、任務引擎與工作流與數據分析的報告、
+- **程式的輸出**：工具與技能的結果（`[PASS]`／`[ERROR]`／`[DENIED]` 與下一步，照〈技能撰寫規範〉）、任務引擎與數據分析的報告、
   提煉結果的排版、檢查的證據——這些是程式算出來的結果，不是給模型的指示。
 - **程式認的標記**：`[tool result]`、`【系統回傳】`、`[vision result]`、`[skill loaded]`、`📘 已載入技能`、`（完整原文存檔 #N，…）`、
   `（依這份報告回答使用者`——程式靠它們辨認訊息（壓縮、清除、核對），範本裡用 `{prefix}`、`{marker}` 這種名稱由程式填。
@@ -53,4 +51,4 @@ harness 送給模型的字都在這裡：改字不用改程式，存檔之後下
 ## 改了之後
 
 改到這裡的字＝改到模型會讀的文字：跑對應的真模型評測跟基準比（`CLAUDE.md`〈每一次修改的測試〉第 3 條；主對話 `evals/chat/run.py`、
-任務引擎與維運 `evals/ops/run.py`、工作流 `evals/workflow/sandbox.py`）；範例不要用評測世界的名稱（`evals/integrity/selftest.py` 會擋）。
+任務引擎與維運 `evals/ops/run.py`、提煉 `evals/extract/run.py`）；範例不要用評測世界的名稱（`evals/integrity/selftest.py` 會擋）。

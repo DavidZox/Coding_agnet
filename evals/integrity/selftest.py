@@ -5,7 +5,7 @@ file_ops 的範例正好是那一題的答案；設計筆記 2.19）。這裡把
 掃模型會讀的文字：
 
 - prompts/ 底下的 .md（prompts/Memory.md 除外：那是使用者的長期記憶，會隨使用改變）、skills_system/SKILLS.md、
-  skills_system/tools/*.md、skills_system/workflows/*.md；
+  skills_system/tools/*.md；
 - agent_core/、vision/、web_app/、skills_system/scripts/ 裡回給模型的字串（用法、[ERROR] 的例子）：程式裡的字串常數，docstring 與
   註解不算；scripts/mock_server.py（開發用的替身，本來就是評測沙盒）不算。
 
@@ -15,6 +15,9 @@ file_ops 的範例正好是那一題的答案；設計筆記 2.19）。這裡把
 
 還有沒人用的程式（2026-11 第 6 階段清掉舊路徑之後，不要再累積）：agent_core、web_app、vision、技能腳本裡定義了卻沒有人用的函式、方法、
 類別、模組層的常數，與各檔 import 了卻沒用到的名稱。
+
+還有階段驗證的維運比對（evals/phase_check.py）：基準記每個情境每一次的結果，只跑一部分（2026-11 起維運分成「檔案與調查」與凍結的工具）
+時總分跟基準裡同一組情境比；只更新一部分的基準時，其他情境的基準不動。
 
 評測世界的名稱：機器人（tb1…）、工作包（WP_…）、站點（a0…）與語意名稱（組裝線區-2…）、容器、映像、檔案沙盒的路徑、
 設定檔裡的設定名稱、錯誤碼、數據的編號（exp_…）。調度系統本身的協定名稱（distribute、handshake_states、threshold_recovery_sec…）
@@ -37,7 +40,7 @@ DATASET = os.path.join(PROJECT, "evals", "ops", "dataset")
 SOURCES = ["evals/ops/dataset/scenarios.py", "evals/ops/dataset/scenarios_holdout.py", "evals/ops/dataset/scenarios_inv.py",
            "evals/ops/dataset/fs_world.py",
            "evals/ops/dataset/sandbox/sandbox.py", "evals/ops/dataset/sandbox/rmf_sim/rmf_sim.py",
-           "evals/chat/scenarios.py", "evals/workflow/sandbox.py"]
+           "evals/chat/scenarios.py"]
 # 調度系統與 ROS 2 本身的名稱：評測沙盒照真的系統做，技能規格要描述它們
 # （/opt/ros 是 ROS 2 的安裝位置：容器裡的 ros2 指令要先 source 它）
 ALLOWED = {"ros__parameters", "authorize_timeout_sec", "threshold_recovery_sec", "threshold_ovp_sec", "fleet_name",
@@ -104,7 +107,6 @@ def facing_docs():
     docs = [p for p in docs if os.path.basename(p) != "Memory.md"]
     docs += [os.path.join(PROJECT, "skills_system", "SKILLS.md")]
     docs += glob.glob(os.path.join(PROJECT, "skills_system", "tools", "*.md"))
-    docs += glob.glob(os.path.join(PROJECT, "skills_system", "workflows", "*.md"))
     return sorted(docs)
 
 
@@ -287,6 +289,40 @@ def t_dead_code():
         assert [n for _, _, n in unused_imports(d)] == ["json"], unused_imports(d)
 
 
+def t_ops_compare():
+    sys.path.insert(0, os.path.join(PROJECT, "evals"))
+    import phase_check as pc
+    one = lambda ok: {"runs": 1, "passed": int(ok), "forbidden": 0, "median_s": 5, "results": [int(ok)]}   # noqa: E731
+    three = lambda *r: {"runs": 3, "passed": sum(r), "forbidden": 0, "median_s": 5, "results": list(r)}   # noqa: E731
+    base = {"current": {"label": "測試", "per": {"fs_a": three(1, 1, 1), "fs_b": three(1, 0, 1), "inv_c": three(1, 1, 1),
+                                                 "dk_d": three(0, 0, 0)}}}
+    assert pc.ops_part(["fs_a", "ho_fs_x", "inv_c"]) == "harness" and pc.ops_part(["dk_d", "ho_cx_y"]) == "tools"
+    assert pc.ops_part(["fs_a", "dk_d"]) == "all"
+    real_load, real_base = pc.load_baseline, pc.BASE
+    pc.load_baseline = lambda name: base
+    try:
+        # 只跑檔案與調查：基準的總分只算這幾個情境（主要每一次 2、1、2；調查與報告 1、1、1），不拿全部情境的總分來比
+        _, btxt, verdict, notes = pc.compare_ops({"per": {"fs_a": one(True), "fs_b": one(False), "inv_c": one(True)}})
+        assert "主要 2、1、2／2" in btxt and "調查與報告 1、1、1／1" in btxt and "保留" not in btxt and verdict == "✅", (btxt, notes)
+        # 低於同一組情境每一次的最低分才列（主要 0 < 1）；基準 3/3 的這次沒過也列
+        _, _, verdict, notes = pc.compare_ops({"per": {"fs_a": one(False), "fs_b": one(False), "inv_c": one(True)}})
+        assert verdict == "⚠️" and notes[0] == "總分低於基準（同一組情境）的最低分：主要 0 < 1" and "fs_a：0/1 過（基準 3/3）" in notes, notes
+    finally:
+        pc.load_baseline = real_load
+    with tempfile.TemporaryDirectory() as d:   # 只更新一部分：這次有跑的情境換成新的結果，其他情境的基準不動
+        pc.BASE = d
+        try:
+            import json
+            name = f"ops_{pc.OPS_MODEL.replace(':', '-')}"
+            with open(os.path.join(d, name + ".json"), "w", encoding="utf-8") as f:
+                json.dump(base, f)
+            pc.save_baseline([{"kind": "ops", "key": "ops", "dirs": ["/x/20261117_ops_all_phase"], "per": {"fs_a": one(False)}}], "只跑檔案")
+            per = pc.load_baseline(name)["current"]["per"]
+            assert per["fs_a"]["results"] == [0] and per["fs_a"]["since"].startswith("只跑檔案") and per["dk_d"]["results"] == [0, 0, 0], per
+        finally:
+            pc.BASE = real_base
+
+
 def main():
     results = []
 
@@ -394,11 +430,12 @@ def main():
 
     for name, fn in [("從評測的來源取得評測世界的名稱（機器人、工作包、站點、容器、檔案、設定…）；協定名稱不算", t_names_extracted),
                      ("掃描抓得到：文件與程式字串裡的評測名稱各抓到；中性的名稱、docstring 不算", t_detects_planted),
-                     ("prompts、SKILLS.md、技能規格、工作流沒有評測世界的名稱", t_docs),
+                     ("prompts、SKILLS.md、技能規格沒有評測世界的名稱", t_docs),
                      ("agent_core、vision、web_app 與技能腳本回給模型的字串沒有評測世界的名稱", t_code),
                      ("prompts/ 的範本跟程式對得上：用到的每一則都在、填的名稱範本裡都有、沒有沒人用的一則", t_templates),
                      ("讀範本（agent_core/prompt_files.py）：取一則、一次填完、讀不到回空字串、檔案改了就重讀", t_loader),
-                     ("沒人用的程式：定義了卻沒有人用的函式、類別、常數，import 了卻沒用到的（清掉的舊路徑不要再累積）", t_dead_code)]:
+                     ("沒人用的程式：定義了卻沒有人用的函式、類別、常數，import 了卻沒用到的（清掉的舊路徑不要再累積）", t_dead_code),
+                     ("階段驗證的維運比對：只跑一部分時跟基準裡同一組情境的每一次比；只更新一部分的基準時其他情境不動", t_ops_compare)]:
         check(name, fn)
     failed = [r for r in results if not r[1]]
     for name, _, tb in failed:

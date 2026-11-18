@@ -9,21 +9,25 @@
 - **使用者自己 commit**：不要 commit、push。一個階段做完，先給整份計畫的狀態表（規劃的部分｜狀態｜程式裡的根據；根據要對照程式確認，
   不憑記憶），再請使用者 commit。
 - 沒有確認之前不開始新的大工作；使用者說「先不做、記下來」的寫進 `doc/待辦清單.md`。
+- **目前的重點是 harness 本身**（2026-11-17 使用者決定）：主對話迴圈、確認關卡、多段處理長內容、存檔與回顧、orchestrator／worker，目標是
+  找檔案、文件與程式分析做到穩定。其他工具（ROS 2、調度系統、容器、數據分析、多模態）**凍結**：照現在的樣子保留、能用，壞了才修，
+  新功能先記進待辦；使用者之後會帶新的架構想法來討論，不要先自己重新設計。
 - 一段工作告一段落時，**先問使用者可不可以更新架構說明（`doc/架構說明.md`）與架構圖（`doc/diagrams/`）**，同意了再更新。
 - `sudo` 要密碼：需要權限的指令整段給使用者自己執行。
 - `diagnostics_package`（使用者的套件）唯讀，不要改。
 
 ## 每一次修改的測試
 
-1. **開始改之前，完整的離線測試要全部通過**：`python3 evals/phase_check.py`（約 2 分鐘；技能、主對話、提煉、維運、任務引擎、數據分析、工作流的
+1. **開始改之前，完整的離線測試要全部通過**：`python3 evals/phase_check.py`（約 2 分鐘；技能、主對話、提煉、維運、任務引擎、數據分析的
    自我測試，加上評測的完整性）。
    全過才開始改、才加新的測試案例；有沒過的先查清楚（環境少了東西、之前就壞了、還是真的退步），不要在沒過的測試上疊新的修改或案例。
 2. **新的修改一定帶測試，而且要加進測試案例**：改了什麼就在對應的自我測試加案例（假模型、離線、幾秒）；行為會受模型影響的，再加真模型的情境。
    手動驗證過的東西（暫存區的腳本、互動式的試跑、單次的指令）也要轉成測試案例，不要只留在對話裡。新的測試要讓 `phase_check.py` 跑得到
    （新的一組加進它的 `OFFLINE` 或對應的組）。
-3. **改到模型會讀的文字**（`prompts/`、`skills_system/SKILLS.md`、`skills_system/tools/`、`skills_system/workflows/`）或主對話的流程：
-   再跑對應的真模型評測（`evals/ops/run.py`、`evals/chat/run.py`、`evals/workflow/sandbox.py`），跟基準比。
-4. **一個階段結束**：`python3 evals/phase_check.py --live --model`（約 1 小時）全跑；要注意的項目逐一查清楚（重跑、看紀錄），寫進設計筆記。
+3. **改到模型會讀的文字**（`prompts/`、`skills_system/SKILLS.md`、`skills_system/tools/`）或主對話的流程：
+   再跑對應的真模型評測（`evals/chat/run.py`、`evals/ops/run.py`、`evals/extract/run.py`），跟基準比。
+4. **一個階段結束**：`python3 evals/phase_check.py --model`（harness 的真模型評測）全跑；動到凍結的工具共用的程式時再加 `--tools`。
+   要注意的項目逐一查清楚（重跑、看紀錄），寫進設計筆記。
 5. **基準**（`evals/baselines/`，跟程式一起進版控）：自我測試的通過數變了就更新（`--save-baseline <結果目錄> --only <項目>`）；
    真模型的基準要用多次的結果（維運至少 3 次完整跑），在階段結束時更新。怎麼比見 `evals/baselines/README.md`。
 
@@ -34,7 +38,7 @@
 - **容器用完就關**：`cah_ops_dind`（維運沙盒）、`cah_dev_dind`（開發用沙盒）、`cah_analysis_test`（數據測試容器）。phase_check 會自己關，
   手動跑的要自己 `docker stop`。Web 的測試前後備份、還原 `logs/analysis_settings.json`（phase_check 會自己比對還原）。
 - **模型有隨機性**：單次沒過先重跑 3 次再下結論。也要看檢查本身是不是太寬——不要只看通過／沒過，打開那一次的紀錄
-  （結果目錄的 `logs/<情境>/`：`task_jobs`、`workflow_jobs`、`extract_jobs`、`tool_results`、`calls.jsonl`）看實際做了什麼
+  （結果目錄的 `logs/<情境>/`：`task_jobs`、`extract_jobs`、`tool_results`、`calls.jsonl`）看實際做了什麼
   （例：cx_domain_fix 的檢查只看回覆裡有沒有那段字，第 3 階段 ops_run 的計畫其實一次都沒做完）。
 - **保留組（`ho_*`）是量沒看過的情境**：不要照保留組的內容調提示或技能說明。
 - 同一時間只跑一組要用 Ollama 的評測（同一個模型一次一個 slot，互相拖慢，時間的比較就不準）；跑很久的放背景，結果出來再看。
@@ -56,9 +60,10 @@
 - 技能說明、prompt、程式回給模型的字（用法、[ERROR] 的例子）不要用評測情境裡的檔案、名稱與數值（用 `<檔案>`、`<名稱>`，或評測世界沒有的
   名稱：amr_07、p0、WP_0815、cam_driver、config/camera.yaml…）——不然評測量到的是會不會抄範例。`evals/integrity/selftest.py` 會擋（評測世界的
   名稱從評測的來源自動取）；新增情境時名稱不要跟範例撞。
-- 會改變狀態的動作一律經過確認關卡（`agent_core/guard.py`）；看不出會不會改的（值還不知道、解析不過）當成會改，寧可多問一次。
+- 會改變狀態的動作一律經過確認關卡（`agent_core/guard.py`）；看不出會不會改的（例如指令裡還有沒代入的值）當成會改，寧可多問一次
+  （參數錯的腳本自己會拒絕執行，不算）。
 - 不用的程式直接刪掉，不留「相容舊的」分支（git 歷史裡有）：`evals/integrity/selftest.py` 會擋定義了沒人用的函式、常數與沒用到的 import。
-- 技能：第一行 `[PASS]`／`[ERROR]`，`[ERROR]` 附下一步（`doc/技能撰寫規範.md`）；工作流照 `doc/工作流撰寫規範.md`。
+- 技能：第一行 `[PASS]`／`[ERROR]`，`[ERROR]` 附下一步（`doc/技能撰寫規範.md`）。
 
 ## 文件
 

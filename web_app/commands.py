@@ -39,7 +39,6 @@ SLASH_COMMANDS = [
     {"cmd": "/plan del ", "desc": "刪計畫的第 N 步", "group": "動作與查詢", "args": True},
     {"cmd": "/plan show", "desc": "顯示目前的計畫草稿", "group": "動作與查詢"},
     {"cmd": "/context_mode", "desc": "查看目前的上下文模式", "group": "動作與查詢"},
-    {"cmd": "/make_skill ", "desc": "把這段做對的對話整理成工作流的規格（後接名稱，可再接軌跡範圍如 3-7）", "group": "動作與查詢", "args": True},
     {"cmd": "/trajectory", "desc": "列出本次 session 記錄到的腳本執行軌跡（步驟編號、成功／失敗）", "group": "動作與查詢"},
     {"cmd": "/objective set ", "desc": "設定 Sticky Objective（後面接內容）", "group": "動作與查詢", "args": True},
     {"cmd": "/objective show", "desc": "查看目前的 Objective", "group": "動作與查詢"},
@@ -55,11 +54,6 @@ SLASH_COMMANDS = [
     {"cmd": "/analysis_mode on", "desc": "📊 分析模式：送出的問題直接交給數據分析", "group": "數據分析"},
     {"cmd": "/analysis_mode off", "desc": "關閉分析模式（訊息回到主對話）", "group": "數據分析"},
     {"cmd": "/analysis_help", "desc": "數據分析的全部指令說明", "group": "數據分析"},
-    {"cmd": "/workflow", "desc": "列出工作流（多步驟、程式照步驟做的維運流程）與呼叫語法", "group": "工作流"},
-    {"cmd": "/workflow show ", "desc": "看一個工作流的步驟與需要的資訊（後接名稱）", "group": "工作流", "args": True},
-    {"cmd": "/workflow ", "desc": "直接執行工作流、不經過 AI 選擇：/workflow <名稱> 名稱=值 …（會改變狀態的步驟照常請你確認，AI 依報告回答）", "group": "工作流", "args": True},
-    {"cmd": "/workflow --continue", "desc": "停在【確認】的工作流接著做", "group": "工作流"},
-    {"cmd": "/workflow --cancel", "desc": "停在【確認】的工作流不做了", "group": "工作流"},
     {"cmd": "/model", "desc": "查看主對話的模型與 thinking 開關", "group": "模型"},
     {"cmd": "/model ", "desc": "設定主對話的模型，例如 /model gemma4:26b", "group": "模型", "args": True},
     {"cmd": "/think ", "desc": "thinking 開關：/think main on|off（模型支援 thinking 才有作用）", "group": "模型", "args": True},
@@ -69,8 +63,6 @@ MENU_TEXT = """可用指令：
 /menu                  顯示本說明
 /analyze [問題]         數據分析：直接交給 analysis_run（Log 去重＋程式量全部 Topic 的事實＋程式寫重點 → 事實報告，AI 依報告回答）；
                         /analysis_help 看全部數據分析指令
-/workflow [名稱 名稱=值 …] 工作流：不接名稱＝列出全部；/workflow show <名稱> 看步驟；/workflow <名稱> 名稱=值 … 直接執行
-                        （不經過 AI 選擇，會改變狀態的步驟照常請你確認，報告進對話、AI 依報告回答）；--continue／--cancel
 /clear                  清空對話記憶，重新開始
 /model [模型]           查看主對話的模型與 thinking；給模型名稱＝換主對話的模型（也可以按標題列的 🧠）
 /think main on|off      thinking 開關（模型支援才有作用）
@@ -90,7 +82,6 @@ MENU_TEXT = """可用指令：
 /skills                 列出所有可用技能
 /skill <技能名稱>        手動載入該技能的規格，隨你下一則訊息一起送出
 /trajectory             列出本次 session 記錄到的腳本執行軌跡（步驟編號、成功／失敗、所屬技能）
-/make_skill <名稱> [範圍] 把做對的對話整理成工作流的規格（範圍省略＝上一個起點之後；可用 3-7、3,5,8 或 all）
 
 在輸入框打「/」會彈出選單：上半是功能開關與指令，下半是 SKILLS.md 裡的技能（依分類）。
 ↑↓ 移動、Enter／Tab 選取、Esc 關閉，也可以繼續打字過濾。選指令只會填入輸入框、要再按
@@ -115,7 +106,7 @@ AI 的每一次回覆都是固定的 JSON（thought／reply／action），由 Ol
 載入規格或執行腳本，reply 裡不論寫了什麼指令文字都不會被執行；回覆不是合法 JSON 時降級為純文字顯示、
 該輪不執行任何東西。
 
-開啟 /plan on 後，輸入新任務時 AI 不會馬上執行，而是由任務引擎列出步驟草稿（每一步的目標、技能或工作流、會不會改變狀態、
+開啟 /plan on 後，輸入新任務時 AI 不會馬上執行，而是由任務引擎列出步驟草稿（每一步的目標、技能、會不會改變狀態、
 做完怎麼檢查），草稿由系統保存、不進主對話。改草稿有兩種方式：直接下 /plan add／insert／edit／del／move（不經過 AI，最穩），
 或在輸入框用說的（例如「第二步改成先看 topic 清單」）——AI 只提出要改哪幾條，由系統套用，不會重寫整份。
 也可以不開 /plan on，直接 /plan add 一條條自己列。規劃與修改都不會呼叫任何工具。
@@ -175,25 +166,11 @@ prompt_eval_count），使用者輸入與工具回傳以每次呼叫後校準的
 會出現通知。但要注意：只有 Ollama 真的為模型配置多個 slot、或摘要模型（AGENT_SUMMARY_MODEL）
 與主模型不同時，摘要才會與主對話同時推論；目前版本的 Ollama 對多模態模型（gemma4）強制
 單 slot，同模型的背景摘要會讓你的下一次對話在 Ollama 內排隊，等待只是搬到下一次呼叫。
-算力弱的設備建議維持關閉（序列處理）。
-
-自建工作流（/make_skill）：每一則對話訊息（你說的話、AI 的想法／回覆／動作、當時進上下文的工具回傳）都會
-留一份在「對話紀錄」，每次腳本執行也會記進「操作軌跡」（/trajectory 可以查看）；兩者都存在對話 messages
-之外，上下文壓縮、/clear 都不會沖掉。當你一步步引導 AI 把一件事做對之後，輸入 /make_skill <名稱>，
-會把「上一個起點（/clear、計畫核准、上一次 make_skill）之後」的整段對話與工具回傳、這段的操作軌跡、可用的
-技能與語法交給草擬模型（{skill_model}，可用 AGENT_SKILL_MODEL 換更大的模型），由它推論下次做同一件事的步驟，
-寫成一份「工作流」的規格：步驟分成執行（呼叫既有技能的腳本）、檢查（看前面的輸出決定怎麼走）、確認（停下來
-等你）、告知（整理結果），會變的值寫成 {{名稱}}——你給的資訊，或前面步驟的輸出才知道、執行到那一步時由模型
-填的值。不會產生任何腳本：系統用跟工作流同一套規則驗證（腳本存在、分支只能往後），不通過就不能註冊。左欄
-會顯示草稿預覽（skills_system/drafts/<名稱>/），下方出現「核准並註冊／取消」按鈕，也可以直接打字送出修改意見
-重擬。核准後寫進 skills_system/workflows/ 與 SKILLS.md〈工作流〉；之後 AI 用 workflow_run、或你用 /workflow
-<名稱> 執行，步驟由程式照規格推進。需要新腳本的話，另外寫好腳本與規格。只有一句話的做法，用 modify_memory
-記住就好。""".format(
+算力弱的設備建議維持關閉（序列處理）。""".format(
     threshold=TOOL_RESULT_TOKEN_THRESHOLD, vision_model=VISION_MODEL, raw_max=RAW_RESULT_MAX_TOKENS,
     token_threshold=TOKEN_THRESHOLD, soft_threshold=SOFT_TOKEN_THRESHOLD,
     keep_recent=KEEP_RECENT_TOKENS, num_ctx=NUM_CTX, min_compress=MIN_COMPRESS_TOKENS,
     soft_pct=round(SOFT_TOKEN_THRESHOLD / NUM_CTX * 100), hard_pct=round(TOKEN_THRESHOLD / NUM_CTX * 100),
-    skill_model=agent.skill_model,
 )
 
 
@@ -207,15 +184,6 @@ def handle_slash_command(message, events):
         return True
     from .analysis import handle_analysis_command   # /analysis 系列（/analyze 在 server._handle_send，要跑一個回合）
     if handle_analysis_command(text, events):
-        return True
-    if lower == "/workflow" or lower.startswith("/workflow "):
-        # 🧩 列出、看步驟（執行要跑一個回合，在 server._handle_send；跟 CLI 共用 agent_core/workflow_cmd.py）
-        from agent_core import workflow_cmd
-        kind, arg = workflow_cmd.parse(text[len("/workflow"):])
-        if kind == "run":
-            return False
-        events.append({"channel": "system", "text": workflow_cmd.list_text(agent) if kind == "list"
-                       else workflow_cmd.show_text(agent, arg) if kind == "show" else arg})
         return True
     if lower == "/model" or lower.startswith(("/model ", "/think")):
         return _handle_model_command(text, events)
@@ -317,26 +285,6 @@ def handle_slash_command(message, events):
         return True
     if lower == "/trajectory":
         events.append({"channel": "system", "text": agent.format_trajectory()})
-        return True
-    if lower == "/make_skill" or lower.startswith("/make_skill "):
-        parts = text[len("/make_skill"):].split()
-        if not parts:
-            events.append({"channel": "system", "text": (
-                "用法：/make_skill <技能名稱> [範圍：省略＝上一個起點之後的對話；或軌跡編號 3-7、3,5,8；或 all]；"
-                "/trajectory 可查編號。"
-            )})
-            return True
-        name, spec = parts[0], (parts[1] if len(parts) > 1 else None)
-        events.append({"channel": "system", "text": f"🧩 正在讀這段對話與工具回傳，草擬工作流 {name}（模型 {agent.skill_model}）…"})
-        draft, err = agent.start_skill_draft(name, spec)
-        if err:
-            events.append({"channel": "system", "text": f"⚠️ {err}"})
-            return True
-        events.append({"channel": "skilldraft", "name": draft["name"], "text": agent.skill_draft_preview(draft)})
-        events.append({"channel": "system", "text": (
-            "🧩 草稿已寫入 skills_system/drafts/，尚未註冊。下方按鈕：核准並註冊／取消；"
-            "也可以直接在輸入框送出修改意見，系統會重擬草稿。"
-        )})
         return True
     if lower == "/skills":
         lines, cat = ["📘 可用技能（/skill <名稱> 或「/」選單可手動載入規格）："], None

@@ -9,7 +9,7 @@ skinparam ranksep 70
 skinparam nodesep 22
 left to right direction
 
-title prompts/ 與流程的對應：給模型的字都在 prompts/（程式只填算出來的值，讀法 agent_core/prompt_files.py）；\n技能與工作流的說明也是模型會讀的文字；留在程式裡的只有程式的輸出與程式認的標記（右邊）
+title prompts/ 與流程的對應：給模型的字都在 prompts/（程式只填算出來的值，讀法 agent_core/prompt_files.py）；\n技能的說明也是模型會讀的文字；留在程式裡的只有程式的輸出與程式認的標記（右邊）
 
 package "prompts/（改字不用改程式；evals/integrity 檢查範本跟程式對得上）" {
   package "主對話" {
@@ -30,7 +30,7 @@ package "prompts/（改字不用改程式；evals/integrity 檢查範本跟程�
       reminders：程式核對後的提醒（重複、沒動作卻說做了、
         依報告回答寫成因果、空白回覆）
       followup：提煉結果最後的下一步建議
-      direct_commands、attachments：/analyze、/workflow、附圖、
+      direct_commands、attachments：/analyze、附圖、
         手動載入技能時放進對話的訊息；數據報告的回答規則
     ]
   }
@@ -52,13 +52,6 @@ package "prompts/（改字不用改程式；evals/integrity 檢查範本跟程�
       worker 的說明與提醒、對照目標的兩個問題、重試的原因、整合的訊息與交回改）、
       plan_edit.md（Plan 模式用說的改）
     ]
-    rectangle P_WF #FFF2CC [
-      **workflow/**：fill.md、check.md（判斷點的規則）、
-      inputs.md（標籤與選項）
-    ]
-    rectangle P_MS #ECECEC [
-      **make_skill/draft.md**：/make_skill 草擬工作流
-    ]
     rectangle P_VISION #DDEEF6 [
       **vision/extraction.md**：附圖的影像提取
       （system、純文字的退路、user 訊息）
@@ -68,10 +61,9 @@ package "prompts/（改字不用改程式；evals/integrity 檢查範本跟程�
 
 package "skills_system/：也是模型會讀的" {
   rectangle K_ALL #D5E8D4 [
-    **SKILLS.md**：一行一個技能＋〈工作流〉（常駐）
+    **SKILLS.md**：一行一個技能（常駐）
     **tools/<name>.md**：技能的規格（主對話按需載入；
     任務引擎的 worker 整份附上）
-    **workflows/<名稱>.md**：工作流的規格（規劃看得到清單）
   ]
 }
 
@@ -92,12 +84,6 @@ package "用到它們的 session" {
     整合（TASK_SYNTH_SCHEMA：每一則附出處，程式核對）、
     Plan 模式的草稿與用說的改（PLAN_OPS_SCHEMA）
   ]
-  rectangle S_WF #FFF2CC [
-    **工作流的判斷點**：只填那幾個值／選分支
-  ]
-  rectangle S_MS #ECECEC [
-    **/make_skill 草擬**：MAKE_SKILL_SCHEMA
-  ]
   rectangle S_VISION #DDEEF6 [
     **視覺 session**：extraction_schema(張數)
   ]
@@ -106,7 +92,7 @@ package "用到它們的 session" {
 package "留在程式裡的（不是給模型的指示）" {
   rectangle C_LIST #ECECEC [
     * 程式的輸出：技能與工具的 [PASS]／[ERROR]／[DENIED]（附下一步）、
-      任務引擎與工作流與數據分析的報告（含程式寫的報告檔）、提煉結果的排版、檢查的證據
+      任務引擎與數據分析的報告（含程式寫的報告檔）、提煉結果的排版、檢查的證據
     * 程式認的標記：[tool result]、【系統回傳】、[vision result]、
       [skill loaded]、（完整原文存檔 #N…）、（依這份報告回答使用者——
       範本裡用 {prefix}、{marker} 由程式填
@@ -120,16 +106,14 @@ K_ALL --> S_MAIN
 P_SUMMARY --> S_SUMMARY
 P_EXTRACT --> S_EXTRACT
 P_ORCH --> S_ORCH
-K_ALL --> S_ORCH : 規格、工作流清單
-P_WF --> S_WF
-P_MS --> S_MS
+K_ALL --> S_ORCH : 技能清單與規格
 P_VISION --> S_VISION
 S_VISION -[hidden]-> C_LIST
 
 legend bottom
   **用哪個模型**（獨立 session 一律關閉 thinking）
   ・主 session：主模型（Web 的模型設定，預設 gemma4:e4b）；提煉、滾動摘要：summary_model（AGENT_SUMMARY_MODEL，沒設定時跟著主模型）
-  ・任務引擎（選類型、規劃、worker、整合）、工作流的判斷點、Plan 模式：主模型；/make_skill：skill_model；附圖：VISION_MODEL
+  ・任務引擎（選類型、規劃、worker、整合）、Plan 模式：主模型；附圖：VISION_MODEL
   範本的寫法：一個檔案好幾則時每則用一行 <!~-- @名稱 ~--> 開頭；{名稱} 是程式填的值（prompts/README.md）。
   改這些字＝改模型會讀的文字：跑對應的真模型評測、跟基準比；範例不用評測世界的名稱
 endlegend

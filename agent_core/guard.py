@@ -3,8 +3,8 @@
 跟 Plan 模式的核准關卡同一個原則：確認由程式路徑保證，不靠模型記得要先問。判斷在這裡（guard_check），
 執行在 DispatchMixin.run_tool：沒有 approved=True 就不執行被擋的技能（CLI／Web 以外的呼叫端也一樣擋得住）。
 哪些技能要擋見 config.GUARDED_SKILLS；各技能的查詢用法放行（docker_runcmd／host_runcmd 的唯讀指令、workpackage_send --dry-run、
-docker_ctl status、ROS2_param get、rmf_handshake status…），參數一律照腳本自己的解析（_guard_parse）判斷，不另外解析。工作流（workflow_run）在開始時確認：
-workflow_guard_reason 列出到第一個【確認】之前會改變狀態的步驟，核准一次；【確認】之後接著做時再問一次。"""
+docker_ctl status、ROS2_param get、rmf_handshake status…），參數一律照腳本自己的解析（_guard_parse）判斷，不另外解析。
+參數錯的腳本自己會拒絕執行，不用問；指令裡有沒代入的佔位符（{…}）看不出實際做什麼，不放行。"""
 import os
 import re
 import shlex
@@ -214,7 +214,7 @@ class GuardMixin:
 
     def state_change_info(self, parsed):
         """這個 action 會不會改變實體／外部狀態（不看 /guard 開關）：回傳 None 或 {skill, script, command, reason}。
-        guard_check（執行前問使用者）與任務引擎、工作流（哪些步驟會改變狀態、worker 的動作有沒有核准）共用。"""
+        guard_check（執行前問使用者）與任務引擎（哪些步驟會改變狀態、worker 的動作有沒有核准）共用。"""
         if not GUARDED_SKILLS:
             return None
         action = (parsed or {}).get("action") if isinstance(parsed, dict) else None
@@ -242,12 +242,6 @@ class GuardMixin:
             reason = self.task_guard_reason(remainder)
             if reason is None:
                 return None
-        elif skill == "workflow_run":
-            # 開始：列出到第一個【確認】之前會改變狀態的步驟（核准＝那幾步都核准了）；--continue：那個【確認】的內容＋接下來的步驟；
-            # 只查詢的工作流、取消、列出、參數錯（交給 workflow_run 回錯誤）不用確認
-            reason = self.workflow_guard_reason(remainder)
-            if reason is None:
-                return None
         else:
             reason = _GUARD_REASONS.get(skill, "這個技能會改變系統狀態")
             if skill in ("docker_runcmd", "docker_ctl"):   # 實際會操作的容器（省略名稱、部分名稱時使用者看得到是哪一個）
@@ -260,7 +254,7 @@ class GuardMixin:
     @staticmethod
     def guard_prompt_text(info):
         """給使用者看的確認說明（CLI 印出、Web 顯示在確認列上方）。"""
-        if "\n" in info["reason"]:   # task_run／workflow_run：說明是整份計畫或工作流
+        if "\n" in info["reason"]:   # task_run：說明是整份計畫
             return f"🛡️ AI 要執行會改變系統狀態的動作，需要你確認：\n- 技能：{info['skill']}\n{info['reason']}"
         return (f"🛡️ AI 要執行會改變系統狀態的動作，需要你確認：\n"
                 f"- 技能：{info['skill']}（{info['reason']}）\n"

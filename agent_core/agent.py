@@ -17,14 +17,12 @@ from .config import (
     MIN_CHARS_PER_TOKEN,
     PROJECT_ROOT,
     PROMPTS_DIR,
-    SKILL_MODEL,
     SUMMARY_MODEL,
 )
 from .context_mode import ContextModeMixin
 from .conversation import ConversationMixin
 from .dispatch import DispatchMixin
 from .guard import GuardMixin
-from .make_skill import MakeSkillMixin
 from .perf import PerfMixin
 from .plan import PlanMixin
 from .prompt import PromptMixin
@@ -33,12 +31,11 @@ from .tool_summary import ToolSummaryMixin
 from .tool_use_index import ToolUseIndexMixin
 from .trajectory import TrajectoryMixin
 from .turn_guard import TurnGuardMixin
-from .workflow import WorkflowMixin
 
 
 class SkillAgent(ConversationMixin, PromptMixin, DispatchMixin, GuardMixin, ContextModeMixin, PlanMixin,
                  ToolSummaryMixin, ToolUseIndexMixin, ArchiveMixin, TrajectoryMixin, CompressionMixin,
-                 MakeSkillMixin, PerfMixin, TurnGuardMixin, TaskMixin, AnalysisMixin, WorkflowMixin):
+                 PerfMixin, TurnGuardMixin, TaskMixin, AnalysisMixin):
     def __init__(self, model="gemma4:e4b", max_history=None, summary_model=None):
         # max_history：訊息「則數」滑動視窗，預設停用（None）。上下文大小統一以 token 門檻
         # （TOKEN_THRESHOLD）觸發壓縮歸檔；這個參數只保留作為極端情境的保險絲，需要時再開。
@@ -162,30 +159,17 @@ class SkillAgent(ConversationMixin, PromptMixin, DispatchMixin, GuardMixin, Cont
         self.last_tool_summary = None         # 最近一次工具回傳任務導向摘要的統計（structured／input_tokens／omitted_chars…）
 
         # =========================
-        # 🧩 操作軌跡、對話紀錄與 make_skill
-        # trajectory：run_tool 每執行一支腳本就記一筆（指令、參數、當時的 cwd、成功／失敗、輸出開頭），
-        #   另有 kind="boundary" 的起點記錄（/clear、計畫核准、上一次 make_skill）。
-        # transcript：這個 session 每一則對話訊息的副本（使用者的話、AI 的想法／回覆／action、當時進上下文的工具回傳），
-        #   只增不減；transcript_starts 記每個起點在 transcript 的位置。兩者都在 messages 之外，壓縮、/clear、
-        #   claude_code 的清除都不會沖掉——/make_skill 從這裡取「整段對話＋工具回傳」交給草擬 session 寫工作流的規格。
-        # pending_skill_draft：等待使用者核准／修改／取消的技能草稿（CLI 與 Web 共用同一份狀態）。
+        # 🧭 操作軌跡：run_tool 每執行一支腳本就記一筆（指令、參數、當時的 cwd、成功／失敗、輸出開頭、存檔編號），
+        #   另有 kind="boundary" 的起點記錄（/clear、計畫核准）；同時追加到 logs/trajectory.jsonl（跨 session 的稽核記錄）。
         # =========================
         self.session_id = time.strftime("%Y%m%d_%H%M%S")
         self.trajectory = []
-        self.transcript = []
-        self._transcript_refs = []     # 記過的訊息 dict 本身（留著參照，id() 才不會被新物件重複使用）
-        self._transcript_ids = set()
-        self.transcript_starts = [{"reason": "start", "pos": 0, "ts": time.strftime("%m-%d %H:%M:%S")}]
         # 編號跨 session 全域遞增：從既有存檔（logs/tool_results/）的最大編號續編。純數字的 #16 才能在任何一次啟動
         # 都指到同一份存檔——工具使用檢索清單（_tool_use_index_block）就是靠這個讓模型只需要抄編號、不必抄檔名。
         # 配號走 _next_id（上鎖：背景壓縮也會為被壓縮的對話片段配號）。
         self._id_lock = threading.Lock()
         self.trajectory_seq = self._max_archived_id()
 
-        self.drafts_dir = os.path.join(self.base_path, "drafts")
-        self.skill_model = SKILL_MODEL or self.summary_model
-        self._skill_follows_summary = not SKILL_MODEL
-        self.pending_skill_draft = None
         self.last_reply_retry = None  # 最近一次 ask_ai 是否因「空白回覆」自動重試過（給 UI 顯示的說明），見 ask_ai
         # 📊 數據解析（analysis_job.py）：目前分析的數據（容器內路徑；ROS 2 數據技能末行的 [ANALYSIS_DATA] 同步，比照目標容器）、
         # 數據根目錄與預設容器（logs/analysis_settings.json）、最近一次 analysis_run、寫進度（events.jsonl）的鎖，
@@ -201,15 +185,13 @@ class SkillAgent(ConversationMixin, PromptMixin, DispatchMixin, GuardMixin, Cont
 
     # ---------------------------------------------------------------- 🧠 主對話的模型與 thinking（Web Console 的「🧠 模型」）
     def set_main_model(self, model):
-        """換主對話的模型；下一次呼叫開始生效。摘要模型（與 /make_skill 的草擬模型）原本跟著主模型的話一起換。"""
+        """換主對話的模型；下一次呼叫開始生效。摘要模型原本跟著主模型的話一起換。"""
         model = (model or "").strip()
         if not model:
             raise ValueError("模型名稱是空的")
         self.model = model
         if self._summary_follows_main:
             self.summary_model = model
-            if self._skill_follows_summary:
-                self.skill_model = model
         return model
 
     def model_settings_file(self):
