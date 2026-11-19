@@ -21,7 +21,8 @@ package "prompts/（改字不用改程式；evals/integrity 檢查範本跟程�
     ]
     rectangle P_HARNESS #D1E5F0 [
       **harness/**（程式組進主對話的字）
-      system_prompt：各節標題、記憶的說明、接回舊摘要的提醒
+      system_prompt：各節標題、記憶的說明、接回舊摘要的提醒、
+        「領域」一節（交給領域的格式與規則、每個領域一段）
       tool_use_index：檢索清單（兩種模式）、對話片段、最新一筆
       state_tail：動態區（工作目錄、容器、Workspace、數據、Objective）
       tool_results：工具結果的框架句、捨棄通知、只給成功／失敗
@@ -29,6 +30,9 @@ package "prompts/（改字不用改程式；evals/integrity 檢查範本跟程�
       skill_docs：載入規格之後「下一輪要做什麼」
       reminders：程式核對後的提醒（重複、沒動作卻說做了、
         依報告回答寫成因果、空白回覆）
+      domain：交給領域的結果（報告、要問使用者、取消、不屬於、
+        沒有適合的做法、失敗與放行的工具）、核對沒過的說明、
+        出處不在報告裡的提醒
       followup：提煉結果最後的下一步建議
       direct_commands、attachments：/analyze、附圖、
         手動載入技能時放進對話的訊息；數據報告的回答規則
@@ -66,13 +70,15 @@ package "prompts/（改字不用改程式；evals/integrity 檢查範本跟程�
 
 package "skills_system/：也是模型會讀的" {
   rectangle K_ALL #D5E8D4 [
-    **SKILLS.md**：一行一個技能（常駐）
+    **SKILLS.md**：一行一個技能（常駐；領域讀內容的工具不列）
+    **DOMAIN.md**：領域的清單與共用的工具（給程式讀，不直接給模型）
     **tools/<name>.md**：技能的規格（主對話按需載入；
     給程式看的 parameters、receipt、narrow 載入時拿掉）
   ]
   rectangle K_DOMAIN #D5E8D4 [
     **<領域>/SKILLS.md**（新架構，第一版 repo_analysis）：
-    領域的說明（含不包含什麼）、複合技能與工具的清單
+    領域的說明（含不包含什麼）、複合技能與工具的清單；
+    說明與每個複合技能的一句話也組進主對話的「領域」一節
     **<領域>/<複合技能>.md**：說明、答得了哪幾種、〈什麼時候用〉、
     參數的說明（〈骨架〉〈回退〉給程式排圖與換做法；
     判斷節點的 goal、labels、每條路的 say 給判斷的模型）
@@ -81,7 +87,8 @@ package "skills_system/：也是模型會讀的" {
 
 package "用到它們的 session" {
   rectangle S_MAIN #D1E5F0 [
-    **主 session（主對話）**：每一輪；AGENT_REPLY_SCHEMA
+    **主 session（主對話）**：每一輪；agent_reply_schema(領域)
+    （action 多「交給領域」：領域只能是清單裡的、項目 1～6）
   ]
   rectangle S_SUMMARY #FCE5CD [
     **滾動摘要**：超過水位、/compress；SUMMARY_SCHEMA
@@ -94,12 +101,12 @@ package "用到它們的 session" {
     **視覺 session**：extraction_schema(張數)
   ]
   rectangle S_EDG #E2F0D9 [
-    **第 1 級修正**（低階執行器，還沒接上主對話）：
+    **第 1 級修正**（低階執行器；主對話交給領域時跑）：
     工具節點參數錯或逾時，每個節點一次；EDG_FIX_SCHEMA
     （拿到給模型看的規格：tools/ 去掉給程式看的欄位）
   ]
   rectangle S_MID #E2F0D9 [
-    **中階**（還沒接上主對話）：挑技能 mid_select_schema
+    **中階**（主對話交給領域時跑）：挑技能 mid_select_schema
     → 合約 mid_contract_schema（沒過核對的參數修一次）；
     程式核對之後照〈骨架〉排圖、交給低階執行器
     → 判斷 mid_judge_schema（跑到判斷節點時；原文由程式
@@ -110,9 +117,10 @@ package "用到它們的 session" {
 package "留在程式裡的（不是給模型的指示）" {
   rectangle C_LIST #ECECEC [
     * 程式的輸出：技能與工具的 [PASS]／[ERROR]／[DENIED]（附下一步）、
-      數據分析的報告、提煉結果的排版、檢查的證據
+      數據分析的報告、中階的報告（照收據整理）、提煉結果的排版、檢查的證據
     * 程式認的標記：[tool result]、【系統回傳】、[vision result]、
-      [skill loaded]、（完整原文存檔 #N…）、（依這份報告回答使用者——
+      [skill loaded]、（完整原文存檔 #N…）、交給領域的結果的開頭、
+      （依這份報告回答使用者——
       範本裡用 {prefix}、{marker} 由程式填
     * 給使用者看的字（提示、確認關卡的說明）、比對用的詞表
   ]
@@ -128,6 +136,7 @@ P_EDG --> S_EDG
 K_ALL --> S_EDG
 P_MID --> S_MID
 K_DOMAIN --> S_MID
+K_DOMAIN --> S_MAIN
 S_MID -[hidden]-> C_LIST
 
 legend bottom

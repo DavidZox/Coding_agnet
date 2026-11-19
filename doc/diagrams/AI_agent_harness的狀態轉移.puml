@@ -36,7 +36,9 @@ rectangle State2 #F5F5F5 [
   **2. Prompt**
   system prompt（只放不常變的）：prompts/AGENT.md → Context Mode 規則
   → prompts/Memory.md（整份）→ 滾動摘要 → 使用者原話
-  → SKILLS.md → **工具使用檢索清單（最近 30 筆，含〔附圖分析〕）**
+  → Domains（領域：交給領域的格式、各領域的說明與複合技能）
+  → SKILLS.md（拿掉領域讀內容的工具）
+  → **工具使用檢索清單（最近 30 筆，含〔附圖分析〕）**
   動態區（接在最後一則訊息後、不寫進歷史）：
   Current Agent State（含目前的數據）→ Objective → 清單最新一筆
   ----
@@ -46,9 +48,12 @@ rectangle State2 #F5F5F5 [
 
 rectangle State3 #FFE6CC [
   **3. Reply（主 session 回 JSON）**
-  * {thought, reply, action}，Ollama format= 強制
+  * {thought, reply, action}，Ollama format= 強制；action 是 null、
+    技能的動作或「交給領域」{domain, goal, items}
   * 不是合法 JSON → 只顯示文字、本輪不執行
   * 空白回覆 → 帶暫時提醒自動重試一次
+  * action null 時程式核對（各提醒一次）：沒執行工具卻說做完了；
+    依報告回答的出處（檔案:行號）要在這一回合的報告裡
 ]
 
 rectangle StateGuard #F4CCCC [
@@ -64,6 +69,9 @@ rectangle StateGuard #F4CCCC [
 rectangle State4 #FFF2CC [
   **4. Dispatch（run_tool，只看 action）**
   * null → 回合結束（7）
+  * 交給領域 → 5d
+  * 領域讀內容的工具（搜文字、看檔案、分析程式）→ [ERROR]
+    先交給領域（這一回合中階沒有報告時放行）
   * 技能名稱 → 回規格文件，不執行、不存檔
   * result_recall_cmd.py → 在本程序內 recall（5）
   * 偽技能（在本程序內做；報告記軌跡、存 #編號）（5）：
@@ -81,6 +89,27 @@ rectangle State5 #D5E8D4 [
   * result_recall：讀出存檔原文 → 獨立 session 依
     使用者的問題提煉（見「工具回傳管線」圖）
   * 偽技能：數據分析見「數據分析的流程」圖
+]
+
+rectangle State5d #E2F0D9 [
+  **5d. 交給領域（orchestrator.run_domain）**
+  * 核對：有這個領域、這個問題沒有排除過它、子目標、
+    項目 1～6 項、跟這一回合交過的不一樣；沒過 → [ERROR]
+  * 中階：挑技能 → 合約 → 排決策圖 → 低階照圖執行
+    （判斷、第 2 級回退與換技能）；決策圖的連結先推給畫面
+  * 有報告（做完、死路、熔斷）→ 報告原文，照報告回答
+  * 沒有報告（不屬於、沒有適合的做法、失敗、取消）
+    → 寫原因，這一回合放行這個領域的工具（不屬於的另外排除）
+  * 結果存成 #編號（domain_<領域>），不提煉
+]
+
+rectangle State5e #C5E0B4 [
+  **5e. 中階要問使用者（程式轉問、程式接回）**
+  * CLI：印問題與候選，輸入編號或回答（0 取消）
+  * Web：藍色卡片、候選按鈕與取消（pending＝domain）
+  * 回答由程式核對（不合法附原因再問）→ 接回同一個工作；
+    取消或 /clear → 中階結束成「使用者取消」
+  * 不經過主 session
 ]
 
 rectangle State6a #FFE0B2 [
@@ -102,7 +131,7 @@ rectangle State6c #FFCC80 [
   **6c. 決定進主對話的內容（只在「加入」時算）**
   harness 模式：
   * (A) 規格文件、≤500 tokens、本身已是提煉結果、
-    或程式整理好的報告（數據分析）→ 原文
+    或程式整理好的報告（數據分析、交給領域的結果）→ 原文
   * (B) >500 tokens → 工具摘要 session：重點 + 下一步建議，
     並把一句話描述寫進工具使用檢索清單；提煉沒成功照實說、
     附下一步；重點不比原文短改給原文
@@ -144,6 +173,10 @@ StateGuard -[#CC0000]left-> State7 : 拒絕
 State4 -[#CC6600,bold]down-> State5 : **腳本路徑／recall／偽技能**
 State4 -[#3366CC]right-> State6c : 技能名稱：規格文件\n（不執行，完整放行）
 State5 -down-> State6a
+State4 -[#548235,bold]down-> State5d : **交給領域**
+State5d -[#548235]down-> State6a : 結果 #編號
+State5d -[#548235,dashed]right-> State5e : 要問使用者
+State5e -[#548235,dashed]left-> State5d : 回答 → 接回
 State6a -down-> State6b
 State6b -down-> State6c : 加入
 State6c -[#009933,bold]up-> State3 : **結果加入上下文，續推**

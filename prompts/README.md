@@ -11,7 +11,7 @@ harness 送給模型的字都在這裡：改字不用改程式，存檔之後下
 | `AGENT.md` | 主對話的 system prompt（角色、做法、執行協議、記憶協議、溝通風格） | `prompt.get_system_prompt` |
 | `context_modes/harness.md`、`claude_code.md` | 主對話：目前上下文模式的規則（接在 AGENT.md 後面） | `context_mode.context_mode_rules` |
 | `Memory.md` | 主對話：長期記憶——**資料，不是規則**：使用者要求時 `modify_memory` 寫入 | `prompt.load_long_term_memory` |
-| `harness/system_prompt.md` | 主對話 system prompt 裡程式組的部分：各節的標題、長期記憶開頭的說明、接回舊摘要時的提醒、「領域」一節（交給領域的寫法與每個領域的說明） | `prompt.py`、`orchestrator.py` |
+| `harness/system_prompt.md` | 主對話 system prompt 裡程式組的部分：各節的標題、長期記憶開頭的說明、接回舊摘要時的提醒、「領域」一節（交給領域的寫法、Available Skills 列的可以直接用、每個領域的說明） | `prompt.py`、`orchestrator.py` |
 | `harness/domain.md` | 新架構的高階：交給領域之後程式交回主模型的文字（中階的報告與依報告回答的規則、要問使用者、取消、不屬於這個領域、沒有適合的做法時放行的工具），核對沒過的說明（沒有的領域、排除過的、項目數、一樣的再交、直接叫領域的工具），回覆的出處不在報告裡的提醒 | `orchestrator.py` |
 | `harness/tool_use_index.md` | system prompt 尾端的工具使用檢索清單（兩種模式各一則）、過去的對話片段、動態區的最新一筆 | `tool_use_index.py` |
 | `harness/state_tail.md` | 動態區：目前狀態（工作目錄、容器、Workspace、目前的數據）、Objective | `prompt.build_state_tail`、`analysis_job.analysis_state_line` |

@@ -6,9 +6,9 @@
   構想在 `docs/`，討論與決定在〈[新架構討論紀錄](docs/新架構討論紀錄.md)〉。做好的：評測（`evals/repo/`）、第一版領域技能的收據、
   低階執行器（`agent_core/edg.py`：照圖執行、照收據守門、第 1 級修正、重排）、中階（`agent_core/mid.py`：挑複合技能、合約、
   照骨架排圖、第 2 級的回退與換技能、判斷節點——模型看原文挑行、選路，程式核對，`agent_core/judge.py`；領域 `skills_system/repo_analysis/` 的
-  `py_usage`、`count_in_scope`、`doc_lookup`、`cpp_symbol`、`config_trace`）、高階（`agent_core/orchestrator.py`：主對話就是高階，
-  照 `skills_system/DOMAIN.md` 把找檔案、讀文件、分析程式的問題「交給領域」，依中階的報告回答；中階要問使用者時由程式轉問、接回；
-  領域的工具不給主對話直接用，沒有適合的做法時才放行）、Web 的決策圖（`/topology`，唯讀：中階與低階執行過的工作，
+  `py_usage`、`count_in_scope`、`find_lines`、`doc_lookup`、`cpp_symbol`、`config_trace`）、高階（`agent_core/orchestrator.py`：主對話就是高階，
+  照 `skills_system/DOMAIN.md` 把找檔案、讀文件與 log、分析程式的問題「交給領域」，依中階的報告回答；中階要問使用者時由程式轉問、接回；
+  領域讀內容的工具（搜文字、看檔案、分析程式）不給主對話直接用，中階沒有報告的那一回合才放行；列目錄、找檔案是共用的工具）、Web 的決策圖（`/topology`，唯讀：中階與低階執行過的工作，
   每一版的圖、回退、問使用者與判斷；交給領域時對話裡附連結）。下面寫的是現在的程式。
 - **harness 本身**（新架構沿用的基礎；目標是找檔案、文件與程式分析做到穩定）：一次一個動作的主對話迴圈、會改變狀態的動作先問使用者
   （確認關卡）、**多段處理長內容**（太長的工具輸出由程式切段、每段一個 worker 提煉、每條事實附行號由程式核對）、**存檔與回顧**（每次的

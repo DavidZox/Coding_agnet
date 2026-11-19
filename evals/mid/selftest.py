@@ -2,7 +2,7 @@
 
 領域與複合技能的規格（解析、給模型時拿掉給程式看的部分、寫錯的擋下來）、合約的核對（原文要在問題裡、值照種類對原文；沒過的交回修一次）、
 排圖（if 群組、名稱清單一項一組、節點的 if）、補參數（預設值、路徑找不到時自己查、剛好一個就補、好幾個問使用者、必填的問使用者、接回）、
-執行與報告（定義、呼叫、每個檔案的數量、總數、#編號）、第 2 級（加節點重排、不收斂、問範圍附各子目錄的筆數、熔斷）、
+執行與報告（定義、呼叫、每個檔案的數量、總數、#編號；find_lines 列出提到的行與前後行）、第 2 級（加節點重排、不收斂、問範圍附各子目錄的筆數、熔斷）、
 確認關卡停下來與接回、存檔（每一版的圖與節點的狀態、回退、問使用者的問題與回答、報告、模型呼叫）、真模型評測的題目（evals/mid/cases.py）、
 Web 的拓撲圖（web_app/topology.py 整理的資料、/topology 頁面與 /api/topology/* 的路由）。
 3b：判斷節點（規格的核對；原文照收據讀、交給模型的原文與預算、片段的比對與行號；回答、接著找、看前後、沒寫、交回修、重選路、找過的字、
@@ -156,7 +156,7 @@ def main():
     # ------------------------------------------------------------------------------------------------------------
     def t_domain():
         d = mid.load_domain(agent.base_path, agent.tools_dir, "repo_analysis")
-        assert d["problems"] == [] and list(d["skills"]) == ["py_usage", "count_in_scope", "doc_lookup", "cpp_symbol", "config_trace"], d["problems"]
+        assert d["problems"] == [] and list(d["skills"]) == ["py_usage", "count_in_scope", "find_lines", "doc_lookup", "cpp_symbol", "config_trace"], d["problems"]
         assert "不包含" in d["intro"] and "code_ast_reader" in d["tools"]
         with open(os.path.join(agent.base_path, "repo_analysis", "SKILLS.md"), encoding="utf-8") as f:
             index = f.read()
@@ -267,8 +267,8 @@ def main():
         roles = [c["role"] for c in model.calls]
         assert roles == ["select", "contract"], roles
         sel = model.calls[0]
-        assert sel["schema"]["properties"]["skill"]["enum"] == ["py_usage", "count_in_scope", "doc_lookup", "cpp_symbol", "config_trace", "none",
-                                                               "out_of_domain"]
+        assert sel["schema"]["properties"]["skill"]["enum"] == ["py_usage", "count_in_scope", "find_lines", "doc_lookup", "cpp_symbol", "config_trace",
+                                                               "none", "out_of_domain"]
         assert sel["schema"]["properties"]["asks"]["items"]["enum"] == ["位置", "數量", "內容"] and list(sel["schema"]["properties"])[1] == "asks"
         assert "  答得了：位置、數量\n" in sel["user"] and "  答得了：數量\n" in sel["user"], sel["user"]
         assert "什麼時候用：問題提到程式裡的一個名稱" in sel["user"] and "不包含" in sel["user"] and "【這一層的子目標】" not in sel["user"]
@@ -418,6 +418,52 @@ def main():
                           contract=[{"understanding": "u", "keyword": cell(), "files": cell(), "path": cell(), "exclude": cell()}])
         job = run("數一下", model)
         assert job["status"] == "need_user" and job["need_user"]["param"] == "keyword" and "至少要有一個" in job["need_user"]["question"]
+
+    def t_find_lines():
+        from agent_core.config import MID_REPORT_LINES
+
+        def lines_model(keyword_quote, keyword, files_quote="", files="", path_quote="", path=""):
+            return FakeModel(select=[{"understanding": "u", "asks": ["位置", "內容"], "skill": "find_lines", "reason": "r"}],
+                             contract=[{"understanding": "u", "keyword": cell(keyword_quote, keyword), "files": cell(files_quote, files),
+                                        "path": cell(path_quote, path), "exclude": cell()}])
+        job = run("logs 目錄裡所有的 log，E9001 出現在哪幾行、寫了什麼？", lines_model("E9001 出現在哪幾行", "E9001", "所有的 log", "*.log", "logs 目錄", "logs"))
+        assert job["status"] == "done", job["result"]
+        nodes = job["graphs"][0]["graph"]["nodes"]
+        assert [n["id"] for n in nodes] == ["hits"] and nodes[0]["args"] == ["E9001", "logs", "--include", "*.log", "-C", "2"], nodes
+        report = job["result"]["report"]
+        for want in ("## 提到這段文字的行", "- 搜尋「E9001」，範圍：logs；只看 *.log", "    - logs/run1.log：2 筆", "- 總共 3 筆（2 個檔案）",
+                     "- 提到的行（檔案:行號：內容，由程式從檔案取；標「提到」的是那一行，其他是前後 2 行）：",
+                     "    - logs/run1.log:1（提到）：E9001 start\n    - logs/run1.log:2（提到）：E9001 again\n    - logs/run1.log:3：ok\n"
+                     "    - logs/run2.log:1（提到）：E9001\n", "- 出處：#"):
+            assert want in report, (want, report)
+        assert "note.txt" not in report
+        # 行太多：先拿掉前後行；還是列不下的寫明還有幾處、在哪個 #編號
+        os.makedirs(os.path.join(work, "big"), exist_ok=True)
+        for name, hits in (("spread.log", 60), ("many.log", MID_REPORT_LINES + 30)):
+            with open(os.path.join(work, "big", name), "w", encoding="utf-8") as f:
+                f.write("".join(f"W7 第 {k} 則\n前\n後\n" for k in range(hits)))
+            job = run(f"big/{name} 裡 W7 在哪幾行？", lines_model("W7 在哪幾行", "W7", path_quote=f"big/{name}", path=f"big/{name}"))
+            report = job["result"]["report"]
+            assert job["status"] == "done" and "；行太多，前後行沒有列）：" in report and f"    - big/{name}:1：W7 第 0 則" in report, report[-800:]
+            assert f"big/{name}:2：" not in report and "（提到）" not in report, "前後行拿掉、不用再標"
+            if name == "many.log":
+                assert "    - 還有 30 處沒有列（見 #" in report, report[-300:]
+            else:
+                assert f"    - big/{name}:178：W7 第 59 則" in report and "還有" not in report
+        # 要找的字沒提到：必填，問使用者
+        job = run("logs 裡有什麼？", lines_model("", "", path_quote="logs", path="logs"))
+        assert job["status"] == "need_user" and job["need_user"]["param"] == "keyword" and job["need_user"]["question"].startswith("要找哪一段文字")
+        # 規格：lines 只用在寫了 report 的 search_text 節點
+        from agent_core import mid as m
+        base = tempfile.mkdtemp(prefix="mid_lines_spec_", dir=tmp)
+        kw = {"name": "kw", "type": "text", "required": True, "desc": "要找的字", "ask": "找什麼？"}
+        for k, (node, want) in enumerate([({"id": "a", "tool": "search_text", "args": ["{kw}", "{path}"], "report": "行", "lines": True}, None),
+                                          ({"id": "a", "tool": "search_text", "args": ["{kw}", "{path}"], "lines": True}, "lines 只用在寫了 report"),
+                                          ({"id": "a", "tool": "search_text", "args": ["{kw}", "{path}"], "report": "行", "lines": 1}, "寫 true"),
+                                          ({"id": "a", "tool": "find_file", "args": ["{kw}", "{path}"], "report": "檔案", "lines": True}, "search_text 節點")]):
+            write_domain(base, f"l{k}", {"s": skill_text([kw, PATH_P], [node], [], subs=("search_text", "find_file"))})
+            got = m.load_domain(base, agent.tools_dir, f"l{k}")["problems"]
+            assert (want is None and got == []) or (want and any(want in x for x in got)), (k, want, got)
 
     def t_select_outcomes():
         for out, status in (({"understanding": "u", "skill": "none", "reason": "沒有技能讀長文件"}, "no_skill"),
@@ -920,6 +966,8 @@ def main():
              ("第 2 級：檔案太多（超過低階的上限）→ 問使用者縮小範圍（附各子目錄的筆數）→ 照回答重新排圖", t_too_many_ask),
              ("第 2 級：重排超過上限就熔斷", t_circuit_break),
              ("count_in_scope：照範圍數（只看的檔案、不含的子目錄由程式扣），每個檔案的筆數與總數；什麼都沒給就問", t_count_in_scope),
+             ("find_lines：列出提到的每一行與前後行（程式從檔案讀）；行太多先拿掉前後行、再列不下寫明還有幾處；要找的字沒提到就問；"
+              "規格的 lines 只用在寫了 report 的 search_text", t_find_lines),
              ("挑技能：沒有適合的、不屬於這個領域、清單外、沒有回覆；選的技能答不了問題要的那一種（位置、數量、內容）", t_select_outcomes),
              ("確認關卡：低階停下來 → 中階要問使用者 → 同意後接回（中階記下問了什麼、低階的實例記下決定）", t_guard),
              ("Web 的拓撲圖的資料：每一版的圖與當時的狀態（重排換掉的從低階找回）、跟上一版比、回退與問使用者、確認關卡、自己查路徑、清單、"

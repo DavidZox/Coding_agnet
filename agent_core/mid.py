@@ -22,7 +22,8 @@
    分支選一條、填那條路的參數；程式核對片段在原文的某一行（行號與整行由程式填）、參數在原文裡，沒過的交回修一次。
    結束的路（沒有 add）就結束；有 add 的照分支加節點（id 加上第幾次）、後面接同一個判斷，交給低階重排（跑過的不重跑）。
    判斷每個工作最多 MID_JUDGE_MAX 次（另外算，不佔重排的次數），用完了還要接著做就熔斷；要接著找的都找過了＝不收斂，停（死路）。
-7. **報告**（程式）：照收據整理（定義、呼叫、每個檔案的數量、總數，各附 #編號）；判斷挑出的行（檔案:行號、#編號、整行）與經過；
+7. **報告**（程式）：照收據整理（定義、呼叫、每個檔案的數量、總數，各附 #編號；search_text 的節點寫 lines 的再列提到的每一行與前後行，
+   從檔案讀、列不下時先拿掉前後行）；判斷挑出的行（檔案:行號、#編號、整行）與經過；
    用了哪些回退、哪裡沒做完、自己補的參數。depends_on（硬性前置的複合技能）目前的技能都用不到，有技能用到時再做。
 
 每一次存在 logs/mid_jobs/<編號>/：job.json（選的技能、參數與原文、每一版的圖與節點的狀態、回退、換技能 switched、判斷 judgments、
@@ -163,6 +164,8 @@ def _tool_problems(n, topo, types, always):
     if "report" in n and (not isinstance(n["report"], str) or n.get("tool") not in REPORTERS
                           or (n["tool"] == "code_ast_reader" and "--refs" not in n.get("args", []))):
         p.append(f"{nid}：report 寫報告裡的小標題；能當報告的是 {'、'.join(REPORTERS)}（code_ast_reader 要用 --refs）")
+    if "lines" in n and (n["lines"] is not True or n.get("tool") != "search_text" or "report" not in n):
+        p.append(f"{nid}：lines 只用在寫了 report 的 search_text 節點，寫 true（報告也列出提到的每一行與前後行）")
     return p + _arg_problems(nid, n, types, always)
 
 
@@ -539,6 +542,7 @@ class Worker:
         self.model = model if model is not None else ModelCaller(agent)
         self.fixer = fixer
         self._receipts = {}
+        self._files = {}                        # 報告列提到的行時讀的檔案（judge.rows 的快取）
 
     # ---------------------------------------------------------------- 進入點
     def start(self, question, goal=None, items=None, on_start=None):
@@ -1214,7 +1218,8 @@ class Worker:
         return out
 
     def _render_hits(self, job, ej, node, values):
-        """search_text：範圍、每個檔案的筆數（收據記全部的檔案）、總共幾筆；逾時沒搜完要寫。"""
+        """search_text：範圍、每個檔案的筆數（收據記全部的檔案）、總共幾筆；逾時沒搜完要寫。節點寫 lines 的再列提到的每一行與前後行
+        （_hit_lines）。"""
         out = []
         for inst, a, r in self._instances(ej, node["id"]):
             if not r or r.get("status") == "error":
@@ -1231,9 +1236,25 @@ class Worker:
                 out.append(f"- 每個檔案（{len(per)} 個）：")
                 out += self._cap([f"    - {self._rel(job, p)}：{n} 筆" for p, n in sorted(per.items())], [a.get("result_id")])
                 out.append(f"- 總共 {sum(per.values())} 筆（{len(per)} 個檔案）")
+                if node.get("lines"):
+                    out += self._hit_lines(job, r, a.get("result_id"))
             if r.get("timed_out"):
                 out.append("- 逾時沒有搜完：上面的數字不是全部")
         return out
+
+    def _hit_lines(self, job, receipt, rid):
+        """提到的每一行與前後行（收據的 -C）：程式照收據從檔案讀（judge.rows），每行寫成「檔案:行號：內容」（主模型照這個寫出處）；
+        超過 MID_REPORT_LINES 行時先拿掉前後行，還是列不下的寫明還有幾行、在哪個 #編號。"""
+        rows = judge.rows("search_text", receipt, self._files)
+        ctx = int((receipt.get("options") or {}).get("context") or 0)
+        dropped = bool(ctx) and len(rows) > MID_REPORT_LINES
+        if dropped:
+            rows = [r for r in rows if r["hit"]]
+        mark = bool(ctx) and not dropped
+        head = ("- 提到的行（檔案:行號：內容，由程式從檔案取" + (f"；標「提到」的是那一行，其他是前後 {ctx} 行" if mark else "")
+                + ("；行太多，前後行沒有列" if dropped else "") + "）：")
+        body = [f"    - {self._rel(job, r['path'])}:{r['line']}" + ("（提到）" if mark and r["hit"] else "") + f"：{r['text']}" for r in rows]
+        return [head] + (self._cap(body, [rid] if rid else []) if body else ["    - 檔案讀不到，沒有列（見收據）"])
 
     def _render_files(self, job, ej, node, values):
         """find_file：名稱符合的檔案有幾個（不含的子目錄由程式從收據扣掉，寫明扣了幾個）。"""

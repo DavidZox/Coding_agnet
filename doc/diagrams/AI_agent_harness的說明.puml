@@ -6,7 +6,7 @@ skinparam nodesep 60
 skinparam shadowing false
 skinparam defaultFontName "Microsoft JhengHei"
 
-title AI_agent_harness 架構：一個主 session 負責「挑技能」，一次性獨立 session 負責「讀原文」與「看影像」
+title AI_agent_harness 架構：一個主 session 負責「挑技能、交給領域」，一次性獨立 session 負責「讀原文」與「看影像」，\n領域的問題由新架構的高階、中階、低階照寫好的做法執行
 
 rectangle NodeUser #F5F5F5 [
   **使用者介面**
@@ -17,7 +17,8 @@ rectangle NodeUser #F5F5F5 [
     附圖（Web：框選螢幕或上傳；CLI 沒有附圖）
   * 顯示：reply；每次工具回傳兩張卡——完整原文（#編號）
     與「AI 實際收到的內容」；視覺分析卡（#編號）；
-    決策按鈕
+    決策按鈕；中階要問的問題（候選按鈕、取消；CLI 用編號）；
+    決策圖的連結（/topology）
 ]
 
 rectangle NodeVision #DDEEF6 [
@@ -52,6 +53,10 @@ rectangle NodeAgent #D1E5F0 [
     被壓掉的對話存檔）
   * 附圖：主對話只收到 [vision result] 文字（附存檔編號），
     存成 #編號〔附圖分析〕；壓縮時當系統內容、不算使用者原話
+  * 交給領域（高階 orchestrator.py）：程式核對之後交給中階；
+    報告存成 #編號 交回主 session；中階要問使用者時程式直接問、
+    接回同一個工作（不經過主 session）；領域讀內容的工具
+    不給主 session 直接用（沒有報告的那一回合才放行）
 ]
 
 rectangle NodeLLM #FFE6CC [
@@ -59,7 +64,8 @@ rectangle NodeLLM #FFE6CC [
   ----
   每輪固定回 JSON {thought, reply, action}
   action 只能是：技能名稱、規格標明的腳本路徑、
-  或 result_recall；reply 裡的文字不會被執行
+  result_recall，或「交給領域」{domain, goal, items}；
+  reply 裡的文字不會被執行
 ]
 
 rectangle NodeSub #FCE5CD [
@@ -89,9 +95,26 @@ rectangle NodeSkills #D5E8D4 [
     結果跟一般工具回傳一樣存檔、提煉
   * 慣例（doc/技能撰寫規範.md）：第一行 [PASS]／[ERROR]（[ERROR] 附下一步）；
     長的輸出分 ## 章節；計數、排序、門檻由腳本算；不讀標準輸入、有逾時
+  * DOMAIN.md：領域的清單與共用的工具（列目錄、找檔案、回顧存檔）；
+    <領域>/：領域的說明與複合技能（第一版 repo_analysis：6 個）
   * 收據（新架構 D4）：第一版領域的腳本另外寫一份給程式讀的結果
     （_receipt_common：狀態、錯誤種類、數量、項目；給模型的文字不變）；
     規格的 parameters／receipt 是給程式看的，載入給模型時拿掉
+]
+
+rectangle NodeDomain #E2F0D9 [
+  **新架構的中階與低階（交給領域之後；第一版領域 repo_analysis）**
+  ----
+  * 中階 mid.py：挑複合技能（模型）→ 合約（模型抄原文，程式核對）
+    → 照〈骨架〉排決策圖（程式）→ 第 2 級：照〈回退〉加節點、問範圍、
+    換技能 → 判斷節點（模型挑行、選路，程式核對）→ 報告（程式照收據
+    整理：定義、呼叫、筆數、提到的行、挑出的行，各附 #編號）
+  * 低階 edg.py：照圖執行腳本（執行前檢查參數、照收據守門、
+    第 1 級修正參數錯與逾時）；會改狀態的照樣經過確認關卡
+  * 複合技能：py_usage、count_in_scope、find_lines、doc_lookup、
+    cpp_symbol、config_trace
+  * 結果：做完／死路／熔斷（有報告）；不屬於這個領域、沒有適合的做法、
+    失敗、使用者取消（沒有報告：主 session 那一回合照一般的方式做）
 ]
 
 rectangle NodeWorld #FFF2CC [
@@ -117,6 +140,8 @@ rectangle NodeStore #E1D5E7 [
     每次模型呼叫的 prompt 與回覆（留最近 500 次）
   * analysis_jobs/<編號>/：每一次數據分析的事實、重點、報告與進度
     （留最近 300 次）
+  * mid_jobs/、edg_jobs/<編號>/：中階與低階的每一次（挑技能、合約、
+    每一版的圖、判斷、收據、問使用者；Web 的 /topology 畫成決策圖）
   * trajectory.jsonl（操作軌跡）、summary_*.md／.json（滾動摘要＋
     使用者原話）、perf.jsonl（每次模型呼叫的耗時）
   * prompts/Memory.md（長期記憶，整份常駐；記憶只寫這裡）
@@ -136,6 +161,10 @@ NodeSkills -down-> NodeWorld : docker exec／HTTP／檔案操作
 NodeWorld -up-> NodeSkills : 原始輸出
 NodeSkills -[#009933,bold]up-> NodeAgent : [PASS]／[ERROR] 完整輸出\n+ [CWD_CHANGED]／[TARGET_CONTAINER]\n＋收據（另一個檔，給程式讀）
 NodeAgent -left-> NodeStore : 存檔原文、附圖分析、檢索描述、\n軌跡、摘要歸檔、耗時
+NodeAgent -[#548235,bold]right-> NodeDomain : **交給領域（程式核對過）**\n／使用者的回答
+NodeDomain -[#548235]left-> NodeAgent : 報告 #編號／要問使用者
+NodeDomain -[#548235]down-> NodeSkills : 照決策圖執行腳本\n（讀收據）
+NodeSub -[hidden]down-> NodeDomain
 NodeStore -right-> NodeAgent : 檢索清單、最新摘要與使用者原話、\n常駐記憶；recall 讀回原文
 NodeLLM -[hidden]down-> NodeSub
 NodeVision -[hidden]down-> NodeLLM

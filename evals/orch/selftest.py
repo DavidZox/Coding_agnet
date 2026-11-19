@@ -2,8 +2,8 @@
 （工作目錄是臨時的小專案），直接驅動 Web 的回合（web_app.flows.run_turn）與 CLI（agent_core.cli.main），幾秒跑完、不需要 Ollama。
 
 - 領域（skills_system/DOMAIN.md）：system prompt 的「領域」一節、技能索引拿掉領域的工具、回覆的 schema 多「交給領域」；沒有 DOMAIN.md 時照舊；
-- 擋領域的工具（技能名稱、腳本、規格）；共用的工具與其他技能照舊；
-- 交給領域 → 中階 → 報告存成 #編號 交回主模型（不提煉）；決策圖的連結先推給畫面；
+- 擋領域的工具（技能名稱、腳本、規格）；共用的工具（回顧存檔、列目錄、找檔案）與其他技能照舊；
+- 交給領域 → 中階 → 報告存成 #編號 交回主模型（不提煉）；決策圖的連結先推給畫面；find_lines 的報告（提到的行）照「檔案:行號」寫出處；
 - 核對：沒有的領域、子目標是空的、項目數、一樣的再交一次；
 - 依報告回答：出處不在報告裡提醒一次；
 - 中階沒有做完、也沒有報告（沒有適合的做法、失敗、不屬於這個領域、取消）：這一回合放行領域的工具，下一回合又擋；
@@ -24,7 +24,8 @@ import traceback
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROJECT = os.path.dirname(os.path.dirname(HERE))
 COPY = ["agent_core", "skills_system", "prompts", "web_app", "vision"]
-FIVE = ("search_text", "find_file", "list_dir", "view_file", "code_ast_reader")
+HIDDEN = ("search_text", "view_file", "code_ast_reader")     # 領域讀內容的工具：主對話不直接用
+SHARED = ("list_dir", "find_file", "result_list", "result_grep", "result_view")   # 共用的工具（DOMAIN.md）
 FILES = {
     "pkg/mod.py": "def alpha(x):\n    return x + 1\n\n\ndef beta():\n    return alpha(2)\n",
     "pkg/use.py": "from pkg.mod import alpha\n\n\ndef gamma():\n    return alpha(3)\n",
@@ -149,8 +150,8 @@ def main():
             sp = agent.get_system_prompt()
             assert "## Domains" in sp and "### repo_analysis：" in sp and "- py_usage — " in sp and "- config_trace — " in sp, sp[:200]
             skills = sp[sp.index("## Available Skills"):]
-            assert not [t for t in FIVE if f"[{t}]" in skills], "領域的工具不列在主對話的技能索引"
-            assert all(f"[{t}]" in skills for t in ("result_grep", "result_view", "change_dir", "file_ops")), "共用的工具與其他技能照舊"
+            assert not [t for t in HIDDEN if f"[{t}]" in skills], "領域的工具不列在主對話的技能索引"
+            assert all(f"[{t}]" in skills for t in SHARED + ("change_dir", "file_ops")), "共用的工具（列目錄、找檔案、回顧存檔）與其他技能照舊"
             act = agent_reply_schema(agent.domain_names())["properties"]["action"]["anyOf"]
             assert act[2]["properties"]["domain"]["enum"] == ["repo_analysis"] and act[2]["properties"]["items"]["maxItems"] == 6, act
             fake = FakeChat(main=[say("你好。")])
@@ -168,14 +169,17 @@ def main():
             assert "## Domains" in agent.get_system_prompt(), "檔案改回來就重讀"
 
         def t_gate():
-            fake = FakeChat(main=[step("search_text"), step("scripts/grep_cmd.py", "alpha ."), step("view_file.md"),
-                                  step("change_dir"), step("result_list"), say("好")])
+            fake = FakeChat(main=[step("search_text"), step("scripts/grep_cmd.py", "alpha ."), step("view_file.md"), step("scripts/cat_cmd.py", "pkg/mod.py"),
+                                  step("change_dir"), step("result_list"), step("list_dir"), step("scripts/ls_cmd.py", "pkg"), step("find_file"),
+                                  step("scripts/find_file_cmd.py", "mod.py ."), say("好")])
             events, _ = turn("找 alpha", fake)
             tools = tools_of(events)
             assert tools[0].startswith("[ERROR] search_text 是 repo_analysis 領域的工具") and "交給領域" in tools[0], tools[0]
             assert tools[1].startswith("[ERROR] search_text 是 repo_analysis 領域的工具"), "腳本對回技能一樣擋"
-            assert tools[2].startswith("[ERROR] view_file 是 repo_analysis 領域的工具"), "規格也不給"
-            assert tools[3].startswith(SKILL_DOC_PREFIX) and tools[4].startswith(SKILL_DOC_PREFIX), "其他技能、共用的工具照舊載入規格"
+            assert tools[2].startswith("[ERROR] view_file 是 repo_analysis 領域的工具") and tools[3].startswith("[ERROR] view_file 是"), "規格也不給"
+            assert tools[4].startswith(SKILL_DOC_PREFIX) and tools[5].startswith(SKILL_DOC_PREFIX), "其他技能、共用的工具照舊載入規格"
+            assert tools[6].startswith(SKILL_DOC_PREFIX) and tools[7].startswith("[PASS]") and "mod.py" in tools[7], "列目錄是共用的工具：直接用"
+            assert tools[8].startswith(SKILL_DOC_PREFIX) and tools[9].startswith("[PASS]") and "pkg/mod.py" in tools[9], tools[8:10]
 
         def t_dispatch_report():
             fake = FakeChat(main=[dispatch("在 pkg 的 .py 裡找 alpha 定義在哪、哪裡呼叫", ["alpha 定義在哪個檔案", "哪些地方呼叫 alpha"]), cite],
@@ -196,6 +200,19 @@ def main():
             assert "pkg/mod.py:1" in fed, "報告原文進主對話（不提煉）"
             assert fake.count("main") == 2 and fake.count("select") == 1 and fake.count("contract") == 1, fake.calls
             assert not any("【系統核對】" in m["content"] for m in agent.messages if m["role"] == "user"), "出處在報告裡：不提醒"
+
+        def t_find_lines_cite():
+            fake = FakeChat(main=[dispatch("在 docs 的文件裡找「電源」，列出提到的行", ["哪一行提到電源", "那一行寫什麼"]),
+                                  say("docs/guide.md:5 寫「啟動前先檢查電源。」")],
+                            select=[select("find_lines", "列出提到的行", asks=("位置", "內容"))],
+                            contract=[{"understanding": "u", "keyword": {"quote": "電源", "value": "電源"}, "files": {"quote": "", "value": ""},
+                                       "path": {"quote": "docs", "value": "docs"}, "exclude": {"quote": "", "value": ""}}])
+            before = len(agent.messages)
+            events, _ = turn("docs 的文件裡哪一行提到電源？寫了什麼？", fake)
+            text = tools_of(events)[0]
+            assert text.startswith(DOMAIN_RESULT_HEAD + "repo_analysis 的報告（做完；做法 find_lines）"), text[:200]
+            assert "    - docs/guide.md:5（提到）：啟動前先檢查電源。" in text and "    - docs/guide.md:3：## 啟動" in text, text
+            assert not any("【系統核對】" in m["content"] for m in agent.messages[before:] if m["role"] == "user"), "照報告的「檔案:行號」寫出處：通過核對"
 
         def t_reply_refs():
             fake = FakeChat(main=[dispatch("在 pkg 裡找 alpha", ["alpha 定義在哪"]), say("alpha 定義在 pkg/zzz.py:99。"), cite],
@@ -220,22 +237,23 @@ def main():
             assert fake.count("select") == 1, "核對沒過的不執行中階、一樣的不再跑一次"
 
         def t_no_skill_unlock():
-            fake = FakeChat(main=[dispatch("列出 pkg 有哪些檔案", ["pkg 底下有哪些檔案"]), step("list_dir"), step("scripts/ls_cmd.py", "pkg"),
-                                  say("有 mod.py、use.py")], select=[select("none", "沒有列目錄的做法")])
-            events, _ = turn("pkg 底下有哪些檔案？", fake)
+            fake = FakeChat(main=[dispatch("比較 pkg/mod.py 與 pkg/use.py", ["兩個檔案差在哪"]), step("view_file"), step("scripts/cat_cmd.py", "pkg/mod.py"),
+                                  say("mod.py 定義 alpha")], select=[select("none", "沒有比較兩個檔案的做法")])
+            events, _ = turn("pkg/mod.py 跟 pkg/use.py 差在哪？", fake)
             tools = tools_of(events)
-            assert "沒有適合的寫好的做法：沒有列目錄的做法" in tools[0] and "- [list_dir](tools/list_dir.md)" in tools[0], tools[0]
-            assert tools[1].startswith(SKILL_DOC_PREFIX) and tools[2].startswith("[PASS]") and "mod.py" in tools[2], tools[1:3]
-            events, _ = turn("再列一次 pkg", FakeChat(main=[step("scripts/ls_cmd.py", "pkg"), say("好")]))
-            assert tools_of(events)[0].startswith("[ERROR] list_dir 是 repo_analysis 領域的工具"), "放行只在那一回合"
+            assert "沒有適合的寫好的做法：沒有比較兩個檔案的做法" in tools[0] and "- [view_file](tools/view_file.md)" in tools[0], tools[0]
+            assert "[list_dir]" not in tools[0], "放行時只列被擋的工具（共用的本來就能用）"
+            assert tools[1].startswith(SKILL_DOC_PREFIX) and tools[2].startswith("[PASS]") and "def alpha" in tools[2], tools[1:3]
+            events, _ = turn("再看一次 pkg/mod.py", FakeChat(main=[step("scripts/cat_cmd.py", "pkg/mod.py"), say("好")]))
+            assert tools_of(events)[0].startswith("[ERROR] view_file 是 repo_analysis 領域的工具"), "放行只在那一回合"
 
         def t_out_of_domain():
             fake = FakeChat(main=[dispatch("看 cam_box 容器在不在跑", ["cam_box 現在的狀態"]), dispatch("再找一次 cam_box", ["狀態"]),
-                                  step("scripts/ls_cmd.py", "pkg"), say("不屬於。")],
+                                  step("scripts/cat_cmd.py", "pkg/mod.py"), say("不屬於。")],
                             select=[select("out_of_domain", "問的是正在跑的容器", asks=("內容",))])
             events, _ = turn("cam_box 容器現在在跑嗎？", fake)
             tools = tools_of(events)
-            assert "repo_analysis 說這個問題不屬於它：問的是正在跑的容器" in tools[0] and "- [list_dir](tools/list_dir.md)" in tools[0], tools[0]
+            assert "repo_analysis 說這個問題不屬於它：問的是正在跑的容器" in tools[0] and "- [view_file](tools/view_file.md)" in tools[0], tools[0]
             assert tools[1].startswith("[ERROR] 這個問題已經交給過 repo_analysis，它說不屬於它") and "1. repo_analysis（做法 —）：不屬於這個領域，決策圖 /topology" in tools[1], tools[1]
             assert tools[2].startswith("[PASS]"), "回到主對話照現在的方式做：這一回合放行領域的工具（G7）"
 
@@ -362,8 +380,9 @@ def main():
             assert agent.domain_pending is None and t["domain_asks"] and "取消了" in result, (t, result[:200])
 
         for name, fn in [("領域：system prompt 的「領域」一節、技能索引拿掉領域的工具、schema 多「交給領域」；沒有 DOMAIN.md 時照舊", t_registry),
-                         ("擋領域的工具：技能名稱、腳本、規格都擋，其他技能與共用的工具照舊", t_gate),
+                         ("擋領域的工具：技能名稱、腳本、規格都擋，其他技能與共用的工具（列目錄、找檔案、回顧存檔）照舊", t_gate),
                          ("交給領域 → 中階 → 報告存成 #編號 交回主模型（不提煉），決策圖的連結先推給畫面", t_dispatch_report),
+                         ("find_lines 的報告列出提到的行（檔案:行號：內容），主模型照它寫的出處通過核對", t_find_lines_cite),
                          ("依報告回答：出處不在報告裡提醒一次", t_reply_refs),
                          ("核對：沒有的領域、子目標是空的、項目數、一樣的再交一次", t_validation),
                          ("沒有適合的做法：這一回合放行領域的工具，下一回合又擋", t_no_skill_unlock),
