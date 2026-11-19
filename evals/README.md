@@ -1,6 +1,6 @@
 # 評測（evals）
 
-評測依對象分成十組，外加每個階段結束時跑的總執行器（`phase_check.py`，見最後一節）。**不用模型**的自我測試（假的 `ollama.chat` 照劇本回答，或直接執行腳本，幾秒到一分多鐘）改程式之後先跑；**真模型／實機**的評測要 Ollama、容器或沙盒。
+評測依對象分成十一組，外加每個階段結束時跑的總執行器（`phase_check.py`，見最後一節）。**不用模型**的自我測試（假的 `ollama.chat` 照劇本回答，或直接執行腳本，幾秒到一分多鐘）改程式之後先跑；**真模型／實機**的評測要 Ollama、容器或沙盒。
 每一次都在臨時目錄複製一份專案來跑，不碰正式的 `logs/` 與 `prompts/Memory.md`（數據分析回歸例外：job 照常寫進正式的 `logs/analysis_jobs/`，評分從那裡讀）；結果寫到 `evals/results/`（已在 `.gitignore`）。
 
 | 組 | 不用模型 | 真模型／實機 | 測什麼 |
@@ -15,6 +15,7 @@
 | `repo/` 真實專案（新架構的評測） | `selftest.py`（核對、每一題答得出來、答案跟快照一致、碰不到真的容器） | `run.py`（題目在 `questions.py`，答案 `answers.json` 由程式從固定版本的快照算；借用 `ops/worker.py` 跑一題） | 在真實專案（amr_base_sw、amr_base_hw、fih_rmf_system）裡找檔案與計數、讀長文件、Python 的定義與呼叫、C++、跨檔案的調查；最後的回覆由程式核對 |
 | `edg/` 低階執行器（新架構 D10 第 2 步） | `selftest.py`（寫好的圖、假的修正模型） | `run.py`（題目在 `cases.py`：一個工具節點故意錯一個參數，工作目錄是真實專案評測的快照） | 照決策圖執行、照收據守門、從收據帶入參數、重排；第 1 級修正：修得好的有沒有修好（收據的欄位與範圍由程式核對）、修不好的有沒有往上交 |
 | `mid/` 中階（新架構 D10 第 3 步） | `selftest.py`（假的模型、真的工具與低階執行器） | `run.py`（題目沿用真實專案評測的 30 題，`cases.py` 標每一題該用的複合技能與參數） | 每一層分開量：挑技能（模型挑的、換技能之後的）、合約（參數與原文的核對）、判斷（幾次、走的路、挑的行過不過核對）、最後的報告（`repo/checks.py`）；第 2 級（回退、換技能、問使用者、熔斷） |
+| `orch/` 高階（新架構 D10 第 4 步） | `selftest.py`（假的主模型與中階的模型、真的中階、低階與工具，直接驅動 Web 的回合、Web 伺服器與 CLI） | —（真模型看 `repo/run.py`：主對話接上中階之後的結果；`chat/`、`ops/` 看有沒有退步） | 領域的清單（`skills_system/DOMAIN.md`）與 system prompt 的「領域」一節、擋領域的工具與 no_skill 之後放行、交給領域的核對（沒有的領域、子目標、項目數、一樣的再交一次）、報告存成 #編號 交回主模型、決策圖的連結、問使用者的接回（Web、HTTP、CLI、取消、/clear）、第 3 級的排除、依報告回答的出處、評測的 worker 怎麼記 |
 
 改程式之後先跑不用模型的自我測試：
 
@@ -22,7 +23,8 @@
 PY=~/aiagent_venv_env/.venv/bin/python     # 有 ollama 套件的 Python
 $PY evals/phase_check.py                   # 下面這幾組一次跑完、跟基準比（約 2 分鐘，見最後一節）
 $PY evals/chat/selftest.py && $PY evals/chat/extract_selftest.py && $PY evals/analysis/selftest.py && $PY evals/ops/selftest.py \
-  && $PY evals/repo/selftest.py && $PY evals/edg/selftest.py && $PY evals/mid/selftest.py && $PY evals/integrity/selftest.py
+  && $PY evals/repo/selftest.py && $PY evals/edg/selftest.py && $PY evals/mid/selftest.py && $PY evals/orch/selftest.py \
+  && $PY evals/integrity/selftest.py
 $PY evals/skills/selftest.py               # 技能腳本（需要容器的情境沒有沙盒就略過）；只跑某幾組：selftest.py fs containers rmf data
 ```
 
@@ -267,6 +269,23 @@ python3 evals/mid/run.py --rescore evals/results/<結果目錄>   # 不跑模型
 - **基準**：`evals/baselines/mid.json`（每個模型每一題每一層過了幾次）；`phase_check --model` 每個模型 30 題各跑 3 次跟它比。
 - 結果在 `evals/results/<時間>_mid_<模型>[_holdout|_all][_<tag>]/`：`runs.jsonl`（選的技能與理解、參數與原文、沒過核對的、回退、每一層的結果）、
   `report.md`、`logs/<題目>_<第幾次>/`（`mid_jobs/` 中階的 job、報告、模型呼叫；`edg_jobs/` 它用到的低階工作）。
+
+## 高階（`orch/`，新架構 D10 第 4 步）
+
+```bash
+python3 evals/orch/selftest.py                              # 離線（幾秒）：假的主模型與中階的模型、真的中階與工具
+```
+
+- **離線**（`selftest.py`，12 項）：system prompt 的「領域」一節與技能索引（領域的工具不列；沒有 `DOMAIN.md` 時照舊）、回覆的 schema 多「交給領域」、
+  擋領域的工具（技能名稱、腳本、規格；共用的工具與其他技能照舊）、交給領域 → 中階 → 報告存成 #編號 交回主模型（不提煉）、決策圖的連結先推給畫面、
+  核對（沒有的領域、子目標是空的、項目數、一樣的再交一次）、依報告回答的出處不在報告裡提醒一次、沒有適合的做法時這一回合放行、不屬於這個領域的排除
+  與高 4 的紀錄、問使用者（Web 的 `run_turn` 與 `answer_domain_turn`、經過 HTTP 的 `/api/send` 與 `/api/decision`、CLI 的 `cli.main()`：回答不合法再問、
+  回答之後接回同一個工作、取消、`/clear` 一起取消）、評測的 worker 怎麼記（`evals/domain_calls.py`）。
+- **真模型**：沒有自己的一組；主對話接上中階之後的結果看真實專案評測（`repo/run.py`），有沒有退步看主對話（`chat/`）與維運（`ops/`）。
+  評測的 worker（`chat/worker.py`、`ops/worker.py`，真實專案評測借用後者）收尾與記法相同（`evals/domain_calls.py`）：中階要問使用者時取消
+  （評測裡沒有人回答，`domain_asks` 記下問了什麼）；交給領域記一筆（`skill` 是領域，附子目標、項目、中階的狀態與做法、工作編號），領域裡用到的工具
+  各記一筆（`via` 是領域），情境的「用了哪個工具」看得到領域裡用的工具。
+- 主對話與提煉的自我測試在臨時副本裡拿掉 `DOMAIN.md`：它們測主迴圈本身（直接執行 ls、cat），分領域在這一組測。
 
 ## 評測的完整性（`integrity/`）
 

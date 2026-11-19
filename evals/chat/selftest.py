@@ -57,6 +57,8 @@ def make_env():
             shutil.copytree(src, os.path.join(tmp, item), ignore=shutil.ignore_patterns("__pycache__"))
         elif os.path.exists(src):
             shutil.copy2(src, os.path.join(tmp, item))
+    # 這裡測主迴圈本身（直接執行 ls、cat 這些工具）：拿掉領域的清單，工具不交給領域（分領域在 evals/orch/selftest.py 測）
+    os.remove(os.path.join(tmp, "skills_system", "DOMAIN.md"))
     return tmp
 
 

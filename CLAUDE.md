@@ -13,7 +13,8 @@
 - **目前的重點是新架構**（2026-11-18 使用者決定）：使用者的構想在 `docs/`（三份 HTML），**設計以這些架構圖為準**（HarnessMM 論文
   只是當初參考的資料）。先討論、定案再實作；討論與決定記在 `docs/新架構討論紀錄.md`（每一輪討論後更新：已定、待討論、討論紀錄），
   **還沒定案的不要先做**。D1～D11 已定（2026-11-18），照 D10 由下往上實作（第 0 步評測、第 1 步收據、第 2 步低階執行器 `agent_core/edg.py`、
-  第 3 步中階 `agent_core/mid.py` 與領域 `skills_system/repo_analysis/` 的複合技能）。原本 harness 穩定化的待辦不單獨修
+  第 3 步中階 `agent_core/mid.py` 與領域 `skills_system/repo_analysis/` 的複合技能、第 4 步高階 `agent_core/orchestrator.py` 與
+  `skills_system/DOMAIN.md`：主對話把領域的問題交給中階）。原本 harness 穩定化的待辦不單獨修
   （當成新架構的需求）；任務引擎（task_run）與 Plan 模式 2026-11-18 拿掉，新架構的中階會取代它；之後的評測與基準以新架構為主。
   主對話迴圈、確認關卡、多段處理長內容、存檔與回顧是新架構沿用的基礎，
   目標仍是找檔案、文件與程式分析做到穩定。其他工具（ROS 2、調度系統、容器、數據分析、多模態）**凍結**：照現在的樣子保留、能用，
@@ -32,7 +33,8 @@
    （新的一組加進它的 `OFFLINE` 或對應的組）。
 3. **改到模型會讀的文字**（`prompts/`、`skills_system/SKILLS.md`、`skills_system/tools/`、`skills_system/<領域>/`）或主對話的流程：
    再跑對應的真模型評測（`evals/chat/run.py`、`evals/ops/run.py`、`evals/extract/run.py`、`evals/repo/run.py`；低階執行器的修正 `prompts/edg/`
-   跑 `evals/edg/run.py`；中階 `prompts/mid/` 與複合技能跑 `evals/mid/run.py`），跟基準比。
+   跑 `evals/edg/run.py`；中階 `prompts/mid/` 與複合技能跑 `evals/mid/run.py`；交給領域的流程與 `prompts/harness/domain.md` 跑
+   `evals/repo/run.py`），跟基準比。
 4. **一個階段結束**：`python3 evals/phase_check.py --model`（harness 的真模型評測）全跑；動到凍結的工具共用的程式時再加 `--tools`。
    要注意的項目逐一查清楚（重跑、看紀錄），寫進設計筆記。
 5. **基準**（`evals/baselines/`，跟程式一起進版控）：自我測試的通過數變了就更新（`--save-baseline <結果目錄> --only <項目>`）；

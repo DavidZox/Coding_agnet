@@ -120,6 +120,12 @@ def main():
 
             # --- 🧰 TOOL 執行（只看 action 欄位，reply 裡的文字不會被執行）---
             result = agent.run_tool(parsed, approved=bool(guard))
+            # --- 🗺️ 交給領域之後中階要問使用者：程式直接問、接回同一個工作（不經過主模型），做完的結果才當成這一次的工具結果 ---
+            while agent.domain_pending:
+                print(f"\n{agent.domain_ask_text()}")
+                answer = input("回答（輸入編號選候選、直接輸入回答，0＝取消）: ").strip()
+                if answer:
+                    result = agent.cancel_domain() if answer == "0" else agent.answer_domain(answer)
             for notice in agent.pop_notices():   # 卡住偵測、背景壓縮完成等
                 print(notice)
             tool_tokens = 0
@@ -147,7 +153,7 @@ def main():
             # --- 模式判定流程 ---
             if not result:
                 # 這一回合沒有執行任何工具、回覆卻說「已經做了」，或依數據分析的報告回答卻寫成因果：提醒一次（turn_guard.py）
-                claim = agent.claim_without_action(parsed) or agent.analysis_reply_check(parsed)
+                claim = agent.claim_without_action(parsed) or agent.analysis_reply_check(parsed) or agent.domain_reply_check(parsed)
                 for notice in agent.pop_notices():
                     print(notice)
                 if claim:

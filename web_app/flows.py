@@ -283,14 +283,18 @@ def run_turn(events):
                            "skill": guard["skill"], "command": guard["command"]})
             return True
 
-        outcome = _handle_tool_result(agent.run_tool(parsed), events)
+        result = agent.run_tool(parsed)
+        if agent.domain_pending:             # 交給領域之後中階要問使用者：程式直接問（不經過主模型），等回答（answer_domain_turn）
+            return _await_domain(result, parsed, events)
+        outcome = _handle_tool_result(result, events)
         for notice in agent.pop_notices():   # 計畫換下一步、連續失敗退出、⛔ 卡住等
             events.append({"channel": "system", "text": notice})
         if outcome == "continue" and agent.stuck:
             return False                     # 同樣的動作 3 次得到同樣的結果：停下來交回使用者（turn_guard.py）
         if outcome == "end":
             # 這一回合沒有執行任何工具、回覆卻說「已經做了」（要做就執行，沒做就照實說），或依數據分析的報告回答卻寫成因果：提醒一次
-            claim = agent.claim_without_action(parsed) or agent.analysis_reply_check(parsed)
+            # 依領域的報告回答時寫了報告裡沒有的出處：也提醒一次（orchestrator.domain_reply_check）
+            claim = agent.claim_without_action(parsed) or agent.analysis_reply_check(parsed) or agent.domain_reply_check(parsed)
             for notice in agent.pop_notices():
                 events.append({"channel": "system", "text": notice})
             if claim:
@@ -302,6 +306,38 @@ def run_turn(events):
 
     events.append({"channel": "system", "text": "⚠️ 已達安全上限（連續執行過多輪工具），本回合自動中止。"})
     return False
+
+
+def _await_domain(result, parsed, events):
+    """交給領域之後中階要問使用者：這一次的結果（「系統已經直接問使用者」）照樣進主對話（不經過 hybrid／manual 的決策：
+    它不是工具的輸出，是等回答的說明），問題與候選推給畫面，回合停下來等使用者回答（pending["mode"]＝"domain"）。"""
+    events.append({"channel": "tool", "text": result, "tokens": agent.count_tokens(result), "oversized": False,
+                   "result_id": agent.last_result_id, "result_file": agent.last_result_file})
+    agent.messages.append({'role': 'user', 'content': tool_result_message(result, parsed["action"])})
+    return _ask_domain(events)
+
+
+def _ask_domain(events):
+    p = agent.domain_pending
+    pending.update(mode="domain")
+    events.append({"channel": "domain_ask", "text": agent.domain_ask_text(), "candidates": p["candidates"], "kind": p["kind"],
+                   "url": p["url"]})
+    return True
+
+
+def answer_domain_turn(text, events, cancel=False):
+    """使用者回答中階的問題（打字、按候選）或取消：交給中階接回同一個工作（orchestrator.answer_domain／cancel_domain）。
+    還要再問（回答不合法、下一個問題）就再推一次問題；做完就照一般的工具結果進主對話，接著跑回合。回傳是否在等使用者決策。"""
+    result = agent.cancel_domain() if cancel else agent.answer_domain(text)
+    if agent.domain_pending:
+        return _ask_domain(events)
+    clear_pending()
+    if not result:
+        return False
+    outcome = _handle_tool_result(result, events)
+    if outcome == "continue":
+        return run_turn(events)
+    return outcome == "await"
 
 
 def run_analysis_turn(question, events, data=None):

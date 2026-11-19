@@ -18,6 +18,9 @@ MAX_STEPS = 20   # 每一句使用者訊息最多幾次模型回覆（Web 的 au
 RESULT_SCRIPTS = {"result_recall_cmd.py", "result_grep_cmd.py", "result_view_cmd.py", "result_list_cmd.py"}
 
 
+from evals import domain_calls   # noqa: E402  （ROOT 加進 sys.path 之後）
+
+
 def install_fake_model():
     """EVAL_FAKE=1：不呼叫 Ollama，只驗證評測流程本身（主對話第一句就直接回答、不下 action）。"""
     import ollama
@@ -147,9 +150,10 @@ def main():
                 if sc.get("guard", "deny") != "approve":
                     agent.messages.append({"role": "user", "content": tool_result_message(agent.guard_denied_text(guard), parsed["action"])})
                     break
-            result = agent.run_tool(parsed, approved=bool(guard))
+            result = domain_calls.settle(agent, parsed, agent.run_tool(parsed, approved=bool(guard)), turn)   # 中階要問使用者：沒有人回答，取消
             if not result:
-                claim = agent.claim_without_action(parsed) or agent.analysis_reply_check(parsed)   # 沒執行卻說做完了、依數據分析的報告回答卻寫成因果：跟 CLI／Web 一樣提醒一次
+                # 沒執行卻說做完了、依數據分析的報告回答卻寫成因果、依領域的報告回答卻寫了報告裡沒有的出處：跟 CLI／Web 一樣提醒一次
+                claim = agent.claim_without_action(parsed) or agent.analysis_reply_check(parsed) or agent.domain_reply_check(parsed)
                 if claim:
                     turn.setdefault("claim_nudges", 0)
                     turn["claim_nudges"] += 1
@@ -160,7 +164,11 @@ def main():
             token = os.path.basename(payload.split()[0]) if payload else ""
             script = agent._normalize_script_name(token)
             is_doc = os.path.exists(os.path.join(agent.tools_dir, (token[:-3] if token.endswith(".md") else token) + ".md"))
-            if not is_doc:
+            if parsed["action"].get("domain"):                 # 交給領域：領域本身與它在裡面用到的工具（evals/domain_calls.py）
+                for call in domain_calls.calls(agent, parsed, result):
+                    turn["tool_calls"].append(call)
+                    all_calls.append(call)
+            elif not is_doc:
                 args = agent._parse_script_args(script, payload.split(maxsplit=1)[1] if len(payload.split(maxsplit=1)) > 1 else "")
                 call = {"script": script, "skill": skill_map.get(script) or ("result_recall" if script == "result_recall_cmd.py" else None),
                         "args": args, "status": "ERROR" if result.lstrip().startswith(("[ERROR]", "[DENIED]")) else "PASS",

@@ -1,34 +1,35 @@
 """給 Ollama format= 的 JSON schema：主對話回覆、滾動摘要、工具摘要、數據分析。"""
+from .config import DOMAIN_GOAL_CHARS, DOMAIN_ITEM_CHARS, DOMAIN_ITEMS_MAX
+
+
+def _text(n):
+    """字串欄位都有上限（同視覺提取的教訓：小模型偶爾會在陣列或字串裡失控，有上限就一定是合法的 JSON）。"""
+    return {"type": "string", "maxLength": n}
 
 
 # 🧷 回覆協議：模型每次回覆都是一個 JSON 物件 {thought, reply, action}。執行與否只看 action 欄位，
 # reply 裡不論寫了什麼（包括解釋、舉例時抄出來的 `EXECUTE: ...` 字串）都不會被執行——這是「實體隔離」：
 # 給人看的文字與給系統執行的指令分開存放，不再用文字比對從回覆裡找指令。以 Ollama 的 format= schema 強制
 # 結構（與摘要同一機制），小模型不需要自律「解釋時不要輸出指令」。
-# action 為 null 或 {"command": 技能名稱｜規格標明的腳本路徑, "args": 參數字串}；args 是字串而不是物件，
-# 因為所有技能腳本都吃位置參數、規格文件的寫法也是位置參數，這樣既有的 tools/*.md 一份都不用改：
+# action 為 null、{"command": 技能名稱｜規格標明的腳本路徑, "args": 參數字串}，或（有領域時）「交給領域」
+# {"domain": DOMAIN.md 列的領域, "goal": 這一層的子目標, "items": [要回答的項目]}（新架構的高階，agent_core/orchestrator.py）。
+# args 是字串而不是物件，因為所有技能腳本都吃位置參數、規格文件的寫法也是位置參數，這樣既有的 tools/*.md 一份都不用改：
 # 規格裡的 `EXECUTE: <路徑> <參數>` 範例就對應 command=<路徑>、args=<參數>。
-AGENT_REPLY_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "thought": {"type": "string"},
-        "reply": {"type": "string"},
-        "action": {"anyOf": [
-            {"type": "null"},
-            {
-                "type": "object",
-                "properties": {"command": {"type": "string"}, "args": {"type": "string"}},
-                "required": ["command", "args"],
-            },
-        ]},
-    },
-    "required": ["thought", "reply", "action"],
-}
-
-
-def _text(n):
-    """字串欄位都有上限（同視覺提取的教訓：小模型偶爾會在陣列或字串裡失控，有上限就一定是合法的 JSON）。"""
-    return {"type": "string", "maxLength": n}
+def agent_reply_schema(domains=()):
+    actions = [
+        {"type": "null"},
+        {"type": "object", "properties": {"command": {"type": "string"}, "args": {"type": "string"}}, "required": ["command", "args"]},
+    ]
+    if domains:
+        actions.append({"type": "object", "properties": {
+            "domain": {"type": "string", "enum": list(domains)}, "goal": _text(DOMAIN_GOAL_CHARS),
+            "items": {"type": "array", "items": _text(DOMAIN_ITEM_CHARS), "minItems": 1, "maxItems": DOMAIN_ITEMS_MAX}},
+            "required": ["domain", "goal", "items"]})
+    return {
+        "type": "object",
+        "properties": {"thought": {"type": "string"}, "reply": {"type": "string"}, "action": {"anyOf": actions}},
+        "required": ["thought", "reply", "action"],
+    }
 
 
 # 融合摘要的 JSON schema：交給 Ollama 的 format= 做結構化輸出，再由 _render_summary_markdown 排版。

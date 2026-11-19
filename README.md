@@ -2,12 +2,14 @@
 
 以本地 Ollama 模型（預設 `gemma4:e4b`）為核心的 agent harness，有 CLI 與 Web 兩種介面；決策模型只用本地模型（離線的工廠環境）。
 
-- **新架構**（2026-11-18 起由下往上實作，還沒接上主對話）：高－中－低三層（領域路由、技能合約與 SOP、照收據執行的決策圖）與三級回退；
+- **新架構**（2026-11-18 起由下往上實作；2026-11-19 高階接上主對話）：高－中－低三層（領域路由、技能合約與 SOP、照收據執行的決策圖）與三級回退；
   構想在 `docs/`，討論與決定在〈[新架構討論紀錄](docs/新架構討論紀錄.md)〉。做好的：評測（`evals/repo/`）、第一版領域技能的收據、
   低階執行器（`agent_core/edg.py`：照圖執行、照收據守門、第 1 級修正、重排）、中階（`agent_core/mid.py`：挑複合技能、合約、
   照骨架排圖、第 2 級的回退與換技能、判斷節點——模型看原文挑行、選路，程式核對，`agent_core/judge.py`；領域 `skills_system/repo_analysis/` 的
-  `py_usage`、`count_in_scope`、`doc_lookup`、`cpp_symbol`、`config_trace`）、Web 的決策圖（`/topology`，唯讀：中階與低階執行過的工作，
-  每一版的圖、回退、問使用者與判斷）。下面寫的是現在的程式。
+  `py_usage`、`count_in_scope`、`doc_lookup`、`cpp_symbol`、`config_trace`）、高階（`agent_core/orchestrator.py`：主對話就是高階，
+  照 `skills_system/DOMAIN.md` 把找檔案、讀文件、分析程式的問題「交給領域」，依中階的報告回答；中階要問使用者時由程式轉問、接回；
+  領域的工具不給主對話直接用，沒有適合的做法時才放行）、Web 的決策圖（`/topology`，唯讀：中階與低階執行過的工作，
+  每一版的圖、回退、問使用者與判斷；交給領域時對話裡附連結）。下面寫的是現在的程式。
 - **harness 本身**（新架構沿用的基礎；目標是找檔案、文件與程式分析做到穩定）：一次一個動作的主對話迴圈、會改變狀態的動作先問使用者
   （確認關卡）、**多段處理長內容**（太長的工具輸出由程式切段、每段一個 worker 提煉、每條事實附行號由程式核對）、**存檔與回顧**（每次的
   原文存成 `#編號`，之後用 `result_recall` 等回到原文）。多步驟的任務由主對話一步一步做：任務引擎（`task_run`）與 Plan 模式
@@ -147,7 +149,7 @@ Web 左欄是對話，右欄是系統與工具回傳（另一個分頁是「📊
 Coding_agnet/            （資料夾名稱沿用；原本的 coding agent 已移到 ~/Coding_agent_harness）
 ├── Agent_Runner.py      CLI 入口（實作在 agent_core/cli.py）
 ├── web_console.py       Web 入口（實作在 web_app/）
-├── agent_core/          核心：SkillAgent（由各 mixin 組成）、回覆協議、常數；analysis_job.py＝數據解析、extract.py＝工具回傳的提煉、edg.py＝新架構的低階執行器、mid.py＝中階、judge.py＝中階的判斷節點（原文與核對）
+├── agent_core/          核心：SkillAgent（由各 mixin 組成）、回覆協議、常數；analysis_job.py＝數據解析、extract.py＝工具回傳的提煉、edg.py＝新架構的低階執行器、mid.py＝中階、judge.py＝中階的判斷節點（原文與核對）、orchestrator.py＝高階（交給領域）
 ├── web_app/             Web 介面（純標準庫）：回合流程、slash 指令、HTTP、static/index.html；analysis.py＝📊 面板的後端；topology.py 與 static/topology.html＝決策圖
 ├── prompts/             給模型的文字，全部在這裡（可以直接改，不用改程式；README.md＝每個檔案給誰、範本的寫法）
 │   ├── AGENT.md         主對話的 system prompt
@@ -158,9 +160,9 @@ Coding_agnet/            （資料夾名稱沿用；原本的 coding agent 已�
 │   ├── extract/         工具回傳的提煉：worker、整合、user 訊息的標籤
 │   ├── edg/、mid/       新架構：低階執行器的第 1 級修正、中階的挑技能、合約與判斷
 │   └── vision/          附圖的影像提取
-├── skills_system/       技能：SKILLS.md（索引）、tools/（規格）、scripts/（腳本與共用模組）、repo_analysis/（新架構的領域：索引與複合技能）
+├── skills_system/       技能：SKILLS.md（索引）、tools/（規格）、scripts/（腳本與共用模組）、DOMAIN.md（新架構的領域清單）、repo_analysis/（領域：索引與複合技能）
 ├── vision/              視覺模態：擷取、推論、提取、Web 的框選（web/）、sniper.py（獨立的框選小工具）
-├── evals/               評測：chat/、skills/、analysis/、datagen/、ops/、extract/、repo/、edg/、mid/、integrity/、phase_check.py、baselines/；
+├── evals/               評測：chat/、skills/、analysis/、datagen/、ops/、extract/、repo/、edg/、mid/、orch/、integrity/、phase_check.py、baselines/；
 │                        results/（.gitignore）
 ├── doc/                 文件（現在的程式）；diagrams/（圖的 .puml）、images/（產生的 PNG）、archive/（第一～九輪的根因版本，只供閱讀）
 ├── docs/                新架構：使用者的構想（三份 HTML）與〈新架構討論紀錄.md〉

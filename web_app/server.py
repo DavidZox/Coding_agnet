@@ -10,6 +10,7 @@ from agent_core.protocol import attach_skill_docs
 from agent_core.turn import after_turn_compression
 from .commands import handle_slash_command, SLASH_COMMANDS
 from .flows import (
+    answer_domain_turn,
     _run_vision_subsession,
     apply_decision,
     build_stats,
@@ -346,8 +347,14 @@ class ConsoleHandler(BaseHTTPRequestHandler):
     def _handle_send(self, data, stream):
         message = (data.get("message") or "").strip()
 
-        if pending["mode"]:
-            stream.error("尚有待決策的工具結果，請先回應決策再繼續。")
+        if pending["mode"] == "domain" and message and not message.startswith("/"):
+            # 🗺️ 中階在等使用者回答：這一句就是回答（程式交給中階接回同一個工作，不經過主模型）
+            stream.append({"channel": "chat", "role": "user", "text": message, "tokens": agent.count_tokens(message)})
+            self._finish_turn(stream, answer_domain_turn(message, stream))
+            return
+        if pending["mode"] and not (pending["mode"] == "domain" and message.lower() == "/clear"):
+            stream.error("尚有待決策的事項（中階的問題請回答或按取消），請先回應再繼續。" if pending["mode"] == "domain"
+                         else "尚有待決策的工具結果，請先回應決策再繼續。")
             self._finish(stream, True)
             return
 
@@ -416,6 +423,12 @@ class ConsoleHandler(BaseHTTPRequestHandler):
         if not pending["mode"]:
             stream.error("目前沒有待決策的工具結果。")
             self._finish(stream, False)
+            return
+        if pending["mode"] == "domain":   # 🗺️ 中階的問題：按了候選（answer）或取消（cancel）
+            answer = str(data.get("answer") or "").strip()
+            if answer:
+                stream.append({"channel": "chat", "role": "user", "text": answer, "tokens": agent.count_tokens(answer)})
+            self._finish_turn(stream, answer_domain_turn(answer, stream, cancel=(action == "cancel")))
             return
 
         outcome = apply_decision(action, stream)   # continue／await／stop（見 flows.apply_decision）

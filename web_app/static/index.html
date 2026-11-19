@@ -60,9 +60,12 @@
   .entry.summary.truncated { background: transparent; border: 1px dashed #b0873f; color: #d9c49a; padding: 4px 8px; font-size: 12px; }
   .entry.summary.truncated .tag { color: #e6b95c; }
   footer { border-top: 1px solid #3a3c40; padding: 10px 12px; background: #2b2d31; }
-  #decision-bar, #guard-bar { display: none; margin-bottom: 8px; gap: 8px; align-items: center; font-size: 13px; flex-wrap: wrap; }
-  #decision-bar.show, #guard-bar.show { display: flex; }
-  #decision-bar button, #guard-bar button { cursor: pointer; }
+  #decision-bar, #guard-bar, #domain-bar { display: none; margin-bottom: 8px; gap: 8px; align-items: center; font-size: 13px; flex-wrap: wrap; }
+  #decision-bar.show, #guard-bar.show, #domain-bar.show { display: flex; }
+  #decision-bar button, #guard-bar button, #domain-bar button { cursor: pointer; }
+  .entry.domain_ask { background: #1d2f3a; border: 1px solid #3f8fb0; color: #d3eaf3; }
+  .entry.domain_ask .tag { color: #8fd3f3; opacity: 1; }
+  .entry a.topo { color: #8ab4f8; }
   .input-row { display: flex; gap: 8px; }
   textarea#msg {
     flex: 1; resize: none; height: 54px; background: #1e1f22; color: #e3e3e3;
@@ -273,6 +276,11 @@
     <button class="danger" onclick="sendDecision('y')">✅ 同意執行</button>
     <button class="secondary" onclick="sendDecision('n')">🚫 拒絕</button>
   </div>
+  <div id="domain-bar">
+    <span>🗺️ 中階要問你（內容見左欄藍色卡片；也可以直接在下面輸入回答）：</span>
+    <span id="domain-cands"></span>
+    <button class="secondary" onclick="sendDomain('', true)">✖ 取消這個問題</button>
+  </div>
   <div id="decision-bar">
     <span>⏸️ 有工具結果待決策：</span>
     <button onclick="sendDecision('y')">✅ 加入上下文</button>
@@ -310,6 +318,8 @@ const msgBox = document.getElementById('msg');
 const sendBtn = document.getElementById('send-btn');
 const decisionBar = document.getElementById('decision-bar');
 const guardBar = document.getElementById('guard-bar');
+const domainBar = document.getElementById('domain-bar');
+let domainCandidates = [];   // 🗺️ 中階最近一次要問的候選（domain_ask 事件）
 const attachStrip = document.getElementById('attach-strip');
 const attachMenu = document.getElementById('attach-menu');
 const attachBtn = document.getElementById('attach-btn');
@@ -329,7 +339,7 @@ function renderEntry(container, cls, tag, text, oversized) {
     div.appendChild(tagEl);
   }
   const textEl = document.createElement('div');
-  textEl.textContent = text;
+  appendLinkified(textEl, text);
   div.appendChild(textEl);
   if (oversized) {
     const ackBtn = document.createElement('div');
@@ -343,6 +353,20 @@ function renderEntry(container, cls, tag, text, oversized) {
   }
   container.appendChild(div);
   container.scrollTop = container.scrollHeight;
+}
+
+function appendLinkified(el, text) {
+  // 🔗 決策圖的網址（/topology?…）變成連結（新分頁開），其他照原文
+  const parts = String(text == null ? '' : text).split(/(\/topology\?[^\s）)」]+)/);
+  parts.forEach((part, i) => {
+    if (i % 2 === 1) {
+      const a = document.createElement('a');
+      a.href = part; a.target = '_blank'; a.className = 'topo'; a.textContent = part;
+      el.appendChild(a);
+    } else if (part) {
+      el.appendChild(document.createTextNode(part));
+    }
+  });
 }
 
 function attachResultLink(container, id) {
@@ -390,6 +414,9 @@ function renderEvents(events) {
       renderEntry(toolLog, 'summary ' + kind, labels[kind] || labels.summary, ev.text);
     } else if (ev.channel === 'guard') {
       renderEntry(chatLog, 'guard', '🛡️ 執行前確認（下方按鈕：同意執行／拒絕）', ev.text);
+    } else if (ev.channel === 'domain_ask') {
+      renderEntry(chatLog, 'domain_ask', '🗺️ 中階的問題（下方按候選或取消，也可以直接輸入回答）', ev.text);
+      domainCandidates = ev.kind === 'guard' ? ['是', '否'] : (ev.candidates || []);
     } else if (ev.channel === 'system') {
       renderEntry(toolLog, 'system', '系統', ev.text);
     } else if (ev.channel === 'progress') {
@@ -488,6 +515,19 @@ function showDecisionBar(pendingMode) {
     guardBar.classList.add('show');
     return;
   }
+  if (pendingMode === 'domain') {
+    // 🗺️ 中階的問題：候選一個一個做成按鈕（按了就是回答），另外有取消；打字送出也是回答（伺服器依 pending mode 分流）
+    const box = document.getElementById('domain-cands');
+    box.innerHTML = '';
+    domainCandidates.forEach((c) => {
+      const b = document.createElement('button');
+      b.textContent = c;
+      b.onclick = () => sendDomain(c, false);
+      box.appendChild(b);
+    });
+    domainBar.classList.add('show');
+    return;
+  }
   decisionBar.classList.add('show');
   const stopBtn = document.getElementById('decision-stop');
   const nBtn = document.getElementById('decision-n');
@@ -499,6 +539,7 @@ function showDecisionBar(pendingMode) {
 function hideDecisionBar() {
   decisionBar.classList.remove('show');
   guardBar.classList.remove('show');
+  domainBar.classList.remove('show');
 }
 
 function handleStreamMessage(msg) {
@@ -561,6 +602,19 @@ async function sendMessage() {
   msgBox.value = '';
   try {
     applyDone(await streamPost('/api/send', { message: text }));
+  } catch (e) {
+    renderEntry(toolLog, 'system', '錯誤', '與伺服器的連線中斷：' + e);
+  } finally {
+    setBusy(false);
+    msgBox.focus();
+  }
+}
+
+async function sendDomain(answer, cancel) {
+  setBusy(true);
+  hideDecisionBar();
+  try {
+    applyDone(await streamPost('/api/decision', { action: cancel ? 'cancel' : 'answer', answer }));
   } catch (e) {
     renderEntry(toolLog, 'system', '錯誤', '與伺服器的連線中斷：' + e);
   } finally {

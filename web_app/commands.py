@@ -10,7 +10,7 @@ from agent_core.config import (
     TOOL_RESULT_TOKEN_THRESHOLD,
 )
 from agent_core.context_mode import CONTEXT_MODE_DESCRIPTIONS
-from .state import agent, load_pending_skill, state
+from .state import agent, clear_pending, load_pending_skill, state
 
 
 # 「/」選單裡的功能開關與指令（技能清單另由 agent.list_skills() 提供）。args=True 代表選取後只填入、等使用者接參數。
@@ -168,7 +168,8 @@ def handle_slash_command(message, events):
     if lower == "/model" or lower.startswith(("/model ", "/think")):
         return _handle_model_command(text, events)
     if lower == "/clear":
-        agent.reset_conversation()
+        agent.reset_conversation()    # 中階還在等使用者回答的話一起取消（agent.cancel_domain）
+        clear_pending()
         events.append({"channel": "system", "text": "🧹 記憶已清空。"})
         return True
     if lower == "/compress":

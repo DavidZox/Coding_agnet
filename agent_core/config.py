@@ -213,6 +213,16 @@ MID_JUDGE_LINES = 12
 MID_JUDGE_MODEL = os.environ.get("AGENT_MID_JUDGE_MODEL", "").strip()
 MID_JUDGE_PREDICT = 2000     # 判斷的輸出（理解＋挑的行＋分支與參數＋理由）的 num_predict 上限
 
+# 🗺️ 新架構的高階（agent_core/orchestrator.py，D10 第 4 步）：主對話就是高階（D1）。skills_system/DOMAIN.md 列領域（每個領域一行，
+# 連到它的 SKILLS.md）與〈共用的工具〉；主模型在回覆的 action 填「交給領域」{"domain", "goal", "items"}，程式核對之後執行中階。
+DOMAIN_INDEX_NAME = "DOMAIN.md"
+# 交給領域的結果（報告、要問使用者、沒有適合的做法…）的開頭：程式整理好的，不再交給提煉（protocol.is_exempt_result）
+DOMAIN_RESULT_HEAD = "[PASS] 🗺️ "
+# 交給領域時的欄位上限（schema 的長度與項目數；資源的上限，D7「各層之間都用有長度上限的 schema」）
+DOMAIN_GOAL_CHARS = 300
+DOMAIN_ITEM_CHARS = 120
+DOMAIN_ITEMS_MAX = 6
+
 # run_tool 載入技能規格文件時回傳字串的固定開頭。規格文件是「按需載入」機制的核心，
 # 內容（尤其是實際腳本路徑與參數格式）必須完整進入上下文，因此 _content_for_context
 # 對這類結果一律放行、不套用 TOOL_RESULT_TOKEN_THRESHOLD，Web Console 也不標記 ⚠️。

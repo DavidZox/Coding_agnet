@@ -189,6 +189,8 @@ class DispatchMixin:
            不做技能名稱 -> 腳本檔名的猜測或對照；AI 讀完規格後，下一輪需改用
            規格書中標明的實際腳本路徑（例如 scripts/cd_cmd.py）才會真正執行。
         2. 否則將 command 視為實際腳本路徑，以 args 為參數執行對應的 CLI 腳本並回傳結果。
+        3. 「交給領域」{"domain", "goal", "items"}：交給高階（orchestrator.run_domain：核對、執行中階、報告存成 #編號）。
+           領域的工具（技能名稱或腳本）這一回合沒有放行就不執行、也不給規格，回 [ERROR]（domain_gate）。
 
         執行前關卡：會改變狀態的技能（guard_check）沒有 approved=True 就不執行，回 [DENIED]。CLI／Web 先用
         guard_check 問使用者，同意後才以 approved=True 呼叫；其他呼叫端漏接確認時這裡也擋得住。
@@ -201,11 +203,16 @@ class DispatchMixin:
             return None
 
         try:
+            if action.get("domain"):
+                return self.run_domain(action)
             payload = action_text(action)
             parts = payload.split(maxsplit=1)
             raw_token = os.path.basename(parts[0])
             remainder = parts[1] if len(parts) > 1 else ""
 
+            blocked = self.domain_gate(raw_token)
+            if blocked:
+                return blocked
             skill_doc = self._load_skill_doc(raw_token)
             if skill_doc is not None:
                 print(f"📖 Agent 選擇技能索引: {raw_token}（載入規格文件，尚未執行）")

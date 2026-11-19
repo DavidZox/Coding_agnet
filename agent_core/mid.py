@@ -45,7 +45,8 @@ TYPES = ("name", "text", "path", "glob", "names", "words")
 KINDS = ("位置", "數量", "內容")       # 問題要的是哪幾種（挑技能時模型分類，複合技能的 answers 寫它答得了哪幾種）
 STATUS_TEXT = {"done": "做完", "dead_end": "死路（照〈回退〉或判斷都沒有可以接著做的）",
                "circuit_break": f"熔斷（重排超過 {MID_REPLAN_MAX} 次，或判斷超過 {MID_JUDGE_MAX} 次）",
-               "no_skill": "這個領域沒有適合的複合技能", "out_of_domain": "不屬於這個領域", "failed": "失敗", "need_user": "要問使用者"}
+               "no_skill": "這個領域沒有適合的複合技能", "out_of_domain": "不屬於這個領域", "failed": "失敗", "need_user": "要問使用者",
+               "cancelled": "使用者取消"}
 JUDGE_RESULT = {"done": "結束", "replanned": "照這條路加了節點，接著做", "no_new_nodes": "要接著找的都找過了（不收斂），停",
                 "circuit_break": f"判斷已經 {MID_JUDGE_MAX} 次，還要接著做：停（熔斷）", "params_rejected": "這條路要填的值沒有通過核對，停",
                 "no_lines": "這條路要有挑出的行，但挑的行都沒有通過核對", "no_input": "要看的節點沒有結果（0 筆），沒有判斷",
@@ -78,8 +79,9 @@ def _empty(v):
 # 領域與複合技能
 # =====================================================================================================================
 def load_domain(base_path, tools_dir, name):
-    """skills_system/<領域>/SKILLS.md 與它列的複合技能 → {"name", "title", "intro", "skills": {名稱: 規格}, "tools", "problems"}。"""
-    out = {"name": name, "title": name, "intro": "", "skills": {}, "tools": [], "problems": []}
+    """skills_system/<領域>/SKILLS.md 與它列的複合技能 → {"name", "title", "intro", "skills": {名稱: 規格}, "catalog": {名稱: 那一行的說明},
+    "tools", "problems"}。catalog 是高階分流看的入口技能（agent_core/orchestrator.py）。"""
+    out = {"name": name, "title": name, "intro": "", "skills": {}, "catalog": {}, "tools": [], "problems": []}
     try:
         with open(os.path.join(base_path, name, "SKILLS.md"), encoding="utf-8") as f:
             lines = f.read().split("\n")
@@ -96,6 +98,8 @@ def load_domain(base_path, tools_dir, name):
             intro.append(ln)
         elif (m := _ENTRY.match(ln)) and section in ("複合技能", "工具"):
             entries.append((section, m.group(1), m.group(2)))
+            if section == "複合技能":
+                out["catalog"][m.group(1)] = ln[m.end():].strip().lstrip("—-– ").strip()
     out["intro"] = "\n".join(intro).strip()
     out["tools"] = [n for s, n, _ in entries if s == "工具"]
     for t in out["tools"]:
@@ -537,14 +541,20 @@ class Worker:
         self._receipts = {}
 
     # ---------------------------------------------------------------- 進入點
-    def start(self, question, goal=None):
+    def start(self, question, goal=None, items=None, on_start=None):
+        """items：高階交下來的要回答的項目（存進 job、列在報告開頭；挑技能與判斷先不看）。on_start(編號)：job 建好就呼叫
+        （高階在執行中就把拓撲圖的連結推給畫面）。"""
         jid = self.store.new_id()
         self.store.prune(MID_JOBS_KEEP)
         job = {"id": jid, "status": "running", "created": _now(), "updated": _now(), "cwd": self.agent.current_cwd,
-               "domain": self.domain_name, "question": question, "goal": (goal or question).strip(), "selection": None, "skill": None,
+               "domain": self.domain_name, "question": question, "goal": (goal or question).strip(), "items": list(items or []),
+               "selection": None, "skill": None,
                "contract": None, "params": {}, "rejected": [], "auto_filled": [], "fetches": [], "graphs": [], "edg_job": None,
                "fallbacks": [], "applied": [], "added": [], "replans": 0, "switched": [], "judgments": [], "need_user": None, "asked": [],
                "result": None}
+        self.store.save(job)
+        if on_start:
+            on_start(jid)
         self._note(jid, f"🧭 中階（{self.domain_name}）開始：{question[:80]}")
         domain = self._domain()
         if domain["problems"]:
@@ -583,6 +593,14 @@ class Worker:
         if job["graphs"]:                       # 跑過了（回退問的範圍）：照新的參數重新排，之前用過的回退可以再用
             job.update(applied=[], added=[], rebuild={"kind": "user", "param": p["name"], "value": value})
         return self._proceed(job, domain)
+
+    def cancel(self, jid):
+        """使用者不回答、取消要問人的工作：記在 asked，結束成 cancelled（報告寫明做到哪裡）。"""
+        job = self.store.load(jid)
+        if not job or job["status"] != "need_user":
+            return job
+        self._answered(job, cancelled=True)
+        return self._finish(job, "cancelled", note=f"使用者取消（要問的是：{job['need_user']['question']}）")
 
     # ---------------------------------------------------------------- 挑技能
     def _select(self, job, domain):
@@ -1069,6 +1087,9 @@ class Worker:
 
     def _report(self, job, ej, note):
         lines = [f"# 中階的結果：{STATUS_TEXT[job['status']]}", f"- 問題：{job['question']}"]
+        if job.get("goal") and job["goal"] != job["question"]:
+            lines.append(f"- 子目標：{job['goal']}")
+        lines += [f"- 要回答的項目 {k}：{x}" for k, x in enumerate(job.get("items") or [], 1)]
         if job["skill"]:
             lines.append(f"- 複合技能：{job['skill']}")
         if job["params"]:

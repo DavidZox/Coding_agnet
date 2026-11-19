@@ -6,7 +6,7 @@ from . import prompt_files
 from .config import NUM_CTX, TASK_HISTORY_KEEP
 from .model_caps import think_arg, thinking_text
 from .protocol import action_text, parse_agent_reply
-from .schemas import AGENT_REPLY_SCHEMA
+from .schemas import agent_reply_schema
 
 
 class ConversationMixin:
@@ -22,6 +22,8 @@ class ConversationMixin:
             del self._user_said[:-200]
 
     def reset_conversation(self):
+        if self.domain_pending:     # /clear 時中階還在等使用者回答：取消（中階的紀錄寫明使用者取消）
+            self.cancel_domain()
         self.begin_turn()
         self._analysis_ctx = None   # /clear：之後的回答不再對照上一份數據分析的報告（turn_guard.analysis_reply_check）
         self.current_task = None  # /clear：避免舊任務敘述殘留誤導下一次的摘要 session
@@ -112,7 +114,7 @@ class ConversationMixin:
         response = ollama.chat(
             model=self.model,
             messages=snapshot,
-            format=AGENT_REPLY_SCHEMA,  # 回覆協議：{thought, reply, action}，見 schemas.AGENT_REPLY_SCHEMA
+            format=agent_reply_schema(self.domain_names()),  # 回覆協議：{thought, reply, action}；有領域時 action 多一種「交給領域」（schemas.agent_reply_schema）
             options={'temperature': 0.2, 'num_ctx': NUM_CTX},
             think=think_arg(self.model, getattr(self, "main_think", False))   # 預設關（見上）；使用者可以在畫面上打開
         )

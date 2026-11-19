@@ -86,7 +86,7 @@ def write_report(results, modes, out_dir, args):
     for mode in modes:
         rs = [r for r in results if r["mode"] == mode]
         turns = [t for r in rs for t in r.get("turns", [])]
-        lookups = sum(1 for t in turns for c in t["tool_calls"] if c["script"].startswith("result_"))
+        lookups = sum(1 for t in turns for c in t["tool_calls"] if (c["script"] or "").startswith("result_"))
         lines.append(
             f"| {mode} | {sum(1 for r in rs if r.get('passed'))}/{len(rs)} | {sum(1 for t in turns if t['passed'])}/{len(turns)} | "
             f"{_avg([t['main_calls'] for t in turns])} | {_avg([t['side_calls'] for t in turns])} | "

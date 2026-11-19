@@ -1,7 +1,7 @@
 """回覆協議與訊息包裝：解析主模型的 JSON 回覆、把工具結果包成主對話訊息、判斷回傳是不是規格文件或已提煉的結果。"""
 import json
 import os
-from .config import ANALYSIS_REPORT_HEAD, SKILL_DOC_PREFIX, TOOL_RESULT_FRAME, TOOL_SUMMARY_TAG
+from .config import ANALYSIS_REPORT_HEAD, DOMAIN_RESULT_HEAD, SKILL_DOC_PREFIX, TOOL_RESULT_FRAME, TOOL_SUMMARY_TAG
 from . import prompt_files
 
 _FRAME = "harness/tool_results.md"   # 工具結果的框架句（【系統回傳】是程式認的標記，留在程式）
@@ -28,7 +28,8 @@ def quote_cli_arg(arg):
 def parse_agent_reply(raw):
     """模型回覆（JSON 字串）→ {"thought", "reply", "action", "valid"}。
 
-    action 正規化為 None 或 {"command": str, "args": str}。不是合法 JSON 時 valid=False、reply=原文、
+    action 正規化為 None、{"command": str, "args": str}，或「交給領域」{"domain": str, "goal": str, "items": [str]}（新架構的高階，
+    agent_core/orchestrator.py；項目去掉空白與空的，數量與長度由高階核對）。不是合法 JSON 時 valid=False、reply=原文、
     action=None：降級成「只顯示文字、不執行任何東西」，絕不退回用文字比對找指令（那正是要避免的誤觸發來源）。
     對非 format= 強制的後端保留一點容錯：args 給成陣列／物件、把整行 `EXECUTE: ...` 塞進 command、
     command 裡夾帶參數，都會被整理成同一種形狀。"""
@@ -49,6 +50,11 @@ def parse_agent_reply(raw):
     reply = "" if reply is None else str(reply).strip()
     action = data.get("action")
     norm = None
+    if isinstance(action, dict) and str(action.get("domain") or "").strip():
+        items = action.get("items")
+        items = [" ".join(str(x).split()) for x in (items if isinstance(items, list) else [items]) if x is not None and str(x).strip()]
+        norm = {"domain": str(action["domain"]).strip(), "goal": " ".join(str(action.get("goal") or "").split()), "items": items}
+        return {"thought": thought, "reply": reply, "action": norm, "valid": True}
     if isinstance(action, str) and action.strip().lower() not in ("", "null", "none"):
         action = {"command": action, "args": ""}
     if isinstance(action, dict):
@@ -72,9 +78,11 @@ def parse_agent_reply(raw):
 
 
 def action_text(action):
-    """action 的單行文字表示（顯示與軌跡用）：`command args`。"""
+    """action 的單行文字表示（顯示與軌跡用）：`command args`；交給領域是「→ 領域：子目標（項目：…）」。"""
     if not action:
         return ""
+    if action.get("domain"):
+        return f"→ {action['domain']}：{action.get('goal', '')}（項目：{'；'.join(action.get('items') or [])}）"
     return f"{action['command']} {action['args']}".strip()
 
 
@@ -88,7 +96,9 @@ def tool_result_message(content, action=None):
     「感謝您提供的語義地圖」。影像分析結果（web_app.flows._run_vision_subsession）用的是同一招。
     action 可給 parse_reply 的 action dict 或指令字串，只取腳本檔名放進框架句方便模型對應。"""
     label = ""
-    if isinstance(action, dict) and action.get("command"):
+    if isinstance(action, dict) and action.get("domain"):
+        label = str(action["domain"])
+    elif isinstance(action, dict) and action.get("command"):
         label = os.path.basename(str(action["command"]).strip())
     elif isinstance(action, str) and action.strip():
         label = os.path.basename(action.strip().split()[0])
@@ -108,5 +118,6 @@ def is_exempt_result(result, tool_tokens):
     TOOL_SUMMARY_TAG 開頭）——後者再摘要一次只會摘要的摘要、多一次模型呼叫。所有腳本輸出（包括分析型的
     --watch／--duration／語義地圖）都走同一套規則——超過門檻就交給獨立 session 做任務導向擷取。
     CLI／Web 的 ⚠️ 標記與 _content_for_context 共用這個判斷。"""
-    # analysis_run 的事實報告（ANALYSIS_REPORT_HEAD 開頭）同理：它本身就是程式整理好、有編號的事實
-    return is_skill_doc_result(result) or result.startswith((TOOL_SUMMARY_TAG, ANALYSIS_REPORT_HEAD))
+    # analysis_run 的事實報告（ANALYSIS_REPORT_HEAD 開頭）同理：它本身就是程式整理好、有編號的事實；交給領域的結果（中階照收據
+    # 整理的報告，DOMAIN_RESULT_HEAD 開頭）也是
+    return is_skill_doc_result(result) or result.startswith((TOOL_SUMMARY_TAG, ANALYSIS_REPORT_HEAD, DOMAIN_RESULT_HEAD))

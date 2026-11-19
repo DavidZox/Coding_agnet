@@ -44,6 +44,11 @@
   "passed": 3,
   "total": 3
  },
+ "orch_selftest": {
+  "label": "第 4 步 4-1（2026-11-19）",
+  "passed": 12,
+  "total": 12
+ },
  "repo_selftest": {
   "label": "真實專案評測（第 0 步）（2026-11-18）",
   "passed": 9,

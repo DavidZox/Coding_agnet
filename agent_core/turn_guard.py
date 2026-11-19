@@ -65,6 +65,7 @@ class TurnGuardMixin:
         self._analysis_report = None
         self._analysis_job_id = None
         self._analysis_nudged = False
+        self._reset_domain_turn()     # 交過的領域、排除的領域、放行的工具（orchestrator.py）
 
     def note_tool_result(self, parsed, output):
         """run_tool 執行完一個動作之後呼叫：計數、必要時在 output 後面附提醒或設 self.stuck。回傳（可能附了提醒的）output。"""

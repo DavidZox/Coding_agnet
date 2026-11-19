@@ -23,6 +23,7 @@ from .context_mode import ContextModeMixin
 from .conversation import ConversationMixin
 from .dispatch import DispatchMixin
 from .guard import GuardMixin
+from .orchestrator import DomainMixin
 from .perf import PerfMixin
 from .prompt import PromptMixin
 from .tool_summary import ToolSummaryMixin
@@ -33,7 +34,7 @@ from .turn_guard import TurnGuardMixin
 
 class SkillAgent(ConversationMixin, PromptMixin, DispatchMixin, GuardMixin, ContextModeMixin,
                  ToolSummaryMixin, ToolUseIndexMixin, ArchiveMixin, TrajectoryMixin, CompressionMixin,
-                 PerfMixin, TurnGuardMixin, AnalysisMixin):
+                 PerfMixin, TurnGuardMixin, AnalysisMixin, DomainMixin):
     def __init__(self, model="gemma4:e4b", max_history=None, summary_model=None):
         # max_history：訊息「則數」滑動視窗，預設停用（None）。上下文大小統一以 token 門檻
         # （TOKEN_THRESHOLD）觸發壓縮歸檔；這個參數只保留作為極端情境的保險絲，需要時再開。
@@ -144,6 +145,9 @@ class SkillAgent(ConversationMixin, PromptMixin, DispatchMixin, GuardMixin, Cont
         self._compress_thread = None          # 進行中的背景壓縮執行緒（/parallel_cal on 時才會有）
         self._compress_state_lock = threading.Lock()
         self._notices = []                    # 背景壓縮完成／失敗的通知，下一次互動時顯示
+        # 🗺️ 新架構的高階（orchestrator.py）：領域清單的快取（檔案改了才重讀）、中階停下來要問使用者的事（程式轉問、接回）
+        self._domain_cache = None
+        self.domain_pending = None
         self.last_compression = None          # 最近一次壓縮的統計（檔名、則數、摘要 token 數）
         self.last_tool_summary = None         # 最近一次工具回傳任務導向摘要的統計（structured／input_tokens／omitted_chars…）
 

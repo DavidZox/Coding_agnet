@@ -24,6 +24,7 @@ def main():
         sc = json.load(f)
     from agent_core.agent import SkillAgent
     from agent_core.protocol import action_text, tool_result_message
+    from evals import domain_calls
     from agent_core.turn import _content_for_context, after_turn_compression
 
     agent = SkillAgent(model=os.environ.get("EVAL_MODEL", "gemma4:26b"))
@@ -60,9 +61,10 @@ def main():
                 if sc.get("guard", "approve") != "approve":
                     agent.messages.append({"role": "user", "content": tool_result_message(agent.guard_denied_text(guard), parsed["action"])})
                     break
-            result = agent.run_tool(parsed, approved=bool(guard))
+            result = domain_calls.settle(agent, parsed, agent.run_tool(parsed, approved=bool(guard)), turn)   # 中階要問使用者：沒有人回答，取消
             if not result:
-                claim = agent.claim_without_action(parsed)
+                # 跟 CLI／Web 一樣：沒執行卻說做完了、依數據分析的報告回答卻寫成因果、依領域的報告回答卻寫了報告裡沒有的出處，提醒一次
+                claim = agent.claim_without_action(parsed) or agent.analysis_reply_check(parsed) or agent.domain_reply_check(parsed)
                 if claim:
                     turn.setdefault("claim_nudges", 0)
                     turn["claim_nudges"] += 1
@@ -73,7 +75,9 @@ def main():
             token = os.path.basename(payload.split()[0]) if payload else ""
             script = agent._normalize_script_name(token)
             is_doc = os.path.exists(os.path.join(agent.tools_dir, (token[:-3] if token.endswith(".md") else token) + ".md"))
-            if not is_doc:
+            if parsed["action"].get("domain"):                 # 交給領域：領域本身與它在裡面用到的工具（evals/domain_calls.py）
+                turn["tool_calls"] += domain_calls.calls(agent, parsed, result)
+            elif not is_doc:
                 args = agent._parse_script_args(script, payload.split(maxsplit=1)[1] if len(payload.split(maxsplit=1)) > 1 else "")
                 receipt = agent.last_receipt or {}      # 寫收據的腳本（第一版領域的技能）才有
                 turn["tool_calls"].append({"script": script, "skill": skill_map.get(script), "args": args,
