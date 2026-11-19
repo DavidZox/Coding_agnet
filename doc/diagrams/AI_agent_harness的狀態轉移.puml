@@ -50,10 +50,10 @@ rectangle State3 #FFE6CC [
   **3. Reply（主 session 回 JSON）**
   * {thought, reply, action}，Ollama format= 強制；action 是 null、
     技能的動作或「交給領域」{domain, goal, items}
+  * 這一回合有領域的報告時多 answers：報告列的每一項一筆
+    （答到／查不到、回答或原因、出處）
   * 不是合法 JSON → 只顯示文字、本輪不執行
   * 空白回覆 → 帶暫時提醒自動重試一次
-  * action null 時程式核對（各提醒一次）：沒執行工具卻說做完了；
-    依報告回答的出處（檔案:行號）要在這一回合的報告裡
 ]
 
 rectangle StateGuard #F4CCCC [
@@ -68,7 +68,7 @@ rectangle StateGuard #F4CCCC [
 
 rectangle State4 #FFF2CC [
   **4. Dispatch（run_tool，只看 action）**
-  * null → 回合結束（7）
+  * null → 回答前的核對（3c）→ 回合結束（7）
   * 交給領域 → 5d
   * 領域讀內容的工具（搜文字、看檔案、分析程式）→ [ERROR]
     先交給領域（這一回合中階沒有報告時放行）
@@ -94,13 +94,32 @@ rectangle State5 #D5E8D4 [
 rectangle State5d #E2F0D9 [
   **5d. 交給領域（orchestrator.run_domain）**
   * 核對：有這個領域、這個問題沒有排除過它、子目標、
-    項目 1～6 項、跟這一回合交過的不一樣；沒過 → [ERROR]
+    項目 1～6 項、跟這一回合交過的不一樣、
+    同一個項目最多交 3 次；沒過 → [ERROR]
   * 中階：挑技能 → 合約 → 排決策圖 → 低階照圖執行
     （判斷、第 2 級回退與換技能）；決策圖的連結先推給畫面
-  * 有報告（做完、死路、熔斷）→ 報告原文，照報告回答
+  * **再交（同一個問題、同一個領域）**：之前幾次的技能、參數、
+    結果、停下來的原因、找過的字一起交給中階（挑技能、合約、
+    判斷看得到）；做法跟之前一模一樣 → 合約重寫一次，
+    還是一樣就停（跟之前一樣）；決策圖串起上一次、下一次
+  * 有報告（做完、死路、熔斷、跟之前一樣）→ 報告原文
+    ＋這一回合要回答的項目，照報告填 answers
   * 沒有報告（不屬於、沒有適合的做法、失敗、取消）
     → 寫原因，這一回合放行這個領域的工具（不屬於的另外排除）
   * 結果存成 #編號（domain_<領域>），不提煉
+]
+
+rectangle StateCheck #F8CECC [
+  **3c. 回答前的核對（action null 時；每一種交回一次）**
+  * 沒執行工具卻說做完了 → [harness] 提醒
+  * 依數據分析的報告回答 → 先後寫成因果、寫錯事實
+  * **依領域的報告回答（answers）**：每一項都有；答到的出處
+    在這一回合的報告（或自己執行過的工具結果）裡；回答的
+    數字與名稱在出處那幾段裡（對不上附相近的寫法）；
+    查不到的寫了原因 → 沒過的只把那幾項交回修一次
+  * 照項目排（domain_render）：每一項的回答與出處，附出處
+    那一行的原文；修過還是沒過的標「沒有通過核對」；
+    CLI／Web 等核對過才顯示
 ]
 
 rectangle State5e #C5E0B4 [
@@ -144,7 +163,7 @@ rectangle State6c #FFCC80 [
 
 rectangle State7 #E1D5E7 [
   **7. End of turn（回合結束）**
-  * 使用者看到最終 reply
+  * 使用者看到最終 reply（依領域的報告回答時：程式照項目排好的）
   * 超過軟水位（NUM_CTX×60%）：claude_code 先清除舊回傳；
     還超過且可壓內容夠多 → 舊訊息 + 上一份摘要融合成新摘要、
     歸檔（使用者原話逐字保留、被壓掉的對話存成 #編號）
@@ -173,14 +192,16 @@ StateGuard -[#CC0000]left-> State7 : 拒絕
 State4 -[#CC6600,bold]down-> State5 : **腳本路徑／recall／偽技能**
 State4 -[#3366CC]right-> State6c : 技能名稱：規格文件\n（不執行，完整放行）
 State5 -down-> State6a
-State4 -[#548235,bold]down-> State5d : **交給領域**
+State4 -[#548235,bold]down-> State5d : **交給領域**\n（再交：附上一次的經過）
 State5d -[#548235]down-> State6a : 結果 #編號
 State5d -[#548235,dashed]right-> State5e : 要問使用者
 State5e -[#548235,dashed]left-> State5d : 回答 → 接回
 State6a -down-> State6b
 State6b -down-> State6c : 加入
 State6c -[#009933,bold]up-> State3 : **結果加入上下文，續推**
-State4 -[#CC0000,bold]left-> State7 : **action null**
+State4 -[#CC0000,bold]left-> StateCheck : **action null**
+StateCheck -[#CC0000,dashed]up-> State3 : 沒過：交回修一次
+StateCheck -[#CC0000,bold]down-> State7 : 過了／修過一次
 State6b -[#CC0000]left-> State7 : manual 的 n／stop
 State7 -[#6A5ACD,dashed]down-> State8 : 使用者再說一句
 State8 -[#6A5ACD,dashed]up-> State1
