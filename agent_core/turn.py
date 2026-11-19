@@ -26,7 +26,7 @@ def _append_discarded_tool_result(agent):
         ),
     })
 
-def _content_for_context(result, tool_tokens, agent=None, use_summary=True):
+def _content_for_context(result, tool_tokens, agent=None, use_summary=True, step=None, anchor=None):
     """決定要餵給主對話的內容。技能規格文件、已提煉過的結果（result_recall）：原封不動。其餘依上下文模式：
 
     claude_code 模式（agent.context_mode）：一律交給 agent.raw_result_for_context——原文直接進上下文（第一行註明
@@ -39,6 +39,7 @@ def _content_for_context(result, tool_tokens, agent=None, use_summary=True):
       已經是提煉結果的、程式整理好的報告（數據分析）——直接原文。
     - use_summary=False（/summarize off）、沒有 agent、或摘要 session 失敗：退回只給成功／失敗判定——零延遲，
       但模型拿不到內容，只能換更精確的參數重查。
+    step、anchor：子工作階段（agent_core/sub.py）的這一步與「想知道什麼」（不在主對話裡，提煉不能從主對話找）。
     """
     if is_exempt_result(result, tool_tokens):
         return result
@@ -49,7 +50,7 @@ def _content_for_context(result, tool_tokens, agent=None, use_summary=True):
 
     if use_summary and agent is not None:
         try:
-            summary = agent.summarize_tool_result(result, tool_tokens)
+            summary = agent.summarize_tool_result(result, tool_tokens, step=step, anchor=anchor)
             # 摘要不比原文短時直接給原文：實測 700 tokens 左右的結構化輸出（ros2 node info）會被摘要 session「展開」成
             # 900 多 tokens，門檻的目的是省上下文，這時原文反而更省、也不會有摘要自己數錯的問題。
             if agent.count_tokens(summary) < tool_tokens:

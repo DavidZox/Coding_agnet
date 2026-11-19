@@ -22,8 +22,8 @@ class ConversationMixin:
             del self._user_said[:-200]
 
     def reset_conversation(self):
-        if self.domain_pending:     # /clear 時中階還在等使用者回答：取消（中階的紀錄寫明使用者取消）
-            self.cancel_domain()
+        if self.domain_pending:     # /clear 時中階或子工作階段還在等使用者回答：取消（紀錄寫明使用者取消），不再接著做
+            self.cancel_domain(follow=False)
         self.begin_turn()
         self._analysis_ctx = None   # /clear：之後的回答不再對照上一份數據分析的報告（turn_guard.analysis_reply_check）
         self.current_task = None  # /clear：避免舊任務敘述殘留誤導下一次的摘要 session

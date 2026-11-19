@@ -12,7 +12,7 @@ harness 送給模型的字都在這裡：改字不用改程式，存檔之後下
 | `context_modes/harness.md`、`claude_code.md` | 主對話：目前上下文模式的規則（接在 AGENT.md 後面） | `context_mode.context_mode_rules` |
 | `Memory.md` | 主對話：長期記憶——**資料，不是規則**：使用者要求時 `modify_memory` 寫入 | `prompt.load_long_term_memory` |
 | `harness/system_prompt.md` | 主對話 system prompt 裡程式組的部分：各節的標題、長期記憶開頭的說明、接回舊摘要時的提醒、「領域」一節（交給領域的寫法、依報告回答的 answers、再交給領域與次數的上限、Available Skills 列的可以直接用、每個領域的說明） | `prompt.py`、`orchestrator.py` |
-| `harness/domain.md` | 新架構的高階：交給領域之後程式交回主模型的文字（中階的報告、這一回合要回答的項目與 answers 的寫法、要問使用者、取消、不屬於這個領域、沒有適合的做法時放行的工具），核對沒過的說明（沒有的領域、排除過的、項目數、一樣的再交、同一個項目交太多次、直接叫領域的工具），answers 沒有通過核對的說明（`answers_fix`、`why_*`；`why_*` 也用在使用者看到的「沒有通過核對」） | `orchestrator.py` |
+| `harness/domain.md` | 新架構的高階：交給領域之後程式交回主模型的文字（中階或子工作階段的報告、這一回合要回答的項目與 answers 的寫法、要問使用者、中階沒做完時接著一步一步做 `stepwise`、不屬於這個領域、/clear 取消），核對沒過的說明（沒有的領域、排除過的、項目數、一樣的再交、同一個項目交太多次、直接叫領域的工具），answers 沒有通過核對的說明（`answers_fix`、`why_*`；`why_*` 也用在使用者看到的「沒有通過核對」與子工作階段收尾的核對） | `orchestrator.py`、`answers.py`、`sub.py` |
 | `harness/tool_use_index.md` | system prompt 尾端的工具使用檢索清單（兩種模式各一則）、過去的對話片段、動態區的最新一筆 | `tool_use_index.py` |
 | `harness/state_tail.md` | 動態區：目前狀態（工作目錄、容器、Workspace、目前的數據）、Objective | `prompt.build_state_tail`、`analysis_job.analysis_state_line` |
 | `harness/tool_results.md` | 每一則工具結果的框架句、使用者捨棄結果的通知、沒有提煉時只給成功／失敗的那一則 | `protocol.tool_result_message`、`turn.py` |
@@ -32,7 +32,8 @@ harness 送給模型的字都在這裡：改字不用改程式，存檔之後下
 | `mid/select.md` | 新架構的中階：挑複合技能（先寫理解、問題要的是位置／數量／內容，再選一個或說 none、out_of_domain）的規則 | `mid.Worker._select` |
 | `mid/contract.md` | 中階的合約：照技能的參數從問題抽值，每個附一字不改的原文（程式核對）的規則 | `mid.Worker._contract_call` |
 | `mid/judge.md` | 中階的判斷節點：看原文挑出回答問題的行（來源、檔案、行號、一字不改的片段、標籤），從技能列的路選一條、填那條路的值（程式核對）的規則 | `mid.Worker._judge` |
-| `mid/inputs.md` | 中階的 user 訊息裡程式組的標籤（問題、領域、複合技能、參數與種類、沒過核對的參數；判斷的原文、之前挑出的行、找過的字、路與要填的值、沒過核對的片段；4-2：上一次的經過 `previous*`、參數跟之前一樣時重寫合約的原因 `reject_same`、判斷看的之前找過的字 `judge_searched_before`） | `mid.py`、`judge.py` |
+| `mid/inputs.md` | 中階的 user 訊息裡程式組的標籤（問題、領域、複合技能、參數與種類、沒過核對的參數；判斷的原文、之前挑出的行、找過的字、路與要填的值、沒過核對的片段；4-2：上一次的經過 `previous*`、參數跟之前一樣時重寫合約的原因 `reject_same`、判斷看的之前找過的字 `judge_searched_before`；第 5 步：再交時參數只從子目標抄 `redispatch_goal`、`redispatch_question`、`reject_quote_goal`） | `mid.py`、`judge.py` |
+| `sub/session.md` | 新架構的子工作階段（第 5 步）：沒有複合技能的領域、或中階沒有做完也沒有報告時，用領域的工具一步一步做的模型看到的字——system prompt（領域的說明、〈做法〉、能用的工具、怎麼回覆與收尾、長期記憶）、第一則訊息（原始問題、子目標、要回答的項目、上一次的經過）、每份工具結果前面的 #編號、收尾的核對沒過時交回修（`answers_fix`、`why_ref_unknown`）、不是這個領域的工具、回覆不是 JSON、對話太長時清掉的舊結果、提煉的錨點 | `sub.py`、`orchestrator.domain_gate` |
 | `vision/extraction.md` | Web 附圖的影像提取（視覺模型的 system、純文字的退路、user 訊息） | `vision/extraction.py` |
 
 ## 範本的寫法
@@ -54,4 +55,4 @@ harness 送給模型的字都在這裡：改字不用改程式，存檔之後下
 ## 改了之後
 
 改到這裡的字＝改到模型會讀的文字：跑對應的真模型評測跟基準比（`CLAUDE.md`〈每一次修改的測試〉第 3 條；主對話 `evals/chat/run.py`、
-維運 `evals/ops/run.py`、提煉 `evals/extract/run.py`、低階執行器的修正 `evals/edg/run.py`、中階 `evals/mid/run.py`）；範例不要用評測世界的名稱（`evals/integrity/selftest.py` 會擋）。
+維運 `evals/ops/run.py`、提煉 `evals/extract/run.py`、低階執行器的修正 `evals/edg/run.py`、中階 `evals/mid/run.py`、交給領域與子工作階段 `evals/repo/run.py`）；範例不要用評測世界的名稱（`evals/integrity/selftest.py` 會擋）。

@@ -1,7 +1,8 @@
-"""新架構的決策圖（Web 的 /topology 頁面，唯讀）：列出中階與低階的工作，把一個工作整理成頁面要畫的資料。
+"""新架構的決策圖（Web 的 /topology 頁面，唯讀）：列出中階、子工作階段與低階的工作，把一個工作整理成頁面要畫的資料。
 
-來源：正式的 logs/（mid_jobs/<編號>/、edg_jobs/<編號>/）與評測結果（evals/results/<目錄>/logs/<題目>/ 底下的 mid_jobs/、edg_jobs/，
-或低階評測直接放在題目目錄的 job.json）。中階的工作附上它用到的低階工作（排圖的、查參數的），清單裡不另外列。
+來源：正式的 logs/（mid_jobs/<編號>/、sub_jobs/<編號>/、edg_jobs/<編號>/）與評測結果（evals/results/<目錄>/logs/<題目>/ 底下的 mid_jobs/、
+sub_jobs/、edg_jobs/，或低階評測直接放在題目目錄的 job.json）。中階的工作附上它用到的低階工作（排圖的、查參數的），清單裡不另外列。
+子工作階段（第 5 步，agent_core/sub.py）沒有圖：整理成每一步（模型的想法、動作、結果、#編號、確認關卡的決定）與收尾的回答。
 
 一個中階的工作整理成每一版的圖（mid 的 graphs），每一版附：
 - 每個節點跑完那一版時的狀態與每一次嘗試（低階 job.json 的 nodes；之後重排掉的，從 replans 的 replaced 找回當時的狀態）；
@@ -17,7 +18,8 @@ import json
 import os
 import re
 
-from agent_core.config import EDG_JOBS_DIRNAME, MID_JOBS_DIRNAME, PROJECT_ROOT
+from agent_core import sub
+from agent_core.config import EDG_JOBS_DIRNAME, MID_JOBS_DIRNAME, PROJECT_ROOT, SUB_JOBS_DIRNAME
 from agent_core.mid import STATUS_TEXT
 
 RESULTS_DIR = os.path.join("evals", "results")
@@ -97,10 +99,10 @@ def _job_refs(base, flat):
         if g and os.path.isfile(os.path.join(gdir, "job.json")):
             out.append((g, "edg"))                 # 低階評測：題目的目錄就是一個工作
             continue
-        for sub, kind in ((MID_JOBS_DIRNAME, "mid"), (EDG_JOBS_DIRNAME, "edg")):
-            for jid in sorted(_listdir(os.path.join(gdir, sub))):
-                if _SEG.match(jid) and os.path.isfile(os.path.join(gdir, sub, jid, "job.json")):
-                    out.append(("/".join(x for x in (g, sub, jid) if x), kind))
+        for dirname, kind in ((MID_JOBS_DIRNAME, "mid"), (SUB_JOBS_DIRNAME, "sub"), (EDG_JOBS_DIRNAME, "edg")):
+            for jid in sorted(_listdir(os.path.join(gdir, dirname))):
+                if _SEG.match(jid) and os.path.isfile(os.path.join(gdir, dirname, jid, "job.json")):
+                    out.append(("/".join(x for x in (g, dirname, jid) if x), kind))
     return out
 
 
@@ -116,19 +118,20 @@ def _edg_ref(group, eid):
 
 # ================================================================ 清單
 def sources(root=PROJECT_ROOT):
-    """有工作的來源：正式的 logs/（一定列）與評測結果的目錄（名稱開頭是時間，新的在前）；每個附中階、低階工作的數量。"""
+    """有工作的來源：正式的 logs/（一定列）與評測結果的目錄（名稱開頭是時間，新的在前）；每個附中階、子工作階段、低階工作的數量。"""
     keys = ["logs"] + [f"evals/results/{n}" for n in sorted(_listdir(os.path.join(root, RESULTS_DIR)), reverse=True) if _SEG.match(n)]
     out = []
     for key in keys:
         base = _src_dir(key, root)
         refs = _job_refs(base, key == "logs") if base else []
         if key == "logs" or refs:
-            out.append({"key": key, "mid": sum(k == "mid" for _, k in refs), "edg": sum(k == "edg" for _, k in refs)})
+            out.append({"key": key, "mid": sum(k == "mid" for _, k in refs), "sub": sum(k == "sub" for _, k in refs),
+                        "edg": sum(k == "edg" for _, k in refs)})
     return out
 
 
 def jobs(src, root=PROJECT_ROOT):
-    """一個來源的工作：中階的，加上沒有被中階用到的低階工作；正式的 logs/ 新的在前，評測照題目排。來源不認得回 None。"""
+    """一個來源的工作：中階的、子工作階段的，加上沒有被中階用到的低階工作；正式的 logs/ 新的在前，評測照題目排。來源不認得回 None。"""
     base = _src_dir(src, root)
     if not base:
         return None
@@ -143,6 +146,10 @@ def jobs(src, root=PROJECT_ROOT):
                          "skill": job.get("skill"), "versions": len(job.get("graphs") or []),
                          "fallbacks": [f.get("fallback") for f in job.get("fallbacks") or []],
                          "judged": sum(1 for j in job.get("judgments") or [] if j.get("round")), "created": job.get("created")})
+        elif kind == "sub":
+            mids.append({"ref": ref, "kind": "sub", "id": job.get("id"), "case": case, "status": job.get("status"),
+                         "status_text": sub.STATUS_TEXT.get(job.get("status"), job.get("status")), "title": job.get("question", ""),
+                         "skill": sub.STEP_SKILL, "steps": len(job.get("steps") or []), "created": job.get("created")})
         else:
             insts = [i for st in (job.get("nodes") or {}).values() for i in st.get("instances") or []]
             edgs.append({"ref": ref, "kind": "edg", "id": job.get("id"), "case": case, "status": job.get("status"),
@@ -299,11 +306,7 @@ def _mid_view(base, ref, d, job):
     keys = ("id", "status", "created", "updated", "cwd", "domain", "question", "goal", "selection", "skill", "contract", "params",
             "rejected", "auto_filled", "need_user", "fallbacks", "switched", "judgments", "result", "same_as")
     view = {k: job.get(k) for k in keys}
-    sib = lambda jid: "/".join(ref.split("/")[:-1] + [jid])   # noqa: E731  同一層的另一個中階工作
-    view["chain"] = {"attempt": job.get("attempt") or 1,       # 4-2 的 I.4：同一個問題的幾次交給領域
-                     "previous": [{"ref": sib(p["job"]), "n": p.get("n"), "status": p.get("status"), "skill": p.get("skill"), "note": p.get("note")}
-                                  for p in job.get("previous") or [] if _SEG.match(str(p.get("job") or ""))],
-                     "next": [{"ref": sib(x["job"]), "n": x.get("n")} for x in job.get("next") or [] if _SEG.match(str(x.get("job") or ""))]}
+    view["chain"] = _chain(ref, job)
     if view["result"]:
         view["result"] = {k: v for k, v in view["result"].items() if k != "report"}
     view.update(kind="mid", status_text=STATUS_TEXT.get(job.get("status"), job.get("status")), asked=_asked(job), fetches=fetches,
@@ -311,6 +314,28 @@ def _mid_view(base, ref, d, job):
                 events=_texts(os.path.join(d, "events.jsonl")), calls=_jsonl(os.path.join(d, "calls.jsonl")),
                 edg_events=_texts(os.path.join(edir, "events.jsonl")) if edir else [],
                 edg_calls=_jsonl(os.path.join(edir, "calls.jsonl")) if edir else [])
+    return view
+
+
+def _chain(ref, job):
+    """同一個問題的幾次交給領域（4-2 的 I.4）：這是第幾次、上一次與下一次的工作（中階或子工作階段，在同一層的 mid_jobs/、sub_jobs/）。"""
+    head = ref.split("/")[:-2]                 # 評測：題目的目錄；正式的 logs/：空的
+    to = lambda x: "/".join(head + [SUB_JOBS_DIRNAME if x.get("kind") == "sub" else MID_JOBS_DIRNAME, x["job"]])   # noqa: E731
+    return {"attempt": job.get("attempt") or 1,
+            "previous": [{"ref": to(p), "n": p.get("n"), "status": p.get("status_text") or p.get("status"), "skill": p.get("skill"),
+                          "note": p.get("note")} for p in job.get("previous") or [] if _SEG.match(str(p.get("job") or ""))],
+            "next": [{"ref": to(x), "n": x.get("n")} for x in job.get("next") or [] if _SEG.match(str(x.get("job") or ""))]}
+
+
+def _sub_view(ref, d, job):
+    """子工作階段：每一步（想法、動作、結果、#編號、確認關卡）、問使用者的紀錄、收尾的回答與核對、報告；跟中階一樣串起上一次、下一次。"""
+    keys = ("id", "status", "created", "updated", "cwd", "domain", "question", "goal", "items", "tools", "answers", "problems", "need_user", "asked")
+    view = {k: job.get(k) for k in keys}
+    view["steps"] = [{k: v for k, v in st.items() if k != "rep"} for st in job.get("steps") or []]
+    view["result"] = {k: v for k, v in (job.get("result") or {}).items() if k != "report"} or None
+    view.update(kind="sub", status_text=sub.STATUS_TEXT.get(job.get("status"), job.get("status")), skill=sub.STEP_SKILL, versions=[],
+                chain=_chain(ref, job), system=job.get("system", ""), report=_read(os.path.join(d, "report.md")),
+                events=_texts(os.path.join(d, "events.jsonl")), calls=_jsonl(os.path.join(d, "calls.jsonl")))
     return view
 
 
@@ -336,6 +361,8 @@ def job_view(src, ref, root=PROJECT_ROOT):
         return None
     if os.path.basename(os.path.dirname(d)) == MID_JOBS_DIRNAME:
         view = _mid_view(_src_dir(src, root), ref, d, job)
+    elif os.path.basename(os.path.dirname(d)) == SUB_JOBS_DIRNAME:
+        view = _sub_view(ref, d, job)
     else:
         view = _edg_view(ref, d, job)
     return dict(view, src=src, ref=ref, originals=src == "logs")

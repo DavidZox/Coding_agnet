@@ -160,7 +160,7 @@ class ToolSummaryMixin:
             self._validate_related(out["data"], allowed)
         return out
 
-    def summarize_tool_result(self, result, tool_tokens, step=None, result_id=None):
+    def summarize_tool_result(self, result, tool_tokens, step=None, result_id=None, anchor=None):
         """任務導向提煉（Task-Oriented Extraction）：把超過門檻的工具回傳交給獨立、乾淨的 session（不接觸 self.messages）依問題提煉，
         主對話只收到重點。錨點有兩層：1. 使用者的目標（_build_task_anchor_text：Objective、使用者最近 3 句原話）；
         2. 這一步的目的（_last_assistant_step：決策 AI 剛才的 thought／reply 與執行的 action）。
@@ -168,8 +168,8 @@ class ToolSummaryMixin:
         由程式核對；以前超過 16000 字只讀頭尾，中間的內容主對話永遠看不到。
         result_id 預設取最近一次 run_tool 的存檔編號：回答回填到 index.md，index_hint 記進 tools_use_index.md（result_* 這類看舊存檔的
         衍生輸出不記）——這份永久累加、跨 session 存活，讓再久以前的工具回傳也有機會被日後的 main session 從檢索清單裡認出來。
-        結尾的下一步建議見 _followup_guidance。"""
-        anchor = self._build_task_anchor_text()
+        結尾的下一步建議見 _followup_guidance。anchor：子工作階段給的「使用者的目標」（原始問題、子目標、要回答的項目；agent_core/sub.py）。"""
+        anchor = anchor or self._build_task_anchor_text()
         result_id = self.last_result_id if result_id is None else result_id
         step = step if step is not None else (self._last_assistant_step() or {})
         step_lines = []

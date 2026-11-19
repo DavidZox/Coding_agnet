@@ -35,9 +35,9 @@
   "total": 8
  },
  "mid_selftest": {
-  "label": "第 4 步 4-2（2026-11-19）",
-  "passed": 28,
-  "total": 28
+  "label": "第 5 步 5-1（2026-11-19）",
+  "passed": 29,
+  "total": 29
  },
  "ops_selftest": {
   "label": "拿掉任務引擎與 Plan 模式（2026-11-18）",
@@ -45,9 +45,9 @@
   "total": 3
  },
  "orch_selftest": {
-  "label": "第 4 步 4-2（2026-11-19）",
-  "passed": 19,
-  "total": 19
+  "label": "第 5 步 5-1（2026-11-19）",
+  "passed": 22,
+  "total": 22
  },
  "repo_selftest": {
   "label": "第 4 步 4-2（2026-11-19）",

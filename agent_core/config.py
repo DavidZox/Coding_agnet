@@ -230,6 +230,13 @@ DOMAIN_QUOTE_LINES = 3
 # 同一個項目在一個問題裡最多交給領域幾次（G5：資源的上限；跟這一回合交過的一模一樣的另外擋，4-1 的 J1）
 DOMAIN_ITEM_TRIES = 3
 
+# 🧩 子工作階段（agent_core/sub.py，第 5 步）：沒有複合技能的領域、或中階沒有做完也沒有報告時（沒有適合的做法、失敗、使用者取消），
+# 用領域的工具一步一步做；自己的對話存在 logs/sub_jobs/<編號>/，主對話只收到程式整理的報告
+SUB_JOBS_DIRNAME = "sub_jobs"
+SUB_JOBS_KEEP = int(os.environ.get("AGENT_SUB_JOBS_KEEP", "300"))
+SUB_STEPS_MAX = 20           # 一個子工作階段最多幾步（資源的上限，跟主對話一個回合的步數上限同一級）；用完了照做到的收尾
+SUB_MODEL = os.environ.get("AGENT_SUB_MODEL", "")   # 子工作階段用的模型（空＝主模型；D8 第一版都用主模型）
+
 # run_tool 載入技能規格文件時回傳字串的固定開頭。規格文件是「按需載入」機制的核心，
 # 內容（尤其是實際腳本路徑與參數格式）必須完整進入上下文，因此 _content_for_context
 # 對這類結果一律放行、不套用 TOOL_RESULT_TOKEN_THRESHOLD，Web Console 也不標記 ⚠️。

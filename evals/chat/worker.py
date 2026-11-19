@@ -150,7 +150,8 @@ def main():
                 if sc.get("guard", "deny") != "approve":
                     agent.messages.append({"role": "user", "content": tool_result_message(agent.guard_denied_text(guard), parsed["action"])})
                     break
-            result = domain_calls.settle(agent, parsed, agent.run_tool(parsed, approved=bool(guard)), turn)   # 中階要問使用者：沒有人回答，取消
+            # 中階或子工作階段要問使用者：問參數沒有人回答（取消）；確認關卡照情境的 guard 回答（evals/domain_calls.py）
+            result = domain_calls.settle(agent, parsed, agent.run_tool(parsed, approved=bool(guard)), turn, guard=sc.get("guard", "deny"))
             if not result:
                 # 沒執行卻說做完了、依數據分析的報告回答卻寫成因果、依領域的報告回答時 answers 沒有通過核對：跟 CLI／Web 一樣提醒一次
                 claim = agent.claim_without_action(parsed) or agent.analysis_reply_check(parsed) or agent.domain_reply_check(parsed)

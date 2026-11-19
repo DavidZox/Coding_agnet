@@ -53,12 +53,43 @@ def _g(key, /, **fields):
     return prompt_files.load("harness/reminders.md", key, **fields)
 
 
+class RepeatTracker:
+    """卡住偵測的計數（主對話的一個回合、子工作階段各用一個）：同樣的動作（command＋args）得到同樣的結果，第 REPEAT_HINT_AT 次起在結果後面附
+    提醒，第 REPEAT_STOP_AT 次算卡住；同一個錯誤（同樣的動作、同樣的 [ERROR] 開頭）不連續也算。評測的對照組：AGENT_TURN_GUARD_RULE=v4
+    （第 3 次就停、不加強提醒）、AGENT_ABLATE=turn_guard（關掉）。"""
+
+    def __init__(self):
+        self.key, self.count, self.errors = None, 0, {}
+
+    def note(self, action, output):
+        """→ (可能附了提醒的 output, 卡住時是第幾次、沒卡住是 None)。"""
+        if "turn_guard" in os.environ.get("AGENT_ABLATE", ""):
+            return output, None
+        key = (action.strip(), output.strip()[:500])
+        if key == self.key:
+            self.count += 1
+        else:
+            self.key, self.count = key, 1
+        errors = 0
+        if output.lstrip().startswith("[ERROR]"):
+            self.errors[key] = errors = self.errors.get(key, 0) + 1
+        v4 = os.environ.get("AGENT_TURN_GUARD_RULE") == "v4"
+        stop_at = 3 if v4 else REPEAT_STOP_AT
+        times = max(self.count, errors)
+        if self.count >= stop_at or errors >= stop_at:
+            return output + "\n" + _g("repeat_stop", times=times), times
+        if not v4 and times >= REPEAT_HINT_AT + 1:
+            return output + "\n" + _g("repeat_strong", times=times, warn=_g("repeat_last_warning") if times >= stop_at - 1 else ""), None
+        if self.count >= REPEAT_HINT_AT or (not v4 and errors >= REPEAT_HINT_AT):
+            warn = _g("repeat_last_warning") if times >= stop_at - 1 else ""
+            return output + "\n" + _g("repeat_hint", warn=warn), None
+        return output, None
+
+
 class TurnGuardMixin:
     def begin_turn(self):
         """使用者送出新訊息：清掉上一回合的重複計數、卡住旗標、執行次數。"""
-        self._rep_key = None
-        self._rep_count = 0
-        self._rep_errors = {}
+        self._rep = RepeatTracker()
         self.stuck = None
         self.turn_tool_runs = 0
         self._claim_nudged = False
@@ -71,7 +102,7 @@ class TurnGuardMixin:
         """run_tool 執行完一個動作之後呼叫：計數、必要時在 output 後面附提醒或設 self.stuck。回傳（可能附了提醒的）output。"""
         if not isinstance(output, str) or not parsed or not parsed.get("action"):
             return output
-        if not hasattr(self, "_rep_errors"):
+        if not hasattr(self, "_rep"):
             self.begin_turn()
         self.turn_tool_runs += 1
         if output.startswith(ANALYSIS_REPORT_HEAD):   # 這一回合的回覆要依這份報告：analysis_reply_check 核對（最後那行回答的說明不算報告的字）
@@ -80,36 +111,18 @@ class TurnGuardMixin:
             self._analysis_job_id = m.group(1) if m else None
             # 之後的回合（追問、討論這份報告）也核對寫到報告的那幾行：最近一份報告一直算數，直到下一份報告或 /clear
             self._analysis_ctx = {"report": self._analysis_report, "job": self._analysis_job_id}
-        if "turn_guard" in os.environ.get("AGENT_ABLATE", ""):
-            return output
-        key = (action_text(parsed["action"]).strip(), output.strip()[:500])
-        if key == self._rep_key:
-            self._rep_count += 1
-        else:
-            self._rep_key, self._rep_count = key, 1
-        errors = 0
-        if output.lstrip().startswith("[ERROR]"):
-            self._rep_errors[key] = errors = self._rep_errors.get(key, 0) + 1
-        v4 = os.environ.get("AGENT_TURN_GUARD_RULE") == "v4"
-        stop_at = 3 if v4 else REPEAT_STOP_AT
-        if self._rep_count >= stop_at or errors >= stop_at:
-            times = max(self._rep_count, errors)
-            self.stuck = f"「{key[0][:80]}」已經 {times} 次得到同樣的結果"
-            self._add_notice(f"⛔ AI 用同樣的動作 {times} 次都得到同樣的結果（{key[0][:60]}），這一回合先停在這裡，避免一直重試；"
+        action = action_text(parsed["action"]).strip()
+        output, times = self._rep.note(action, output)
+        if times:
+            self.stuck = f"「{action[:80]}」已經 {times} 次得到同樣的結果"
+            self._add_notice(f"⛔ AI 用同樣的動作 {times} 次都得到同樣的結果（{action[:60]}），這一回合先停在這裡，避免一直重試；"
                              "可以補充說明、指出正確的路徑或參數，或換個方式要求。")
-            return output + "\n" + _g("repeat_stop", times=times)
-        times = max(self._rep_count, errors)
-        if not v4 and times >= REPEAT_HINT_AT + 1:
-            return output + "\n" + _g("repeat_strong", times=times, warn=_g("repeat_last_warning") if times >= stop_at - 1 else "")
-        if self._rep_count >= REPEAT_HINT_AT or (not v4 and errors >= REPEAT_HINT_AT):
-            warn = _g("repeat_last_warning") if times >= stop_at - 1 else ""
-            return output + "\n" + _g("repeat_hint", warn=warn)
         return output
 
     def claim_without_action(self, parsed):
         """這一回合沒有執行任何工具、回覆卻宣稱已經做了某件事，或說要去做卻沒有動作：回傳要接在對話後面的提醒（每回合最多一次），
         否則 None。在問使用者（嗎？、請問、要不要…）或有條件（如果…）的不算。"""
-        if not hasattr(self, "_rep_errors"):
+        if not hasattr(self, "_rep"):
             self.begin_turn()
         if self._claim_nudged or self.turn_tool_runs or not parsed or parsed.get("action") or not parsed.get("valid", True):
             return None

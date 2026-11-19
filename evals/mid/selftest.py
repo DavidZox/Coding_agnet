@@ -862,6 +862,31 @@ def main():
         job = mid.Worker(agent, model=model, fixer=lambda req, log: None).start(DOC_Q, previous=same, attempt=2)
         assert job["status"] == "done" and job["params"]["words"]["value"] == ["cmd_halt"] and job["same_as"]["fixed"] and "still" not in job["same_as"], job["same_as"]
 
+    def t_redispatch_goal():
+        # 第 5 步 G9：再交（附了上一次的經過）時合約的參數只從這一次的子目標抄；抄了原始問題的交回（說明寫明），子目標沒提到的沿用上一次的值
+        q = "src 裡的 Python 程式，handle_cmd 定義在哪？誰呼叫 handle_cmd？"
+        prev = [{"n": 1, "job": "j_p1", "skill": "py_usage", "params": {"name": "handle_cmd", "path": "src"}, "status": "dead_end",
+                 "note": "原因", "searched": ["handle_cmd"], "items": ["定義在哪"]}]
+        sel = {"understanding": "u", "asks": ["位置"], "skill": "py_usage", "reason": "r"}
+        model = FakeModel(select=[sel], contract=[{"understanding": "u", "name": cell("誰呼叫 handle_cmd", "handle_cmd"), "path": cell(), "exclude": cell()},
+                                                  {"understanding": "u", "name": cell("start 定義在哪", "start")}])
+        job = mid.Worker(agent, model=model, fixer=lambda req, log: None).start(q, "找 start 定義在哪、誰呼叫", previous=prev, attempt=2)
+        assert job["status"] == "done", (job["status"], job["result"]["note"])
+        assert job["params"]["name"] == {"value": "start", "quote": "start 定義在哪", "source": "goal"}, job["params"]["name"]
+        path = job["params"]["path"]
+        assert path["value"] == "src" and path["source"] == "previous" and path["from"] == 1, path
+        con, fix = model.calls[1], model.calls[2]
+        assert "這是第 2 次交給這個領域：這次的參數只從這一段抄" in con["user"] and "【使用者的原始問題】（背景" in con["user"], con["user"][:400]
+        assert "【使用者的問題】" not in con["user"]
+        assert "抄的原文「誰呼叫 handle_cmd」在原始問題裡、不在這一次的子目標裡" in fix["user"], fix["user"][-300:]
+        assert "- 參數：name＝start（子目標「start 定義在哪」）；path＝src（沿用第 1 次）" in job["result"]["report"], job["result"]["report"][:600]
+        # 子目標沒有新的參數：全部沿用 → 跟第 1 次一樣 → 合約重寫一次 → 還是一樣 → repeated
+        empty = {"understanding": "u", "name": cell(), "path": cell(), "exclude": cell()}
+        model = FakeModel(select=[sel], contract=[empty, empty])
+        job = mid.Worker(agent, model=model, fixer=lambda req, log: None).start(q, "再查一次", previous=prev, attempt=2)
+        assert job["status"] == "repeated" and job["params"]["name"]["source"] == "previous", (job["status"], job["params"])
+        assert [x["role"] for x in model.calls] == ["select", "contract", "contract"], [x["role"] for x in model.calls]
+
     def t_judgment_follow_wider():
         # 接著找：第 1 次挑一行、要找 ALP-F07 → 第 2 版加 more_2、read_2（跑過的不重跑）→ 第 2 次看得到之前挑的行與找過的字
         model = doc_model(judge_reply([jline("ALP-S02", label="相關")], branch="follow", params={"names": ["ALP-F07"]}),
@@ -1020,6 +1045,8 @@ def main():
               t_judgment_answered),
              ("帶著上一次的經過（4-2）：挑技能、合約看得到，判斷看得到之前找過的字；一樣的技能與參數 → 合約重寫一次 → 還是一樣就停；改了參數照常做",
               t_previous),
+             ("再交時合約照新的子目標（第 5 步 G9）：參數只從子目標抄、抄了原始問題的交回並寫明、子目標沒提到的沿用上一次的值；"
+              "沒有新的參數就跟之前一樣（repeated）", t_redispatch_goal),
              ("判斷之後接著做：接著找（加節點、後面接同一個判斷、跑過的不重跑、看得到之前挑的行與找過的字）、看前後（view_file --around）",
               t_judgment_follow_wider),
              ("判斷沒過核對：片段交回重抄；參數沒過可以重選路；找過的字當成沒過；修了還是不對就停；沒有挑出行、沒寫、模型沒有回覆", t_judgment_fix),

@@ -19,6 +19,14 @@ skill＝那一次的複合技能；params＝那一次的參數；status＝結果
 【這一層的子目標】
 {goal}
 
+<!-- @redispatch_goal -->
+【這一層的子目標】（這是第 {n} 次交給這個領域：這次的參數只從這一段抄，quote 也只能是這一段裡的字；這一段沒提到的參數，quote 與 value 都留空，程式會沿用上一次的值）
+{goal}
+
+<!-- @redispatch_question -->
+【使用者的原始問題】（背景，讓你知道整件事要做什麼；這次的參數不從這裡抄）
+{question}
+
 <!-- @domain -->
 【領域】{domain}
 {intro}
@@ -79,6 +87,9 @@ skill＝那一次的複合技能；params＝那一次的參數；status＝結果
 
 <!-- @reject_quote -->
 - {name}：抄的原文「{quote}」不在問題或子目標裡（要一字不改地抄）
+
+<!-- @reject_quote_goal -->
+- {name}：抄的原文「{quote}」在原始問題裡、不在這一次的子目標裡（這次再交，參數只從子目標抄；子目標沒提到就留空，程式會沿用上一次的值）
 
 <!-- @reject_name -->
 - {name}：「{value}」要是一個名稱（英文字母或底線開頭，只有英數字與底線），而且要出現在抄的原文「{quote}」裡
