@@ -164,7 +164,7 @@ class SkillAgent(ConversationMixin, PromptMixin, DispatchMixin, GuardMixin, Cont
         self._id_lock = threading.Lock()
         self.trajectory_seq = self._max_archived_id()
 
-        self.last_reply_retry = None  # 最近一次 ask_ai 是否因「空白回覆」自動重試過（給 UI 顯示的說明），見 ask_ai
+        self.last_reply_retry = None  # 最近一次 ask_ai 是否因「空白回覆」或「寫到長度上限被截斷」自動重試過（給 UI 顯示的說明），見 ask_ai
         # 📊 數據解析（analysis_job.py）：目前分析的數據（容器內路徑；ROS 2 數據技能末行的 [ANALYSIS_DATA] 同步，比照目標容器）、
         # 數據根目錄與預設容器（logs/analysis_settings.json）、最近一次 analysis_run、寫進度（events.jsonl）的鎖，
         # 以及執行中回報進度的 callback（Web 執行工具時設定，把進度推到右欄；CLI 直接 print）

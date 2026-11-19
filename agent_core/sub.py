@@ -12,7 +12,9 @@
    [DENIED] 交給模型接著做；cancel（使用者取消）照做到的收尾。
 4. **收尾**：模型回 action null 加 answers（每一項：答到／查不到、回答、出處＝這個子工作階段的工具結果 #編號，或收據裡的 檔案:行號），
    程式照 4-2 核對（answers.answer_problems：出處在自己的工具結果裡、數字與名稱在出處裡、查不到的寫原因），沒過的交回修一次；
-   步數用完（SUB_STEPS_MAX）、卡住、使用者取消、模型沒有回覆也收尾，報告寫明做到哪裡。
+   步數用完（SUB_STEPS_MAX）、卡住、使用者取消、模型沒有回覆也收尾，報告寫明做到哪裡。每一則不是用工具就是收尾：action null、answers
+   也是空的（沒有動作也沒有回答）不算收尾，提醒一次（上一步之後只提醒一次，不算交回修）；寫到字串上限被截斷的回覆不執行、重問一次
+   （第 5 步 5-1 的評測：26b 的第一則常沒有動作也沒有回答，被當成收尾、用掉交回修，有的一步都沒做就結束）。
 5. **報告**（程式整理，report.md）：每一項的回答與出處（核對過的；沒過的標出來；檔案:行號 附那一行的原文）、每一步（工具、參數、結果、
    #編號、確認關卡的決定）。主對話照 4-2 依報告回答。
 """
@@ -23,7 +25,7 @@ from . import answers, prompt_files
 from .config import (DOMAIN_QUOTE_LINES, MID_JOBS_DIRNAME, NUM_CTX, SUB_JOBS_DIRNAME, SUB_JOBS_KEEP, SUB_MODEL, SUB_STEPS_MAX,
                      TOKEN_THRESHOLD, TOOL_SUMMARY_DEFAULT)
 from .jobstore import JobStore
-from .protocol import action_text, is_skill_doc_result, parse_agent_reply, tool_result_message
+from .protocol import action_text, drop_cut, is_skill_doc_result, parse_agent_reply, tool_result_message
 from .schemas import agent_reply_schema
 from .turn import _content_for_context
 from .turn_guard import RepeatTracker
@@ -86,7 +88,8 @@ class Session:
         job = {"id": jid, "kind": "sub", "status": "running", "created": _now(), "updated": _now(), "cwd": self.agent.current_cwd,
                "domain": self.domain, "question": question, "goal": (goal or question).strip(), "items": list(items or []),
                "attempt": attempt, "previous": previous, "tools": self.tools, "system": self._system(),
-               "messages": [], "steps": [], "need_user": None, "asked": [], "nudged": False, "answers": [], "problems": {}, "result": None}
+               "messages": [], "steps": [], "need_user": None, "asked": [], "nudged": False, "empty_at": None, "answers": [], "problems": {},
+               "result": None}
         job["messages"].append({"role": "user", "content": self._first(job)})
         self.store.save(job)
         self._link(previous, jid, attempt)
@@ -129,6 +132,14 @@ class Session:
             if parsed is None:
                 return self._finish(job, "failed", note="子工作階段的模型沒有回覆（或回覆不是 JSON）")
             job["messages"].append({"role": "assistant", "content": raw})
+            if not parsed["action"] and not parsed["answers"] and job.get("empty_at") != len(job["steps"]):
+                # 沒有動作也沒有回答：不是用工具、也不是收尾。提醒一次（上一步之後只一次），不算交回修
+                job["empty_at"] = len(job["steps"])
+                job["messages"].append({"role": "user", "content": _s("empty_turn")})
+                job["updated"] = _now()
+                self.store.save(job)
+                self._note(job["id"], "🧩 沒有動作也沒有回答：提醒它用工具或收尾")
+                continue
             if not parsed["action"]:
                 problems = self._problems(job, parsed["answers"])
                 if problems and not job["nudged"]:
@@ -199,13 +210,15 @@ class Session:
             self.agent._sub_allowed = None
 
     def _ask(self, job):
-        """模型一次（不是 JSON 或是空的再問一次，附提醒）→ (parsed, 原文)；兩次都不行回 (None, 原文)。每次呼叫記進 calls.jsonl
-        （送出的最後一則與回覆；system prompt 在 job.json 的 system，前面的對話在 messages）。"""
+        """模型一次 → (parsed, 原文)。不是 JSON 或是空的：附上那一則與提醒再問一次，兩次都不行回 (None, 原文)。寫到字串上限被截斷
+        （parsed 的 cut）：不執行，只接提醒再問一次（不把那一大段截斷的回覆放進去）；還是被截斷就 protocol.drop_cut（截斷的動作不執行，
+        存進對話的是不含截斷參數的 JSON）。每次呼叫記進 calls.jsonl（送出的最後一則與回覆；system prompt 在 job.json 的 system，
+        前面的對話在 messages）。"""
         msgs = self._fit(job)
         schema = agent_reply_schema((), len(job["items"]))
         model = SUB_MODEL or self.agent.model
         raw = ""
-        for _ in range(2):
+        for attempt in range(2):
             t0, err = time.time(), None
             try:
                 res = self.agent._timed_chat("sub_step", model=model, messages=msgs, format=schema,
@@ -215,12 +228,16 @@ class Session:
                 raw, err = "", f"{type(e).__name__}: {e}"
             parsed = parse_agent_reply(raw)
             ok = parsed["valid"] and bool(parsed["action"] or parsed["reply"] or parsed["answers"])
+            cut = parsed["cut"] if ok else []
+            error = None if ok and not cut else err or ("寫到長度上限被截斷：" + "、".join(cut) if cut else "回覆不是 JSON 或是空的")
             self.store.append(job["id"], "calls.jsonl", {"role": "step", "step": len(job["steps"]) + 1, "model": model, "user": msgs[-1]["content"],
-                                                         "response": raw, "error": None if ok else (err or "回覆不是 JSON 或是空的"),
-                                                         "ms": round((time.time() - t0) * 1000)})
-            if ok:
+                                                         "response": raw, "error": error, "ms": round((time.time() - t0) * 1000)})
+            if ok and not cut:
                 return parsed, raw
-            msgs = msgs + [{"role": "assistant", "content": raw}, {"role": "user", "content": _s("retry")}]
+            if cut and attempt:
+                return drop_cut(parsed)
+            msgs = msgs + ([{"role": "user", "content": _s("cut", fields="、".join(cut))}] if cut else
+                           [{"role": "assistant", "content": raw}, {"role": "user", "content": _s("retry")}])
         return None, raw
 
     def _fit(self, job):

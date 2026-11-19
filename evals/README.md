@@ -5,7 +5,7 @@
 
 | 組 | 不用模型 | 真模型／實機 | 測什麼 |
 |---|---|---|---|
-| `chat/` 主對話 | `selftest.py`、`extract_selftest.py`（工具回傳的提煉與存檔回查） | `run.py`（情境在 `scenarios.py`，`worker.py` 跑一個情境）、`perf_report.py`（KV cache 分析） | 選技能、兩階段揭露、大量回傳與回存檔查、執行前確認、記憶、程式把關（卡住、說做了卻沒做、說要做卻沒動作）、模型設定、CLI 主迴圈的確認關卡、對數據技能的路由；提煉的切段、核對、存檔、行號；兩種上下文模式比較 |
+| `chat/` 主對話 | `selftest.py`、`extract_selftest.py`（工具回傳的提煉與存檔回查） | `run.py`（情境在 `scenarios.py`，`worker.py` 跑一個情境）、`perf_report.py`（KV cache 分析） | 選技能、兩階段揭露、大量回傳與回存檔查、執行前確認、記憶、程式把關（卡住、說做了卻沒做、說要做卻沒動作、回覆寫到長度上限被截斷）、模型設定、CLI 主迴圈的確認關卡、對數據技能的路由；提煉的切段、核對、存檔、行號；兩種上下文模式比較 |
 | `skills/` 技能腳本 | `selftest.py`（每一組一個 `<組>_test.py`：fs、containers、rmf、data、receipt） | —（主對話真的用技能看 `chat/`、`ops/`） | 每個技能直接執行：[PASS] 與每一種 [ERROR] 的寫法（原因與下一步）、截斷的說明、不讀標準輸入、逾時；需要容器的在沙盒裡跑，沒有就略過；第一版領域的技能的收據（`receipt`：每一種出口、數量跟文字一致、收據比文字完整、有沒有收據文字都一樣、規格跟腳本一致）（規範：`doc/技能撰寫規範.md`） |
 | `analysis/` 數據解析 | `selftest.py`（數據技能用錄下的真實輸出 `fixtures/`） | `regression.py`（回歸評分；數據分析全部由程式做，不需要 Ollama，要測試容器）、`tools_live.py`（在真的容器裡跑數據技能） | 事實的整理、重點、報告、主對話回答的核對；回歸評分只評事實 |
 | `datagen/` 隨機情境的錄製產生器 | `check_facts.py`（只驗程式那一層，需要容器） | 產生的錄製交給 `analysis/regression.py` | 六個開發中套件的模擬，評分標準由注入的事件自動產生（見 [`datagen/README.md`](datagen/README.md)） |
@@ -15,7 +15,7 @@
 | `repo/` 真實專案（新架構的評測） | `selftest.py`（核對、每一題答得出來、答案跟快照一致、碰不到真的容器） | `run.py`（題目在 `questions.py`，答案 `answers.json` 由程式從固定版本的快照算；借用 `ops/worker.py` 跑一題） | 在真實專案（amr_base_sw、amr_base_hw、fih_rmf_system）裡找檔案與計數、讀長文件、Python 的定義與呼叫、C++、跨檔案的調查；最後的回覆由程式核對 |
 | `edg/` 低階執行器（新架構 D10 第 2 步） | `selftest.py`（寫好的圖、假的修正模型） | `run.py`（題目在 `cases.py`：一個工具節點故意錯一個參數，工作目錄是真實專案評測的快照） | 照決策圖執行、照收據守門、從收據帶入參數、重排；第 1 級修正：修得好的有沒有修好（收據的欄位與範圍由程式核對）、修不好的有沒有往上交 |
 | `mid/` 中階（新架構 D10 第 3 步） | `selftest.py`（假的模型、真的工具與低階執行器） | `run.py`（題目沿用真實專案評測的 30 題，`cases.py` 標每一題該用的複合技能與參數） | 每一層分開量：挑技能（模型挑的、換技能之後的）、合約（參數與原文的核對）、判斷（幾次、走的路、挑的行過不過核對）、最後的報告（`repo/checks.py`）；第 2 級（回退、換技能、問使用者、熔斷） |
-| `orch/` 高階（新架構 D10 第 4 步） | `selftest.py`（假的主模型與中階的模型、真的中階、低階與工具，直接驅動 Web 的回合、Web 伺服器與 CLI） | —（真模型看 `repo/run.py`：主對話接上中階之後的結果；`chat/`、`ops/` 看有沒有退步） | 領域的清單（`skills_system/DOMAIN.md`）與 system prompt 的「領域」一節、擋領域的工具（列目錄、找檔案是共用的）、中階沒做完時接著開子工作階段、沒有複合技能的領域直接開子工作階段（確認關卡、上限、收尾的核對、決策圖）、find_lines 的報告與出處、依報告回答的 answers 與核對、照項目排好的回答、帶著上一次的經過再交、交給領域的核對（沒有的領域、子目標、項目數、一樣的再交一次）、報告存成 #編號 交回主模型、決策圖的連結、問使用者的接回（Web、HTTP、CLI、取消、/clear）、第 3 級的排除、依報告回答的出處、評測的 worker 怎麼記 |
+| `orch/` 高階（新架構 D10 第 4 步） | `selftest.py`（假的主模型與中階的模型、真的中階、低階與工具，直接驅動 Web 的回合、Web 伺服器與 CLI） | —（真模型看 `repo/run.py`：主對話接上中階之後的結果；`chat/`、`ops/` 看有沒有退步） | 領域的清單（`skills_system/DOMAIN.md`）與 system prompt 的「領域」一節、擋領域的工具（列目錄、找檔案是共用的）、中階沒做完時接著開子工作階段、沒有複合技能的領域直接開子工作階段（確認關卡、上限、收尾的核對、回覆的協議、決策圖）、find_lines 的報告與出處、依報告回答的 answers 與核對、照項目排好的回答、帶著上一次的經過再交、交給領域的核對（沒有的領域、子目標、項目數、一樣的再交一次）、報告存成 #編號 交回主模型、決策圖的連結、問使用者的接回（Web、HTTP、CLI、取消、/clear）、第 3 級的排除、依報告回答的出處、評測的 worker 怎麼記 |
 
 改程式之後先跑不用模型的自我測試：
 
@@ -277,7 +277,7 @@ python3 evals/mid/run.py --rescore evals/results/<結果目錄>   # 不跑模型
 python3 evals/orch/selftest.py                              # 離線（幾秒）：假的主模型與中階的模型、真的中階與工具
 ```
 
-- **離線**（`selftest.py`，22 項）：system prompt 的「領域」一節與技能索引（領域讀內容的工具不列；沒有 `DOMAIN.md` 時照舊）、回覆的 schema 多「交給領域」、
+- **離線**（`selftest.py`，23 項）：system prompt 的「領域」一節與技能索引（領域讀內容的工具不列；沒有 `DOMAIN.md` 時照舊）、回覆的 schema 多「交給領域」、
   擋領域的工具（技能名稱、腳本、規格；共用的工具（列目錄、找檔案、回顧存檔）與其他技能照舊）、交給領域 → 中階 → 報告存成 #編號 交回主模型（不提煉）、決策圖的連結先推給畫面、
   find_lines 的報告（提到的行）照「檔案:行號」寫出處通過核對、核對（沒有的領域、子目標是空的、項目數、一樣的再交一次）、依報告回答的出處不在報告裡提醒一次、不屬於這個領域的排除
   與高 4 的紀錄、問使用者（Web 的 `run_turn` 與 `answer_domain_turn`、經過 HTTP 的 `/api/send` 與 `/api/decision`、CLI 的 `cli.main()`：回答不合法再問、
@@ -290,6 +290,8 @@ python3 evals/orch/selftest.py                              # 離線（幾秒）
   沒有複合技能的領域直接開子工作階段（system prompt 有〈做法〉與能用的工具、確認關卡停下來問使用者，同意接回同一步、不同意把 [DENIED] 交給模型；
   `t_sub_domain_guard`）、子工作階段的上限與收尾（不是這個領域的工具擋下來、同樣的動作卡住、步數用完、出處不是自己的工具結果交回修一次；
   `t_sub_limits`）、決策圖的子工作階段與上一次、下一次（`t_sub_topology`）；取消之後接著開子工作階段、`/clear` 不接著開（`t_ask_cancel`、`t_cli`、`t_http`）。
+  5-1b（5-1 的評測之後）：子工作階段的回覆——沒有動作也沒有回答提醒一次、不算交回修（之後收尾的核對照樣能交回修；提醒之後還是一樣就照收尾核對）、
+  收尾寫成 `{"command": "null"}` 跟 action null 一樣、寫到長度上限被截斷的不執行（只接提醒重問一次；還是被截斷就不執行、對話裡不留那段參數）（`t_sub_protocol`）。
 - **真模型**：沒有自己的一組；主對話接上中階之後的結果看真實專案評測（`repo/run.py`），有沒有退步看主對話（`chat/`）與維運（`ops/`）。
   評測的 worker（`chat/worker.py`、`ops/worker.py`，真實專案評測借用後者）收尾與記法相同（`evals/domain_calls.py`）：中階要問使用者時取消
   （評測裡沒有人回答，`domain_asks` 記下問了什麼；取消之後跟使用者按取消一樣接著開子工作階段）；子工作階段或中階的確認關卡照情境的 `guard` 回答
@@ -362,4 +364,4 @@ python3 evals/phase_check.py --save-baseline <結果目錄…> --label "第 N �
 - 近期加進來的案例：第 2 階段——提煉的真模型評測（〈提煉〉一節）、交握 status 連續幾次的判斷（`skills/rmf_test.py` 的 `t_sandbox_status_stable`）、
   數據技能的「不是錄製數據」判斷不擋任何一份真的錄製（`skills/data_test.py` 的 `t_not_recording_real_data`）、維運評測的 `logs/<情境>/`
   （每一步的紀錄）；第 4 階段——評測的完整性（`integrity`）、
-  數據分析的存檔只留最近幾次（`analysis_selftest`）；第 4 階段之後——`--until-done` 看得出卡住就提早結束、`--until-confirmed` 等授權有結果（`skills/rmf_test.py` 的 `t_until_done_stuck`、`t_until_confirmed`、`t_until_done_stuck_rules`）；2026-11-18——任務引擎與 Plan 模式拿掉（`task_selftest` 跟著拿掉），CLI 主迴圈的確認關卡改在 `chat_selftest` 測（`t_cli_guard`），範本的檢查改成每個 import 了 `prompt_files` 的模組各自核對（`integrity`，取代「至少 200 處」）；同一天——真實專案評測的自我測試（`repo_selftest`），完整性檢查也收它答案裡的名稱；收據（D10 第 1 步）——`skills/receipt_test.py` 8 項、`chat_selftest` 的 `t_receipts`；低階執行器（D10 第 2 步）——`edg_selftest` 12 項、`skills/receipt_test.py` 的 `t_parse_args_contract`（寫收據的腳本都有純函式 `parse_args`、規格的 `narrow`），`--model` 加上第 1 級修正的真模型評測（`edg`）。中階（D10 第 3 步的 3a）——`mid_selftest` 16 項、`edg_selftest` 的重排（13 項）、`skills/fs_test.py` 與 `receipt_test.py` 的 code_ast_reader `--refs`（技能 109 → 111），`--model` 加上中階的真模型評測（`mid`）；完整性檢查也掃各領域的 `skills_system/<領域>/*.md`、收中階評測標的參數。第 3 步的 3b——`mid_selftest` 26 項（判斷節點、換技能、拓撲圖的判斷）、`skills/fs_test.py` 與 `receipt_test.py` 的 view_file `--around`、search_text `--rank`（技能 111 → 113）、`edg_selftest` 的重排多核對重跑的收據不蓋掉前一版。第 4 步的 4-1——新的 `orch_selftest` 12 項。4-1 之後的三點——`mid_selftest` 27 項（`t_find_lines`）、`orch_selftest` 13 項（列目錄、找檔案是共用的工具；`t_find_lines_cite`）。第 4 步的 4-2——`orch_selftest` 19 項（answers 的 schema、核對、修過還是沒過、上一次的經過、repeated、同一個項目的次數）、`mid_selftest` 28 項（`t_previous`）、`repo_selftest` 10 項（`t_phase_baseline`），`--model` 加上真實專案評測（`repo`，每個模型 3 次）。第 5 步的 5-1——`orch_selftest` 22 項（子工作階段：`t_no_skill_sub`、`t_sub_domain_guard`、`t_sub_limits`、`t_sub_topology`）、`mid_selftest` 29 項（`t_redispatch_goal`：再交時合約只從子目標抄）。
+  數據分析的存檔只留最近幾次（`analysis_selftest`）；第 4 階段之後——`--until-done` 看得出卡住就提早結束、`--until-confirmed` 等授權有結果（`skills/rmf_test.py` 的 `t_until_done_stuck`、`t_until_confirmed`、`t_until_done_stuck_rules`）；2026-11-18——任務引擎與 Plan 模式拿掉（`task_selftest` 跟著拿掉），CLI 主迴圈的確認關卡改在 `chat_selftest` 測（`t_cli_guard`），範本的檢查改成每個 import 了 `prompt_files` 的模組各自核對（`integrity`，取代「至少 200 處」）；同一天——真實專案評測的自我測試（`repo_selftest`），完整性檢查也收它答案裡的名稱；收據（D10 第 1 步）——`skills/receipt_test.py` 8 項、`chat_selftest` 的 `t_receipts`；低階執行器（D10 第 2 步）——`edg_selftest` 12 項、`skills/receipt_test.py` 的 `t_parse_args_contract`（寫收據的腳本都有純函式 `parse_args`、規格的 `narrow`），`--model` 加上第 1 級修正的真模型評測（`edg`）。中階（D10 第 3 步的 3a）——`mid_selftest` 16 項、`edg_selftest` 的重排（13 項）、`skills/fs_test.py` 與 `receipt_test.py` 的 code_ast_reader `--refs`（技能 109 → 111），`--model` 加上中階的真模型評測（`mid`）；完整性檢查也掃各領域的 `skills_system/<領域>/*.md`、收中階評測標的參數。第 3 步的 3b——`mid_selftest` 26 項（判斷節點、換技能、拓撲圖的判斷）、`skills/fs_test.py` 與 `receipt_test.py` 的 view_file `--around`、search_text `--rank`（技能 111 → 113）、`edg_selftest` 的重排多核對重跑的收據不蓋掉前一版。第 4 步的 4-1——新的 `orch_selftest` 12 項。4-1 之後的三點——`mid_selftest` 27 項（`t_find_lines`）、`orch_selftest` 13 項（列目錄、找檔案是共用的工具；`t_find_lines_cite`）。第 4 步的 4-2——`orch_selftest` 19 項（answers 的 schema、核對、修過還是沒過、上一次的經過、repeated、同一個項目的次數）、`mid_selftest` 28 項（`t_previous`）、`repo_selftest` 10 項（`t_phase_baseline`），`--model` 加上真實專案評測（`repo`，每個模型 3 次）。第 5 步的 5-1——`orch_selftest` 22 項（子工作階段：`t_no_skill_sub`、`t_sub_domain_guard`、`t_sub_limits`、`t_sub_topology`）、`mid_selftest` 29 項（`t_redispatch_goal`：再交時合約只從子目標抄）。5-1b——`orch_selftest` 23 項（`t_sub_protocol`：子工作階段的回覆協議）、`chat_selftest` 19 項（`t_reply_cut`：回覆的字串上限、`{"command": "null"}`、寫到上限被截斷的重問）。

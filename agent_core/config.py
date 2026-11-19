@@ -213,6 +213,15 @@ MID_JUDGE_LINES = 12
 MID_JUDGE_MODEL = os.environ.get("AGENT_MID_JUDGE_MODEL", "").strip()
 MID_JUDGE_PREDICT = 2000     # 判斷的輸出（理解＋挑的行＋分支與參數＋理由）的 num_predict 上限
 
+# 🧷 主對話與子工作階段回覆的字串上限（schemas.agent_reply_schema；資源的上限，跟其他 schema 的字串一樣：小模型偶爾在字串裡一直重複同一段，
+# 沒有上限時一次寫兩萬多個 token、寫到 JSON 解析不了，第 5 步 5-1 的評測）。2026-11-19 全部評測紀錄裡最長的：thought 1444、reply 1452
+# （模型自己寫的）、command 35、args 971 字；上限約取 3～8 倍，args 留給 file_ops write 寫整份檔案。寫到上限＝輸出被截斷：重問一次，
+# 還是寫到上限就不執行那個動作（conversation.ask_ai、sub.Session._ask、protocol.drop_cut）。
+REPLY_THOUGHT_CHARS = 4000
+REPLY_TEXT_CHARS = 6000
+REPLY_COMMAND_CHARS = 200
+REPLY_ARGS_CHARS = 8000
+
 # 🗺️ 新架構的高階（agent_core/orchestrator.py，D10 第 4 步）：主對話就是高階（D1）。skills_system/DOMAIN.md 列領域（每個領域一行，
 # 連到它的 SKILLS.md）與〈共用的工具〉；主模型在回覆的 action 填「交給領域」{"domain", "goal", "items"}，程式核對之後執行中階。
 DOMAIN_INDEX_NAME = "DOMAIN.md"

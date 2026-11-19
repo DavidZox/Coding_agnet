@@ -5,7 +5,7 @@ import ollama
 from . import prompt_files
 from .config import NUM_CTX, TASK_HISTORY_KEEP
 from .model_caps import think_arg, thinking_text
-from .protocol import action_text, parse_agent_reply
+from .protocol import action_text, drop_cut, parse_agent_reply
 from .schemas import agent_reply_schema
 
 
@@ -75,6 +75,7 @@ class ConversationMixin:
 
             self.last_reply_retry = None
             raw_content, eval_tokens = self._chat_once(snapshot)
+            spent, notes = [eval_tokens], []
 
             # 空白回覆的自動重試：合法 JSON、reply 是空字串、action 是 null。實測成因是 thought／reply 的文字裡
             # 出現英文雙引號（例如想寫 關鍵字是 "scheduler"），在 JSON 字串裡它就是「字串結束」，文法接著只允許
@@ -86,16 +87,32 @@ class ConversationMixin:
                 nudge = {'role': 'user', 'content': prompt_files.load(
                     "harness/reminders.md", "empty_reply",
                     cut=prompt_files.load("harness/reminders.md", "empty_reply_cut", tail=tail) if tail else "")}
-                raw_retry, eval_retry = self._chat_once(snapshot + [nudge])
-                parsed_retry = parse_agent_reply(raw_retry)
-                self.last_eval_tokens = (eval_tokens or 0) + (eval_retry or 0)  # 兩次呼叫的產出都算這一輪的 AI tokens
-                still_blank = parsed_retry["valid"] and not parsed_retry["reply"] and not parsed_retry["action"]
-                self.last_reply_retry = (
-                    "⚠️ 模型第一次回覆為空白（thought 疑似被英文雙引號提前截斷），已自動重試一次"
-                    + ("，重試後仍為空白。" if still_blank else "。")
-                )
-                raw_content = raw_retry
+                raw_content, eval_retry = self._chat_once(snapshot + [nudge])
+                spent.append(eval_retry)
+                parsed = parse_agent_reply(raw_content)
+                still_blank = parsed["valid"] and not parsed["reply"] and not parsed["action"]
+                notes.append("⚠️ 模型第一次回覆為空白（thought 疑似被英文雙引號提前截斷），已自動重試一次"
+                             + ("，重試後仍為空白。" if still_blank else "。"))
 
+            # 寫到字串上限被截斷（REPLY_*_CHARS；輸出失控，例如在參數裡一直重複同一段）：這一次不執行，重問一次並附暫時的提醒（同上，只放進
+            # 快照）；還是被截斷就 drop_cut——截斷的動作不執行，存進對話的是不含截斷參數的 JSON（第 5 步 5-1 的評測：沒有上限時一次寫兩萬多個
+            # token、JSON 解析不了，整段當成回覆、回合結束）
+            if parsed["cut"]:
+                fields = "、".join(parsed["cut"])
+                nudge = {'role': 'user', 'content': prompt_files.load("harness/reminders.md", "reply_cut", fields=fields)}
+                raw_content, eval_retry = self._chat_once(snapshot + [nudge])
+                spent.append(eval_retry)
+                parsed = parse_agent_reply(raw_content)
+                still = parsed["cut"]
+                if still:
+                    _, raw_content = drop_cut(parsed)
+                dropped = bool({"command", "args"} & set(still))
+                notes.append(f"⚠️ 模型的回覆寫到長度上限被截斷（{fields}），已自動重試一次"
+                             + (("；重試後還是被截斷" + ("，這一次的動作不執行。" if dropped else "。")) if still else "。"))
+
+            if len(spent) > 1:
+                self.last_eval_tokens = sum(x or 0 for x in spent)  # 幾次呼叫的產出都算這一輪的 AI tokens
+            self.last_reply_retry = "\n".join(notes) or None
             return raw_content
 
         except Exception as e:

@@ -12,7 +12,8 @@
 - 中階沒有做完、也沒有報告（沒有適合的做法、失敗、取消）：接著開子工作階段，用領域的工具一步一步做（第 5 步，取代放行；主對話照舊擋）；
   不屬於這個領域：排除，再交時附這一回合做過的事；
 - 子工作階段（第 5 步，agent_core/sub.py）：沒有複合技能的領域直接開；自己的對話（主對話看不到試錯）、只能用領域的工具、確認關卡停下來與接回
-  （同意、不同意、取消）、步數用完、卡住、收尾的核對（出處是自己的工具結果、修一次）、報告、決策圖；
+  （同意、不同意、取消）、步數用完、卡住、收尾的核對（出處是自己的工具結果、修一次）、報告、決策圖；回覆的協議（5-1 的評測之後）：
+  沒有動作也沒有回答提醒一次（不算交回修）、收尾寫成 {"command": "null"}、寫到長度上限被截斷的不執行；
 - 問使用者：Web（停下來、問題、回答不合法再問、回答之後接回同一個工作、取消；經過 HTTP 的 /api/send 與 /api/decision）、
   CLI（輸入回答、0 取消）、/clear 取消；
 - 評測的 worker 怎麼記（evals/domain_calls.py）。
@@ -661,6 +662,44 @@ def main():
                 assert job["status"] == "done" and "⚠️ 沒有通過核對：出處 #99999 不在這個子工作階段的工具結果裡" in job["result"]["report"]
             with_test_domain(body)
 
+        def t_sub_protocol():
+            # 子工作階段的回覆（第 5 步 5-1 的評測之後）：每一則不是用工具就是收尾——沒有動作也沒有回答提醒一次（上一步之後只一次，不算交回修，
+            # 收尾的核對照樣能交回修）；收尾寫成 {"command": "null"} 跟 action null 一樣；寫到長度上限被截斷的不執行、只接提醒重問一次，
+            # 還是被截斷就不執行那個動作（對話裡不留那段截斷的參數）
+            from agent_core.config import REPLY_ARGS_CHARS
+            empty = {"thought": "我將先用 list_dir 看目錄", "reply": "我將列出目錄。", "action": None, "answers": []}
+            bad = {"thought": "收尾", "reply": "好", "action": None, "answers": [{"item": 1, "status": "answered", "text": "有 mod.py", "refs": ["#99999"]}]}
+            long_step = step("scripts/ls_cmd.py", "x" * REPLY_ARGS_CHARS)
+
+            def good(messages):
+                rid = re.findall(r"存檔是 #(\d+)", "\n".join(m["content"] for m in messages))[-1]
+                return {"thought": "收尾", "reply": "列好了。", "action": None,
+                        "answers": [{"item": 1, "status": "answered", "text": "有 mod.py", "refs": [f"#{rid}"]}]}
+
+            def run(sub):
+                turn("pkg 裡有哪些檔案？", FakeChat(main=[dispatch("列出 pkg", ["有哪些檔案"], domain="test_ops"), say("好")], sub=sub))
+                job = sub_job(agent._domain_turn["dispatches"][-1]["job"])
+                users = [m["content"] for m in job["messages"] if m["role"] == "user"]
+                return job, sum(u.startswith("【系統提醒】上一則 action 是 null、answers 也是空的") for u in users), sum(u.startswith("【系統核對】") for u in users)
+
+            def body():
+                job, empties, fixes = run([empty, step("scripts/ls_cmd.py", "pkg"), bad, good])
+                assert (empties, fixes, job["status"], job["problems"], len(job["steps"]), job["empty_at"]) == (1, 1, "done", {}, 1, 0), (empties, fixes, job["result"])
+                job, empties, fixes = run([empty, empty])          # 提醒之後還是沒有動作也沒有回答：照收尾核對（交回修一次），劇本用完收尾
+                assert (empties, fixes, job["status"], len(job["steps"])) == (1, 1, "done", 0) and job["answers"][0]["status"] == "not_found", job["result"]
+                job, empties, fixes = run([step("scripts/ls_cmd.py", "pkg"), lambda m: dict(good(m), action={"command": "null", "args": ""})])
+                assert (empties, fixes, job["status"], job["problems"], len(job["steps"])) == (0, 0, "done", {}, 1) and job["answers"][0]["refs"], job["result"]
+                job, empties, fixes = run([long_step, step("scripts/ls_cmd.py", "pkg"), good])
+                assert [st["args"] for st in job["steps"]] == [["pkg"]] and job["status"] == "done" and empties == 0, job["steps"]
+                with open(os.path.join(tmp, "logs", "sub_jobs", job["id"], "calls.jsonl"), encoding="utf-8") as f:
+                    calls = [json.loads(ln) for ln in f]
+                assert calls[0]["error"] == "寫到長度上限被截斷：args" and calls[1]["user"].startswith("【系統提醒】上一次的回覆裡 args 寫到長度上限被截斷了"), calls[:2]
+                assert not any("xxxxxxxxxx" in m["content"] for m in job["messages"]), "截斷的回覆不進子工作階段的對話"
+                job, empties, fixes = run([long_step, long_step, step("scripts/ls_cmd.py", "pkg"), good])   # 重問之後還是被截斷：不執行，接著提醒
+                assert [st["args"] for st in job["steps"]] == [["pkg"]] and job["status"] == "done" and empties == 1, (job["steps"], empties)
+                assert not any("xxxxxxxxxx" in m["content"] for m in job["messages"]), "存進對話的是不含截斷參數的 JSON"
+            with_test_domain(body)
+
         def t_sub_topology():
             # 決策圖：子工作階段在清單裡（種類、步數），一個工作整理成每一步、收尾的回答與核對；跟中階一樣串起上一次、下一次
             from web_app import topology
@@ -699,6 +738,8 @@ def main():
                          ("子工作階段：沒有複合技能的領域直接開（不挑技能）、〈做法〉與能用的工具、確認關卡停下來（Web）同意接回、不同意交 [DENIED]",
                           t_sub_domain_guard),
                          ("子工作階段的上限與收尾：不是這個領域的工具擋下來、卡住、步數用完、出處不是自己的工具結果交回修一次再標出來", t_sub_limits),
+                         ("子工作階段的回覆：沒有動作也沒有回答提醒一次（不算交回修）、收尾寫成 {\"command\": \"null\"}、寫到長度上限被截斷的不執行"
+                          "（重問一次，還是被截斷就不執行）", t_sub_protocol),
                          ("決策圖：子工作階段在清單裡、整理成每一步與收尾的回答、串起上一次", t_sub_topology)]:
             check(name, fn)
     finally:

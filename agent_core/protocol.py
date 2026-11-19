@@ -1,10 +1,13 @@
 """回覆協議與訊息包裝：解析主模型的 JSON 回覆、把工具結果包成主對話訊息、判斷回傳是不是規格文件或已提煉的結果。"""
 import json
 import os
-from .config import ANALYSIS_REPORT_HEAD, DOMAIN_RESULT_HEAD, SKILL_DOC_PREFIX, TOOL_RESULT_FRAME, TOOL_SUMMARY_TAG
+from .config import (ANALYSIS_REPORT_HEAD, DOMAIN_RESULT_HEAD, REPLY_ARGS_CHARS, REPLY_COMMAND_CHARS, REPLY_TEXT_CHARS, REPLY_THOUGHT_CHARS,
+                     SKILL_DOC_PREFIX, TOOL_RESULT_FRAME, TOOL_SUMMARY_TAG)
 from . import prompt_files
 
 _FRAME = "harness/tool_results.md"   # 工具結果的框架句（【系統回傳】是程式認的標記，留在程式）
+_CAPS = (("thought", REPLY_THOUGHT_CHARS), ("reply", REPLY_TEXT_CHARS))           # 回覆的字串上限（schemas.agent_reply_schema）
+_ACTION_CAPS = (("command", REPLY_COMMAND_CHARS), ("args", REPLY_ARGS_CHARS))
 
 
 def attach_skill_docs(message, blocks):
@@ -44,13 +47,15 @@ def _answers(value):
 
 
 def parse_agent_reply(raw):
-    """模型回覆（JSON 字串）→ {"thought", "reply", "action", "answers", "valid"}。
+    """模型回覆（JSON 字串）→ {"thought", "reply", "action", "answers", "valid", "cut"}。
 
     action 正規化為 None、{"command": str, "args": str}，或「交給領域」{"domain": str, "goal": str, "items": [str]}（新架構的高階，
     agent_core/orchestrator.py；項目去掉空白與空的，數量與長度由高階核對）。不是合法 JSON 時 valid=False、reply=原文、
     action=None：降級成「只顯示文字、不執行任何東西」，絕不退回用文字比對找指令（那正是要避免的誤觸發來源）。
     對非 format= 強制的後端保留一點容錯：args 給成陣列／物件、把整行 `EXECUTE: ...` 塞進 command、
-    command 裡夾帶參數，都會被整理成同一種形狀。answers 是依領域的報告回答的每一項（4-2；沒有時是空的清單，_answers）。"""
+    command 裡夾帶參數，都會被整理成同一種形狀；command 寫成 null／none 的跟 action 填 null 一樣（e4b 收尾時這樣寫，第 5 步 5-1 的評測）。
+    answers 是依領域的報告回答的每一項（4-2；沒有時是空的清單，_answers）。cut：寫到字串上限（被截斷）的欄位（thought、reply、command、args；
+    REPLY_*_CHARS），呼叫的一方重問一次（conversation.ask_ai、sub.Session._ask），還是被截斷就 drop_cut。"""
     text = (raw or "").strip()
     if text.startswith("```"):  # format= 下不會出現，保險去掉程式碼區塊包裹
         text = text.strip("`").strip()
@@ -61,19 +66,22 @@ def parse_agent_reply(raw):
     except (ValueError, TypeError):
         data = None
     if not isinstance(data, dict):
-        return {"thought": "", "reply": (raw or "").strip(), "action": None, "answers": [], "valid": False}
+        return {"thought": "", "reply": (raw or "").strip(), "action": None, "answers": [], "valid": False, "cut": []}
 
     thought = str(data.get("thought") or "").strip()
     reply = data.get("reply")
     reply = "" if reply is None else str(reply).strip()
     answers = _answers(data.get("answers"))
     action = data.get("action")
+    cut = [k for k, n in _CAPS if isinstance(data.get(k), str) and len(data[k]) >= n]
+    if isinstance(action, dict):
+        cut += [k for k, n in _ACTION_CAPS if isinstance(action.get(k), str) and len(action[k]) >= n]
     norm = None
     if isinstance(action, dict) and str(action.get("domain") or "").strip():
         items = action.get("items")
         items = [" ".join(str(x).split()) for x in (items if isinstance(items, list) else [items]) if x is not None and str(x).strip()]
         norm = {"domain": str(action["domain"]).strip(), "goal": " ".join(str(action.get("goal") or "").split()), "items": items}
-        return {"thought": thought, "reply": reply, "action": norm, "answers": answers, "valid": True}
+        return {"thought": thought, "reply": reply, "action": norm, "answers": answers, "valid": True, "cut": cut}
     if isinstance(action, str) and action.strip().lower() not in ("", "null", "none"):
         action = {"command": action, "args": ""}
     if isinstance(action, dict):
@@ -91,9 +99,24 @@ def parse_agent_reply(raw):
             # 同樣的參數 command 與 args 都寫了一次（實測 ops worker 常這樣）：只留一份，不然參數會重複（ls rmf_sim ls）
             same = " ".join(rest.split()) == " ".join(args.split()) or (args and " ".join(args.split()).startswith(" ".join(rest.split())))
             command, args = head, (args if same else rest.strip() + (" " + args if args else ""))
-        if command:
+        if command and command.lower() not in ("null", "none"):
             norm = {"command": command, "args": args}
-    return {"thought": thought, "reply": reply, "action": norm, "answers": answers, "valid": True}
+    return {"thought": thought, "reply": reply, "action": norm, "answers": answers, "valid": True, "cut": cut}
+
+
+def drop_cut(parsed):
+    """寫到字串上限、重問一次還是被截斷的回覆 → (不執行動作的 parsed, 存進對話的原文)。command／args 被截斷的，action 換成 None
+    （截斷的參數不能執行）；被截斷的 thought／reply 照樣留著、後面接一句說明。存進對話的是重新組的 JSON（沒有那段截斷的參數）：
+    對話裡不留下一大段重複的字（跟空白回覆的重試同一個原則，conversation.ask_ai）。"""
+    out = dict(parsed, cut=[])
+    mark = prompt_files.load("harness/reminders.md", "cut_mark")
+    for k, _ in _CAPS:
+        if k in parsed["cut"]:
+            out[k] = parsed[k] + mark
+    if {"command", "args"} & set(parsed["cut"]):
+        out["action"] = None
+    raw = json.dumps({"thought": out["thought"], "reply": out["reply"], "action": out["action"], "answers": out["answers"]}, ensure_ascii=False)
+    return out, raw
 
 
 def answers_text(answers):

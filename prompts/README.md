@@ -18,7 +18,7 @@ harness 送給模型的字都在這裡：改字不用改程式，存檔之後下
 | `harness/tool_results.md` | 每一則工具結果的框架句、使用者捨棄結果的通知、沒有提煉時只給成功／失敗的那一則 | `protocol.tool_result_message`、`turn.py` |
 | `harness/raw_results.md` | claude_code 模式：原文太長時中間省略的說明、清除舊回傳的佔位 | `context_mode.py` |
 | `harness/skill_docs.md` | 用技能名稱當 action 時，規格前面那句「這一輪只是載入規格、下一輪要做什麼」 | `dispatch.py` |
-| `harness/reminders.md` | 程式核對後的提醒：同樣的動作一直失敗、沒動作卻說做了或說要做、依數據報告回答時寫成因果或寫錯事實、空白回覆 | `turn_guard.py`、`conversation.ask_ai` |
+| `harness/reminders.md` | 程式核對後的提醒：同樣的動作一直失敗、沒動作卻說做了或說要做、依數據報告回答時寫成因果或寫錯事實、空白回覆、寫到長度上限被截斷（`reply_cut`）；截斷的欄位後面接的說明（`cut_mark`） | `turn_guard.py`、`conversation.ask_ai`、`protocol.drop_cut` |
 | `harness/followup.md` | 提煉結果最後的下一步建議（還要哪幾份存檔、沒讀到的段落、缺口、已經回答） | `tool_summary._followup_guidance` |
 | `harness/extract_anchor.md` | 交給提煉的「使用者想知道什麼」：這一步的目的、recall 的問題與每份存檔的背景 | `tool_summary.py` |
 | `harness/anchor.md` | 交給獨立 session 的「使用者的目標」（Objective、最新一句、任務線） | `prompt._build_task_anchor_text` |
@@ -33,7 +33,7 @@ harness 送給模型的字都在這裡：改字不用改程式，存檔之後下
 | `mid/contract.md` | 中階的合約：照技能的參數從問題抽值，每個附一字不改的原文（程式核對）的規則 | `mid.Worker._contract_call` |
 | `mid/judge.md` | 中階的判斷節點：看原文挑出回答問題的行（來源、檔案、行號、一字不改的片段、標籤），從技能列的路選一條、填那條路的值（程式核對）的規則 | `mid.Worker._judge` |
 | `mid/inputs.md` | 中階的 user 訊息裡程式組的標籤（問題、領域、複合技能、參數與種類、沒過核對的參數；判斷的原文、之前挑出的行、找過的字、路與要填的值、沒過核對的片段；4-2：上一次的經過 `previous*`、參數跟之前一樣時重寫合約的原因 `reject_same`、判斷看的之前找過的字 `judge_searched_before`；第 5 步：再交時參數只從子目標抄 `redispatch_goal`、`redispatch_question`、`reject_quote_goal`） | `mid.py`、`judge.py` |
-| `sub/session.md` | 新架構的子工作階段（第 5 步）：沒有複合技能的領域、或中階沒有做完也沒有報告時，用領域的工具一步一步做的模型看到的字——system prompt（領域的說明、〈做法〉、能用的工具、怎麼回覆與收尾、長期記憶）、第一則訊息（原始問題、子目標、要回答的項目、上一次的經過）、每份工具結果前面的 #編號、收尾的核對沒過時交回修（`answers_fix`、`why_ref_unknown`）、不是這個領域的工具、回覆不是 JSON、對話太長時清掉的舊結果、提煉的錨點 | `sub.py`、`orchestrator.domain_gate` |
+| `sub/session.md` | 新架構的子工作階段（第 5 步）：沒有複合技能的領域、或中階沒有做完也沒有報告時，用領域的工具一步一步做的模型看到的字——system prompt（領域的說明、〈做法〉、能用的工具、怎麼回覆與收尾、長期記憶）、第一則訊息（原始問題、子目標、要回答的項目、上一次的經過）、每份工具結果前面的 #編號、收尾的核對沒過時交回修（`answers_fix`、`why_ref_unknown`）、不是這個領域的工具、回覆不是 JSON、沒有動作也沒有回答（`empty_turn`）、寫到長度上限被截斷（`cut`）、對話太長時清掉的舊結果、提煉的錨點 | `sub.py`、`orchestrator.domain_gate` |
 | `vision/extraction.md` | Web 附圖的影像提取（視覺模型的 system、純文字的退路、user 訊息） | `vision/extraction.py` |
 
 ## 範本的寫法

@@ -5,9 +5,9 @@
   "total": 12
  },
  "chat_selftest": {
-  "label": "收據（D10 第 1 步）（2026-11-18）",
-  "passed": 18,
-  "total": 18
+  "label": "第 5 步 5-1b（2026-11-19）",
+  "passed": 19,
+  "total": 19
  },
  "containers_sandbox": {
   "label": "第 4 階段（任務引擎，三次完整跑）（2026-10-24）",
@@ -45,9 +45,9 @@
   "total": 3
  },
  "orch_selftest": {
-  "label": "第 5 步 5-1（2026-11-19）",
-  "passed": 22,
-  "total": 22
+  "label": "第 5 步 5-1b（2026-11-19）",
+  "passed": 23,
+  "total": 23
  },
  "repo_selftest": {
   "label": "第 4 步 4-2（2026-11-19）",

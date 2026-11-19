@@ -1,7 +1,8 @@
 新架構的子工作階段（agent_core/sub.py，第 5 步）：沒有複合技能的領域、或中階沒有做完也沒有報告時，用領域的工具一步一步做的那個模型看到的字——
 system prompt（system、practice）、第一則訊息（first 與它的各段）、每份工具結果前面的編號（result_id）、收尾的核對沒過時交回修（answers_fix、
 why_ref_unknown；其他原因的說法用 harness/domain.md 的 why_*）、不是這個領域的工具（not_my_tool）、回覆不是 JSON（retry）、
-對話太長時清掉的舊結果（cleared）、提煉時的「使用者想知道什麼」（anchor）。{名稱} 是程式填的值。
+沒有動作也沒有回答（empty_turn）、寫到長度上限被截斷（cut）、對話太長時清掉的舊結果（cleared）、提煉時的「使用者想知道什麼」（anchor）。
+{名稱} 是程式填的值。
 
 <!-- @system -->
 你是「{title}」領域（{domain}）的子工作階段：主對話把一個問題交給這個領域，你用這個領域的工具一步一步查（或照使用者的要求做），最後一項一項回答。
@@ -63,6 +64,12 @@ text 裡的數字與名稱要是出處裡的；查不到的 status 寫 not_found
 
 <!-- @retry -->
 【系統提醒】上一次的回覆不是規定的 JSON（或是空的）。請只回一個 JSON：thought、reply、action（null 或 {"command": …, "args": …}）、answers。
+
+<!-- @empty_turn -->
+【系統提醒】上一則 action 是 null、answers 也是空的：這樣既沒有用工具，也沒有收尾。還要查就在 action 填工具（先填技能名稱載入規格）；查完了才收尾——action 填 null，answers 照【要回答的項目】一項一筆（查不到的 status 寫 not_found、text 寫原因）。
+
+<!-- @cut -->
+【系統提醒】上一次的回覆裡 {fields} 寫到長度上限被截斷了（多半是同一段字一直重複），沒有執行。請重新回覆：thought 一到兩句；action 的參數只寫這一步需要的，不要重複。
 
 <!-- @cleared -->
 （第 {n} 步的工具結果已經從這裡清掉（對話太長）；原文在存檔 #{rid}，要再看用 result_view 或 result_grep。第一行：{head}）

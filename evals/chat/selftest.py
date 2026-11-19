@@ -13,6 +13,8 @@
 - CLI 的主迴圈（真的 cli.main()）：會改變狀態的技能先問 y/n，n 不執行、y 才執行；
 - 說要去做卻沒有動作（「我會先查…」、action 是 null）：提醒一次；問使用者的、做過的事不提醒。
 - 收據（新架構 D4）：寫收據的腳本執行完讀得到收據、軌跡記摘要、存檔旁邊存一份、刪存檔時一起刪；規格裡給程式看的欄位不給模型。
+- 回覆的字串上限（第 5 步 5-1）：schema 的 thought、reply、command、args 有上限；command 寫成 null 當成沒有動作；寫到上限被截斷的不執行、
+  重問一次（提醒只放進那一次送出的快照），還是被截斷就不執行那個動作，對話裡不留那段截斷的參數。
 每一個情境都在臨時目錄複製一份專案，不碰正式的 logs/。"""
 import json
 import os
@@ -356,6 +358,31 @@ def main():
                 assert got == expect, (answer, got, out[-1500:])
                 assert fake.calls == (1 if answer == "n" else 2), (answer, fake.calls)
 
+        def t_reply_cut():
+            # 回覆的字串上限（第 5 步 5-1 的評測：模型在參數裡一直重複同一段，沒有上限時一次寫兩萬多個 token、JSON 解析不了）
+            from agent_core.config import REPLY_ARGS_CHARS, REPLY_COMMAND_CHARS, REPLY_TEXT_CHARS, REPLY_THOUGHT_CHARS
+            from agent_core.protocol import parse_agent_reply
+            from agent_core.schemas import agent_reply_schema
+            props = agent_reply_schema()["properties"]
+            act = props["action"]["anyOf"][1]["properties"]
+            assert (props["thought"]["maxLength"], props["reply"]["maxLength"], act["command"]["maxLength"], act["args"]["maxLength"]) == \
+                (REPLY_THOUGHT_CHARS, REPLY_TEXT_CHARS, REPLY_COMMAND_CHARS, REPLY_ARGS_CHARS), props
+            for cmd in ("null", "None", "NULL"):       # e4b 收尾時寫成 {"command": "null"}：跟 action 填 null 一樣
+                p = parse_agent_reply(json.dumps({"thought": "收尾", "reply": "好", "action": {"command": cmd, "args": ""}}))
+                assert p["action"] is None and p["valid"] and p["cut"] == [], (cmd, p)
+            long_args = "x" * REPLY_ARGS_CHARS
+            fake, tools, system = turn("列出目前的目錄", [step("scripts/ls_cmd.py", long_args, reply="列出目錄"),
+                                                        step("scripts/ls_cmd.py", ".", reply="列出目錄"), say("列好了。")])
+            assert fake.calls == 3 and len(tools) == 1 and long_args not in tools[0], (fake.calls, [t[:200] for t in tools])
+            assert any("寫到長度上限被截斷（args），已自動重試一次。" in s for s in system), system
+            assert not any("xxxxxxxxxx" in (m.get("content") or "") or "寫到長度上限被截斷了" in (m.get("content") or "") for m in agent.messages), \
+                "截斷的那一則與重問的提醒都不進對話"
+            fake, tools, system = turn("再列一次", [step("scripts/ls_cmd.py", long_args, reply="好"), step("scripts/ls_cmd.py", long_args, reply="好")])
+            assert fake.calls == 2 and not tools, (fake.calls, [t[:200] for t in tools])
+            assert any("重試後還是被截斷，這一次的動作不執行。" in s for s in system), system
+            last = json.loads(next(m["content"] for m in reversed(agent.messages) if m["role"] == "assistant"))
+            assert last["action"] is None and "xxxxxxxxxx" not in json.dumps(last), last
+
         for name, fn in [("卡住偵測：同樣的動作第二次附提醒、第三次加強提醒、第四次停下這一回合（v4.1）", t_stuck),
                          ("卡住偵測：同一個錯誤不管中間做了什麼，第二次提醒、第四次算卡住", t_same_error_not_consecutive),
                          ("卡住偵測：評測對照組的舊規則（AGENT_TURN_GUARD_RULE=v4，第三次就停）", t_v4_rule),
@@ -373,7 +400,8 @@ def main():
                          ("說要去做卻沒有動作（「我會先查…」）：提醒一次；問使用者的、做過的事不提醒", t_promise),
                          ("腳本 → 技能的對照：規格裡 EXECUTE 指令位置的腳本都對回那個技能（只提到的不算）", t_script_skill_map),
                          ("收據：寫收據的腳本執行完讀得到、軌跡記摘要、存檔旁邊存一份、刪存檔時一起刪；規格裡給程式看的欄位不給模型", t_receipts),
-                         ("CLI 的主迴圈：會改變狀態的技能先問 y/n，n 不執行、y 才執行", t_cli_guard)]:
+                         ("CLI 的主迴圈：會改變狀態的技能先問 y/n，n 不執行、y 才執行", t_cli_guard),
+                         ("回覆的字串上限：schema 有上限、command 寫成 null 是沒有動作、寫到上限被截斷的不執行（重問一次，還是被截斷就不執行）", t_reply_cut)]:
             check(name, fn)
     finally:
         os.chdir(cwd)
