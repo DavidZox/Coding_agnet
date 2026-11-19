@@ -13,7 +13,7 @@
 - CLI 的主迴圈（真的 cli.main()）：會改變狀態的技能先問 y/n，n 不執行、y 才執行；
 - 說要去做卻沒有動作（「我會先查…」、action 是 null）：提醒一次；問使用者的、做過的事不提醒。
 - 收據（新架構 D4）：寫收據的腳本執行完讀得到收據、軌跡記摘要、存檔旁邊存一份、刪存檔時一起刪；規格裡給程式看的欄位不給模型。
-- 回覆的字串上限（第 5 步 5-1）：schema 的 thought、reply、command、args 有上限；command 寫成 null 當成沒有動作；寫到上限被截斷的不執行、
+- 回覆的字串上限（第 5 步 5-1b）：schema 的 thought、command、args 有上限（都在 SCHEMA_MAX_CHARS 以內）、reply 沒有；command 寫成 null 當成沒有動作；寫到上限被截斷的不執行、
   重問一次（提醒只放進那一次送出的快照），還是被截斷就不執行那個動作，對話裡不留那段截斷的參數。
 每一個情境都在臨時目錄複製一份專案，不碰正式的 logs/。"""
 import json
@@ -360,13 +360,28 @@ def main():
 
         def t_reply_cut():
             # 回覆的字串上限（第 5 步 5-1 的評測：模型在參數裡一直重複同一段，沒有上限時一次寫兩萬多個 token、JSON 解析不了）
-            from agent_core.config import REPLY_ARGS_CHARS, REPLY_COMMAND_CHARS, REPLY_TEXT_CHARS, REPLY_THOUGHT_CHARS
+            from agent_core.config import REPLY_ARGS_CHARS, REPLY_COMMAND_CHARS, REPLY_THOUGHT_CHARS, SCHEMA_MAX_CHARS
             from agent_core.protocol import parse_agent_reply
-            from agent_core.schemas import agent_reply_schema
+            from agent_core.schemas import _text, agent_reply_schema
             props = agent_reply_schema()["properties"]
             act = props["action"]["anyOf"][1]["properties"]
-            assert (props["thought"]["maxLength"], props["reply"]["maxLength"], act["command"]["maxLength"], act["args"]["maxLength"]) == \
-                (REPLY_THOUGHT_CHARS, REPLY_TEXT_CHARS, REPLY_COMMAND_CHARS, REPLY_ARGS_CHARS), props
+            assert (props["thought"]["maxLength"], act["command"]["maxLength"], act["args"]["maxLength"]) == \
+                (REPLY_THOUGHT_CHARS, REPLY_COMMAND_CHARS, REPLY_ARGS_CHARS) and "maxLength" not in props["reply"], props
+            # Ollama（llama.cpp 的文法）不套用超過 2000 的 maxLength（實測 2001 不截）：每個上限都在 SCHEMA_MAX_CHARS 以內，寫大了建 schema 時就報錯
+            def caps(node):
+                if isinstance(node, dict):
+                    yield from ([node["maxLength"]] if "maxLength" in node else [])
+                    for v in node.values():
+                        yield from caps(v)
+                elif isinstance(node, list):
+                    for v in node:
+                        yield from caps(v)
+            assert SCHEMA_MAX_CHARS == 2000 and max(caps(agent_reply_schema(("repo_analysis",), 3))) <= SCHEMA_MAX_CHARS
+            try:
+                _text(SCHEMA_MAX_CHARS + 1)
+                raise AssertionError("超過 SCHEMA_MAX_CHARS 的上限要報錯")
+            except ValueError:
+                pass
             for cmd in ("null", "None", "NULL"):       # e4b 收尾時寫成 {"command": "null"}：跟 action 填 null 一樣
                 p = parse_agent_reply(json.dumps({"thought": "收尾", "reply": "好", "action": {"command": cmd, "args": ""}}))
                 assert p["action"] is None and p["valid"] and p["cut"] == [], (cmd, p)

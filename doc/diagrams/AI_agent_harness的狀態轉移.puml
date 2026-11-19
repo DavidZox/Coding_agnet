@@ -54,7 +54,7 @@ rectangle State3 #FFE6CC [
     （答到／查不到、回答或原因、出處）
   * 不是合法 JSON → 只顯示文字、本輪不執行
   * 空白回覆 → 帶暫時提醒自動重試一次
-  * 寫到長度上限被截斷（thought、reply、command、args 有上限）
+  * 寫到長度上限被截斷（thought、command、args 有上限）
     → 不執行、重問一次；還是被截斷就不執行那個動作
   * command 寫成 null＝沒有動作
 ]

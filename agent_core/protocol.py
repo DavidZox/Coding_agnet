@@ -1,12 +1,12 @@
 """回覆協議與訊息包裝：解析主模型的 JSON 回覆、把工具結果包成主對話訊息、判斷回傳是不是規格文件或已提煉的結果。"""
 import json
 import os
-from .config import (ANALYSIS_REPORT_HEAD, DOMAIN_RESULT_HEAD, REPLY_ARGS_CHARS, REPLY_COMMAND_CHARS, REPLY_TEXT_CHARS, REPLY_THOUGHT_CHARS,
-                     SKILL_DOC_PREFIX, TOOL_RESULT_FRAME, TOOL_SUMMARY_TAG)
+from .config import (ANALYSIS_REPORT_HEAD, DOMAIN_RESULT_HEAD, REPLY_ARGS_CHARS, REPLY_COMMAND_CHARS, REPLY_THOUGHT_CHARS, SKILL_DOC_PREFIX,
+                     TOOL_RESULT_FRAME, TOOL_SUMMARY_TAG)
 from . import prompt_files
 
 _FRAME = "harness/tool_results.md"   # 工具結果的框架句（【系統回傳】是程式認的標記，留在程式）
-_CAPS = (("thought", REPLY_THOUGHT_CHARS), ("reply", REPLY_TEXT_CHARS))           # 回覆的字串上限（schemas.agent_reply_schema）
+_CAPS = (("thought", REPLY_THOUGHT_CHARS),)            # 回覆的字串上限（schemas.agent_reply_schema；reply 不設上限）
 _ACTION_CAPS = (("command", REPLY_COMMAND_CHARS), ("args", REPLY_ARGS_CHARS))
 
 
@@ -54,7 +54,7 @@ def parse_agent_reply(raw):
     action=None：降級成「只顯示文字、不執行任何東西」，絕不退回用文字比對找指令（那正是要避免的誤觸發來源）。
     對非 format= 強制的後端保留一點容錯：args 給成陣列／物件、把整行 `EXECUTE: ...` 塞進 command、
     command 裡夾帶參數，都會被整理成同一種形狀；command 寫成 null／none 的跟 action 填 null 一樣（e4b 收尾時這樣寫，第 5 步 5-1 的評測）。
-    answers 是依領域的報告回答的每一項（4-2；沒有時是空的清單，_answers）。cut：寫到字串上限（被截斷）的欄位（thought、reply、command、args；
+    answers 是依領域的報告回答的每一項（4-2；沒有時是空的清單，_answers）。cut：寫到字串上限（被截斷）的欄位（thought、command、args；
     REPLY_*_CHARS），呼叫的一方重問一次（conversation.ask_ai、sub.Session._ask），還是被截斷就 drop_cut。"""
     text = (raw or "").strip()
     if text.startswith("```"):  # format= 下不會出現，保險去掉程式碼區塊包裹
@@ -106,7 +106,7 @@ def parse_agent_reply(raw):
 
 def drop_cut(parsed):
     """寫到字串上限、重問一次還是被截斷的回覆 → (不執行動作的 parsed, 存進對話的原文)。command／args 被截斷的，action 換成 None
-    （截斷的參數不能執行）；被截斷的 thought／reply 照樣留著、後面接一句說明。存進對話的是重新組的 JSON（沒有那段截斷的參數）：
+    （截斷的參數不能執行）；被截斷的 thought 照樣留著、後面接一句說明。存進對話的是重新組的 JSON（沒有那段截斷的參數）：
     對話裡不留下一大段重複的字（跟空白回覆的重試同一個原則，conversation.ask_ai）。"""
     out = dict(parsed, cut=[])
     mark = prompt_files.load("harness/reminders.md", "cut_mark")

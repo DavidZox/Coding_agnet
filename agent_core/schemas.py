@@ -1,10 +1,13 @@
 """給 Ollama format= 的 JSON schema：主對話回覆、滾動摘要、工具摘要、數據分析。"""
 from .config import (DOMAIN_ANSWER_CHARS, DOMAIN_GOAL_CHARS, DOMAIN_ITEM_CHARS, DOMAIN_ITEMS_MAX, DOMAIN_REFS_MAX, REPLY_ARGS_CHARS,
-                     REPLY_COMMAND_CHARS, REPLY_TEXT_CHARS, REPLY_THOUGHT_CHARS)
+                     REPLY_COMMAND_CHARS, REPLY_THOUGHT_CHARS, SCHEMA_MAX_CHARS)
 
 
 def _text(n):
-    """字串欄位都有上限（同視覺提取的教訓：小模型偶爾會在陣列或字串裡失控，有上限就一定是合法的 JSON）。"""
+    """字串欄位都有上限（同視覺提取的教訓：小模型偶爾會在陣列或字串裡失控，有上限就一定是合法的 JSON）。上限要在 SCHEMA_MAX_CHARS（2000）
+    以內：Ollama（llama.cpp 的文法）不套用更大的 maxLength，寫大了就在這裡報錯，不會默默沒有上限。"""
+    if n > SCHEMA_MAX_CHARS:
+        raise ValueError(f"maxLength {n} 超過 {SCHEMA_MAX_CHARS}：Ollama 不會套用這個上限")
     return {"type": "string", "maxLength": n}
 
 
@@ -18,7 +21,8 @@ def _text(n):
 # 規格裡的 `EXECUTE: <路徑> <參數>` 範例就對應 command=<路徑>、args=<參數>。
 # items：這一回合交給領域、有報告的項目數（4-2，G4）。有的時候多一個 answers：每一項一筆 {item: 編號, status: answered／not_found,
 # text: 回答或查不到的原因, refs: 報告裡的出處}，程式核對之後照項目排給使用者；還要做別的動作時填 []（action 先寫，再寫 answers）。
-# thought、reply、command、args 也有上限（REPLY_*_CHARS，第 5 步 5-1）：寫到上限＝被截斷，protocol.parse_agent_reply 記在 cut。
+# thought、command、args 也有上限（REPLY_*_CHARS，第 5 步 5-1）：寫到上限＝被截斷，protocol.parse_agent_reply 記在 cut。reply 不設上限
+# （給使用者的回答可能比 2000 字長，Ollama 又不套用超過 2000 的上限；config 的說明）。
 def agent_reply_schema(domains=(), items=0):
     actions = [
         {"type": "null"},
@@ -29,7 +33,7 @@ def agent_reply_schema(domains=(), items=0):
             "domain": {"type": "string", "enum": list(domains)}, "goal": _text(DOMAIN_GOAL_CHARS),
             "items": {"type": "array", "items": _text(DOMAIN_ITEM_CHARS), "minItems": 1, "maxItems": DOMAIN_ITEMS_MAX}},
             "required": ["domain", "goal", "items"]})
-    props = {"thought": _text(REPLY_THOUGHT_CHARS), "reply": _text(REPLY_TEXT_CHARS), "action": {"anyOf": actions}}
+    props = {"thought": _text(REPLY_THOUGHT_CHARS), "reply": {"type": "string"}, "action": {"anyOf": actions}}
     if items:
         props["answers"] = {"type": "array", "maxItems": items, "items": {"type": "object", "properties": {
             "item": {"type": "integer", "enum": list(range(1, items + 1))},

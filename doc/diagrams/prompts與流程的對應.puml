@@ -101,7 +101,7 @@ package "skills_system/：也是模型會讀的" {
 package "用到它們的 session" {
   rectangle S_MAIN #D1E5F0 [
     **主 session（主對話）**：每一輪；agent_reply_schema(領域, 項目數)
-    （thought、reply、command、args 有長度上限）
+    （thought、command、args 有長度上限，2000 字以內）
     （action 多「交給領域」：領域只能是清單裡的、項目 1～6；
     這一回合有領域的報告時多 answers：每一項的答到／查不到、
     回答、出處，程式核對之後照項目排給使用者）
