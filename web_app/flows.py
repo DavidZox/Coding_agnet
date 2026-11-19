@@ -357,7 +357,7 @@ def run_analysis_turn(question, events, data=None):
     agent.messages.append({"role": "assistant", "content": json.dumps(
         {"thought": prompt_files.load("harness/direct_commands.md", "analyze_thought"), "reply": reply, "action": action}, ensure_ascii=False)})
     events.append({"channel": "chat", "role": "assistant", "text": reply, "action": action_text(action)})
-    outcome = _handle_tool_result(agent.run_tool({"action": action}, approved=True), events)
+    outcome = _handle_tool_result(agent.run_tool({"action": action}, approved=True, direct=True), events)   # 使用者直接指定的：不經過領域
     if outcome == "continue":
         return run_turn(events)
     return outcome == "await"

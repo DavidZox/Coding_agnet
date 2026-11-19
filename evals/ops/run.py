@@ -44,6 +44,15 @@ def make_copy():
     return tmp
 
 
+def worker_env(model, tmp, fs_root, urls):
+    """worker 的環境變數。HOME 指到檔案沙盒旁邊的空目錄（run_one 建，跟沙盒一起刪）：照抄主機的 HOME 時，`cd ~` 會跑到真的家目錄，
+    維運評測的確認關卡又自動同意，曾在那裡寫出檔案（第 5 步 5-1b 的 inv_fleet_report，待辦 4f ③）。不放在沙盒裡：工具在家目錄建的
+    快取不會進沙盒的快照、被當成改了檔案。"""
+    return dict(os.environ, EVAL_MODEL=model, PYTHONPATH=tmp, PYTHONDONTWRITEBYTECODE="1", OPS_FS_ROOT=fs_root,
+                HOME=os.path.join(os.path.dirname(fs_root), "home"), DOCKER_HOST=urls["docker_host"],
+                RMF_WEB_CONSOLE_URL=urls["web_console"], RMF_MANUAL_TRIGGER_URL=urls["manual_trigger"])
+
+
 def run_one(sc, args, urls, out_dir):
     tmp = make_copy()
     fs_root = os.path.join(tempfile.mkdtemp(prefix="ops_fs_"), "ops_home")
@@ -57,9 +66,8 @@ def run_one(sc, args, urls, out_dir):
         with open(sc_path, "w", encoding="utf-8") as f:
             json.dump(sc, f, ensure_ascii=False)
         out_path = os.path.join(tmp, "out.json")
-        env = dict(os.environ, EVAL_MODEL=args.model, PYTHONPATH=tmp, PYTHONDONTWRITEBYTECODE="1", OPS_FS_ROOT=fs_root,
-                   DOCKER_HOST=urls["docker_host"], RMF_WEB_CONSOLE_URL=urls["web_console"],
-                   RMF_MANUAL_TRIGGER_URL=urls["manual_trigger"])
+        env = worker_env(args.model, tmp, fs_root, urls)
+        os.makedirs(env["HOME"], exist_ok=True)
         t0 = time.time()
         r = {"scenario": sc["id"], "domain": sc["domain"], "complex": sc["complex"]}
         try:

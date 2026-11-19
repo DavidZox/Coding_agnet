@@ -1,5 +1,5 @@
 """真實專案評測的自我測試（不用模型，幾秒）：核對的比對規則、每一題的答案都答得出來而且每一則事實都必要、常見的錯答會被擋、
-真實回覆（人看過的）維持原來的判斷、answers.json 跟快照算出來的一樣（快照不在就略過）、跑評測時碰不到真的容器與調度系統、
+真實回覆（人看過的）維持原來的判斷、answers.json 跟快照算出來的一樣（快照不在就略過）、跑評測時碰不到真的容器與調度系統、主機的家目錄、
 階段驗證（phase_check 的 repo）怎麼合成好幾次的結果、怎麼跟基準比。
 
     python3 evals/repo/selftest.py
@@ -8,6 +8,8 @@ import glob
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 import tempfile
 import traceback
@@ -145,6 +147,20 @@ def t_runner_safety():
     assert names and names <= set(run.UNREACHABLE), f"技能讀的外部系統位址沒有全部指到不存在的地方：{sorted(names - set(run.UNREACHABLE))}"
     sc = run.scenario(BY_ID["py_fleet_msg"])
     assert sc["guard"] == "deny" and sc["turns"] == [{"user": BY_ID["py_fleet_msg"]["question"]}]
+    # 家目錄（待辦 4f ③）：harness 副本旁邊的空目錄——真的跑一次 `cd ~`，停在那裡，不是主機的家目錄，也不在副本裡（副本裡有題目與答案）
+    tmp = tempfile.mkdtemp(prefix="repo_selftest_")
+    try:
+        env = run.worker_env("m", tmp, "/tmp/src")
+        home = env["HOME"]
+        assert home == tmp + "_home" and not home.startswith(tmp + os.sep), home
+        assert os.path.realpath(home) != os.path.realpath(os.path.expanduser("~")), "不能是主機的家目錄"
+        os.makedirs(home)
+        r = subprocess.run([sys.executable, os.path.join(PROJECT, "skills_system", "scripts", "cd_cmd.py"), "~"], cwd=tmp, env=env,
+                           capture_output=True, text=True, timeout=60)
+        assert f"[CWD_CHANGED] {home}" in r.stdout, r.stdout + r.stderr
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+        shutil.rmtree(tmp + "_home", ignore_errors=True)
 
 
 def t_rescore():
@@ -210,7 +226,7 @@ def main():
              ("真實回覆（第一次試跑與最終量測、人看過的）維持原來的判斷：引用列裡的分支編號、分行列行號、說法不同", t_real_replies),
              ("answers.json 的形狀：30 題、五種各 5＋1、跟快照的版本一致", t_answers_shape),
              ("answers.json 跟快照算出來的一樣；快照唯讀、不解開指到外面的連結", t_answers_match_snapshot),
-             ("跑評測時碰不到真的容器與調度系統；確認關卡一律拒絕", t_runner_safety),
+             ("跑評測時碰不到真的容器與調度系統、主機的家目錄；確認關卡一律拒絕", t_runner_safety),
              ("核對改了之後用存下來的回覆重新計分（不跑模型），寫回 runs.jsonl 與報表", t_rescore),
              ("最後的回覆：最後一步沒有動作的那則", t_final_reply),
              ("階段驗證：好幾次的結果合成一份，每一題與每一次的主要組通過數跟基準比", t_phase_baseline)]

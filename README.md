@@ -9,8 +9,11 @@
   `py_usage`、`count_in_scope`、`find_lines`、`doc_lookup`、`cpp_symbol`、`config_trace`）、高階（`agent_core/orchestrator.py`：主對話就是高階，
   照 `skills_system/DOMAIN.md` 把找檔案、讀文件與 log、分析程式的問題「交給領域」，依中階的報告回答——每一項的回答與出處由程式核對、
   照項目排好給使用者（附出處那一行的原文）；再交給領域時帶著上一次的經過（中階從挑技能、合約重新規劃，一樣的做法由程式擋）；中階要問使用者時由程式轉問、接回；
-  領域讀內容的工具（搜文字、看檔案、分析程式）不給主對話直接用；列目錄、找檔案是共用的工具）、子工作階段（`agent_core/sub.py`：中階沒有適合的做法、
+  領域的工具不給主對話直接用；列目錄、找檔案是共用的工具）、子工作階段（`agent_core/sub.py`：中階沒有適合的做法、
   失敗或使用者取消時，程式接著開一個自己的對話，用這個領域的工具一步一步做，會改狀態的先問使用者，做完由程式核對回答、整理成報告交回主對話）、
+  凍結的工具登記成四個領域（`robotics_infra` 容器與 ROS 2、`rmf_dispatch` 調度系統、`data_analysis` 錄製的數據、`multimodal` 音檔與影像檔；
+  還沒有複合技能，交給它們的問題直接開子工作階段，現在的做法從 `prompts/AGENT.md` 搬到各領域 `SKILLS.md` 的〈做法〉；主對話不再直接用它們，
+  `/analyze` 是使用者直接指定的，照舊直接執行）、
   Web 的決策圖（`/topology`，唯讀：中階、子工作階段與低階執行過的工作，每一版的圖、每一步、回退、問使用者與判斷；交給領域時對話裡附連結）。下面寫的是現在的程式。
 - **harness 本身**（新架構沿用的基礎；目標是找檔案、文件與程式分析做到穩定）：一次一個動作的主對話迴圈、會改變狀態的動作先問使用者
   （確認關卡）、**多段處理長內容**（太長的工具輸出由程式切段、每段一個 worker 提煉、每條事實附行號由程式核對）、**存檔與回顧**（每次的
@@ -18,7 +21,7 @@
   2026-11-18 拿掉，新架構的中階會取代它（設計筆記 2.26）。
 - **凍結的工具**（照現在的樣子保留、能用，不再開發；〈[架構說明 §14](doc/架構說明.md#14-凍結的工具2026-11-17-起不再開發)〉）：
   ROS 2／MCAP 的數據解析（`analysis_run`：程式整理的事實報告）、機器人維運（Docker 容器、容器內的 ROS 2、fih_rmf_system 的調度系統）、
-  視覺（Web 附圖、`image_inspect`、框選小工具）與語音轉文字。
+  視覺（Web 附圖、`image_inspect`、框選小工具）與語音轉文字。2026-11-19 起登記成新架構的領域，在子工作階段裡用（第 5 步 5-2）。
 
 核心想法是**模型不寫程式、只挑技能**：可用的能力是一份技能索引，加上按需載入的規格與既有腳本；會改變實體狀態的動作（派工單、
 建容器、容器內非唯讀的指令…）執行前一律由程式請使用者確認。
@@ -116,12 +119,12 @@ Web 左欄是對話，右欄是系統與工具回傳（另一個分頁是「📊
 
 | 分類 | 技能 |
 |---|---|
-| ROS 2 數據解析（凍結） | `analysis_run`（程式整理的事實報告）、`mcap_recorder`、`rosout_parser`、`mcap_analyzer`、`mcap_feature_measure`、`mcap_slicer` |
+| ROS 2 數據解析（凍結；領域 `data_analysis`） | `analysis_run`（程式整理的事實報告）、`mcap_recorder`、`rosout_parser`、`mcap_analyzer`、`mcap_feature_measure`、`mcap_slicer` |
 | 檔案系統 | `list_dir`、`search_text`、`find_file`、`change_dir`、`view_file`、`code_ast_reader`、`host_runcmd`、`file_ops`、`csv_query` |
-| 容器（凍結） | `docker_containers`、`docker_images`、`docker_est`、`docker_open`、`docker_runcmd`、`docker_ctl`、`ROS2_workspace_env` |
-| ROS 2（容器內，凍結） | `ROS2_domain_id`、`ROS2_topic_list`、`ROS2_topic_echo`、`ROS2_node_list`、`ROS2_node_info`、`ROS2_param`、`ROS2_topic_pub` |
-| 調度系統（凍結） | `workpackage_send`、`workpackage_status`、`workpackage_cancel`、`overpending_cancel`、`semantic_map`、`rmf_handshake` |
-| 多模態（凍結） | `stt_engine`、`image_inspect` |
+| 容器（凍結；領域 `robotics_infra`） | `docker_containers`、`docker_images`、`docker_est`、`docker_open`、`docker_runcmd`、`docker_ctl`、`ROS2_workspace_env` |
+| ROS 2（容器內，凍結；領域 `robotics_infra`） | `ROS2_domain_id`、`ROS2_topic_list`、`ROS2_topic_echo`、`ROS2_node_list`、`ROS2_node_info`、`ROS2_param`、`ROS2_topic_pub` |
+| 調度系統（凍結；領域 `rmf_dispatch`） | `workpackage_send`、`workpackage_status`、`workpackage_cancel`、`overpending_cancel`、`semantic_map`、`rmf_handshake` |
+| 多模態（凍結；領域 `multimodal`） | `stt_engine`、`image_inspect` |
 | 工具結果存檔 | `result_recall`、`result_grep`、`result_view`、`result_list` |
 | 記憶 | `modify_memory`（用法寫在 `prompts/AGENT.md` 的記憶協議，不列在索引） |
 
@@ -162,7 +165,7 @@ Coding_agnet/            （資料夾名稱沿用；原本的 coding agent 已�
 │   ├── extract/         工具回傳的提煉：worker、整合、user 訊息的標籤
 │   ├── edg/、mid/       新架構：低階執行器的第 1 級修正、中階的挑技能、合約與判斷
 │   └── vision/          附圖的影像提取
-├── skills_system/       技能：SKILLS.md（索引）、tools/（規格）、scripts/（腳本與共用模組）、DOMAIN.md（新架構的領域清單）、repo_analysis/（領域：索引與複合技能）
+├── skills_system/       技能：SKILLS.md（索引）、tools/（規格）、scripts/（腳本與共用模組）、DOMAIN.md（新架構的領域清單）、repo_analysis/（領域：索引與複合技能）、robotics_infra/、rmf_dispatch/、data_analysis/、multimodal/（凍結的工具登記成的領域：索引與〈做法〉）
 ├── vision/              視覺模態：擷取、推論、提取、Web 的框選（web/）、sniper.py（獨立的框選小工具）
 ├── evals/               評測：chat/、skills/、analysis/、datagen/、ops/、extract/、repo/、edg/、mid/、orch/、integrity/、phase_check.py、baselines/；
 │                        results/（.gitignore）

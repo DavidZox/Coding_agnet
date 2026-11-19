@@ -14,6 +14,8 @@
 - 子工作階段（第 5 步，agent_core/sub.py）：沒有複合技能的領域直接開；自己的對話（主對話看不到試錯）、只能用領域的工具、確認關卡停下來與接回
   （同意、不同意、取消）、步數用完、卡住、收尾的核對（出處是自己的工具結果、修一次）、報告、決策圖；回覆的協議（5-1 的評測之後）：
   沒有動作也沒有回答提醒一次（不算交回修）、收尾寫成 {"command": "null"}、寫到長度上限被截斷的不執行；
+- 凍結的四個領域（第 5 步 5-2）：「領域」一節、主對話的索引拿掉它們的工具（工具全部交給領域的那一節連說明都不列）、子工作階段的工具清單
+  帶那一節的說明、〈做法〉從 AGENT.md 搬過去、擋與放行；數據分析在子工作階段裡執行（G4）：報告原樣附上、主對話照它核對回答；
 - 問使用者：Web（停下來、問題、回答不合法再問、回答之後接回同一個工作、取消；經過 HTTP 的 /api/send 與 /api/decision）、
   CLI（輸入回答、0 取消）、/clear 取消；
 - 評測的 worker 怎麼記（evals/domain_calls.py）。
@@ -33,6 +35,7 @@ PROJECT = os.path.dirname(os.path.dirname(HERE))
 COPY = ["agent_core", "skills_system", "prompts", "web_app", "vision"]
 HIDDEN = ("search_text", "view_file", "code_ast_reader")     # 領域讀內容的工具：主對話不直接用
 SHARED = ("list_dir", "find_file", "result_list", "result_grep", "result_view")   # 共用的工具（DOMAIN.md）
+DOMAINS = ["repo_analysis", "robotics_infra", "rmf_dispatch", "data_analysis", "multimodal"]   # DOMAIN.md 的領域（第 5 步 5-2 登記凍結的四個）
 FILES = {
     "pkg/mod.py": "def alpha(x):\n    return x + 1\n\n\ndef beta():\n    return alpha(2)\n",
     "pkg/use.py": "from pkg.mod import alpha\n\n\ndef gamma():\n    return alpha(3)\n",
@@ -193,7 +196,7 @@ def main():
             assert not [t for t in HIDDEN if f"[{t}]" in skills], "領域的工具不列在主對話的技能索引"
             assert all(f"[{t}]" in skills for t in SHARED + ("change_dir", "file_ops")), "共用的工具（列目錄、找檔案、回顧存檔）與其他技能照舊"
             act = agent_reply_schema(agent.domain_names())["properties"]["action"]["anyOf"]
-            assert act[2]["properties"]["domain"]["enum"] == ["repo_analysis"] and act[2]["properties"]["items"]["maxItems"] == 6, act
+            assert act[2]["properties"]["domain"]["enum"] == DOMAINS and act[2]["properties"]["items"]["maxItems"] == 6, act
             fake = FakeChat(main=[say("你好。")])
             turn("你好", fake)
             fmt = next(c["format"] for c in fake.calls if c["role"] == "main")
@@ -380,7 +383,7 @@ def main():
             fake = FakeChat(main=bad, select=[select("none", "沒有列目錄的做法")])
             events, _ = turn("pkg 有哪些檔案？", fake)
             tools = tools_of(events)
-            assert tools[0].startswith("[ERROR] 沒有「nope」這個領域（有的領域：repo_analysis）"), tools[0]
+            assert tools[0].startswith("[ERROR] 沒有「nope」這個領域（有的領域：" + "、".join(DOMAINS) + "）"), tools[0]
             assert tools[1].startswith("[ERROR] 交給 repo_analysis 時 goal 是空的"), tools[1]
             assert tools[2].startswith("[ERROR] 要回答的項目有 0 項（要 1～6 項）") and tools[3].startswith("[ERROR] 要回答的項目有 7 項"), tools[2:4]
             assert tools[4].startswith(DOMAIN_RESULT_HEAD) and tools[5].startswith("[ERROR] 這個問題已經用一樣的子目標與項目交給過 repo_analysis"), tools[5]
@@ -713,6 +716,90 @@ def main():
             assert v["system"] and isinstance(v["calls"], list) and v["calls"][0]["role"] == "step" and v["status_text"]
             assert v["chain"]["previous"] and v["chain"]["previous"][0]["ref"].startswith("mid_jobs/"), v["chain"]
 
+        def t_frozen_domains():
+            # 第 5 步 5-2：凍結的工具登記成四個領域（沒有複合技能：直接開子工作階段）；主對話的索引拿掉它們，工具全部交給領域的那幾節
+            # （標題與說明）也不列；子工作階段列工具時，那一節的說明（目標容器、ROS 2 Workspace）放在第一個工具前面；〈做法〉從 AGENT.md 搬過去
+            reg = agent.domain_registry()
+            assert list(reg["domains"]) == DOMAINS and not reg["problems"], (list(reg["domains"]), reg["problems"])
+            sp = agent.get_system_prompt()
+            assert all(f"### {d}：" in sp for d in DOMAINS) and sp.count("（沒有寫好的做法：交給這個領域的問題") == 4, "四個凍結的領域在「領域」一節"
+            skills = sp[sp.index("## Available Skills"):]
+            frozen = {t for d in DOMAINS[1:] for t in reg["domains"][d]["tools"]}
+            assert len(frozen) == 28 and not [t for t in frozen if f"[{t}]" in skills], "凍結的 28 個工具不列在主對話的索引"
+            assert all(f"[{t}]" in skills for t in ("change_dir", "file_ops", "host_runcmd", "csv_query") + SHARED), "不屬於領域的照舊"
+            for gone in ("## 容器化環境", "## ROS2套件", "## 調度系統", "## 多模態資訊", "## ROS 2 數據解析", "**目標容器**", "**ROS 2 Workspace 狀態**",
+                         "執行邊界"):
+                assert gone not in skills, f"工具全部交給領域的那一節（標題與說明）不列：{gone}"
+            lines = agent._index_lines(reg["domains"]["robotics_infra"]["tools"] + reg["shared"]).split("\n")
+            k = next(i for i, ln in enumerate(lines) if "**目標容器**" in ln)
+            assert lines[k + 1].startswith("- [docker_containers]"), "目標容器的說明放在容器工具的前面"
+            k = next(i for i, ln in enumerate(lines) if "**ROS 2 Workspace 狀態**" in ln)
+            assert lines[k + 1].startswith("- [ROS2_domain_id]"), "ROS 2 Workspace 的說明放在 ROS2_* 的前面"
+            assert sum("**目標容器**" in ln for ln in lines) == 1, "一節的說明只列一次"
+            assert not any(ln.startswith(">") for ln in agent._index_lines(reg["domains"]["repo_analysis"]["tools"]).split("\n")), \
+                "repo_analysis 的工具那幾節沒有說明：跟以前一樣只有工具"
+            with open(os.path.join(tmp, "prompts", "AGENT.md"), encoding="utf-8") as f:
+                prof = f.read()
+            assert "## Data Analysis" not in prof and "工作包卡住" not in prof and "容器停了" not in prof and "CURRENT_TARGET_CONTAINER" not in prof
+            assert "改設定檔的一個值" in prof and "使用者提到手冊" in prof and "只查不改" in prof, "跨領域的做法留在主對話"
+            practice = {d: reg["domains"][d]["practice"] for d in DOMAINS}
+            assert "**數據在哪裡**" in practice["data_analysis"] and "analysis_run" in practice["data_analysis"]
+            assert "ROS2_topic_echo" not in practice["data_analysis"], "正在跑的系統不是 data_analysis 的事"
+            assert "工作包卡住" in practice["rmf_dispatch"] and "handshake" in practice["rmf_dispatch"] and "容器停了" in practice["robotics_infra"]
+            assert "CURRENT_TARGET_CONTAINER" in practice["robotics_infra"] and not practice["multimodal"]
+            for tool, dom in (("docker_ctl", "robotics_infra"), ("workpackage_status", "rmf_dispatch"), ("analysis_run", "data_analysis"),
+                              ("stt_engine", "multimodal"), ("scripts/ROS2_param_cmd.py", "robotics_infra")):
+                assert agent.domain_gate(tool).startswith(f"[ERROR] {tool.split('/')[-1].replace('_cmd.py', '')} 是 {dom} 領域的工具"), tool
+            agent._sub_allowed = {"domain": "rmf_dispatch", "tools": set(reg["domains"]["rmf_dispatch"]["tools"] + reg["shared"])}
+            try:
+                assert agent.domain_gate("docker_containers") is None and agent.domain_gate("rmf_handshake") is None
+                assert agent.domain_gate("docker_ctl").startswith("[ERROR] docker_ctl 不是 rmf_dispatch 這個領域的工具"), "子工作階段只能用那個領域的工具"
+            finally:
+                agent._sub_allowed = None
+
+        def t_sub_analysis():
+            # G4：analysis_run 在 data_analysis 的子工作階段裡執行：數據分析的報告原樣附在交回主對話的報告裡；主對話照它核對回答
+            # （analysis_reply_check：answers 的回答寫成因果 → 提醒一次），之後的回合也核對寫到報告的那幾行
+            from agent_core.config import ANALYSIS_ANSWER_NOTE, ANALYSIS_REPORT_HEAD
+            areport = (f"{ANALYSIS_REPORT_HEAD}（job 20260101_000000：程式整理，1 秒）\n問題：安全閘什麼時候恢復？\n數據：exp_x（30.000 秒）\n"
+                       "重點（程式整理）：\n- +3.20s　/scan 中斷（E1）\n- +15.50s　/safety_gate 狀態改變：PROTECTIVE_STOP → RUNNING（E2）\n"
+                       f"{ANALYSIS_ANSWER_NOTE}：只陳述報告裡的事實）")
+
+            def fin(messages):
+                rid = re.findall(r"存檔是 #(\d+)", "\n".join(m["content"] for m in messages))[-1]
+                return {"thought": "收尾", "reply": "看完報告。", "action": None,
+                        "answers": [{"item": 1, "status": "answered", "text": "+15.50s 安全閘從 PROTECTIVE_STOP 變成 RUNNING（E2）", "refs": [f"#{rid}"]}]}
+
+            def ans(text):
+                def f(messages):
+                    rid = re.findall(r"數據分析的報告（#(\d+)，原樣）", last_report(messages))[-1]
+                    return answer("見報告。", [(1, "answered", text, [f"#{rid}"])])
+                return f
+            real, n0 = agent.analysis_run, len(agent.messages)
+            agent.analysis_run = lambda remainder="": areport
+            try:
+                fake = FakeChat(main=[dispatch("錄製的數據 exp_x 裡安全閘什麼時候恢復", ["什麼時候恢復"], domain="data_analysis"),
+                                      ans("雷達斷線導致安全閘停住，+15.50s 恢復 RUNNING（E2）"), ans("+15.50s 安全閘從 PROTECTIVE_STOP 變成 RUNNING（E2）")],
+                                sub=[step("analysis_run"), step("scripts/analysis_run_cmd.py", '--data exp_x "安全閘什麼時候恢復"'), fin])
+                events, _ = turn("錄製的 exp_x 裡安全閘什麼時候恢復？", fake)
+            finally:
+                agent.analysis_run = real
+            d = agent._domain_turn["dispatches"][-1]
+            job = sub_job(d["job"])
+            rid = [st["result_id"] for st in job["steps"] if st["tool"] == "analysis_run" and not st["doc"]][0]
+            assert d["kind"] == "sub" and fake.count("select") == 0, "沒有複合技能：直接開子工作階段"
+            assert f"## 數據分析的報告（#{rid}，原樣）\n{areport}" in job["result"]["report"], "數據分析的報告原樣附在報告裡"
+            mine = agent.messages[n0:]
+            result = next(m["content"] for m in mine if m["role"] == "user" and DOMAIN_RESULT_HEAD in m["content"])
+            assert areport.split("\n")[4] in result, "交回主對話的報告裡有數據分析的報告"
+            assert agent._analysis_ctx and agent._analysis_ctx["report"].startswith(ANALYSIS_REPORT_HEAD) and ANALYSIS_ANSWER_NOTE not in agent._analysis_ctx["report"]
+            nudges = [m["content"] for m in mine if m["role"] == "user" and m["content"].startswith("[harness]") and "導致" in m["content"]]
+            assert len(nudges) == 1 and fake.count("main") == 3, "answers 寫成因果：提醒一次改寫（analysis_reply_check 看 answers 的回答）"
+            assert "+15.50s 安全閘從 PROTECTIVE_STOP 變成 RUNNING" in [e for e in events if e["channel"] == "chat"][-1]["text"]
+            agent.begin_turn()                      # 之後的回合：寫到報告的那幾行照樣核對
+            assert agent.analysis_reply_check({"reply": "是雷達斷線導致的（E2）", "action": None, "valid": True}), "之後的回合也核對"
+            assert agent.analysis_reply_check({"reply": "好的，還有別的問題嗎？", "action": None, "valid": True}) is None, "跟報告無關的不核對"
+
         for name, fn in [("領域：system prompt 的「領域」一節、技能索引拿掉領域的工具、schema 多「交給領域」；沒有 DOMAIN.md 時照舊", t_registry),
                          ("擋領域的工具：技能名稱、腳本、規格都擋，其他技能與共用的工具（列目錄、找檔案、回顧存檔）照舊", t_gate),
                          ("交給領域 → 中階 → 報告存成 #編號 交回主模型（不提煉），決策圖的連結先推給畫面；使用者看到照項目排好的回答", t_dispatch_report),
@@ -740,7 +827,10 @@ def main():
                          ("子工作階段的上限與收尾：不是這個領域的工具擋下來、卡住、步數用完、出處不是自己的工具結果交回修一次再標出來", t_sub_limits),
                          ("子工作階段的回覆：沒有動作也沒有回答提醒一次（不算交回修）、收尾寫成 {\"command\": \"null\"}、寫到長度上限被截斷的不執行"
                           "（重問一次，還是被截斷就不執行）", t_sub_protocol),
-                         ("決策圖：子工作階段在清單裡、整理成每一步與收尾的回答、串起上一次", t_sub_topology)]:
+                         ("決策圖：子工作階段在清單裡、整理成每一步與收尾的回答、串起上一次", t_sub_topology),
+                         ("凍結的四個領域（5-2）：「領域」一節、索引拿掉它們的工具與整節的說明、子工作階段的工具帶那一節的說明、〈做法〉搬過去、擋與放行",
+                          t_frozen_domains),
+                         ("數據分析在子工作階段裡（G4）：報告原樣附上、主對話照它核對回答（answers 寫成因果提醒一次）、之後的回合也核對", t_sub_analysis)]:
             check(name, fn)
     finally:
         os.chdir(cwd)

@@ -12,7 +12,7 @@
 | `ops/` 多步驟維運 | `selftest.py`（file_ops、維運技能的確認關卡、沙盒 daemon 怎麼起） | `run.py`（情境在 `dataset/`，在 Docker-in-Docker 沙盒裡真的執行；`worker.py` 跑一個情境） | 主對話用技能做完維運任務（2026-11-18 起沒有任務引擎，多步驟由主對話自己做）；狀態、回覆、禁止動作由程式計分 |
 | `integrity/` 評測的完整性 | `selftest.py` | — | 模型會讀的文字（prompt、技能說明、程式回給模型的字）沒有評測世界的名稱（從評測的來源自動取）；`prompts/` 的範本跟程式對得上；沒人用的程式 |
 | `extract/` 提煉 | —（不用模型的在 `chat/extract_selftest.py`） | `run.py`（情境在 `cases.py`：程式產生已知答案的長輸出；`worker.py` 跑一個情境） | 工具回傳的提煉與 result_recall：找到幾個、多列幾個、數量的說法、切幾段讀幾段、程式拿掉幾條 |
-| `repo/` 真實專案（新架構的評測） | `selftest.py`（核對、每一題答得出來、答案跟快照一致、碰不到真的容器） | `run.py`（題目在 `questions.py`，答案 `answers.json` 由程式從固定版本的快照算；借用 `ops/worker.py` 跑一題） | 在真實專案（amr_base_sw、amr_base_hw、fih_rmf_system）裡找檔案與計數、讀長文件、Python 的定義與呼叫、C++、跨檔案的調查；最後的回覆由程式核對 |
+| `repo/` 真實專案（新架構的評測） | `selftest.py`（核對、每一題答得出來、答案跟快照一致、碰不到真的容器與主機的家目錄） | `run.py`（題目在 `questions.py`，答案 `answers.json` 由程式從固定版本的快照算；借用 `ops/worker.py` 跑一題） | 在真實專案（amr_base_sw、amr_base_hw、fih_rmf_system）裡找檔案與計數、讀長文件、Python 的定義與呼叫、C++、跨檔案的調查；最後的回覆由程式核對 |
 | `edg/` 低階執行器（新架構 D10 第 2 步） | `selftest.py`（寫好的圖、假的修正模型） | `run.py`（題目在 `cases.py`：一個工具節點故意錯一個參數，工作目錄是真實專案評測的快照） | 照決策圖執行、照收據守門、從收據帶入參數、重排；第 1 級修正：修得好的有沒有修好（收據的欄位與範圍由程式核對）、修不好的有沒有往上交 |
 | `mid/` 中階（新架構 D10 第 3 步） | `selftest.py`（假的模型、真的工具與低階執行器） | `run.py`（題目沿用真實專案評測的 30 題，`cases.py` 標每一題該用的複合技能與參數） | 每一層分開量：挑技能（模型挑的、換技能之後的）、合約（參數與原文的核對）、判斷（幾次、走的路、挑的行過不過核對）、最後的報告（`repo/checks.py`）；第 2 級（回退、換技能、問使用者、熔斷） |
 | `orch/` 高階（新架構 D10 第 4 步） | `selftest.py`（假的主模型與中階的模型、真的中階、低階與工具，直接驅動 Web 的回合、Web 伺服器與 CLI） | —（真模型看 `repo/run.py`：主對話接上中階之後的結果；`chat/`、`ops/` 看有沒有退步） | 領域的清單（`skills_system/DOMAIN.md`）與 system prompt 的「領域」一節、擋領域的工具（列目錄、找檔案是共用的）、中階沒做完時接著開子工作階段、沒有複合技能的領域直接開子工作階段（確認關卡、上限、收尾的核對、回覆的協議、決策圖）、find_lines 的報告與出處、依報告回答的 answers 與核對、照項目排好的回答、帶著上一次的經過再交、交給領域的核對（沒有的領域、子目標、項目數、一樣的再交一次）、報告存成 #編號 交回主模型、決策圖的連結、問使用者的接回（Web、HTTP、CLI、取消、/clear）、第 3 級的排除、依報告回答的出處、評測的 worker 怎麼記 |
@@ -139,7 +139,8 @@ python3 evals/datagen/check_facts.py test_data/recordings/gen/s2/cases.json   # 
   換了水準的地方、反覆切換只留頭尾、陣列只量長度）；事實的整理（T#／E# 每次一樣、同一則訊息的變化合成一個事件、時間線與前後 1 秒的對照、
   前後沒有任何變化的 Log、沒有量的 Topic）；報告（每個重要的時間點一則重點、那一刻全部的 Log 與事件、到最後跟開頭不同的值依 Topic 分組、
   指定的 Topic、不呼叫模型）；句子的意思（`agent_core/claims.py`：每一類誤擋都有放行與照樣擋的案例）；主對話依報告回答時把先後寫成因果
-  或寫錯事實 → 提醒一次（之後的回合核對寫到報告的那幾行、`/clear` 之後不再對照）；dispatch、Web 的 `/analyze` 回合、CLI 的 `/analyze`（驅動真的 `cli.main()` 迴圈：
+  或寫錯事實 → 提醒一次（之後的回合核對寫到報告的那幾行、`/clear` 之後不再對照）；dispatch（主模型直接叫 analysis_run 會被擋：它登記在 data_analysis）、
+  Web 的 `/analyze` 回合（使用者直接指定的，不經過領域）、CLI 的 `/analyze`（驅動真的 `cli.main()` 迴圈：
   `--data`、`--topic` 照原樣交給 analysis_run，跟 Web 同一套參數）；一次最多 3 分鐘、只有 Log 的錄製、
   拿掉的選項、設定檔只存改過的值；程式重新啟動時標成中斷；錄製的資料夾名稱。
   `evals/analysis/fixtures/` 是 `exp_5090_overheat` 錄下的 `mcap_analyzer --json`、`--facts --json`、`rosout_parser --json` 輸出；
@@ -165,7 +166,7 @@ python3 evals/datagen/check_facts.py test_data/recordings/gen/s2/cases.json   # 
 ## 多步驟維運（`ops/`）
 
 ```bash
-python3 evals/ops/selftest.py                                   # 離線：file_ops、維運技能的確認關卡、沙盒 daemon 怎麼起
+python3 evals/ops/selftest.py                                   # 離線：file_ops、維運技能的確認關卡、沙盒 daemon 怎麼起、worker 的家目錄（`cd ~` 到不了主機的家目錄）
 python3 evals/ops/run.py --model gemma4:26b                     # 真模型：50 個情境（fs 12、docker 10、ros2 10、handshake 10、complex 8）
 python3 evals/ops/run.py --set holdout --model gemma4:26b       # 20 個保留情境（開發時沒有看過）
 python3 evals/ops/run.py --set inv --model gemma4:26b           # 調查與整理報告 7 個（第 5 階段）；--set all＝三組 77 個（phase_check 用這個）
@@ -188,7 +189,7 @@ python3 evals/ops/run.py --only hs_lost_fin_fix --tag try1      # 只跑一個�
 ## 真實專案（`repo/`，新架構的評測）
 
 ```bash
-python3 evals/repo/selftest.py                              # 離線（幾秒）：核對、每一題答得出來、真實回覆的判斷、answers.json 跟快照一致、碰不到真的容器、階段驗證的比對
+python3 evals/repo/selftest.py                              # 離線（幾秒）：核對、每一題答得出來、真實回覆的判斷、answers.json 跟快照一致、碰不到真的容器與主機的家目錄、階段驗證的比對
 python3 evals/repo/run.py --model gemma4:26b                # 真模型：主要的 25 題
 python3 evals/repo/run.py --model gemma4:e4b --set all      # 加上保留組（30 題）
 python3 evals/repo/run.py --only py_fleet_msg --tag try1    # 只跑某幾題
@@ -277,7 +278,7 @@ python3 evals/mid/run.py --rescore evals/results/<結果目錄>   # 不跑模型
 python3 evals/orch/selftest.py                              # 離線（幾秒）：假的主模型與中階的模型、真的中階與工具
 ```
 
-- **離線**（`selftest.py`，23 項）：system prompt 的「領域」一節與技能索引（領域讀內容的工具不列；沒有 `DOMAIN.md` 時照舊）、回覆的 schema 多「交給領域」、
+- **離線**（`selftest.py`，25 項）：system prompt 的「領域」一節與技能索引（領域讀內容的工具不列；沒有 `DOMAIN.md` 時照舊）、回覆的 schema 多「交給領域」、
   擋領域的工具（技能名稱、腳本、規格；共用的工具（列目錄、找檔案、回顧存檔）與其他技能照舊）、交給領域 → 中階 → 報告存成 #編號 交回主模型（不提煉）、決策圖的連結先推給畫面、
   find_lines 的報告（提到的行）照「檔案:行號」寫出處通過核對、核對（沒有的領域、子目標是空的、項目數、一樣的再交一次）、依報告回答的出處不在報告裡提醒一次、不屬於這個領域的排除
   與高 4 的紀錄、問使用者（Web 的 `run_turn` 與 `answer_domain_turn`、經過 HTTP 的 `/api/send` 與 `/api/decision`、CLI 的 `cli.main()`：回答不合法再問、
@@ -292,6 +293,9 @@ python3 evals/orch/selftest.py                              # 離線（幾秒）
   `t_sub_limits`）、決策圖的子工作階段與上一次、下一次（`t_sub_topology`）；取消之後接著開子工作階段、`/clear` 不接著開（`t_ask_cancel`、`t_cli`、`t_http`）。
   5-1b（5-1 的評測之後）：子工作階段的回覆——沒有動作也沒有回答提醒一次、不算交回修（之後收尾的核對照樣能交回修；提醒之後還是一樣就照收尾核對）、
   收尾寫成 `{"command": "null"}` 跟 action null 一樣、寫到長度上限被截斷的不執行（只接提醒重問一次；還是被截斷就不執行、對話裡不留那段參數）（`t_sub_protocol`）。
+  5-2（凍結的工具登記成領域）：四個領域在「領域」一節、主對話的索引拿掉它們的工具（工具全部交給領域的那一節連標題與說明都不列）、子工作階段的工具清單
+  帶那一節的說明（目標容器、ROS 2 Workspace）、〈做法〉從 `prompts/AGENT.md` 搬過去、擋與放行（`t_frozen_domains`）；數據分析在子工作階段裡執行（G4）：
+  報告原樣附上、主對話照它核對回答（answers 寫成因果提醒一次、之後的回合也核對；`t_sub_analysis`）。
 - **真模型**：沒有自己的一組；主對話接上中階之後的結果看真實專案評測（`repo/run.py`），有沒有退步看主對話（`chat/`）與維運（`ops/`）。
   評測的 worker（`chat/worker.py`、`ops/worker.py`，真實專案評測借用後者）收尾與記法相同（`evals/domain_calls.py`）：中階要問使用者時取消
   （評測裡沒有人回答，`domain_asks` 記下問了什麼；取消之後跟使用者按取消一樣接著開子工作階段）；子工作階段或中階的確認關卡照情境的 `guard` 回答

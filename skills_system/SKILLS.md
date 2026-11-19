@@ -4,13 +4,8 @@
 
 > **共同回傳慣例**：成功以 `[PASS]` 開頭；失敗（含逾時）以 `[ERROR]` 開頭並附原因與下一步。各技能有自己的逾時上限（見規格），系統另有 600 秒總逾時。收到 `[ERROR]` 照訊息的下一步做（修正參數、先用它說的技能查、或問使用者），不要原樣重試。長的輸出分成 `## 章節`；提煉結果與 result_* 引用的行號都是存檔原文的行號（`result_view <編號> --from <行號>`）。
 
-> **目標容器**：容器技能的 `<container_name>` 可省略＝Current Agent State 的 CURRENT_TARGET_CONTAINER（`docker_open` 選定／切換；成功操作過的容器會自動成為目標）。已有目標時直接用，不要再問使用者要看哪個容器。
-
-> **ROS 2 Workspace 狀態**：`CURRENT_ROS2_WORKSPACE` 只適用於 `ROS2_WORKSPACE_CONTAINER` 所記錄的容器。ROS2_* 技能與數據技能會自動載入 /opt/ros、這個 Workspace 與執行中節點的 ROS_DOMAIN_ID；`docker_runcmd` 不會，容器裡的 ros2 指令要自己 source，或改用 `ROS2_workspace_env --command`。Workspace 路徑不知道時用 `ROS2_workspace_env --discover` 找，不要先問使用者。
-
-> **ROS 2 數據解析的執行邊界**：數據技能（mcap_*、rosout_parser）由主機端呼叫，讀檔與 ROS 2 訊息反序列化在目標容器內執行（自動載入 /opt/ros 與 Workspace overlay；自訂訊息型別讀不到時先用 ROS2_workspace_env 確認 Workspace）。路徑以容器內路徑為準，主機路徑會依容器的 bind mount 自動換算。**數據**可以是實驗資料夾、bag 資料夾、切片資料夾、`.mcap`、實驗名稱或 `latest`；省略時用 CURRENT_ANALYSIS_DATA（成功操作過的數據會自動成為目前的數據）。
-
 ## ROS 2 數據解析（主要功能）
+> **ROS 2 數據解析的執行邊界**：數據技能（mcap_*、rosout_parser）由主機端呼叫，讀檔與 ROS 2 訊息反序列化在目標容器內執行（自動載入 /opt/ros 與 Workspace overlay；自訂訊息型別讀不到時先用 ROS2_workspace_env 確認 Workspace）。路徑以容器內路徑為準，主機路徑會依容器的 bind mount 自動換算。**數據**可以是實驗資料夾、bag 資料夾、切片資料夾、`.mcap`、實驗名稱或 `latest`；省略時用 CURRENT_ANALYSIS_DATA（成功操作過的數據會自動成為目前的數據）。
 > 問題要同時看 Log 與好幾個 Topic（「發生了什麼、前後有哪些變化、什麼時候恢復」）用 analysis_run；只看一個 Topic、一個值、Log 的時間點，直接用下面對應的技能。
 - [analysis_run](tools/analysis_run.md) — 數據分析（全部由程式做）：Log 去重＋量全部 Topic 的事實 → 事實報告（每個重要的時間點一則重點、各 Topic 的結果、時間線、Log 的對照；不判斷原因），依報告回答
 - [mcap_recorder](tools/mcap_recorder.md) — 在目標容器內定時錄製 ROS 2 Topic（toolkit 格式：bag、rosout.log、terminal.log），錄完自動建立全域 Topic Metadata 索引
@@ -31,6 +26,7 @@
 - [file_ops](tools/file_ops.md) — 改本機的文件：建目錄、複製、移動／改名、寫入或附加文字檔、取代檔案裡的一段文字；改 YAML 設定檔的一個值用 set（`--after "name: amr_07"` 只改那一台的那一行）；會先請使用者確認；不提供刪除
 
 ## 容器化環境
+> **目標容器**：容器技能的 `<container_name>` 可省略＝Current Agent State 的 CURRENT_TARGET_CONTAINER（`docker_open` 選定／切換；成功操作過的容器會自動成為目標）。已有目標時直接用，不要再問使用者要看哪個容器。
 - [docker_containers](tools/docker_containers.md) — 列出目前所有容器（名稱、狀態、映像檔），可只看運行中或以關鍵字過濾；要進入容器前先用這個確認完整名稱
 - [docker_images](tools/docker_images.md) — 列出本機所有映像檔（名稱、tag、大小），建立容器前先用這個確認映像檔存在
 - [docker_est](tools/docker_est.md) — 用映像檔（可帶 tag）建立並啟動容器，可指定名稱（--name）、指令（--cmd）、--network、-e；會先請使用者確認
@@ -44,6 +40,7 @@
 - [image_inspect](tools/image_inspect.md) — 對指定路徑的影像檔（截圖、相機快照）依提示詞做視覺模型分析，回傳文字描述
 
 ## ROS2套件
+> **ROS 2 Workspace 狀態**：`CURRENT_ROS2_WORKSPACE` 只適用於 `ROS2_WORKSPACE_CONTAINER` 所記錄的容器。ROS2_* 技能與數據技能會自動載入 /opt/ros、這個 Workspace 與執行中節點的 ROS_DOMAIN_ID；`docker_runcmd` 不會，容器裡的 ros2 指令要自己 source，或改用 `ROS2_workspace_env --command`。Workspace 路徑不知道時用 `ROS2_workspace_env --discover` 找，不要先問使用者。
 - [ROS2_domain_id](tools/ROS2_domain_id.md) — 看 shell 與正在跑的節點各在哪個 ROS_DOMAIN_ID（topic／node 列表是空的時用）；set 寫進容器的 ~/.bashrc（會先請使用者確認）
 - [ROS2_topic_list](tools/ROS2_topic_list.md) — 在容器內查詢 topic 列表（依命名空間分組、算好總數、寫明用的 domain）；`--filter 關鍵字` 只列符合的、`--types` 附型別
 - [ROS2_topic_echo](tools/ROS2_topic_echo.md) — 問現在的值：讀指定 topic 的一筆訊息（直接讀，不用問要觀察多久）；問一段時間內的變化才加 `--duration`：發布方式與中斷、每個欄位的變化（同 mcap_feature_measure）、`--where 欄位<值` 門檻判斷

@@ -8,7 +8,7 @@ harness 送給模型的字都在這裡：改字不用改程式，存檔之後下
 
 | 檔案 | 給誰 | 程式 |
 |---|---|---|
-| `AGENT.md` | 主對話的 system prompt（角色、做法、執行協議、記憶協議、溝通風格） | `prompt.get_system_prompt` |
+| `AGENT.md` | 主對話的 system prompt（角色、跨領域的做法、執行協議、記憶協議、溝通風格；只屬於一個領域的做法在那個領域 `SKILLS.md` 的〈做法〉，只給它的子工作階段看，第 5 步 5-2） | `prompt.get_system_prompt` |
 | `context_modes/harness.md`、`claude_code.md` | 主對話：目前上下文模式的規則（接在 AGENT.md 後面） | `context_mode.context_mode_rules` |
 | `Memory.md` | 主對話：長期記憶——**資料，不是規則**：使用者要求時 `modify_memory` 寫入 | `prompt.load_long_term_memory` |
 | `harness/system_prompt.md` | 主對話 system prompt 裡程式組的部分：各節的標題、長期記憶開頭的說明、接回舊摘要時的提醒、「領域」一節（交給領域的寫法、依報告回答的 answers、再交給領域與次數的上限、Available Skills 列的可以直接用、每個領域的說明） | `prompt.py`、`orchestrator.py` |

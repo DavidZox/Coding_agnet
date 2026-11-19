@@ -40,14 +40,14 @@
   "total": 29
  },
  "ops_selftest": {
-  "label": "拿掉任務引擎與 Plan 模式（2026-11-18）",
-  "passed": 3,
-  "total": 3
+  "label": "評測 worker 的家目錄（待辦 4f ③）（2026-11-19）",
+  "passed": 4,
+  "total": 4
  },
  "orch_selftest": {
-  "label": "第 5 步 5-1b（2026-11-19）",
-  "passed": 23,
-  "total": 23
+  "label": "第 5 步 5-2（2026-11-19）",
+  "passed": 25,
+  "total": 25
  },
  "repo_selftest": {
   "label": "第 4 步 4-2（2026-11-19）",

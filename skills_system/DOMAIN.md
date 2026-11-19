@@ -7,6 +7,10 @@
 
 ## 領域
 - [repo_analysis](repo_analysis/SKILLS.md)
+- [robotics_infra](robotics_infra/SKILLS.md)
+- [rmf_dispatch](rmf_dispatch/SKILLS.md)
+- [data_analysis](data_analysis/SKILLS.md)
+- [multimodal](multimodal/SKILLS.md)
 
 ## 共用的工具
 > 每一層都直接用：回顧存檔（追問時看之前的結果）；列目錄、找檔案（只看有什麼、在哪裡，不讀內容：凍結的工具的事——數據資料夾、

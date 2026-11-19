@@ -105,12 +105,8 @@ class TurnGuardMixin:
         if not hasattr(self, "_rep"):
             self.begin_turn()
         self.turn_tool_runs += 1
-        if output.startswith(ANALYSIS_REPORT_HEAD):   # 這一回合的回覆要依這份報告：analysis_reply_check 核對（最後那行回答的說明不算報告的字）
-            self._analysis_report = "\n".join(ln for ln in output.splitlines() if not ln.startswith(ANALYSIS_ANSWER_NOTE))
-            m = re.search(r"（job ([^\s：）]+)", output.splitlines()[0])
-            self._analysis_job_id = m.group(1) if m else None
-            # 之後的回合（追問、討論這份報告）也核對寫到報告的那幾行：最近一份報告一直算數，直到下一份報告或 /clear
-            self._analysis_ctx = {"report": self._analysis_report, "job": self._analysis_job_id}
+        if output.startswith(ANALYSIS_REPORT_HEAD):
+            self.note_analysis_report(output)
         action = action_text(parsed["action"]).strip()
         output, times = self._rep.note(action, output)
         if times:
@@ -118,6 +114,15 @@ class TurnGuardMixin:
             self._add_notice(f"⛔ AI 用同樣的動作 {times} 次都得到同樣的結果（{action[:60]}），這一回合先停在這裡，避免一直重試；"
                              "可以補充說明、指出正確的路徑或參數，或換個方式要求。")
         return output
+
+    def note_analysis_report(self, output):
+        """數據分析的事實報告（ANALYSIS_REPORT_HEAD 開頭）：這一回合的回覆要依這份報告，analysis_reply_check 核對（最後那行回答的說明不算
+        報告的字）；之後的回合（追問、討論這份報告）也核對寫到報告的那幾行：最近一份報告一直算數，直到下一份報告或 /clear。主對話自己執行的
+        （note_tool_result）與子工作階段裡執行、原樣附在報告裡交回的（第 5 步 G4，orchestrator._domain_outcome）都走這裡。"""
+        self._analysis_report = "\n".join(ln for ln in output.splitlines() if not ln.startswith(ANALYSIS_ANSWER_NOTE))
+        m = re.search(r"（job ([^\s：）]+)", output.splitlines()[0])
+        self._analysis_job_id = m.group(1) if m else None
+        self._analysis_ctx = {"report": self._analysis_report, "job": self._analysis_job_id}
 
     def claim_without_action(self, parsed):
         """這一回合沒有執行任何工具、回覆卻宣稱已經做了某件事，或說要去做卻沒有動作：回傳要接在對話後面的提醒（每回合最多一次），
@@ -155,7 +160,8 @@ class TurnGuardMixin:
         if "turn_guard" in os.environ.get("AGENT_ABLATE", ""):
             return None
         report = ctx["report"]
-        reply = parsed.get("reply") or ""
+        # 依領域的報告回答時，回答寫在 answers（第 5 步 G4：數據分析在子工作階段裡執行）：每一項的回答文字一起核對（出處不算）
+        reply = "\n".join([parsed.get("reply") or ""] + [a.get("text") or "" for a in parsed.get("answers") or []])
         if not getattr(self, "_analysis_report", None):   # 不是這一回合的報告：只看寫到報告的那幾行
             reply = _about_report(reply, report)
             if not reply:

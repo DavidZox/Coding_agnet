@@ -227,7 +227,7 @@ def main():
                 agent.messages.append({'role': 'assistant', 'content': _json.dumps(
                     {"thought": prompt_files.load(_DIRECT, "analyze_thought"), "reply": prompt_files.load(_DIRECT, "analyze_reply_cli"),
                      "action": action}, ensure_ascii=False)})
-                result = agent.run_tool({"action": action}, approved=True)
+                result = agent.run_tool({"action": action}, approved=True, direct=True)     # 使用者直接指定的：不經過領域
                 print(f"\n🚀 系統回傳:\n{'-'*30}\n{result}\n{'-'*30}")
                 tokens = agent.count_tokens(result)
                 agent.total_tool_tokens += tokens

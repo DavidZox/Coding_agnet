@@ -4,7 +4,8 @@
 
 - file_ops（建目錄、寫入含引號的內容、附加、取代要剛好一次、複製不覆蓋——目的已經一模一樣算成功、移動、備份、系統目錄不能寫、不提供刪除）；
 - 確認關卡：docker_ctl／ROS2_param／rmf_handshake 的唯讀用法不用問、會改變狀態的要問；
-- 維運沙盒的 daemon：停著的容器刪掉重建（不用 docker start，舊的 containerd.pid 會讓 daemon 起不來），跑著的不動、沒有的直接建。
+- 維運沙盒的 daemon：停著的容器刪掉重建（不用 docker start，舊的 containerd.pid 會讓 daemon 起不來），跑著的不動、沒有的直接建；
+- 評測 worker 的家目錄：HOME 指到檔案沙盒旁邊的空目錄（`cd ~` 不會跑到主機的家目錄、在那裡寫檔案）。
 每一個情境都在臨時目錄複製一份專案，不碰正式的 logs/。"""
 import os
 import shutil
@@ -141,20 +142,43 @@ def t_sandbox_up():
         sandbox.host_docker, sandbox.sd, sandbox.urls = real
 
 
+def t_worker_home():
+    """評測 worker 的家目錄（待辦 4f ③）：HOME 指到檔案沙盒旁邊的空目錄——真的跑一次 `cd ~`，停在那裡，不是主機的家目錄，也不在沙盒裡
+    （工具在家目錄建的快取不會進沙盒的快照）。"""
+    sys.path.insert(0, HERE)
+    import run as ops_run
+    base = tempfile.mkdtemp(prefix="ops_selftest_home_")
+    try:
+        fs_root = os.path.join(base, "ops_home")
+        os.makedirs(fs_root)
+        urls = {"docker_host": "tcp://127.0.0.1:9", "web_console": "http://127.0.0.1:9", "manual_trigger": "http://127.0.0.1:9"}
+        env = ops_run.worker_env("m", "/tmp/x", fs_root, urls)
+        home = env["HOME"]
+        assert home == os.path.join(base, "home") and not home.startswith(fs_root + os.sep), home
+        assert os.path.realpath(home) != os.path.realpath(os.path.expanduser("~")), "不能是主機的家目錄"
+        os.makedirs(home)
+        r = subprocess.run([sys.executable, os.path.join(PROJECT, "skills_system", "scripts", "cd_cmd.py"), "~"], cwd=fs_root, env=env,
+                           capture_output=True, text=True, timeout=60)
+        assert f"[CWD_CHANGED] {home}" in r.stdout, r.stdout + r.stderr
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
+
+
 def main():
     results = []
     for name, fn in [("file_ops：建目錄、含引號的內容、附加、取代要剛好一次、複製不覆蓋、移動、備份、系統目錄、不提供刪除", t_file_ops),
                      ("新技能的確認關卡：唯讀的用法不用問、會改變狀態的要問", t_guard_new_skills)]:
         scenario(name, fn, results)
-    name = "維運沙盒的 daemon：停著的容器刪掉重建、跑著的不動、沒有的直接建（不用 docker start）"
-    try:
-        t_sandbox_up()
-        results.append((name, True, ""))
-        print(f"✅ {name}")
-    except Exception as e:
-        import traceback
-        results.append((name, False, traceback.format_exc()))
-        print(f"❌ {name}：{e}")
+    for name, fn in [("維運沙盒的 daemon：停著的容器刪掉重建、跑著的不動、沒有的直接建（不用 docker start）", t_sandbox_up),
+                     ("評測 worker 的家目錄：HOME 指到檔案沙盒旁邊的空目錄，`cd ~` 不會跑到主機的家目錄", t_worker_home)]:
+        try:
+            fn()
+            results.append((name, True, ""))
+            print(f"✅ {name}")
+        except Exception as e:
+            import traceback
+            results.append((name, False, traceback.format_exc()))
+            print(f"❌ {name}：{e}")
     failed = [r for r in results if not r[1]]
     for name, _, tb in failed:
         print(f"\n---- {name} ----\n{tb}")

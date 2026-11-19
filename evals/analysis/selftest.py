@@ -11,8 +11,9 @@
 - 報告（程式）：每個重要的時間點一則重點（引用那一刻全部的編號，Log 與事件的內容列在下面）、到最後跟開頭不同的值、指定的 Topic、
   不呼叫模型；
 - 句子的意思（agent_core/claims.py）與主對話：依報告回答卻寫成因果、或寫錯事實 → 提醒一次改寫；
-- 一次最多 3 分鐘、拿掉的選項說清楚、設定檔只存改過的值；dispatch、Web 的 /analyze 回合、面板、程式重新啟動時標中斷；
-- CLI 的 /analyze（驅動真的 cli.main() 迴圈）：選項照原樣交給 analysis_run，跟 Web 同一套參數；
+- 一次最多 3 分鐘、拿掉的選項說清楚、設定檔只存改過的值；dispatch（主模型直接叫會被擋：analysis_run 在 data_analysis 領域）、Web 的 /analyze 回合、
+  面板、程式重新啟動時標中斷；
+- CLI 的 /analyze（驅動真的 cli.main() 迴圈）：選項照原樣交給 analysis_run，跟 Web 同一套參數；使用者直接指定的，不經過領域（direct）；
 - 存檔（logs/analysis_jobs/）只留最近幾次。
 每一個情境都在臨時目錄複製一份專案，不碰正式的 logs/。"""
 import json
@@ -407,7 +408,10 @@ def main():
         def t_dispatch_and_state():
             fake, calls = setup()
             agent.analysis_data = ""
-            out = agent.run_tool({"action": {"command": "scripts/analysis_run_cmd.py", "args": f'--data {DATA} "安全閘"'}})
+            # 第 5 步 5-2：analysis_run 登記在 data_analysis，主模型直接叫會被擋（交給領域）；/analyze 是使用者直接指定的，照舊直接執行（direct）
+            blocked = agent.run_tool({"action": {"command": "scripts/analysis_run_cmd.py", "args": f'--data {DATA} "安全閘"'}})
+            assert blocked.startswith("[ERROR] analysis_run 是 data_analysis 領域的工具") and not calls, blocked
+            out = agent.run_tool({"action": {"command": "scripts/analysis_run_cmd.py", "args": f'--data {DATA} "安全閘"'}}, direct=True)
             assert out.startswith(ANALYSIS_REPORT_HEAD) and agent.last_result_id, (out[:100], agent.last_result_id)
             assert agent.trajectory[-1]["script"] == "analysis_run_cmd.py"
             assert agent.analysis_data == DATA, "[ANALYSIS_DATA] 同步目前的數據"
@@ -461,7 +465,8 @@ def main():
             assert stats["analysis"]["status"] == "done" and "analysis_mode" in stats
             seen = []
             real = agent.run_tool
-            agent.run_tool = lambda parsed, approved=False: (seen.append(parsed["action"]["args"]), "[ERROR] 測試：不執行")[1]
+            agent.run_tool = lambda parsed, approved=False, direct=False: (seen.append(parsed["action"]["args"] if direct else "沒有 direct"),
+                                                                           "[ERROR] 測試：不執行")[1]
             try:
                 flows.run_analysis_turn("--data exp_other LiDAR 出錯之後發生了什麼", [], data=DATA)
                 flows.run_analysis_turn("--topic /cmd_vel 什麼時候歸零", [], data=DATA)
@@ -487,11 +492,11 @@ def main():
                 return lines.pop(0)
             real_run, real_input = SkillAgent.run_tool, builtins.input
 
-            def fake_run(self, parsed, approved=False):
+            def fake_run(self, parsed, approved=False, direct=False):
                 action = (parsed or {}).get("action")
                 if not action:
                     return None                    # 這一輪沒有動作（跟真的 run_tool 一樣回空的）
-                seen.append((action["args"], approved))
+                seen.append((action["args"] if direct else "沒有 direct（使用者直接指定的要直接執行，不經過領域）", approved))
                 return "[ERROR] 測試：不執行"
             SkillAgent.run_tool = fake_run
             builtins.input = fake_input
@@ -610,7 +615,7 @@ def main():
                          ("報告（程式）：每個時間點一則重點（那一刻全部的 Log 與事件）、到最後跟開頭不同的值、指定的 Topic、不呼叫模型", t_program_report),
                          ("句子的意思：變化、某一刻與到最後的值、沒有變化、回到初始（中途才出現的不算）跟事實核對；中文主詞、部分、疑問不核對", t_claims),
                          ("主對話：依報告回答卻寫成因果、或寫錯事實 → 提醒一次（之後的回合核對寫到報告的那幾行）；否定、條件、Log 原文不算", t_main_reply_check),
-                         ("dispatch：analysis_run 偽技能存檔與軌跡、[ANALYSIS_DATA] 同步、省略 --data、腳本拿得到環境變數", t_dispatch_and_state),
+                         ("dispatch：主模型直接叫被擋（data_analysis）、/analyze 直接執行；偽技能存檔與軌跡、[ANALYSIS_DATA] 同步、省略 --data、腳本拿得到環境變數", t_dispatch_and_state),
                          ("Web：/analyze 的回合（進度、報告進主對話、寫成因果時改寫）、面板 state 與設定、不認識的指令列出現有的、分析模式", t_web),
                          ("CLI：/analyze 的選項照原樣交給 analysis_run、沒有 --data 時補目前的數據（跟 Web 共用 analyze_command_args）", t_cli_analyze),
                          ("限制與設定：一次最多 3 分鐘（以整秒算）、只有 Log 的錄製、拿掉的選項、設定檔只存改過的值", t_limits_and_settings),

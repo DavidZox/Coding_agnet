@@ -120,18 +120,46 @@ class DomainMixin:
         return prompt_files.load("harness/system_prompt.md", "domains", domains="\n\n".join(entries), max=DOMAIN_ITEMS_MAX,
                                  tries=DOMAIN_ITEM_TRIES)
 
-    def skills_index_text(self):
-        """主對話的技能索引（SKILLS.md）拿掉領域的工具（共用的以外）：那些交給領域做（system prompt 不變）。"""
+    def _index_blocks(self):
+        """技能索引（SKILLS.md）→ [[一節的每一行]]：第一塊是第一個 ## 之前的開頭，之後每一塊從 ## 標題開始（標題、> 開頭的說明、工具）。"""
         with open(self.index_file, "r", encoding="utf-8") as f:
-            text = f.read().strip()
+            lines = f.read().strip().split("\n")
+        blocks = [[]]
+        for ln in lines:
+            if ln.startswith("## "):
+                blocks.append([])
+            blocks[-1].append(ln)
+        return blocks
+
+    def skills_index_text(self):
+        """主對話的技能索引（SKILLS.md）拿掉領域的工具（共用的以外）：那些交給領域做（system prompt 不變）。一節的工具全部拿掉時，整節
+        （標題與說明，例如目標容器、ROS 2 Workspace）都不列：主對話用不到（第 5 步 5-2，凍結的工具交給領域）。"""
         hidden = self.domain_registry()["hidden"]
-        return "\n".join(ln for ln in text.split("\n") if not ((m := _INDEX_LINE.match(ln)) and m.group(1) in hidden))
+        out = []
+        for k, block in enumerate(self._index_blocks()):
+            tools = [m.group(1) for ln in block if (m := _INDEX_LINE.match(ln))]
+            if k and tools and all(t in hidden for t in tools):
+                continue
+            out += [ln for ln in block if not ((m := _INDEX_LINE.match(ln)) and m.group(1) in hidden)]
+        return "\n".join(out)
 
     def _index_lines(self, tools):
-        """技能索引裡這幾個工具的那一行（子工作階段的 system prompt 列能用的工具）。"""
-        with open(self.index_file, "r", encoding="utf-8") as f:
-            lines = {m.group(1): ln for ln in f.read().split("\n") if (m := _INDEX_LINE.match(ln))}
-        return "\n".join(lines.get(t, f"- {t}") for t in tools)
+        """技能索引裡這幾個工具的那一行（子工作階段的 system prompt 列能用的工具，照 tools 的順序）。工具所在的那一節有說明（> 開頭的，
+        例如目標容器、ROS 2 Workspace）時，放在那一節第一個工具的前面：說明跟著工具走（第 5 步 5-2，凍結的工具交給子工作階段）。"""
+        rows, where, notes = {}, {}, {}
+        for k, block in enumerate(self._index_blocks()):
+            notes[k] = [ln for ln in block if ln.startswith(">")] if k else []
+            for ln in block:
+                if (m := _INDEX_LINE.match(ln)):
+                    rows[m.group(1)], where[m.group(1)] = ln, k
+        out, shown = [], set()
+        for t in tools:
+            k = where.get(t)
+            if k is not None and k not in shown:
+                shown.add(k)
+                out += notes[k]
+            out.append(rows.get(t, f"- {t}"))
+        return "\n".join(out)
 
     # ---------------------------------------------------------------- 一回合的狀態
     def _reset_domain_turn(self):
@@ -273,6 +301,9 @@ class DomainMixin:
         self.domain_pending = None
         if self._reported(entry):
             report = (job.get("result") or {}).get("report") or ""
+            analysis = sub.analysis_reports(self, job) if kind == "sub" else []
+            if analysis:                # G4：子工作階段裡執行的數據分析（原樣附在報告裡），主對話的回答照它核對（analysis_reply_check）
+                self.note_analysis_report(analysis[-1][1])
             self._domain_turn["reports"].append(report)
             items = "\n".join(f"{k}. {x}" for k, x in enumerate(self.domain_items(), 1))
             return _d("report", domain=name, status=_status_text(kind, st), skill=entry["skill"] or "—", url=url, report=report,

@@ -16,14 +16,16 @@
    也是空的（沒有動作也沒有回答）不算收尾，提醒一次（上一步之後只提醒一次，不算交回修）；寫到字串上限被截斷的回覆不執行、重問一次
    （第 5 步 5-1 的評測：26b 的第一則常沒有動作也沒有回答，被當成收尾、用掉交回修，有的一步都沒做就結束）。
 5. **報告**（程式整理，report.md）：每一項的回答與出處（核對過的；沒過的標出來；檔案:行號 附那一行的原文）、每一步（工具、參數、結果、
-   #編號、確認關卡的決定）。主對話照 4-2 依報告回答。
+   #編號、確認關卡的決定）；analysis_run 的事實報告原樣附在最後（第 5 步 G4：主對話照它核對回答，orchestrator._domain_outcome）。
+   主對話照 4-2 依報告回答。
 """
 import os
 import time
 
+from skills_system.scripts import _results_common
 from . import answers, prompt_files
-from .config import (DOMAIN_QUOTE_LINES, MID_JOBS_DIRNAME, NUM_CTX, SUB_JOBS_DIRNAME, SUB_JOBS_KEEP, SUB_MODEL, SUB_STEPS_MAX,
-                     TOKEN_THRESHOLD, TOOL_SUMMARY_DEFAULT)
+from .config import (ANALYSIS_REPORT_HEAD, DOMAIN_QUOTE_LINES, MID_JOBS_DIRNAME, NUM_CTX, SUB_JOBS_DIRNAME, SUB_JOBS_KEEP, SUB_MODEL,
+                     SUB_STEPS_MAX, TOKEN_THRESHOLD, TOOL_SUMMARY_DEFAULT)
 from .jobstore import JobStore
 from .protocol import action_text, drop_cut, is_skill_doc_result, parse_agent_reply, tool_result_message
 from .schemas import agent_reply_schema
@@ -58,6 +60,18 @@ def searched(job):
                 w = w.strip()
                 if w and w.lower() not in {x.lower() for x in out}:
                     out.append(w)
+    return out
+
+
+def analysis_reports(agent, job):
+    """子工作階段裡 analysis_run 的事實報告：[(#編號, 原文)]（從存檔讀；第 5 步 G4：原樣附在報告裡，主對話的回答照它核對）。"""
+    out = []
+    for st in job.get("steps") or []:
+        if st.get("tool") == "analysis_run" and not st.get("doc") and st.get("status") == "PASS" and st.get("result_id"):
+            path = agent.result_file_path(st["result_id"])
+            text = "\n".join(_results_common.read_body(path)[1]).strip() if path else ""
+            if text.startswith(ANALYSIS_REPORT_HEAD):
+                out.append((st["result_id"], text))
     return out
 
 
@@ -350,6 +364,8 @@ class Session:
                              + ("（使用者同意）" if st.get("guard") else ""))
         if not job["steps"]:
             lines.append("（沒有執行任何工具）")
+        for rid, text in analysis_reports(self.agent, job):      # G4：數據分析的報告原樣附上
+            lines += ["", f"## 數據分析的報告（#{rid}，原樣）", text]
         return "\n".join(lines)
 
     # ---------------------------------------------------------------- 其他

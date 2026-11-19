@@ -42,7 +42,10 @@ def make_copy():
 
 
 def worker_env(model, tmp, src_root):
-    return dict(os.environ, EVAL_MODEL=model, PYTHONPATH=tmp, PYTHONDONTWRITEBYTECODE="1", OPS_FS_ROOT=src_root, **UNREACHABLE)
+    """worker 的環境變數：外部系統的位址都指到不存在的地方；HOME 指到 harness 副本旁邊的空目錄（run_one 建、跑完刪）——照抄主機的 HOME 時
+    `cd ~` 會跑到真的家目錄（維運評測曾在那裡寫出檔案，待辦 4f ③）；不放在副本裡面，副本裡有題目與答案（scenario.json）。"""
+    return dict(os.environ, EVAL_MODEL=model, PYTHONPATH=tmp, PYTHONDONTWRITEBYTECODE="1", OPS_FS_ROOT=src_root,
+                HOME=tmp.rstrip(os.sep) + "_home", **UNREACHABLE)
 
 
 def scenario(q):
@@ -51,6 +54,8 @@ def scenario(q):
 
 def run_one(q, args, src_root, out_dir):
     tmp = make_copy()
+    env = worker_env(args.model, tmp, src_root)
+    os.makedirs(env["HOME"], exist_ok=True)
     try:
         sc_path, out_path = os.path.join(tmp, "scenario.json"), os.path.join(tmp, "out.json")
         with open(sc_path, "w", encoding="utf-8") as f:
@@ -60,7 +65,7 @@ def run_one(q, args, src_root, out_dir):
         out = {}
         try:
             proc = subprocess.run([sys.executable, os.path.join(tmp, "evals", "ops", "worker.py"), sc_path, out_path],
-                                  cwd=tmp, env=worker_env(args.model, tmp, src_root), capture_output=True, text=True, timeout=args.timeout)
+                                  cwd=tmp, env=env, capture_output=True, text=True, timeout=args.timeout)
             if os.path.exists(out_path):
                 with open(out_path, encoding="utf-8") as f:
                     out = json.load(f)
@@ -82,9 +87,10 @@ def run_one(q, args, src_root, out_dir):
         if os.path.isdir(os.path.join(tmp, "logs")):
             shutil.copytree(os.path.join(tmp, "logs"), os.path.join(out_dir, "logs", q["id"]), dirs_exist_ok=True)
         if args.keep:
-            print(f"  （保留）harness 副本 {tmp}")
+            print(f"  （保留）harness 副本 {tmp}、家目錄 {env['HOME']}")
         else:
             shutil.rmtree(tmp, ignore_errors=True)
+            shutil.rmtree(env["HOME"], ignore_errors=True)
 
 
 def write_report(path, results, model, note=""):

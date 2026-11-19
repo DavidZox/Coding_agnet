@@ -172,13 +172,13 @@ class DispatchMixin:
                         "path": workspace,
                     }
 
-    def run_tool(self, ai_response, approved=False):
+    def run_tool(self, ai_response, approved=False, direct=False):
         """執行 AI 回覆的 action（見 _run_tool_once），再交給 note_tool_result 做卡住偵測：同一個回合裡同樣的動作得到同樣的
         結果，第二次在回傳後面附提醒、第三次設 self.stuck（回合迴圈看到就停下來，見 turn_guard.py）。"""
         parsed = ai_response if isinstance(ai_response, dict) else parse_agent_reply(ai_response)
-        return self.note_tool_result(parsed, self._run_tool_once(parsed, approved))
+        return self.note_tool_result(parsed, self._run_tool_once(parsed, approved, direct))
 
-    def _run_tool_once(self, ai_response, approved=False):
+    def _run_tool_once(self, ai_response, approved=False, direct=False):
         """依 AI 回覆 JSON 的 action 欄位執行（ai_response 可以是原始 JSON 字串或 parse_reply 的結果）。
         action 為 null／回覆不是合法 JSON → 不執行、回傳 None；reply 裡的文字完全不看。
         有 action 時行為分兩種：
@@ -190,7 +190,8 @@ class DispatchMixin:
            規格書中標明的實際腳本路徑（例如 scripts/cd_cmd.py）才會真正執行。
         2. 否則將 command 視為實際腳本路徑，以 args 為參數執行對應的 CLI 腳本並回傳結果。
         3. 「交給領域」{"domain", "goal", "items"}：交給高階（orchestrator.run_domain：核對、執行中階、報告存成 #編號）。
-           領域的工具（技能名稱或腳本）這一回合沒有放行就不執行、也不給規格，回 [ERROR]（domain_gate）。
+           領域的工具（技能名稱或腳本）這一回合沒有放行就不執行、也不給規格，回 [ERROR]（domain_gate）。direct＝使用者直接指定的指令
+           （/analyze：不經過主模型選擇，CLI 與 Web），照舊直接執行、不擋（第 5 步 5-2：analysis_run 登記在 data_analysis）。
 
         執行前關卡：會改變狀態的技能（guard_check）沒有 approved=True 就不執行，回 [DENIED]。CLI／Web 先用
         guard_check 問使用者，同意後才以 approved=True 呼叫；其他呼叫端漏接確認時這裡也擋得住。
@@ -210,7 +211,7 @@ class DispatchMixin:
             raw_token = os.path.basename(parts[0])
             remainder = parts[1] if len(parts) > 1 else ""
 
-            blocked = self.domain_gate(raw_token)
+            blocked = None if direct else self.domain_gate(raw_token)
             if blocked:
                 return blocked
             skill_doc = self._load_skill_doc(raw_token)
