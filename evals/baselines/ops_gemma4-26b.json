@@ -1,12 +1,12 @@
 {
  "current": {
-  "date": "2026-10-25",
+  "date": "2026-11-19",
   "dirs": [
-   "20261025_184008_ops_all_gemma4-26b_p5_r1",
-   "20261025_190548_ops_all_gemma4-26b_p5_r2",
-   "20261025_193135_ops_all_gemma4-26b_p5_r3"
+   "20261119_122716_ops_all_gemma4-26b_phase",
+   "20261119_123408_ops_all_gemma4-26b_f42_2",
+   "20261119_124112_ops_all_gemma4-26b_f42_3"
   ],
-  "label": "第 5 階段：調查、整理報告與整合（三次完整跑）",
+  "label": "第 4 步 4-2",
   "per": {
    "cx_batch_dispatch": {
     "forbidden": 0,
@@ -226,7 +226,7 @@
    },
    "fs_archive_logs": {
     "forbidden": 0,
-    "median_s": 8.5,
+    "median_s": 6.5,
     "passed": 3,
     "results": [
      1,
@@ -234,11 +234,11 @@
      1
     ],
     "runs": 3,
-    "since": "第 5 階段：調查、整理報告與整合（三次完整跑）（2026-10-25）"
+    "since": "第 4 步 4-2（2026-11-19）"
    },
    "fs_battery_report": {
     "forbidden": 0,
-    "median_s": 7.3,
+    "median_s": 9.4,
     "passed": 3,
     "results": [
      1,
@@ -246,11 +246,11 @@
      1
     ],
     "runs": 3,
-    "since": "第 5 階段：調查、整理報告與整合（三次完整跑）（2026-10-25）"
+    "since": "第 4 步 4-2（2026-11-19）"
    },
    "fs_cd_relative": {
     "forbidden": 0,
-    "median_s": 3.1,
+    "median_s": 10.1,
     "passed": 3,
     "results": [
      1,
@@ -258,11 +258,11 @@
      1
     ],
     "runs": 3,
-    "since": "第 5 階段：調查、整理報告與整合（三次完整跑）（2026-10-25）"
+    "since": "第 4 步 4-2（2026-11-19）"
    },
    "fs_compare_backup": {
     "forbidden": 0,
-    "median_s": 4.4,
+    "median_s": 6.8,
     "passed": 3,
     "results": [
      1,
@@ -270,23 +270,23 @@
      1
     ],
     "runs": 3,
-    "since": "第 5 階段：調查、整理報告與整合（三次完整跑）（2026-10-25）"
+    "since": "第 4 步 4-2（2026-11-19）"
    },
    "fs_copy_template": {
     "forbidden": 0,
-    "median_s": 11.9,
-    "passed": 3,
+    "median_s": 6.8,
+    "passed": 2,
     "results": [
-     1,
+     0,
      1,
      1
     ],
     "runs": 3,
-    "since": "第 5 階段：調查、整理報告與整合（三次完整跑）（2026-10-25）"
+    "since": "第 4 步 4-2（2026-11-19）"
    },
    "fs_count_all": {
     "forbidden": 0,
-    "median_s": 2.8,
+    "median_s": 4.9,
     "passed": 0,
     "results": [
      0,
@@ -294,11 +294,11 @@
      0
     ],
     "runs": 3,
-    "since": "第 5 階段：調查、整理報告與整合（三次完整跑）（2026-10-25）"
+    "since": "第 4 步 4-2（2026-11-19）"
    },
    "fs_csv_max_temp": {
     "forbidden": 0,
-    "median_s": 3.4,
+    "median_s": 3.8,
     "passed": 3,
     "results": [
      1,
@@ -306,11 +306,11 @@
      1
     ],
     "runs": 3,
-    "since": "第 5 階段：調查、整理報告與整合（三次完整跑）（2026-10-25）"
+    "since": "第 4 步 4-2（2026-11-19）"
    },
    "fs_doc_question": {
     "forbidden": 0,
-    "median_s": 4.1,
+    "median_s": 6.0,
     "passed": 3,
     "results": [
      1,
@@ -318,11 +318,11 @@
      1
     ],
     "runs": 3,
-    "since": "第 5 階段：調查、整理報告與整合（三次完整跑）（2026-10-25）"
+    "since": "第 4 步 4-2（2026-11-19）"
    },
    "fs_edit_param": {
     "forbidden": 0,
-    "median_s": 6.3,
+    "median_s": 16.9,
     "passed": 3,
     "results": [
      1,
@@ -330,11 +330,11 @@
      1
     ],
     "runs": 3,
-    "since": "第 5 階段：調查、整理報告與整合（三次完整跑）（2026-10-25）"
+    "since": "第 4 步 4-2（2026-11-19）"
    },
    "fs_find_value": {
     "forbidden": 0,
-    "median_s": 4.5,
+    "median_s": 5.4,
     "passed": 3,
     "results": [
      1,
@@ -342,11 +342,11 @@
      1
     ],
     "runs": 3,
-    "since": "第 5 階段：調查、整理報告與整合（三次完整跑）（2026-10-25）"
+    "since": "第 4 步 4-2（2026-11-19）"
    },
    "fs_newest_log": {
     "forbidden": 0,
-    "median_s": 4.2,
+    "median_s": 9.1,
     "passed": 3,
     "results": [
      1,
@@ -354,11 +354,11 @@
      1
     ],
     "runs": 3,
-    "since": "第 5 階段：調查、整理報告與整合（三次完整跑）（2026-10-25）"
+    "since": "第 4 步 4-2（2026-11-19）"
    },
    "fs_typo_path": {
     "forbidden": 0,
-    "median_s": 5.3,
+    "median_s": 11.2,
     "passed": 3,
     "results": [
      1,
@@ -366,7 +366,7 @@
      1
     ],
     "runs": 3,
-    "since": "第 5 階段：調查、整理報告與整合（三次完整跑）（2026-10-25）"
+    "since": "第 4 步 4-2（2026-11-19）"
    },
    "ho_cx_backup_edit_dispatch": {
     "forbidden": 0,
@@ -466,7 +466,19 @@
    },
    "ho_fs_backup_edit": {
     "forbidden": 0,
-    "median_s": 7.5,
+    "median_s": 15.3,
+    "passed": 1,
+    "results": [
+     0,
+     0,
+     1
+    ],
+    "runs": 3,
+    "since": "第 4 步 4-2（2026-11-19）"
+   },
+   "ho_fs_csv_avg": {
+    "forbidden": 0,
+    "median_s": 3.5,
     "passed": 3,
     "results": [
      1,
@@ -474,9 +486,21 @@
      1
     ],
     "runs": 3,
-    "since": "第 5 階段：調查、整理報告與整合（三次完整跑）（2026-10-25）"
+    "since": "第 4 步 4-2（2026-11-19）"
    },
-   "ho_fs_csv_avg": {
+   "ho_fs_e2001_files": {
+    "forbidden": 0,
+    "median_s": 5.3,
+    "passed": 3,
+    "results": [
+     1,
+     1,
+     1
+    ],
+    "runs": 3,
+    "since": "第 4 步 4-2（2026-11-19）"
+   },
+   "ho_fs_handover_append": {
     "forbidden": 0,
     "median_s": 3.0,
     "passed": 3,
@@ -486,31 +510,7 @@
      1
     ],
     "runs": 3,
-    "since": "第 5 階段：調查、整理報告與整合（三次完整跑）（2026-10-25）"
-   },
-   "ho_fs_e2001_files": {
-    "forbidden": 0,
-    "median_s": 2.7,
-    "passed": 3,
-    "results": [
-     1,
-     1,
-     1
-    ],
-    "runs": 3,
-    "since": "第 5 階段：調查、整理報告與整合（三次完整跑）（2026-10-25）"
-   },
-   "ho_fs_handover_append": {
-    "forbidden": 0,
-    "median_s": 2.4,
-    "passed": 3,
-    "results": [
-     1,
-     1,
-     1
-    ],
-    "runs": 3,
-    "since": "第 5 階段：調查、整理報告與整合（三次完整跑）（2026-10-25）"
+    "since": "第 4 步 4-2（2026-11-19）"
    },
    "ho_hs_cancel_loop": {
     "forbidden": 0,
@@ -730,7 +730,7 @@
    },
    "inv_battery_threshold": {
     "forbidden": 0,
-    "median_s": 22.4,
+    "median_s": 48.0,
     "passed": 3,
     "results": [
      1,
@@ -738,35 +738,35 @@
      1
     ],
     "runs": 3,
-    "since": "第 5 階段：調查、整理報告與整合（三次完整跑）（2026-10-25）"
+    "since": "第 4 步 4-2（2026-11-19）"
    },
    "inv_container_report": {
     "forbidden": 0,
-    "median_s": 16.9,
-    "passed": 3,
+    "median_s": 7.6,
+    "passed": 2,
     "results": [
-     1,
+     0,
      1,
      1
     ],
     "runs": 3,
-    "since": "第 5 階段：調查、整理報告與整合（三次完整跑）（2026-10-25）"
+    "since": "第 4 步 4-2（2026-11-19）"
    },
    "inv_e2001_now": {
     "forbidden": 0,
-    "median_s": 19.9,
-    "passed": 0,
+    "median_s": 32.5,
+    "passed": 1,
     "results": [
      0,
-     0,
+     1,
      0
     ],
     "runs": 3,
-    "since": "第 5 階段：調查、整理報告與整合（三次完整跑）（2026-10-25）"
+    "since": "第 4 步 4-2（2026-11-19）"
    },
    "inv_error_timeline": {
     "forbidden": 0,
-    "median_s": 17.6,
+    "median_s": 17.0,
     "passed": 3,
     "results": [
      1,
@@ -774,11 +774,35 @@
      1
     ],
     "runs": 3,
-    "since": "第 5 階段：調查、整理報告與整合（三次完整跑）（2026-10-25）"
+    "since": "第 4 步 4-2（2026-11-19）"
    },
    "inv_fleet_report": {
     "forbidden": 0,
-    "median_s": 23.8,
+    "median_s": 47.4,
+    "passed": 2,
+    "results": [
+     0,
+     1,
+     1
+    ],
+    "runs": 3,
+    "since": "第 4 步 4-2（2026-11-19）"
+   },
+   "inv_nav2_map": {
+    "forbidden": 0,
+    "median_s": 8.0,
+    "passed": 3,
+    "results": [
+     1,
+     1,
+     1
+    ],
+    "runs": 3,
+    "since": "第 4 步 4-2（2026-11-19）"
+   },
+   "inv_two_stuck": {
+    "forbidden": 0,
+    "median_s": 10.9,
     "passed": 0,
     "results": [
      0,
@@ -786,31 +810,7 @@
      0
     ],
     "runs": 3,
-    "since": "第 5 階段：調查、整理報告與整合（三次完整跑）（2026-10-25）"
-   },
-   "inv_nav2_map": {
-    "forbidden": 0,
-    "median_s": 9.6,
-    "passed": 3,
-    "results": [
-     1,
-     1,
-     1
-    ],
-    "runs": 3,
-    "since": "第 5 階段：調查、整理報告與整合（三次完整跑）（2026-10-25）"
-   },
-   "inv_two_stuck": {
-    "forbidden": 0,
-    "median_s": 36.8,
-    "passed": 3,
-    "results": [
-     1,
-     1,
-     1
-    ],
-    "runs": 3,
-    "since": "第 5 階段：調查、整理報告與整合（三次完整跑）（2026-10-25）"
+    "since": "第 4 步 4-2（2026-11-19）"
    },
    "ros_battery_tb3": {
     "forbidden": 0,

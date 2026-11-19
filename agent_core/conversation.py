@@ -114,7 +114,8 @@ class ConversationMixin:
         response = ollama.chat(
             model=self.model,
             messages=snapshot,
-            format=agent_reply_schema(self.domain_names()),  # 回覆協議：{thought, reply, action}；有領域時 action 多一種「交給領域」（schemas.agent_reply_schema）
+            # 回覆協議：{thought, reply, action}；有領域時 action 多一種「交給領域」；這一回合有領域的報告時多 answers（依報告回答，4-2）
+            format=agent_reply_schema(self.domain_names(), len(self.domain_items())),
             options={'temperature': 0.2, 'num_ctx': NUM_CTX},
             think=think_arg(self.model, getattr(self, "main_think", False))   # 預設關（見上）；使用者可以在畫面上打開
         )

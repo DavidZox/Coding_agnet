@@ -7,6 +7,7 @@
 Web 的拓撲圖（web_app/topology.py 整理的資料、/topology 頁面與 /api/topology/* 的路由）。
 3b：判斷節點（規格的核對；原文照收據讀、交給模型的原文與預算、片段的比對與行號；回答、接著找、看前後、沒寫、交回修、重選路、找過的字、
 次數用完、沒有輸入、模型沒有回覆）、換技能（py_usage 的 .py 沒有、C++ 檔有 → cpp_symbol；答不了就不換）、搜尋的字的合約、拓撲圖的判斷。
+4-2：帶著上一次的經過（挑技能、合約、判斷看得到；一樣的技能與參數先重寫合約，還是一樣就停）。
 
     python3 evals/mid/selftest.py
 """
@@ -825,6 +826,42 @@ def main():
         assert "- 第 1 次（read）：answered（挑出來的行回答了問題）；挑了 1 行；結束" in report and saved(job)["judgments"][0]["branch"] == "answered"
         assert job["result"]["sources"] == [int(sid[0][1:])], job["result"]["sources"]
 
+    def t_previous():
+        # 4-2：帶著上一次的經過——挑技能、合約看得到這一節，判斷看得到之前找過的字；一樣的技能與參數 → 合約交回修一次 → 還是一樣就停
+        prev = [{"n": 1, "job": "j_prev", "skill": "doc_lookup", "params": {"doc": "docs/spec_alpha.md", "words": ["RUNNING"]},
+                 "status": "dead_end", "note": "看過的行都沒有寫這件事", "searched": ["RUNNING", "ALP-F99"], "items": ["會轉到哪個狀態"]}]
+        model = doc_model(judge_reply([jline("ALP-S02 | RUNNING | cmd_halt | IDLE | 不回報")]))
+        job = mid.Worker(agent, model=model, fixer=lambda req, log: None).start(DOC_Q, previous=prev, attempt=2)
+        assert job["status"] == "done" and job["attempt"] == 2 and job["previous"] == prev, (job["status"], job["result"]["note"])
+        sel, con, jud = model.calls
+        for c in (sel, con):
+            assert "【上一次的經過】同一個問題之前交給這個領域 1 次" in c["user"], c["user"][-600:]
+            assert "- 第 1 次：做法 doc_lookup；參數 doc＝docs/spec_alpha.md；words＝RUNNING；結果：死路" in c["user"] and "（看過的行都沒有寫這件事）" in c["user"]
+            assert "找過的字：RUNNING、ALP-F99；那一次的項目：會轉到哪個狀態" in c["user"], c["user"][-400:]
+        assert "【之前幾次交給這個領域時找過的字】RUNNING、ALP-F99" in jud["user"], "判斷看得到之前找過的字"
+        assert mid.searched(job) == ["RUNNING", "cmd_halt"], mid.searched(job)
+        assert "- 第 2 次交給這個領域（之前：第 1 次 doc_lookup：死路" in job["result"]["report"]
+        m0 = doc_model()
+        run(DOC_Q, m0)
+        assert all("【上一次的經過】" not in c["user"] for c in m0.calls), "第一次交：沒有這一節"
+        # 一樣的做法：參數跟第 1 次一模一樣 → 合約整份重寫一次（附原因）→ 還是一樣 → repeated（不排圖、不執行）
+        same = [dict(prev[0], params={"doc": "docs/spec_alpha.md", "words": ["RUNNING", "cmd_halt"]})]
+        c = {"understanding": "u", "doc": cell("spec_alpha 規格書", "spec_alpha"), "words": cell("RUNNING 收到 cmd_halt", "RUNNING、cmd_halt")}
+        model = FakeModel(select=[{"understanding": "u", "asks": ["內容"], "skill": "doc_lookup", "reason": "照規格書"}], contract=[c, c])
+        job = mid.Worker(agent, model=model, fixer=lambda req, log: None).start(DOC_Q, previous=same, attempt=2)
+        assert job["status"] == "repeated" and job["graphs"] == [] and job["same_as"] == {"n": 1, "job": "j_prev", "fixed": True, "still": True}, job
+        assert [x["role"] for x in model.calls] == ["select", "contract", "contract"], [x["role"] for x in model.calls]
+        assert "這次的參數跟第 1 次一模一樣（做法 doc_lookup；doc＝docs/spec_alpha.md；words＝RUNNING、cmd_halt），那一次的結果是「死路" \
+            in model.calls[2]["user"] and "【上一次沒有通過核對的參數" not in model.calls[2]["user"], model.calls[2]["user"][-500:]
+        assert "跟第 1 次一樣（做法 doc_lookup；doc＝docs/spec_alpha.md；words＝RUNNING、cmd_halt），那一次的結果：死路" in job["result"]["note"]
+        assert saved(job, "report.md").startswith("# 中階的結果：跟之前的某一次一樣")
+        # 合約改了參數：照常執行
+        c2 = {"understanding": "u", "doc": cell("spec_alpha 規格書", "spec_alpha"), "words": cell("cmd_halt", "cmd_halt")}
+        model = FakeModel(select=[{"understanding": "u", "asks": ["內容"], "skill": "doc_lookup", "reason": "照規格書"}], contract=[c, c2],
+                          judge=[judge_reply([jline("ALP-S02 | RUNNING | cmd_halt | IDLE | 不回報")])])
+        job = mid.Worker(agent, model=model, fixer=lambda req, log: None).start(DOC_Q, previous=same, attempt=2)
+        assert job["status"] == "done" and job["params"]["words"]["value"] == ["cmd_halt"] and job["same_as"]["fixed"] and "still" not in job["same_as"], job["same_as"]
+
     def t_judgment_follow_wider():
         # 接著找：第 1 次挑一行、要找 ALP-F07 → 第 2 版加 more_2、read_2（跑過的不重跑）→ 第 2 次看得到之前挑的行與找過的字
         model = doc_model(judge_reply([jline("ALP-S02", label="相關")], branch="follow", params={"names": ["ALP-F07"]}),
@@ -981,6 +1018,8 @@ def main():
               "引號、行號、之前挑過的）、分支的參數", t_judge_rows),
              ("判斷走一遍：自己查文件（「X 規格書」）→ 搜尋（--rank）→ 判斷挑行、選路 → 報告列出整行（檔案:行號、#編號）；模型的輸入與 schema",
               t_judgment_answered),
+             ("帶著上一次的經過（4-2）：挑技能、合約看得到，判斷看得到之前找過的字；一樣的技能與參數 → 合約重寫一次 → 還是一樣就停；改了參數照常做",
+              t_previous),
              ("判斷之後接著做：接著找（加節點、後面接同一個判斷、跑過的不重跑、看得到之前挑的行與找過的字）、看前後（view_file --around）",
               t_judgment_follow_wider),
              ("判斷沒過核對：片段交回重抄；參數沒過可以重選路；找過的字當成沒過；修了還是不對就停；沒有挑出行、沒寫、模型沒有回覆", t_judgment_fix),

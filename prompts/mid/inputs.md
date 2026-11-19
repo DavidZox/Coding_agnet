@@ -8,6 +8,8 @@ rejected＝沒有通過核對的參數（reject_* 的幾則）；quote＝模型�
 pattern＝搜尋的字；scope＝搜尋的範圍；hits＝命中幾筆；file＝檔案；start、end＝看的那一段；omitted＝省略了哪些行；picked＝之前挑出的行；
 labels＝可以標的種類；branches＝每條路一則（judge_branch*）；id、say＝路的名稱與說明；params＝那條路要填的（judge_param_* 的幾則）；
 where＝片段對到的那幾行；line＝行號；label＝挑的時候標的種類；text＝那一行的內容（程式從原文取）；words＝這個工作找過的字；branch＝選的路。
+上一次的經過（previous*，4-2：同一個問題再交給這個領域時，程式從之前幾次的紀錄取）：count＝之前交了幾次；attempts＝每一次一則；n＝第幾次；
+skill＝那一次的複合技能；params＝那一次的參數；status＝結果；note＝停下來的原因；searched＝那一次找過的字；items＝那一次要回答的項目。
 
 <!-- @question -->
 【使用者的問題】
@@ -65,6 +67,16 @@ where＝片段對到的那幾行；line＝行號；label＝挑的時候標的種
 【上一次沒有通過核對的參數：只重寫這幾個】
 {rejected}
 
+<!-- @previous -->
+【上一次的經過】同一個問題之前交給這個領域 {count} 次，下面是每一次做了什麼、停在哪裡（程式從紀錄取）。照一樣的複合技能與參數再做一次，結果也會一樣：這次要從停下來的原因修正——換一個做得到的複合技能，或照原因改參數（例如範圍找不到就照原文重寫路徑、連在一起的幾個名稱分開寫、換成檔案裡會照樣出現的寫法）。
+{attempts}
+
+<!-- @previous_attempt -->
+- 第 {n} 次：做法 {skill}；參數 {params}；結果：{status}{note}；找過的字：{searched}；那一次的項目：{items}
+
+<!-- @reject_same -->
+這次的參數跟第 {n} 次一模一樣（做法 {skill}；{params}），那一次的結果是「{status}」：照一樣的參數再跑一次結果也一樣。請照那一次停下來的原因改參數（每個參數重寫）；問題裡真的沒有別的寫法，就照原樣寫。
+
 <!-- @reject_quote -->
 - {name}：抄的原文「{quote}」不在問題或子目標裡（要一字不改地抄）
 
@@ -118,6 +130,9 @@ where＝片段對到的那幾行；line＝行號；label＝挑的時候標的種
 
 <!-- @judge_searched -->
 【已經找過的字】{words}
+
+<!-- @judge_searched_before -->
+【之前幾次交給這個領域時找過的字】{words}（那幾次沒有答到問題：要接著找的話，換別的字或別的範圍）
 
 <!-- @judge_labels -->
 【挑出的行可以標的種類】{labels}

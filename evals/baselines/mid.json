@@ -1,7 +1,7 @@
 {
  "models": {
   "gemma4:26b": {
-   "label": "第 3 步 3b，各 3 次（2026-11-18，20261118_223826_mid_gemma4-26b_all_phase）",
+   "label": "第 4 步 4-2（2026-11-19，20261119_104152_mid_gemma4-26b_all_phase）",
    "per": {
     "cnt_hw_params": {
      "final": [
@@ -131,7 +131,7 @@
     },
     "cpp_rf2o_params": {
      "final": [
-      3,
+      1,
       3
      ],
      "params": [
@@ -145,7 +145,7 @@
     },
     "cpp_sick_ports": {
      "final": [
-      3,
+      2,
       3
      ],
      "params": [
@@ -201,7 +201,7 @@
     },
     "cross_rf2o_runtime": {
      "final": [
-      2,
+      3,
       3
      ],
      "params": [
@@ -215,7 +215,7 @@
     },
     "cross_scan_chain": {
      "final": [
-      0,
+      1,
       3
      ],
      "params": [
@@ -243,7 +243,7 @@
     },
     "cross_speed_limit": {
      "final": [
-      3,
+      2,
       3
      ],
      "params": [
@@ -441,7 +441,7 @@
     },
     "main": {
      "final": [
-      57,
+      55,
       75
      ],
      "params": [
@@ -456,7 +456,7 @@
    }
   },
   "gemma4:e4b": {
-   "label": "第 3 步 3b，各 3 次（2026-11-18，20261118_224523_mid_gemma4-e4b_all_phase）",
+   "label": "第 4 步 4-2（2026-11-19，20261119_104907_mid_gemma4-e4b_all_phase）",
    "per": {
     "cnt_hw_params": {
      "final": [
@@ -544,7 +544,7 @@
     },
     "cpp_compact_parser": {
      "final": [
-      2,
+      0,
       3
      ],
      "params": [
@@ -562,7 +562,7 @@
       3
      ],
      "params": [
-      2,
+      0,
       3
      ],
      "skill": [
@@ -590,7 +590,7 @@
       3
      ],
      "params": [
-      0,
+      2,
       3
      ],
      "skill": [
@@ -604,11 +604,11 @@
       3
      ],
      "params": [
-      3,
+      0,
       3
      ],
      "skill": [
-      3,
+      1,
       3
      ]
     },
@@ -656,7 +656,7 @@
     },
     "cross_rf2o_runtime": {
      "final": [
-      1,
+      2,
       3
      ],
      "params": [
@@ -688,17 +688,17 @@
       3
      ],
      "params": [
-      1,
+      0,
       3
      ],
      "skill": [
-      1,
+      0,
       3
      ]
     },
     "cross_speed_limit": {
      "final": [
-      2,
+      1,
       3
      ],
      "params": [
@@ -740,7 +740,7 @@
     },
     "doc_nav_stop": {
      "final": [
-      3,
+      1,
       3
      ],
      "params": [
@@ -882,7 +882,7 @@
    "sets": {
     "holdout": {
      "final": [
-      8,
+      6,
       15
      ],
      "params": [
@@ -896,15 +896,15 @@
     },
     "main": {
      "final": [
-      47,
+      45,
       75
      ],
      "params": [
-      58,
+      54,
       75
      ],
      "skill": [
-      73,
+      70,
       75
      ]
     }

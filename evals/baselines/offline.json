@@ -35,9 +35,9 @@
   "total": 8
  },
  "mid_selftest": {
-  "label": "第 4 步 4-1 的三點（2026-11-19）",
-  "passed": 27,
-  "total": 27
+  "label": "第 4 步 4-2（2026-11-19）",
+  "passed": 28,
+  "total": 28
  },
  "ops_selftest": {
   "label": "拿掉任務引擎與 Plan 模式（2026-11-18）",
@@ -45,14 +45,14 @@
   "total": 3
  },
  "orch_selftest": {
-  "label": "第 4 步 4-1 的三點（2026-11-19）",
-  "passed": 13,
-  "total": 13
+  "label": "第 4 步 4-2（2026-11-19）",
+  "passed": 19,
+  "total": 19
  },
  "repo_selftest": {
-  "label": "真實專案評測（第 0 步）（2026-11-18）",
-  "passed": 9,
-  "total": 9
+  "label": "第 4 步 4-2（2026-11-19）",
+  "passed": 10,
+  "total": 10
  },
  "skills": {
   "label": "第 3 步 3b（2026-11-18）",

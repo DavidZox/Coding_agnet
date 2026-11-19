@@ -1,5 +1,6 @@
 """真實專案評測的自我測試（不用模型，幾秒）：核對的比對規則、每一題的答案都答得出來而且每一則事實都必要、常見的錯答會被擋、
-真實回覆（人看過的）維持原來的判斷、answers.json 跟快照算出來的一樣（快照不在就略過）、跑評測時碰不到真的容器與調度系統。
+真實回覆（人看過的）維持原來的判斷、answers.json 跟快照算出來的一樣（快照不在就略過）、跑評測時碰不到真的容器與調度系統、
+階段驗證（phase_check 的 repo）怎麼合成好幾次的結果、怎麼跟基準比。
 
     python3 evals/repo/selftest.py
 """
@@ -171,6 +172,37 @@ def t_final_reply():
     assert checks.final_reply({}) == ""
 
 
+def t_phase_baseline():
+    """階段驗證（phase_check --model 的 repo）：好幾次的結果合成一份、每一題的通過率與每一次的主要組通過數跟基準比。"""
+    sys.path.insert(0, os.path.join(PROJECT, "evals"))
+    try:
+        import phase_check as pc
+    finally:
+        del sys.path[0]
+    with tempfile.TemporaryDirectory(prefix="repo_phase_") as root:
+        dirs = []
+        for k, rows in enumerate(([("a", "main", True), ("b", "main", False), ("h", "holdout", True)],
+                                  [("a", "main", True), ("b", "main", True), ("h", "holdout", False)])):
+            d = os.path.join(root, f"2026111{k}_000000_repo_m_all_phase{k + 1}")
+            os.makedirs(d)
+            with open(os.path.join(d, "runs.jsonl"), "w", encoding="utf-8") as f:
+                f.writelines(json.dumps({"id": i, "set": st, "model": "m", "score": {"passed": ok}}) + "\n" for i, st, ok in rows)
+            dirs.append(d)
+        assert pc.classify(dirs[0]) == "repo"
+        res = pc.from_dirs(dirs)
+        assert len(res) == 1 and res[0]["per"] == {"a": [2, 2], "b": [1, 2], "h": [1, 2]} and res[0]["runs"] == [1, 2], res
+        assert res[0]["sets"] == {"main": [3, 4], "holdout": [1, 2]}, res[0]["sets"]
+        real = pc.load_baseline
+        pc.load_baseline = lambda name: {"models": {"m": {"per": {"a": [2, 2], "b": [2, 2]}, "sets": {"main": [4, 4]}, "runs": [2, 2]}}} \
+            if name == "repo" else None
+        try:
+            text, base, verdict, notes = pc.compare(res[0])
+        finally:
+            pc.load_baseline = real
+        assert verdict == "⚠️" and notes[0].startswith("主要組每一次的通過數 1、2，最低的比基準（2、2）低"), notes
+        assert "b：1/2（基準 2/2）" in notes and "h：基準裡沒有" in notes and text.startswith("主要 3/4；保留 1/2（主要每一次 1、2）"), (text, notes)
+
+
 def main():
     tests = [("比對的規則：數字、名稱、topic 的邊界，同一行與距離", t_match_rules),
              ("每一題都答得出來，每一則事實都必要，數字錯了就不過", t_every_question_answerable),
@@ -180,7 +212,8 @@ def main():
              ("answers.json 跟快照算出來的一樣；快照唯讀、不解開指到外面的連結", t_answers_match_snapshot),
              ("跑評測時碰不到真的容器與調度系統；確認關卡一律拒絕", t_runner_safety),
              ("核對改了之後用存下來的回覆重新計分（不跑模型），寫回 runs.jsonl 與報表", t_rescore),
-             ("最後的回覆：最後一步沒有動作的那則", t_final_reply)]
+             ("最後的回覆：最後一步沒有動作的那則", t_final_reply),
+             ("階段驗證：好幾次的結果合成一份，每一題與每一次的主要組通過數跟基準比", t_phase_baseline)]
     passed = skipped = 0
     failed = []
     for name, fn in tests:

@@ -152,13 +152,17 @@ def main():
                     break
             result = domain_calls.settle(agent, parsed, agent.run_tool(parsed, approved=bool(guard)), turn)   # 中階要問使用者：沒有人回答，取消
             if not result:
-                # 沒執行卻說做完了、依數據分析的報告回答卻寫成因果、依領域的報告回答卻寫了報告裡沒有的出處：跟 CLI／Web 一樣提醒一次
+                # 沒執行卻說做完了、依數據分析的報告回答卻寫成因果、依領域的報告回答時 answers 沒有通過核對：跟 CLI／Web 一樣提醒一次
                 claim = agent.claim_without_action(parsed) or agent.analysis_reply_check(parsed) or agent.domain_reply_check(parsed)
+                domain_calls.record_answers(agent, parsed, turn)
                 if claim:
                     turn.setdefault("claim_nudges", 0)
                     turn["claim_nudges"] += 1
                     agent.messages.append({"role": "user", "content": claim})
                     continue
+                rendered = domain_calls.finalize(agent, parsed, turn)    # 依報告回答：使用者看到的是程式照項目排好的回答
+                if rendered is not None:
+                    turn["final_reply"] = rendered
                 break
             payload = action_text(parsed["action"])
             token = os.path.basename(payload.split()[0]) if payload else ""

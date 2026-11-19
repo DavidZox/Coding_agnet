@@ -25,14 +25,32 @@ def quote_cli_arg(arg):
     return arg
 
 
+def _answers(value):
+    """依報告回答的 answers（4-2）→ [{"item": int, "status": "answered"／"not_found", "text": str, "refs": [str]}]；格式不對的那一筆不要。"""
+    out = []
+    for a in value if isinstance(value, list) else []:
+        if not isinstance(a, dict):
+            continue
+        try:
+            item = int(a.get("item"))
+        except (TypeError, ValueError):
+            continue
+        refs = a.get("refs")
+        refs = [" ".join(str(x).split()) for x in (refs if isinstance(refs, list) else [refs]) if x is not None and str(x).strip()]
+        status = str(a.get("status") or "").strip()
+        out.append({"item": item, "status": status if status in ("answered", "not_found") else "answered",
+                    "text": str(a.get("text") or "").strip(), "refs": refs})
+    return out
+
+
 def parse_agent_reply(raw):
-    """模型回覆（JSON 字串）→ {"thought", "reply", "action", "valid"}。
+    """模型回覆（JSON 字串）→ {"thought", "reply", "action", "answers", "valid"}。
 
     action 正規化為 None、{"command": str, "args": str}，或「交給領域」{"domain": str, "goal": str, "items": [str]}（新架構的高階，
     agent_core/orchestrator.py；項目去掉空白與空的，數量與長度由高階核對）。不是合法 JSON 時 valid=False、reply=原文、
     action=None：降級成「只顯示文字、不執行任何東西」，絕不退回用文字比對找指令（那正是要避免的誤觸發來源）。
     對非 format= 強制的後端保留一點容錯：args 給成陣列／物件、把整行 `EXECUTE: ...` 塞進 command、
-    command 裡夾帶參數，都會被整理成同一種形狀。"""
+    command 裡夾帶參數，都會被整理成同一種形狀。answers 是依領域的報告回答的每一項（4-2；沒有時是空的清單，_answers）。"""
     text = (raw or "").strip()
     if text.startswith("```"):  # format= 下不會出現，保險去掉程式碼區塊包裹
         text = text.strip("`").strip()
@@ -43,18 +61,19 @@ def parse_agent_reply(raw):
     except (ValueError, TypeError):
         data = None
     if not isinstance(data, dict):
-        return {"thought": "", "reply": (raw or "").strip(), "action": None, "valid": False}
+        return {"thought": "", "reply": (raw or "").strip(), "action": None, "answers": [], "valid": False}
 
     thought = str(data.get("thought") or "").strip()
     reply = data.get("reply")
     reply = "" if reply is None else str(reply).strip()
+    answers = _answers(data.get("answers"))
     action = data.get("action")
     norm = None
     if isinstance(action, dict) and str(action.get("domain") or "").strip():
         items = action.get("items")
         items = [" ".join(str(x).split()) for x in (items if isinstance(items, list) else [items]) if x is not None and str(x).strip()]
         norm = {"domain": str(action["domain"]).strip(), "goal": " ".join(str(action.get("goal") or "").split()), "items": items}
-        return {"thought": thought, "reply": reply, "action": norm, "valid": True}
+        return {"thought": thought, "reply": reply, "action": norm, "answers": answers, "valid": True}
     if isinstance(action, str) and action.strip().lower() not in ("", "null", "none"):
         action = {"command": action, "args": ""}
     if isinstance(action, dict):
@@ -74,7 +93,13 @@ def parse_agent_reply(raw):
             command, args = head, (args if same else rest.strip() + (" " + args if args else ""))
         if command:
             norm = {"command": command, "args": args}
-    return {"thought": thought, "reply": reply, "action": norm, "valid": True}
+    return {"thought": thought, "reply": reply, "action": norm, "answers": answers, "valid": True}
+
+
+def answers_text(answers):
+    """answers 的純文字（壓縮、對話片段存檔用：回答的內容不能因為寫在 answers 就在摘要裡不見）。"""
+    return "\n".join(f"{a['item']}. " + ("查不到：" if a["status"] == "not_found" else "") + a["text"]
+                     + (f"（出處：{'、'.join(a['refs'])}）" if a["refs"] else "") for a in answers or [])
 
 
 def action_text(action):

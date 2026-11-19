@@ -1,5 +1,5 @@
 """給 Ollama format= 的 JSON schema：主對話回覆、滾動摘要、工具摘要、數據分析。"""
-from .config import DOMAIN_GOAL_CHARS, DOMAIN_ITEM_CHARS, DOMAIN_ITEMS_MAX
+from .config import DOMAIN_ANSWER_CHARS, DOMAIN_GOAL_CHARS, DOMAIN_ITEM_CHARS, DOMAIN_ITEMS_MAX, DOMAIN_REFS_MAX
 
 
 def _text(n):
@@ -15,7 +15,9 @@ def _text(n):
 # {"domain": DOMAIN.md 列的領域, "goal": 這一層的子目標, "items": [要回答的項目]}（新架構的高階，agent_core/orchestrator.py）。
 # args 是字串而不是物件，因為所有技能腳本都吃位置參數、規格文件的寫法也是位置參數，這樣既有的 tools/*.md 一份都不用改：
 # 規格裡的 `EXECUTE: <路徑> <參數>` 範例就對應 command=<路徑>、args=<參數>。
-def agent_reply_schema(domains=()):
+# items：這一回合交給領域、有報告的項目數（4-2，G4）。有的時候多一個 answers：每一項一筆 {item: 編號, status: answered／not_found,
+# text: 回答或查不到的原因, refs: 報告裡的出處}，程式核對之後照項目排給使用者；還要做別的動作時填 []（action 先寫，再寫 answers）。
+def agent_reply_schema(domains=(), items=0):
     actions = [
         {"type": "null"},
         {"type": "object", "properties": {"command": {"type": "string"}, "args": {"type": "string"}}, "required": ["command", "args"]},
@@ -25,11 +27,15 @@ def agent_reply_schema(domains=()):
             "domain": {"type": "string", "enum": list(domains)}, "goal": _text(DOMAIN_GOAL_CHARS),
             "items": {"type": "array", "items": _text(DOMAIN_ITEM_CHARS), "minItems": 1, "maxItems": DOMAIN_ITEMS_MAX}},
             "required": ["domain", "goal", "items"]})
-    return {
-        "type": "object",
-        "properties": {"thought": {"type": "string"}, "reply": {"type": "string"}, "action": {"anyOf": actions}},
-        "required": ["thought", "reply", "action"],
-    }
+    props = {"thought": {"type": "string"}, "reply": {"type": "string"}, "action": {"anyOf": actions}}
+    if items:
+        props["answers"] = {"type": "array", "maxItems": items, "items": {"type": "object", "properties": {
+            "item": {"type": "integer", "enum": list(range(1, items + 1))},
+            "status": {"type": "string", "enum": ["answered", "not_found"]},
+            "text": _text(DOMAIN_ANSWER_CHARS),
+            "refs": {"type": "array", "items": _text(DOMAIN_ITEM_CHARS), "maxItems": DOMAIN_REFS_MAX}},
+            "required": ["item", "status", "text", "refs"]}}
+    return {"type": "object", "properties": props, "required": list(props)}
 
 
 # 融合摘要的 JSON schema：交給 Ollama 的 format= 做結構化輸出，再由 _render_summary_markdown 排版。

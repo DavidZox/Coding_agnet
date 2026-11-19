@@ -180,7 +180,8 @@ const NODE_STATE = { done: '做完', failed: '失敗', unexpected: '結果不符
 const NODE_CLASS = { done: 'ok', failed: 'bad', unexpected: 'bad', denied: 'bad', blocked: 'warn', judgment: 'info', need_user: 'wait', pending: 'info', running: 'info' };
 const EDG_STATUS = { done: '做完', judgment: '交回判斷', stopped: '停下來（有節點沒成功）', need_user: '等使用者確認', invalid: '圖沒通過檢查', running: '執行中' };
 const EDG_CLASS = { done: 'ok', judgment: 'info', stopped: 'bad', need_user: 'wait', invalid: 'bad', running: 'info' };
-const MID_CLASS = { done: 'ok', dead_end: 'bad', circuit_break: 'bad', failed: 'bad', no_skill: 'warn', out_of_domain: 'warn', need_user: 'wait', running: 'info' };
+const MID_CLASS = { done: 'ok', dead_end: 'bad', circuit_break: 'bad', failed: 'bad', no_skill: 'warn', out_of_domain: 'warn', need_user: 'wait', running: 'info',
+                    cancelled: 'warn', repeated: 'warn' };
 const SOURCE_TEXT = { question: '原文', default: '預設', fetch: '自己查到的', user: '使用者回答', switch: '換技能時帶過來' };
 const ATT_STATUS = { pass: '成功', empty: '0 筆', error: '錯誤' };
 const ERROR_KIND = { args: '參數錯', timeout: '逾時', env: '環境的問題', parse: '腳本的錯' };
@@ -309,9 +310,20 @@ function renderHead() {
     <div class="head-row">${statusChip(v.kind, v.status, text)}<span class="hint">${v.kind === 'mid' ? '中階' : '低階'}的工作 ${esc(v.id)}${v.domain ? `・領域 ${esc(v.domain)}` : ''}${v.created ? `・${esc(v.created)}` : ''}</span></div>
     <div class="question">${esc(v.question || v.goal || '')}</div>
     ${v.question && v.goal && v.goal !== v.question ? `<div class="hint">子目標：${esc(v.goal)}</div>` : ''}
+    ${chainHtml(v.chain)}
     ${v.skill ? `<div class="head-row">複合技能 <b>${esc(v.skill)}</b> ${params}</div>` : ''}
     ${v.cwd ? `<div class="hint">工作目錄：${esc(v.cwd)}</div>` : ''}
     ${v.originals ? '' : '<div class="hint">評測的工作只留了收據：#編號的原文沒有留下來。</div>'}`;
+  for (const a of $('job-head').querySelectorAll('a.chain')) a.onclick = (e) => { e.preventDefault(); openJob(a.dataset.ref); };
+}
+
+// 同一個問題的幾次交給領域（4-2：再交的時候帶著上一次的經過）：上一次、下一次的工作
+function chainHtml(ch) {
+  if (!ch || (!(ch.previous || []).length && !(ch.next || []).length)) return '';
+  const prev = (ch.previous || []).map((p) => `<a href="#" class="chain" data-ref="${esc(p.ref)}" title="${esc(p.note || '')}">← 第 ${esc(p.n)} 次`
+    + `（${esc(p.skill || '—')}：${esc(jobStatusText(p.status))}）</a>`);
+  const next = (ch.next || []).map((x) => `<a href="#" class="chain" data-ref="${esc(x.ref)}">第 ${esc(x.n)} 次 →</a>`);
+  return `<div class="head-row">這是第 ${esc(ch.attempt)} 次交給這個領域 ${prev.join(' ')} ${next.join(' ')}</div>`;
 }
 
 // ---------------------------------------------------------------- 流程列

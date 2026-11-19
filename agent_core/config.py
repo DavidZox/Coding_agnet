@@ -222,6 +222,13 @@ DOMAIN_RESULT_HEAD = "[PASS] 🗺️ "
 DOMAIN_GOAL_CHARS = 300
 DOMAIN_ITEM_CHARS = 120
 DOMAIN_ITEMS_MAX = 6
+# 依報告回答（4-2，G4）：每一項的回答與出處的上限（回覆的 schema；回答要放得下報告列的每個檔案：20 行左右的完整路徑與次數）；
+# 使用者看到的回答由程式照項目排，每一項最多附幾行出處的原文（I.5）
+DOMAIN_ANSWER_CHARS = 1500
+DOMAIN_REFS_MAX = 6
+DOMAIN_QUOTE_LINES = 3
+# 同一個項目在一個問題裡最多交給領域幾次（G5：資源的上限；跟這一回合交過的一模一樣的另外擋，4-1 的 J1）
+DOMAIN_ITEM_TRIES = 3
 
 # run_tool 載入技能規格文件時回傳字串的固定開頭。規格文件是「按需載入」機制的核心，
 # 內容（尤其是實際腳本路徑與參數格式）必須完整進入上下文，因此 _content_for_context

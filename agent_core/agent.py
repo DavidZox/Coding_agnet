@@ -148,6 +148,7 @@ class SkillAgent(ConversationMixin, PromptMixin, DispatchMixin, GuardMixin, Cont
         # 🗺️ 新架構的高階（orchestrator.py）：領域清單的快取（檔案改了才重讀）、中階停下來要問使用者的事（程式轉問、接回）
         self._domain_cache = None
         self.domain_pending = None
+        self._reset_domain_turn()           # 這一回合交給領域的紀錄（set_current_task 的 begin_turn 也會歸零）
         self.last_compression = None          # 最近一次壓縮的統計（檔名、則數、摘要 token 數）
         self.last_tool_summary = None         # 最近一次工具回傳任務導向摘要的統計（structured／input_tokens／omitted_chars…）
 

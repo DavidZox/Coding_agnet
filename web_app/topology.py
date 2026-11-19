@@ -297,8 +297,13 @@ def _mid_view(base, ref, d, job):
         fetches.append(dict(f, ref=fref, graph=(fj or {}).get("graph"),
                             nodes={nid: {"box": _box(None, st), "detail": st} for nid, st in ((fj or {}).get("nodes") or {}).items()}))
     keys = ("id", "status", "created", "updated", "cwd", "domain", "question", "goal", "selection", "skill", "contract", "params",
-            "rejected", "auto_filled", "need_user", "fallbacks", "switched", "judgments", "result")
+            "rejected", "auto_filled", "need_user", "fallbacks", "switched", "judgments", "result", "same_as")
     view = {k: job.get(k) for k in keys}
+    sib = lambda jid: "/".join(ref.split("/")[:-1] + [jid])   # noqa: E731  同一層的另一個中階工作
+    view["chain"] = {"attempt": job.get("attempt") or 1,       # 4-2 的 I.4：同一個問題的幾次交給領域
+                     "previous": [{"ref": sib(p["job"]), "n": p.get("n"), "status": p.get("status"), "skill": p.get("skill"), "note": p.get("note")}
+                                  for p in job.get("previous") or [] if _SEG.match(str(p.get("job") or ""))],
+                     "next": [{"ref": sib(x["job"]), "n": x.get("n")} for x in job.get("next") or [] if _SEG.match(str(x.get("job") or ""))]}
     if view["result"]:
         view["result"] = {k: v for k, v in view["result"].items() if k != "report"}
     view.update(kind="mid", status_text=STATUS_TEXT.get(job.get("status"), job.get("status")), asked=_asked(job), fetches=fetches,

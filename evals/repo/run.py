@@ -74,6 +74,9 @@ def run_one(q, args, src_root, out_dir):
         turn = (out.get("turns") or [{}])[-1]
         r.update(tool_calls=out.get("tool_calls") or [], model_calls=out.get("model_calls"), guards=out.get("guards", 0),
                  hit_step_limit=turn.get("hit_step_limit", False), stuck=turn.get("stuck"))
+        # 依報告回答（4-2）：每一次的 answers 與沒過核對的項目、交回修了幾次（看核對擋了什麼、修好了沒）
+        r["answers"] = [{"answers": st.get("answers"), "problems": st.get("answer_problems")} for st in turn.get("steps") or [] if "answers" in st]
+        r["claim_nudges"] = turn.get("claim_nudges", 0)
         return r
     finally:
         if os.path.isdir(os.path.join(tmp, "logs")):

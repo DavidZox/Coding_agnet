@@ -105,7 +105,10 @@ def main():
             parsed = agent.parse_reply(ai_msg)  # 回覆協議：顯示 reply／thought，執行只看 action
             if agent.last_reply_retry:
                 print(agent.last_reply_retry)
-            print(f"\n🧠 AI:\n{'-'*30}\n{agent.format_reply_for_console(parsed)}\n{'-'*30}")
+            # 依領域的報告回答（4-2）：程式核對 answers、照項目排好才印（orchestrator.domain_reply_check／domain_render）
+            answering = not parsed["action"] and parsed["valid"] and bool(agent.domain_items())
+            if not answering:
+                print(f"\n🧠 AI:\n{'-'*30}\n{agent.format_reply_for_console(parsed)}\n{'-'*30}")
             print(f"📤 AI Tokens: {ai_tokens}")
             agent.messages.append({'role': 'assistant', 'content': ai_msg})
 
@@ -157,8 +160,13 @@ def main():
                 for notice in agent.pop_notices():
                     print(notice)
                 if claim:
+                    if answering:
+                        print("🔎 回答沒有通過程式的核對，交回 AI 修一次。")
                     agent.messages.append({'role': 'user', 'content': claim})
                     continue
+                if answering:            # 照項目排好的回答（每一項附出處那一行的原文；沒過核對的標出來）
+                    shown = dict(parsed, reply=agent.domain_render(parsed) or parsed["reply"])
+                    print(f"\n🧠 AI:\n{'-'*30}\n{agent.format_reply_for_console(shown)}\n{'-'*30}")
                 break
 
             # 1. Auto Mode

@@ -269,11 +269,14 @@ def run_turn(events):
         agent.messages.append({'role': 'assistant', 'content': ai_msg})
         parsed = agent.parse_reply(ai_msg)  # 回覆協議：左欄顯示 reply，執行只看 action，reply 裡的指令文字不會被執行
         _emit_reply_meta(parsed, events)
-        events.append({
-            "channel": "chat", "role": "assistant", "tokens": ai_tokens,
-            "text": parsed["reply"] or ("（本輪沒有文字回覆）" if parsed["action"] else "（空白回覆）"),
-            "action": action_text(parsed["action"]) if parsed["action"] else None,
-        })
+        # 依領域的報告回答（4-2）：程式核對 answers、照項目排好才顯示（orchestrator.domain_reply_check／domain_render）
+        answering = not parsed["action"] and parsed["valid"] and bool(agent.domain_items())
+        if not answering:
+            events.append({
+                "channel": "chat", "role": "assistant", "tokens": ai_tokens,
+                "text": parsed["reply"] or ("（本輪沒有文字回覆）" if parsed["action"] else "（空白回覆）"),
+                "action": action_text(parsed["action"]) if parsed["action"] else None,
+            })
 
         # 🛡️ 執行前關卡：先暫停，等使用者按「同意執行／拒絕」（apply_decision 的 guard 分支）才繼續
         guard = agent.guard_check(parsed)
@@ -293,13 +296,18 @@ def run_turn(events):
             return False                     # 同樣的動作 3 次得到同樣的結果：停下來交回使用者（turn_guard.py）
         if outcome == "end":
             # 這一回合沒有執行任何工具、回覆卻說「已經做了」（要做就執行，沒做就照實說），或依數據分析的報告回答卻寫成因果：提醒一次
-            # 依領域的報告回答時寫了報告裡沒有的出處：也提醒一次（orchestrator.domain_reply_check）
+            # 依領域的報告回答時 answers 沒有通過核對：只把沒過的項目交回修一次（orchestrator.domain_reply_check）
             claim = agent.claim_without_action(parsed) or agent.analysis_reply_check(parsed) or agent.domain_reply_check(parsed)
             for notice in agent.pop_notices():
                 events.append({"channel": "system", "text": notice})
             if claim:
+                if answering:
+                    events.append({"channel": "system", "text": "🔎 回答沒有通過程式的核對，交回 AI 修一次。"})
                 agent.messages.append({'role': 'user', 'content': claim})
                 continue
+            if answering:                    # 照項目排好的回答（每一項附出處那一行的原文；沒過核對的標出來）
+                events.append({"channel": "chat", "role": "assistant", "tokens": ai_tokens,
+                               "text": agent.domain_render(parsed) or parsed["reply"] or "（空白回覆）", "action": None})
             return False
         if outcome == "await":
             return True

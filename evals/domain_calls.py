@@ -2,7 +2,9 @@
 
 - 中階要問使用者時：評測裡沒有人回答，取消（記下問了什麼）；取消之後的結果才是這一步的結果（跟使用者按取消一樣）。
 - 記成 tool_calls：交給領域本身一筆（skill＝領域名稱，附子目標、項目、中階的狀態與做法、工作編號），中階在領域裡用到的工具各一筆
-  （via＝領域；參數照每一版的圖，從收據帶入的不列）——情境的「用了哪個工具」照樣看得到領域裡用的工具。"""
+  （via＝領域；參數照每一版的圖，從收據帶入的不列）——情境的「用了哪個工具」照樣看得到領域裡用的工具。
+- 依報告回答（4-2）：這一步的 answers 與核對的結果記進那一步（record_answers）；最後的回答換成程式照項目排好的那一份（finalize：
+  使用者看到的就是它，評測照它計分）。"""
 
 
 def settle(agent, parsed, result, turn):
@@ -27,3 +29,19 @@ def calls(agent, parsed, result):
     entry.update(mid_status=d["status"], mid_skill=d["skill"], mid_job=d["job"])
     return [entry] + [{"script": None, "skill": c["tool"], "via": action["domain"], "args": c["args"], "status": "PASS"}
                       for c in d.get("calls") or []]
+
+
+def record_answers(agent, parsed, turn):
+    """依報告回答的那一步：answers 與沒過核對的項目記進 turn 的最後一步（不是這種回答就不記）。"""
+    if parsed.get("action") or not agent.domain_items():
+        return
+    turn["steps"][-1].update(answers=parsed.get("answers") or [],
+                             answer_problems={str(k): v for k, v in agent._answer_problems(parsed).items()})
+
+
+def finalize(agent, parsed, turn):
+    """回合結束時：依報告回答的話，回傳程式照項目排好的回答（也寫進最後一步的 reply）；不是就回 None。"""
+    rendered = agent.domain_render(parsed)
+    if rendered is not None:
+        turn["steps"][-1]["reply"] = rendered
+    return rendered

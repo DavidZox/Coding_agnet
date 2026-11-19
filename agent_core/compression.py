@@ -20,7 +20,7 @@ from .config import (
     USER_WORDS_MAX_CHARS,
 )
 from . import prompt_files
-from .protocol import action_text, parse_agent_reply
+from .protocol import action_text, answers_text, parse_agent_reply
 from .schemas import SUMMARY_SCHEMA
 from .tool_use_index import tidy_hint
 
@@ -84,7 +84,7 @@ class CompressionMixin:
                 # 回覆協議的 JSON：只保留給使用者的文字與這輪的 action，thought 與 JSON 語法不進摘要
                 parsed = parse_agent_reply(content)
                 if parsed["valid"]:
-                    content = parsed["reply"]
+                    content = "\n".join(x for x in (parsed["reply"], answers_text(parsed["answers"])) if x)
                     if parsed["action"]:
                         content = (content + "\n" if content else "") + f"[action] {action_text(parsed['action'])}"
             parts.append(f"[{role}]\n{content}")
@@ -318,6 +318,7 @@ class CompressionMixin:
                 if parsed["valid"]:
                     lines = [f"（想法）{parsed['thought']}"] if parsed["thought"] else []
                     lines += [parsed["reply"]] if parsed["reply"] else []
+                    lines += [answers_text(parsed["answers"])] if parsed["answers"] else []
                     lines += [f"[action] {action_text(parsed['action'])}"] if parsed["action"] else []
                     content = "\n".join(lines)
             elif role == 'user':
