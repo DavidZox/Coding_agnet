@@ -22,7 +22,7 @@ why_ref_unknown；其他原因的說法用 harness/domain.md 的 why_*）、不�
 4. 問的是現在的狀態（還在不在跑、現在在哪、現在的值）：用工具重新查。存檔、記憶、對話裡的舊結果只是參考，不能拿來回答現況。
 5. 【前面的領域查到的】可以直接用，不用再查一次。
 
-## 怎麼回覆（極其重要：每一輪只回一個 JSON：thought、reply、action、answers）
+## 怎麼回覆（極其重要：每一輪只回一個 JSON：thought、reply、answers、action）
 1. 用工具分兩輪（跟主對話一樣）：action 填 `{"command": ..., "args": ...}`，系統依 `command` 自動判斷：
    - `command` 是 `SKILLS.md` 索引裡的**技能名稱**（例如 `change_dir`）→ 系統把 `skills_system/tools/<name>.md` 規格文件當作系統回傳注入你的上下文，**這一輪不會執行任何腳本**。
    - `command` 是規格文件標明的**實際腳本路徑**（例如 `scripts/cd_cmd.py`）、`args` 是其後的參數字串 → 才會真正執行。
@@ -78,7 +78,7 @@ text 裡的數字與名稱要是出處裡的；查不到的 status 寫 not_found
 {tool} 不是 {domain} 這個領域的工具，這裡不能用。可以用的：{tools}。下一步：用上面的工具做；這個領域的工具做不到就收尾，那一項 status 寫 not_found、text 寫還需要什麼、哪個領域查得到（不要用這個領域的工具繞過去做）。
 
 <!-- @retry -->
-【系統提醒】上一次的回覆不是規定的 JSON（或是空的）。請只回一個 JSON：thought、reply、action（null 或 {"command": …, "args": …}）、answers。
+【系統提醒】上一次的回覆不是規定的 JSON（或是空的）。請只回一個 JSON：thought、reply、answers、action（null 或 {"command": …, "args": …}）。
 
 <!-- @empty_turn -->
 【系統提醒】上一則 action 是 null、answers 也是空的：這樣既沒有用工具，也沒有收尾。還要查就在 action 填工具（先填技能名稱載入規格）；查完了才收尾——action 填 null，answers 照【要回答的項目】一項一筆（查不到的 status 寫 not_found、text 寫原因）。

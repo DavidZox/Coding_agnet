@@ -122,7 +122,8 @@ def drop_cut(parsed):
             out[k] = parsed[k] + mark
     if {"command", "args"} & set(parsed["cut"]):
         out["action"] = None
-    raw = json.dumps({"thought": out["thought"], "reply": out["reply"], "action": out["action"], "answers": out["answers"]}, ensure_ascii=False)
+    # 跟 schema 同一個順序（schemas.agent_reply_schema：action 放最後）
+    raw = json.dumps({"thought": out["thought"], "reply": out["reply"], "answers": out["answers"], "action": out["action"]}, ensure_ascii=False)
     return out, raw
 
 

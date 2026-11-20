@@ -266,7 +266,7 @@ def main():
             assert "answers" not in fmts[0]["properties"], "還沒有報告：沒有 answers"
             ans = fmts[1]["properties"]["answers"]
             assert "answers" in fmts[1]["required"] and ans["items"]["properties"]["item"]["enum"] == [1, 2], ans
-            assert list(fmts[1]["properties"]) == ["thought", "reply", "action", "answers"], "先決定動作，再寫每一項的回答"
+            assert list(fmts[1]["properties"]) == ["thought", "reply", "answers", "action"], "action 放最後（t_reply_order）"
             assert agent.domain_items() == ["alpha 定義在哪", "誰呼叫"]
             agent.set_current_task("下一個問題")
             assert agent.domain_items() == [], "新的問題：項目歸零"
@@ -974,10 +974,34 @@ def main():
             for want in ("只做【你的子目標】", "不要用這個領域的工具繞過去做", "status 寫 out_of_domain", "問的是現在的狀態", "用工具重新查"):
                 assert want in system, want
 
+        def t_reply_order():
+            # 回覆的欄位順序就是生成順序（Ollama 照 schema 的順序輸出）：action 一律放最後。主對話（有沒有 answers）與子工作階段的 schema、
+            # AGENT.md 與子工作階段說明裡的每個範例都照這個順序、寫完 action 就結束；存回對話的 JSON（drop_cut）也一樣。answers 排在 action
+            # 後面時，模型照範例寫完 action 要收尾的 `"}}` 不合法，結尾的符號寫進了 args（第 5 步 5-3 的評測）
+            from agent_core.config import REPLY_ARGS_CHARS
+            from agent_core.protocol import drop_cut, parse_agent_reply
+            orders = [list(agent_reply_schema(agent.domain_names())["properties"]),
+                      list(agent_reply_schema(agent.domain_names(), 2)["properties"]),
+                      list(agent_reply_schema((), 2, out_of_domain=True)["properties"])]
+            full = ["thought", "reply", "answers", "action"]
+            assert orders == [["thought", "reply", "action"], full, full], orders
+            with open(os.path.join(tmp, "prompts", "AGENT.md"), encoding="utf-8") as f:
+                texts = {"AGENT.md": f.read(), "子工作階段": agent._sub("robotics_infra")._system()}
+            counts = {}
+            for where, text in texts.items():
+                for ex in re.findall(r"範例（[^）]*）：`([^`]+)`", text):
+                    keys = list(json.loads(ex))
+                    assert keys == [k for k in full if k in keys] and keys[-1] == full[-1], (where, keys)
+                    counts[where] = counts.get(where, 0) + 1
+            assert counts == {"AGENT.md": 4, "子工作階段": 2}, counts
+            parsed = parse_agent_reply(json.dumps({"thought": "t", "reply": "r", "action": {"command": "c", "args": "a" * REPLY_ARGS_CHARS}}))
+            _, raw = drop_cut(parsed)
+            assert parsed["cut"] == ["args"] and list(json.loads(raw)) == full and json.loads(raw)["action"] is None, raw[:200]
+
         for name, fn in [("領域：system prompt 的「領域」一節、技能索引拿掉領域的工具、schema 多「分工」；沒有 DOMAIN.md 時照舊", t_registry),
                          ("擋領域的工具：技能名稱、腳本、規格都擋，其他技能與共用的工具（列目錄、找檔案、回顧存檔）照舊", t_gate),
                          ("交給領域 → 中階 → 報告存成 #編號 交回主模型（不提煉），決策圖的連結先推給畫面；使用者看到照項目排好的回答", t_dispatch_report),
-                         ("依報告回答的 schema：有報告時多 answers（項目的編號、先寫動作再寫回答），新的問題歸零", t_answers_schema),
+                         ("依報告回答的 schema：有報告時多 answers（項目的編號，排在 action 前面），新的問題歸零", t_answers_schema),
                          ("find_lines 的報告列出提到的行（檔案:行號：內容），主模型照它寫的出處通過核對、回答附那一行的原文", t_find_lines_cite),
                          ("answers 的核對：出處不在報告、數字不在出處那幾段、查不到沒寫原因、少一項、寫法看不懂、reply 的出處；只把沒過的交回修一次",
                           t_answers_fix),
@@ -1013,7 +1037,8 @@ def main():
                          ("子工作階段回「不屬於這個領域」：每一項都是＝排除（分工裡其他的照做）、只有幾項寫進報告；只有子工作階段的 schema 有",
                           t_sub_out_of_domain),
                          ("主對話的核對不收報告文字裡出現、不是這一回合工具結果的 #編號（子工作階段引用舊存檔）", t_old_archive_ref),
-                         ("子工作階段的說明：兩階段協議照抄 AGENT.md、只做子目標、做不到寫還需要什麼、不屬於、現在的狀態要重查", t_sub_prompt)]:
+                         ("子工作階段的說明：兩階段協議照抄 AGENT.md、只做子目標、做不到寫還需要什麼、不屬於、現在的狀態要重查", t_sub_prompt),
+                         ("回覆的欄位順序：action 放最後（主對話、子工作階段的 schema，每個範例的結尾，存回對話的 JSON）", t_reply_order)]:
             check(name, fn)
     finally:
         os.chdir(cwd)

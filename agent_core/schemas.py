@@ -21,7 +21,9 @@ def _text(n):
 # args 是字串而不是物件，因為所有技能腳本都吃位置參數、規格文件的寫法也是位置參數，這樣既有的 tools/*.md 一份都不用改：
 # 規格裡的 `EXECUTE: <路徑> <參數>` 範例就對應 command=<路徑>、args=<參數>。
 # items：這一回合交給領域、有報告的項目數（4-2，G4）。有的時候多一個 answers：每一項一筆 {item: 編號, status: answered／not_found,
-# text: 回答或查不到的原因, refs: 報告裡的出處}，程式核對之後照項目排給使用者；還要做別的動作時填 []（action 先寫，再寫 answers）。
+# text: 回答或查不到的原因, refs: 報告裡的出處}，程式核對之後照項目排給使用者；還要做別的動作時填 []。
+# 欄位順序就是生成順序（Ollama 照 schema 的順序輸出）：action 一律放最後，回覆寫完 action 就結束，跟 AGENT.md 與子工作階段的範例一樣。
+# answers 排在 action 後面時，模型照範例寫完 action 要收尾的 `"}}` 不合法，結尾的符號就寫進了 args（第 5 步 5-3 的評測：`"args": "WP_P1}}"`）。
 # out_of_domain：子工作階段的收尾多一種 status（這一項不屬於這個領域，text 寫理由；第 5 步 5-3），主對話沒有。
 # thought、command、args 也有上限（REPLY_*_CHARS，第 5 步 5-1）：寫到上限＝被截斷，protocol.parse_agent_reply 記在 cut。reply 不設上限
 # （給使用者的回答可能比 2000 字長，Ollama 又不套用超過 2000 的上限；config 的說明）。
@@ -37,7 +39,7 @@ def agent_reply_schema(domains=(), items=0, out_of_domain=False):
             "required": ["domain", "goal", "items"]}
         actions.append({"type": "object", "properties": {
             "domains": {"type": "array", "items": entry, "minItems": 1, "maxItems": DOMAIN_PLAN_MAX}}, "required": ["domains"]})
-    props = {"thought": _text(REPLY_THOUGHT_CHARS), "reply": {"type": "string"}, "action": {"anyOf": actions}}
+    props = {"thought": _text(REPLY_THOUGHT_CHARS), "reply": {"type": "string"}}
     if items:
         props["answers"] = {"type": "array", "maxItems": items, "items": {"type": "object", "properties": {
             "item": {"type": "integer", "enum": list(range(1, items + 1))},
@@ -45,6 +47,7 @@ def agent_reply_schema(domains=(), items=0, out_of_domain=False):
             "text": _text(DOMAIN_ANSWER_CHARS),
             "refs": {"type": "array", "items": _text(DOMAIN_ITEM_CHARS), "maxItems": DOMAIN_REFS_MAX}},
             "required": ["item", "status", "text", "refs"]}}
+    props["action"] = {"anyOf": actions}
     return {"type": "object", "properties": props, "required": list(props)}
 
 
