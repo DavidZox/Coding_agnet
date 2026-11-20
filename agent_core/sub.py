@@ -12,13 +12,15 @@
 3. **確認關卡**：會改狀態的工具照舊先問使用者——子工作階段停下來（need_user），高階轉問（domain_pending），resume 接回同一步；拒絕就把
    [DENIED] 交給模型接著做；cancel（使用者取消）照做到的收尾。
 4. **收尾**：模型回 action null 加 answers（每一項：答到／查不到／不屬於這個領域、回答或理由、出處＝這個子工作階段的工具結果 #編號，或收據裡的
-   檔案:行號；每一項都不屬於這個領域＝這個子工作階段不屬於這個領域，高階照中階的處理排除、交回主模型重新分工），
+   檔案:行號；查不到、不屬於的那一項另外選哪個領域查得到（system prompt 列的其他領域，或 none；第 5 步 5-4：schema 的欄位，高階照它列給
+   主模型再分工）；每一項都不屬於這個領域＝這個子工作階段不屬於這個領域，高階照中階的處理排除、交回主模型重新分工），
    程式照 4-2 核對（answers.answer_problems：出處在自己的工具結果裡、數字與名稱在出處裡、查不到的寫原因），沒過的交回修一次；
    步數用完（SUB_STEPS_MAX）、卡住、使用者取消、模型沒有回覆也收尾，報告寫明做到哪裡。每一則不是用工具就是收尾：action null、answers
    也是空的（沒有動作也沒有回答）不算收尾，提醒一次（上一步之後只提醒一次，不算交回修）；寫到字串上限被截斷的回覆不執行、重問一次
    （第 5 步 5-1 的評測：26b 的第一則常沒有動作也沒有回答，被當成收尾、用掉交回修，有的一步都沒做就結束）。
-5. **報告**（程式整理，report.md）：每一項的回答與出處（核對過的；沒過的標出來；檔案:行號 附那一行的原文）、每一步（工具、參數、結果、
-   #編號、確認關卡的決定）；analysis_run 的事實報告原樣附在最後（第 5 步 G4：主對話照它核對回答，orchestrator._domain_outcome）。
+5. **報告**（程式整理，report.md）：每一項的回答與出處（核對過的；沒過的標出來；檔案:行號 附那一行的原文；查不到、不屬於的寫查得到的領域）、
+   每一步（工具、參數、結果、#編號、確認關卡的決定）；analysis_run 的事實報告原樣附在最後（第 5 步 G4：主對話照它核對回答，
+   orchestrator._domain_outcome）。
    主對話照 4-2 依報告回答。
 """
 import os
@@ -30,7 +32,7 @@ from .config import (ANALYSIS_REPORT_HEAD, DOMAIN_QUOTE_LINES, MID_JOBS_DIRNAME,
                      SUB_STEPS_MAX, TOKEN_THRESHOLD, TOOL_SUMMARY_DEFAULT)
 from .jobstore import JobStore
 from .protocol import action_text, drop_cut, is_skill_doc_result, parse_agent_reply, tool_result_message
-from .schemas import agent_reply_schema
+from .schemas import NO_ROUTE, agent_reply_schema
 from .turn import _content_for_context
 from .turn_guard import RepeatTracker
 
@@ -85,13 +87,15 @@ def calls(job):
 
 class Session:
     """一個領域的子工作階段：start(問題, 子目標, 項目) → job（也存成 job.json）；停在確認關卡時 resume(編號, approve=…)，使用者不回答
-    cancel(編號)。tools：這一次能用的工具（領域的工具加上共用的工具）；title、intro、practice：領域的標題、說明與〈做法〉（mid.load_domain）。"""
+    cancel(編號)。tools：這一次能用的工具（領域的工具加上共用的工具）；title、intro、practice：領域的標題、說明與〈做法〉（mid.load_domain）；
+    others：其他領域 [(名稱, 標題, 說明的第一行)]（查不到、不屬於的那一項選哪個領域查得到，第 5 步 5-4）。"""
 
-    def __init__(self, agent, domain, tools=(), title="", intro="", practice=""):
+    def __init__(self, agent, domain, tools=(), title="", intro="", practice="", others=()):
         self.agent = agent
         self.domain = domain
         self.tools = list(dict.fromkeys(tools))
         self.title, self.intro, self.practice = title or domain, intro, practice
+        self.others = [tuple(o) for o in others if o[0] != domain]
         self.store = JobStore(os.path.join(agent.script_dir, "logs", SUB_JOBS_DIRNAME))
 
     # ---------------------------------------------------------------- 進入點
@@ -236,7 +240,7 @@ class Session:
         存進對話的是不含截斷參數的 JSON）。每次呼叫記進 calls.jsonl（送出的最後一則與回覆；system prompt 在 job.json 的 system，
         前面的對話在 messages）。"""
         msgs = self._fit(job)
-        schema = agent_reply_schema((), len(job["items"]), out_of_domain=True)
+        schema = agent_reply_schema((), len(job["items"]), others=[o[0] for o in self.others])
         model = SUB_MODEL or self.agent.model
         raw = ""
         for attempt in range(2):
@@ -348,10 +352,9 @@ class Session:
             a = got.get(k)
             if a is None:
                 lines.append(f"{k}. {item}：（沒有回答）")
-            elif a["status"] == "not_found":
-                lines.append(f"{k}. {item}：查不到。{a['text']}")
-            elif a["status"] == "out_of_domain":
-                lines.append(f"{k}. {item}：不屬於這個領域。{a['text']}")
+            elif a["status"] in ("not_found", "out_of_domain"):
+                lines.append(f"{k}. {item}：{'查不到' if a['status'] == 'not_found' else '不屬於這個領域'}。{a['text']}"
+                             + (f"（查得到的領域：{a['domain']}）" if self._route(a) else ""))
             else:
                 refs = list(dict.fromkeys(answers.ref_label(r) for r in a["refs"]))
                 lines.append(f"{k}. {item}：{a['text']}" + (f"（出處：{'、'.join(refs)}）" if refs else ""))
@@ -378,10 +381,16 @@ class Session:
         return "\n".join(lines)
 
     # ---------------------------------------------------------------- 其他
+    def _route(self, a):
+        """一項回答寫的「哪個領域查得到」：其他領域的名稱才算（none、空的、不是其他領域的回空字串）。"""
+        return a.get("domain") if a.get("status") != "answered" and a.get("domain") in {o[0] for o in self.others} else ""
+
     def _system(self):
         practice = _s("practice", practice=self.practice) if self.practice else ""
+        others = "\n".join(_s("other_domain", title=t, intro=i) for _, t, i in self.others) or _s("no_other_domain")
         return _s("system", title=self.title, domain=self.domain, intro=self.intro or "—", practice=practice,
-                  tools=self.agent._index_lines(self.tools), steps=SUB_STEPS_MAX, memory=self.agent.load_long_term_memory())
+                  tools=self.agent._index_lines(self.tools), others=others, none=NO_ROUTE, steps=SUB_STEPS_MAX,
+                  memory=self.agent.load_long_term_memory())
 
     def _first(self, job):
         items = "\n".join(f"{k}. {x}" for k, x in enumerate(job["items"], 1))

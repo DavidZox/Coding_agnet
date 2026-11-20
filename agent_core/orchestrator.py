@@ -5,8 +5,8 @@
    列目錄、找檔案：只看有什麼、在哪裡）。
    主對話的 system prompt 多一節「領域」（domain_block），由程式從每個領域的 SKILLS.md 組：說明、不包含什麼、每個複合技能一句話
    （架構圖的入口技能；沒有複合技能的領域寫明在子工作階段裡一步一步做）。領域的工具（共用的以外）從主對話的技能索引拿掉
-   （skills_index_text），主模型直接叫的時候程式擋下來（domain_gate；子工作階段裡只能用那個領域的工具與共用的工具）。規格有問題的領域
-   不列、它的工具也不擋（主對話照舊能用），問題放進通知。
+   （skills_index_text），主模型直接叫的時候程式擋下來（domain_gate；複合技能的名稱也擋，回交給哪個領域（第 5 步 5-4）；子工作階段裡只能用
+   那個領域的工具與共用的工具）。規格有問題的領域不列、它的工具也不擋（主對話照舊能用），問題放進通知。
 2. **分工**（run_plan，第 5 步 5-3）：主模型在回覆的 action 填 {"domains": [{"domain", "goal", "items"}, …]}——要用的領域一次選出來，
    每個領域各自的子目標與項目（高階決定原始問題裡每個領域要回答什麼）。程式先核對每一項（_check_entry：領域在 DOMAIN.md、這個問題
    沒有排除過、子目標不是空的、項目 1～DOMAIN_ITEMS_MAX 項、跟這一回合交過的不一樣（一樣的再交一次結果也一樣：不收斂）、同一個項目
@@ -15,6 +15,8 @@
    查到的（_known_text，程式從報告取）；子工作階段另外收到這個問題的分工與主對話這一回合已經做過的（_division_text）：它只做自己的
    子目標，原始問題只用來對照名稱與數值。每個領域的結果各自存成 #編號，全部做完接在一起交回主模型（DOMAIN_RESULT_HEAD 開頭：程式
    整理好的，不再提煉；_plan_done）；中途要問使用者時分工停在 _domain_turn["plan"]，回答之後接著做剩下的。
+   子工作階段查不到、不屬於的項目寫了哪個領域查得到時（回答的 domain 欄位，第 5 步 5-4），報告後面列「第 N 項：X 說要交給 Y 查」
+   （_routes；Y 這一回合查過這一項、或說過不屬於它的附上），主模型照它再分工——分工還是主模型決定，程式不自己再交。
 3. **問使用者**（D7）：中階或子工作階段停下來要問時，程式把問題與候選直接給使用者（domain_pending、domain_ask_text），使用者的回答由
    answer_domain 交給它接回同一個工作（不合法就再問，不經過主模型）；cancel_domain 取消。
 4. **第 3 級**（D5 高 1）：中階回「不屬於這個領域」、或子工作階段每一項都回不屬於（5-3）時記下排除的領域，這個問題不能再交給它；
@@ -54,9 +56,9 @@ def _p(key, /, **fields):
 
 
 def load_registry(base_path, tools_dir):
-    """DOMAIN.md → {"domains": {名稱: mid.load_domain 的結果}, "shared": [工具], "hidden": {工具: 領域}, "problems": [...]}。
-    沒有 DOMAIN.md＝沒有領域（主對話照舊）；規格有問題的領域不列，它的工具也不擋。"""
-    out = {"domains": {}, "shared": [], "hidden": {}, "problems": []}
+    """DOMAIN.md → {"domains": {名稱: mid.load_domain 的結果}, "shared": [工具], "hidden": {工具: 領域}, "skills": {複合技能: 領域},
+    "problems": [...]}。沒有 DOMAIN.md＝沒有領域（主對話照舊）；規格有問題的領域不列，它的工具也不擋。"""
+    out = {"domains": {}, "shared": [], "hidden": {}, "skills": {}, "problems": []}
     try:
         with open(os.path.join(base_path, DOMAIN_INDEX_NAME), encoding="utf-8") as f:
             lines = f.read().split("\n")
@@ -77,6 +79,8 @@ def load_registry(base_path, tools_dir):
         for t in d["tools"]:
             if t not in out["shared"]:
                 out["hidden"].setdefault(t, name)
+        for sk in d["skills"]:
+            out["skills"].setdefault(sk, name)
     return out
 
 
@@ -187,19 +191,25 @@ class DomainMixin:
         return self._script_skill_map().get(self._normalize_script_name(name))
 
     def domain_gate(self, token):
-        """主模型直接叫領域的工具（技能名稱或腳本）回 [ERROR]（附下一步）；子工作階段裡（agent._sub_allowed）只能用那個領域的工具與
-        共用的工具。可以用回 None（不是任何技能的照舊交給後面的檢查）。"""
+        """主模型直接叫領域的工具（技能名稱或腳本）回 [ERROR]（附下一步）；叫領域的複合技能的名稱也一樣（複合技能由中階執行，不是工具；
+        第 5 步 5-4：以前落到「沒有這個技能（已經移除的名稱）」，沒有說要交給哪個領域）。子工作階段裡（agent._sub_allowed）只能用那個
+        領域的工具與共用的工具。可以用回 None（不是任何技能的照舊交給後面的檢查）。"""
         skill = self._tool_of(token)
+        reg = self.domain_registry()
+        name = os.path.basename(token)
+        name = name[:-3] if name.endswith(".md") else name
+        composite = reg["skills"].get(name) if skill is None else None
         allowed = getattr(self, "_sub_allowed", None)
         if allowed is not None:
-            if skill is None or skill in allowed["tools"]:
+            if (skill is None and composite is None) or skill in allowed["tools"]:
                 return None
-            return "[ERROR] " + prompt_files.load("sub/session.md", "not_my_tool", tool=skill, domain=allowed["domain"],
+            return "[ERROR] " + prompt_files.load("sub/session.md", "not_my_tool", tool=skill or name, domain=allowed["domain"],
                                                   tools="、".join(sorted(allowed["tools"])))
-        hidden = self.domain_registry()["hidden"]
-        if skill not in hidden:
+        if composite:
+            return "[ERROR] " + _d("skill_blocked", skill=name, domain=composite)
+        if skill not in reg["hidden"]:
             return None
-        return "[ERROR] " + _d("tool_blocked", tool=skill, domain=hidden[skill])
+        return "[ERROR] " + _d("tool_blocked", tool=skill, domain=reg["hidden"][skill])
 
     # ---------------------------------------------------------------- 分工（交給領域）
     def run_plan(self, action):
@@ -218,7 +228,7 @@ class DomainMixin:
                 return "[ERROR] " + (_d("err_plan_entry", k=k, domain=e["domain"]) if len(entries) > 1 else "") + why
         turn = self._domain_turn
         start = len(getattr(self, "trajectory", None) or [])
-        turn["plan"] = {"entries": entries, "next": 0, "texts": []}
+        turn["plan"] = {"entries": entries, "next": 0, "texts": [], "first": len(turn["dispatches"])}
         turn["spans"].append([start, None])             # 分工執行期間的軌跡（中階、子工作階段的工具）：不算主對話自己做的
         return self._plan_run()
 
@@ -263,14 +273,39 @@ class DomainMixin:
         plan["next"] += 1
         return self._plan_run()
 
-    def _plan_done(self, extra=()):
-        """分工做完（或 /clear 取消）：每個領域的結果接在一起，最後是依報告回答的說明與這一回合要回答的項目（有報告時）。"""
+    def _plan_done(self):
+        """分工做完：每個領域的結果接在一起，接著是子工作階段說別的領域查得到的項目（_routes，有的時候），最後是依報告回答的說明與
+        這一回合要回答的項目（有報告時）。"""
         turn = self._domain_turn
         plan, turn["plan"] = turn["plan"], None
         turn["spans"][-1][1] = len(getattr(self, "trajectory", None) or [])
         items = self.domain_items()
+        routes = self._routes(turn["dispatches"][plan["first"]:], items)
         hint = [_d("answer_hint", items="\n".join(f"{k}. {x}" for k, x in enumerate(items, 1)))] if items else []
-        return DOMAIN_RESULT_HEAD + "\n\n".join(plan["texts"] + list(extra) + hint)
+        return DOMAIN_RESULT_HEAD + "\n\n".join(plan["texts"] + ([routes] if routes else []) + hint)
+
+    def _routes(self, done, items):
+        """這次分工裡子工作階段查不到、不屬於、寫了哪個領域查得到的項目（回答的 domain 欄位，第 5 步 5-4）→ 給主模型的一段；沒有回空字串。
+        項目在這一回合要回答的項目（items）裡的寫第幾項（每一項都不屬於的子工作階段沒有報告，項目不在裡面，只寫項目）；那個領域這一回合
+        已經查過這一項、或說過不屬於它的，程式附上（再交之前就看得到）。"""
+        reg, turn = self.domain_registry(), self._domain_turn
+        keys = [answers.norm(x) for x in items]
+        rows = []
+        for x in done:
+            if x.get("kind") != "sub":                # 中階的報告沒有一項一項的回答
+                continue
+            for a in x.get("answers") or []:
+                to = a.get("domain") or ""
+                if a["status"] == "answered" or to == x["domain"] or to not in reg["domains"] or not 1 <= a["item"] <= len(x["items"]):
+                    continue
+                item = x["items"][a["item"] - 1]
+                key = answers.norm(item)
+                where = _d("route_where_n", n=keys.index(key) + 1, item=item) if key in keys else _d("route_where", item=item)
+                tried = [y for y in turn["dispatches"] if y["domain"] == to and key in {answers.norm(i) for i in y["items"]}]
+                state = (_d("route_excluded", to=to) if to in turn["excluded"] else
+                         _d("route_tried", to=to, status=_status_text(tried[-1]["kind"], tried[-1]["status"])) if tried else "")
+                rows.append(_d("route", where=where, domain=x["domain"], to=to, state=state))
+        return _d("routes", rows="\n".join(dict.fromkeys(rows))) if rows else ""
 
     def _start_entry(self, plan, k):
         """分工的第 k 項（從 0 算）：記一筆交給領域的紀錄，交給中階（有複合技能）或子工作階段（沒有）。中階收到的問題後面接前面的領域
@@ -357,10 +392,12 @@ class DomainMixin:
         return head + [self._attempt_info(x)]
 
     def _sub(self, name):
-        """這個領域的子工作階段：能用領域的工具加上共用的工具。"""
+        """這個領域的子工作階段：能用領域的工具加上共用的工具；其他領域的標題與說明的第一行（查不到、不屬於的那一項選哪個領域查得到）。"""
         reg = self.domain_registry()
         d = reg["domains"][name]
-        return sub.Session(self, name, tools=d["tools"] + reg["shared"], title=d["title"], intro=d["intro"], practice=d.get("practice", ""))
+        others = [(n, o["title"], (o["intro"].split("\n") or [""])[0]) for n, o in reg["domains"].items() if n != name]
+        return sub.Session(self, name, tools=d["tools"] + reg["shared"], title=d["title"], intro=d["intro"], practice=d.get("practice", ""),
+                           others=others)
 
     def _domain_started(self, jid, kind="mid"):
         """中階或子工作階段的工作建好了：決策圖的連結先推給畫面（執行中就能看，4b ①）。"""

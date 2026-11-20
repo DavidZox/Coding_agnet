@@ -24,10 +24,15 @@ def _text(n):
 # text: 回答或查不到的原因, refs: 報告裡的出處}，程式核對之後照項目排給使用者；還要做別的動作時填 []。
 # 欄位順序就是生成順序（Ollama 照 schema 的順序輸出）：action 一律放最後，回覆寫完 action 就結束，跟 AGENT.md 與子工作階段的範例一樣。
 # answers 排在 action 後面時，模型照範例寫完 action 要收尾的 `"}}` 不合法，結尾的符號就寫進了 args（第 5 步 5-3 的評測：`"args": "WP_P1}}"`）。
-# out_of_domain：子工作階段的收尾多一種 status（這一項不屬於這個領域，text 寫理由；第 5 步 5-3），主對話沒有。
+# others：子工作階段（主對話是 None）。收尾多一種 status out_of_domain（這一項不屬於這個領域，text 寫理由；第 5 步 5-3），查不到、不屬於的
+# 那一項多一個 domain：哪個領域查得到（others 的其中一個，都不是寫 NO_ROUTE；第 5 步 5-4）。每一項是兩種形狀之一：答到的沒有 domain，
+# 查不到、不屬於的一定有（文法保證：原因寫成程式看得懂的欄位，不靠主模型讀報告的文字）；domain 排在 text 後面：先寫原因再選領域。
 # thought、command、args 也有上限（REPLY_*_CHARS，第 5 步 5-1）：寫到上限＝被截斷，protocol.parse_agent_reply 記在 cut。reply 不設上限
 # （給使用者的回答可能比 2000 字長，Ollama 又不套用超過 2000 的上限；config 的說明）。
-def agent_reply_schema(domains=(), items=0, out_of_domain=False):
+NO_ROUTE = "none"
+
+
+def agent_reply_schema(domains=(), items=0, others=None):
     actions = [
         {"type": "null"},
         {"type": "object", "properties": {"command": _text(REPLY_COMMAND_CHARS), "args": _text(REPLY_ARGS_CHARS)}, "required": ["command", "args"]},
@@ -41,12 +46,15 @@ def agent_reply_schema(domains=(), items=0, out_of_domain=False):
             "domains": {"type": "array", "items": entry, "minItems": 1, "maxItems": DOMAIN_PLAN_MAX}}, "required": ["domains"]})
     props = {"thought": _text(REPLY_THOUGHT_CHARS), "reply": {"type": "string"}}
     if items:
-        props["answers"] = {"type": "array", "maxItems": items, "items": {"type": "object", "properties": {
-            "item": {"type": "integer", "enum": list(range(1, items + 1))},
-            "status": {"type": "string", "enum": ["answered", "not_found"] + (["out_of_domain"] if out_of_domain else [])},
-            "text": _text(DOMAIN_ANSWER_CHARS),
-            "refs": {"type": "array", "items": _text(DOMAIN_ITEM_CHARS), "maxItems": DOMAIN_REFS_MAX}},
-            "required": ["item", "status", "text", "refs"]}}
+        def answer(statuses, route=None):
+            p = {"item": {"type": "integer", "enum": list(range(1, items + 1))}, "status": {"type": "string", "enum": statuses},
+                 "text": _text(DOMAIN_ANSWER_CHARS), "refs": {"type": "array", "items": _text(DOMAIN_ITEM_CHARS), "maxItems": DOMAIN_REFS_MAX}}
+            if route is not None:
+                p["domain"] = {"type": "string", "enum": route}
+            return {"type": "object", "properties": p, "required": list(p)}
+        one = (answer(["answered", "not_found"]) if others is None else
+               {"anyOf": [answer(["answered"]), answer(["not_found", "out_of_domain"], list(others) + [NO_ROUTE])]})
+        props["answers"] = {"type": "array", "maxItems": items, "items": one}
     props["action"] = {"anyOf": actions}
     return {"type": "object", "properties": props, "required": list(props)}
 

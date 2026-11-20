@@ -18,7 +18,10 @@
   帶那一節的說明、〈做法〉從 AGENT.md 搬過去、擋與放行；數據分析在子工作階段裡執行（G4）：報告原樣附上、主對話照它核對回答；
 - 問使用者：Web（停下來、問題、回答不合法再問、回答之後接回同一個工作、取消；經過 HTTP 的 /api/send 與 /api/decision）、
   CLI（輸入回答、0 取消）、/clear 取消；
-- 評測的 worker 怎麼記（evals/domain_calls.py）。
+- 評測的 worker 怎麼記（evals/domain_calls.py）；
+- 回覆的欄位順序（5-3 之後）：action 放最後；
+- 查得到的領域（5-4）：子工作階段查不到、不屬於的那一項寫哪個領域查得到（schema 的欄位），報告寫明、分工的結果列出「第 N 項：X 說要交給 Y 查」
+  （查過、排除的附上），主模型照它再分工；主對話叫複合技能的名稱回交給哪個領域、子工作階段裡也擋。
 
     python3 evals/orch/selftest.py
 """
@@ -108,11 +111,18 @@ class FakeChat:
 SUB_MARK = "的子工作階段：主對話把使用者的問題分給幾個領域"     # 子工作階段的 system prompt（prompts/sub/session.md）
 
 
-def _item_enum(fmt):
+def _answer_shapes(fmt):
+    """answers 每一項的形狀：主對話一種；子工作階段兩種（答到的、查不到與不屬於的多 domain，第 5 步 5-4）。"""
     try:
-        return fmt["properties"]["answers"]["items"]["properties"]["item"]["enum"]
+        one = fmt["properties"]["answers"]["items"]
     except (KeyError, TypeError):
         return []
+    return one["anyOf"] if "anyOf" in one else [one]
+
+
+def _item_enum(fmt):
+    shapes = _answer_shapes(fmt)
+    return shapes[0]["properties"]["item"]["enum"] if shapes else []
 
 
 def make_env():
@@ -935,9 +945,9 @@ def main():
             assert d["status"] == "done" and "2. 設定檔寫什麼：不屬於這個領域。設定在工作目錄的檔案" in job["result"]["report"], job["result"]["report"]
             assert agent.domain_items() == ["有沒有紀錄", "設定檔寫什麼"] and "rmf_dispatch" not in agent._domain_turn["excluded"]
             fmt_sub = next(c["format"] for c in fake.calls if c["role"] == "sub")
-            assert "out_of_domain" in fmt_sub["properties"]["answers"]["items"]["properties"]["status"]["enum"]
+            assert any("out_of_domain" in sh["properties"]["status"]["enum"] for sh in _answer_shapes(fmt_sub))
             fmt_main = [c["format"] for c in fake.calls if c["role"] == "main"][-1]
-            assert "out_of_domain" not in fmt_main["properties"]["answers"]["items"]["properties"]["status"]["enum"], "主對話沒有這一種"
+            assert all("out_of_domain" not in sh["properties"]["status"]["enum"] for sh in _answer_shapes(fmt_main)), "主對話沒有這一種"
 
         def t_old_archive_ref():
             # 主對話的核對不收報告文字裡出現、但不是這一回合的工具結果的 #編號（5-3）：子工作階段引用之前的存檔、自己的核對標了沒過，
@@ -982,7 +992,7 @@ def main():
             from agent_core.protocol import drop_cut, parse_agent_reply
             orders = [list(agent_reply_schema(agent.domain_names())["properties"]),
                       list(agent_reply_schema(agent.domain_names(), 2)["properties"]),
-                      list(agent_reply_schema((), 2, out_of_domain=True)["properties"])]
+                      list(agent_reply_schema((), 2, others=["rmf_dispatch"])["properties"])]
             full = ["thought", "reply", "answers", "action"]
             assert orders == [["thought", "reply", "action"], full, full], orders
             with open(os.path.join(tmp, "prompts", "AGENT.md"), encoding="utf-8") as f:
@@ -997,6 +1007,92 @@ def main():
             parsed = parse_agent_reply(json.dumps({"thought": "t", "reply": "r", "action": {"command": "c", "args": "a" * REPLY_ARGS_CHARS}}))
             _, raw = drop_cut(parsed)
             assert parsed["cut"] == ["args"] and list(json.loads(raw)) == full and json.loads(raw)["action"] is None, raw[:200]
+
+        def t_sub_route():
+            # 5-4：子工作階段查不到、不屬於的那一項寫哪個領域查得到（schema 的欄位：答到的沒有，查不到、不屬於的一定有，選項是其他領域與
+            # none）；報告寫明，分工的結果後面列「第 N 項：X 說要交給 Y 查」，主模型照它再分工（程式不自己再交）；Y 查過這一項、說過不屬於的附上
+            from agent_core.protocol import parse_agent_reply
+            seen = {}
+
+            def fin1(messages):
+                rid = re.findall(r"存檔是 #(\d+)", "\n".join(m["content"] for m in messages))[-1]
+                return {"thought": "收尾", "reply": "一項查到、一項要調度系統。", "action": None, "answers": [
+                    {"item": 1, "status": "answered", "text": "pkg 裡有 mod.py 與 use.py", "refs": [f"#{rid}"]},
+                    {"item": 2, "status": "not_found", "text": "（測試）站點的名稱不在容器裡", "refs": [], "domain": "rmf_dispatch"}]}
+
+            def redo(messages):
+                seen["routes"] = last_report(messages)
+                return plan(("rmf_dispatch", "查站點的名稱", ["站點叫什麼"]))
+
+            def fin2(messages):
+                return {"thought": "收尾", "reply": "查不到。", "action": None, "answers": [
+                    {"item": 1, "status": "not_found", "text": "（測試）語義地圖沒有名稱", "refs": [], "domain": "none"}]}
+
+            def main_ans(messages):
+                seen["second"] = last_report(messages)
+                rid = agent._domain_turn["dispatches"][0]["result_id"]
+                return answer("見報告。", [(1, "answered", "pkg 裡有 mod.py 與 use.py", [f"#{rid}"]), (2, "not_found", "語義地圖沒有名稱", [])])
+            fake = FakeChat(main=[plan(("robotics_infra", "列出 pkg 的檔案、查站點的名稱", ["pkg 有哪些檔案", "站點叫什麼"])), redo, main_ans],
+                            sub=[step("list_dir"), step("scripts/ls_cmd.py", "pkg"), fin1, fin2])
+            events, _ = turn("pkg 有哪些檔案？站點叫什麼？", fake)
+            fmt = next(c["format"] for c in fake.calls if c["role"] == "sub")
+            shapes = _answer_shapes(fmt)
+            assert [sh["properties"]["status"]["enum"] for sh in shapes] == [["answered"], ["not_found", "out_of_domain"]], shapes
+            assert "domain" not in shapes[0]["properties"] and shapes[1]["required"][-1] == "domain", "答到的沒有 domain；查不到的一定有、排在最後"
+            assert shapes[1]["properties"]["domain"]["enum"] == [d for d in DOMAINS if d != "robotics_infra"] + ["none"], shapes[1]
+            d1, d2 = agent._domain_turn["dispatches"]
+            system = sub_job(d1["job"])["system"]
+            assert "## 其他領域（查不到、不屬於的那一項，domain 寫哪一個查得到；都不是寫 none）" in system, system
+            assert "- rmf_dispatch：調度系統 — 調度系統的工作包" in system and "- robotics_infra：" not in system, "列其他領域（標題與說明的第一行），沒有自己"
+            report = sub_job(d1["job"])["result"]["report"]
+            assert "2. 站點叫什麼：查不到。（測試）站點的名稱不在容器裡（查得到的領域：rmf_dispatch）" in report, report
+            assert sub_job(d1["job"])["answers"][1]["domain"] == "rmf_dispatch" and sub_job(d1["job"])["answers"][0]["domain"] == ""
+            routes = seen["routes"]
+            want = "- 第 2 項（站點叫什麼）：robotics_infra 說要交給 rmf_dispatch 查"
+            assert want + "\n" in routes and routes.index(want) < routes.index("這一回合要回答的項目（answers 照這個編號）"), routes
+            assert d2["domain"] == "rmf_dispatch" and d2["items"] == ["站點叫什麼"] and fake.count("sub") == 4, "主模型照它再分工"
+            assert "說要交給" not in seen["second"].split("rmf_dispatch 的報告")[1] and "（查得到的領域" not in seen["second"], "none 不列"
+            shown = chats(events)[-1]
+            assert "2. 站點叫什麼：查不到。語義地圖沒有名稱" in shown, shown
+            # 兩個領域同一項都查不到、互相說對方查得到：程式附上「這一回合查過這一項」；說了不屬於自己的領域（排除）也附上
+            nf = lambda to: {"thought": "收尾", "reply": "查不到。", "action": None,
+                             "answers": [{"item": 1, "status": "not_found", "text": "（測試）沒有", "refs": [], "domain": to}]}
+            ood = {"thought": "不屬於", "reply": "不是調度的事。", "action": None,
+                   "answers": [{"item": 1, "status": "out_of_domain", "text": "（測試）是容器的事", "refs": [], "domain": "robotics_infra"}]}
+            fake = FakeChat(main=[plan(("robotics_infra", "查 A", ["A 在哪"]), ("multimodal", "查 A", ["A 在哪"]), ("rmf_dispatch", "查 B", ["B 在哪"])),
+                                  say("好")], sub=[nf("multimodal"), nf("robotics_infra"), ood])
+            events, _ = turn("A 在哪？B 在哪？", fake)
+            text = tools_of(events)[-1]
+            for want in ("- 第 1 項（A 在哪）：robotics_infra 說要交給 multimodal 查（multimodal 這一回合查過這一項：做完）",
+                         "- 第 1 項（A 在哪）：multimodal 說要交給 robotics_infra 查（robotics_infra 這一回合查過這一項：做完）",
+                         "- 「B 在哪」：rmf_dispatch 說要交給 robotics_infra 查"):
+                assert want in text, (want, text)
+            assert agent._domain_turn["excluded"] == {"rmf_dispatch": "（測試）是容器的事"} and agent.domain_items() == ["A 在哪"]
+            # 回答的解析：答到的不留 domain；查不到的照寫（none 也照寫，報告與列出時才不算）；主對話的 schema 沒有 domain
+            got = parse_agent_reply(json.dumps({"thought": "", "reply": "", "action": None, "answers": [
+                {"item": 1, "status": "answered", "text": "a", "refs": ["#1"], "domain": "rmf_dispatch"},
+                {"item": 2, "status": "not_found", "text": "b", "refs": [], "domain": "none"}]}))["answers"]
+            assert [a["domain"] for a in got] == ["", "none"], got
+            assert all("domain" not in sh["properties"] for sh in _answer_shapes(agent_reply_schema(agent.domain_names(), 2)))
+
+        def t_gate_composite():
+            # 5-4：主對話叫複合技能的名稱（或規格檔名）回交給哪個領域（以前落到「沒有這個技能（已經移除的名稱）」）；子工作階段裡也擋
+            fake = FakeChat(main=[step("py_usage"), step("doc_lookup.md"), step("no_such_skill"), say("好")])
+            events, _ = turn("找 alpha", fake)
+            tools = tools_of(events)
+            assert tools[0].startswith("[ERROR] py_usage 是 repo_analysis 領域寫好的做法（複合技能）") and \
+                '「分工」{"domains": [{"domain": "repo_analysis"' in tools[0], tools[0]
+            assert tools[1].startswith("[ERROR] doc_lookup 是 repo_analysis 領域寫好的做法"), tools[1]
+            assert tools[2].startswith("[ERROR] 沒有 `no_such_skill` 這個技能"), "不是任何技能的照舊"
+            reg = agent.domain_registry()
+            assert reg["skills"]["py_usage"] == "repo_analysis" and set(reg["skills"]) == set(reg["domains"]["repo_analysis"]["skills"])
+            agent._sub_allowed = {"domain": "robotics_infra", "tools": set(reg["domains"]["robotics_infra"]["tools"] + reg["shared"])}
+            try:
+                blocked = agent.domain_gate("py_usage")
+                assert blocked.startswith("[ERROR] py_usage 不是 robotics_infra 這個領域的工具"), blocked
+                assert agent.domain_gate("list_dir") is None and agent.domain_gate("no_such_skill") is None
+            finally:
+                agent._sub_allowed = None
 
         for name, fn in [("領域：system prompt 的「領域」一節、技能索引拿掉領域的工具、schema 多「分工」；沒有 DOMAIN.md 時照舊", t_registry),
                          ("擋領域的工具：技能名稱、腳本、規格都擋，其他技能與共用的工具（列目錄、找檔案、回顧存檔）照舊", t_gate),
@@ -1038,7 +1134,10 @@ def main():
                           t_sub_out_of_domain),
                          ("主對話的核對不收報告文字裡出現、不是這一回合工具結果的 #編號（子工作階段引用舊存檔）", t_old_archive_ref),
                          ("子工作階段的說明：兩階段協議照抄 AGENT.md、只做子目標、做不到寫還需要什麼、不屬於、現在的狀態要重查", t_sub_prompt),
-                         ("回覆的欄位順序：action 放最後（主對話、子工作階段的 schema，每個範例的結尾，存回對話的 JSON）", t_reply_order)]:
+                         ("回覆的欄位順序：action 放最後（主對話、子工作階段的 schema，每個範例的結尾，存回對話的 JSON）", t_reply_order),
+                         ("查得到的領域（5-4）：子工作階段查不到、不屬於的寫哪個領域查得到（schema 的欄位），報告寫明、分工的結果列出、主模型照它再分工；"
+                          "查過、排除的附上", t_sub_route),
+                         ("擋複合技能的名稱（5-4）：主對話回交給哪個領域、子工作階段裡也擋，不是任何技能的照舊", t_gate_composite)]:
             check(name, fn)
     finally:
         os.chdir(cwd)

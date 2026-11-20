@@ -1,11 +1,32 @@
-新架構的高階（agent_core/orchestrator.py）：主模型「分工」（交給領域）之後，程式交回給主模型的文字（每個領域的報告、分工做完時依報告回答的
-說明 answer_hint、要問使用者、中階沒做完時接著一步一步做、不屬於這個領域、/clear 取消），核對沒過的說明（[ERROR] 後面的部分），依報告回答時
+新架構的高階（agent_core/orchestrator.py）：主模型「分工」（交給領域）之後，程式交回給主模型的文字（每個領域的報告、子工作階段說別的領域
+查得到的項目 routes、分工做完時依報告回答的說明 answer_hint、要問使用者、中階沒做完時接著一步一步做、不屬於這個領域、/clear 取消），
+擋領域的工具與複合技能（tool_blocked、skill_blocked）、核對沒過的說明（[ERROR] 後面的部分），依報告回答時
 answers 沒有通過核對的說明（answers_fix、why_*；why_* 也用在使用者看到的「沒有通過核對」與子工作階段收尾的核對）。開頭的 [PASS] 🗺️／[ERROR]
 由程式加。交給下一層的文字（前面的領域查到的、這個問題的分工）在 harness/plan.md。{名稱} 是程式填的值。
 
 <!-- @report -->
 {domain} 的報告（{status}；做法 {skill}）。決策圖：{url}
 {report}
+
+<!-- @routes -->
+子工作階段查不到、不屬於它、寫了哪個領域查得到的項目（系統從它們的回答取）：
+{rows}
+要再查就再分工一次：只帶這幾項，交給它寫的領域（系統會把這一次的經過一起交過去）。
+
+<!-- @route -->
+- {where}：{domain} 說要交給 {to} 查{state}
+
+<!-- @route_where_n -->
+第 {n} 項（{item}）
+
+<!-- @route_where -->
+「{item}」
+
+<!-- @route_tried -->
+（{to} 這一回合查過這一項：{status}）
+
+<!-- @route_excluded -->
+（{to} 這一回合說過不屬於它，不能再交給它）
 
 <!-- @answer_hint -->
 這一回合要回答的項目（answers 照這個編號）：
@@ -43,6 +64,10 @@ text 寫回答，not_found 寫原因（照報告寫的說明、沒有做完的�
 <!-- @tool_blocked -->
 {tool} 是 {domain} 領域的工具，不直接用。下一步：在 action 填「分工」{"domains": [{"domain": "{domain}", "goal": …, "items": […]}]}（要用的領域都列進去），
 由 {domain} 照寫好的做法查；沒有寫好的做法時，系統會在子工作階段裡用這個領域的工具一步一步做，再把報告交給你。
+
+<!-- @skill_blocked -->
+{skill} 是 {domain} 領域寫好的做法（複合技能），由 {domain} 挑選、執行，不能直接用。下一步：在 action 填「分工」{"domains": [{"domain": "{domain}", "goal": …, "items": […]}]}（要用的領域都列進去），
+由 {domain} 照寫好的做法查，再把報告交給你。
 
 <!-- @err_plan_size -->
 分工列了 {count} 個領域（要 1～{max} 個）。下一步：domains 列這個問題要用的領域，每個領域一項。

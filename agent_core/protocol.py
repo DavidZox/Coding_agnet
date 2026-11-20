@@ -29,8 +29,9 @@ def quote_cli_arg(arg):
 
 
 def _answers(value):
-    """依報告回答的 answers（4-2）→ [{"item": int, "status": "answered"／"not_found"／"out_of_domain", "text": str, "refs": [str]}]；
-    格式不對的那一筆不要。out_of_domain 只有子工作階段的 schema 有（這一項不屬於這個領域，第 5 步 5-3）。"""
+    """依報告回答的 answers（4-2）→ [{"item": int, "status": "answered"／"not_found"／"out_of_domain", "text": str, "refs": [str], "domain": str}]；
+    格式不對的那一筆不要。out_of_domain 與 domain（哪個領域查得到，或 none）只有子工作階段的 schema 有（第 5 步 5-3、5-4）；答到的、
+    沒有寫的 domain 是空字串。"""
     out = []
     for a in value if isinstance(value, list) else []:
         if not isinstance(a, dict):
@@ -42,8 +43,9 @@ def _answers(value):
         refs = a.get("refs")
         refs = [" ".join(str(x).split()) for x in (refs if isinstance(refs, list) else [refs]) if x is not None and str(x).strip()]
         status = str(a.get("status") or "").strip()
-        out.append({"item": item, "status": status if status in ("answered", "not_found", "out_of_domain") else "answered",
-                    "text": str(a.get("text") or "").strip(), "refs": refs})
+        status = status if status in ("answered", "not_found", "out_of_domain") else "answered"
+        out.append({"item": item, "status": status, "text": str(a.get("text") or "").strip(), "refs": refs,
+                    "domain": str(a.get("domain") or "").strip() if status != "answered" else ""})
     return out
 
 

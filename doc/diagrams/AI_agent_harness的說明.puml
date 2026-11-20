@@ -6,7 +6,7 @@ skinparam nodesep 60
 skinparam shadowing false
 skinparam defaultFontName "Microsoft JhengHei"
 
-title AI_agent_harness 架構：一個主 session 負責「挑技能、交給領域」，一次性獨立 session 負責「讀原文」與「看影像」，\n領域的問題由新架構的高階、中階、低階照寫好的做法執行，沒有寫好的做法時在子工作階段裡一步一步做
+title AI_agent_harness 架構：一個主 session 負責「挑技能、分工交給領域」，一次性獨立 session 負責「讀原文」與「看影像」，\n領域的問題由新架構的高階、中階、低階照寫好的做法執行，沒有寫好的做法時在子工作階段裡一步一步做
 
 rectangle NodeUser #F5F5F5 [
   **使用者介面**
@@ -54,12 +54,14 @@ rectangle NodeAgent #D1E5F0 [
     被壓掉的對話存檔）
   * 附圖：主對話只收到 [vision result] 文字（附存檔編號），
     存成 #編號〔附圖分析〕；壓縮時當系統內容、不算使用者原話
-  * 交給領域（高階 orchestrator.py）：程式核對之後交給中階，
-    中階沒有做完時接著開子工作階段（sub.py）；報告存成 #編號
-    交回主 session，照報告一項一項回答、程式核對出處；
+  * 分工（高階 orchestrator.py）：程式核對之後照順序交給中階
+    （有複合技能的領域）或子工作階段（sub.py：沒有的、或中階
+    沒有做完時），後面的領域收到前面查到的；報告各自存成 #編號
+    交回主 session，照報告一項一項回答、程式核對出處；子工作階段
+    查不到的項目寫明哪個領域查得到，列給主 session 再分工；
     中階或子工作階段要問使用者時程式直接問、接回同一個工作
-    （不經過主 session）；領域讀內容的工具不給主 session 直接用
-    （試錯留在子工作階段裡）
+    （不經過主 session）；領域的工具與複合技能不給主 session
+    直接用（試錯留在子工作階段裡）
   * 回覆的字串有上限：寫到上限被截斷的不執行、重問一次
 ]
 
@@ -67,8 +69,9 @@ rectangle NodeLLM #FFE6CC [
   **主 session（Ollama gemma4:e4b，有對話歷史）**
   ----
   每輪固定回 JSON {thought, reply, action}
+  （有領域的報告時多 answers；action 一律最後）
   action 只能是：技能名稱、規格標明的腳本路徑、
-  result_recall，或「交給領域」{domain, goal, items}；
+  result_recall，或「分工」{domains: [{domain, goal, items}…]}；
   reply 裡的文字不會被執行
 ]
 
@@ -100,14 +103,15 @@ rectangle NodeSkills #D5E8D4 [
   * 慣例（doc/技能撰寫規範.md）：第一行 [PASS]／[ERROR]（[ERROR] 附下一步）；
     長的輸出分 ## 章節；計數、排序、門檻由腳本算；不讀標準輸入、有逾時
   * DOMAIN.md：領域的清單與共用的工具（列目錄、找檔案、回顧存檔）；
-    <領域>/：領域的說明與複合技能（第一版 repo_analysis：6 個）
+    <領域>/：領域的說明、〈做法〉與複合技能（repo_analysis：6 個；
+    凍結的工具登記成的四個領域沒有複合技能）
   * 收據（新架構 D4）：第一版領域的腳本另外寫一份給程式讀的結果
     （_receipt_common：狀態、錯誤種類、數量、項目；給模型的文字不變）；
     規格的 parameters／receipt 是給程式看的，載入給模型時拿掉
 ]
 
 rectangle NodeDomain #E2F0D9 [
-  **新架構的中階、子工作階段與低階（交給領域之後；第一版領域 repo_analysis）**
+  **新架構的中階、子工作階段與低階（分工交給領域之後）**
   ----
   * 中階 mid.py：挑複合技能（模型）→ 合約（模型抄原文，程式核對；
     再交時只照新的子目標抄）
@@ -120,9 +124,10 @@ rectangle NodeDomain #E2F0D9 [
     cpp_symbol、config_trace
   * 結果：做完／死路／熔斷（有報告）；沒有適合的做法、失敗、使用者取消
     → 接著開子工作階段；不屬於這個領域 → 排除
-  * 子工作階段 sub.py（中階沒有做完、沒有複合技能的領域）：自己的對話，
-    用這個領域的工具一步一步做（同一套執行、確認關卡、存檔、提煉、
-    卡住偵測、步數上限）；收尾的回答由程式核對（answers.py）、
+  * 子工作階段 sub.py（沒有複合技能的領域、中階沒有做完）：自己的對話，
+    只做自己的子目標，用這個領域的工具一步一步做（同一套執行、確認關卡、
+    存檔、提煉、卡住偵測、步數上限）；收尾每一項答到／查不到／不屬於
+    （查不到、不屬於的寫哪個領域查得到），由程式核對（answers.py）、
     整理成報告；試錯不進主對話
 ]
 
@@ -171,8 +176,8 @@ NodeSkills -down-> NodeWorld : docker exec／HTTP／檔案操作
 NodeWorld -up-> NodeSkills : 原始輸出
 NodeSkills -[#009933,bold]up-> NodeAgent : [PASS]／[ERROR] 完整輸出\n+ [CWD_CHANGED]／[TARGET_CONTAINER]\n＋收據（另一個檔，給程式讀）
 NodeAgent -left-> NodeStore : 存檔原文、附圖分析、檢索描述、\n軌跡、摘要歸檔、耗時
-NodeAgent -[#548235,bold]right-> NodeDomain : **交給領域（程式核對過）**\n／使用者的回答
-NodeDomain -[#548235]left-> NodeAgent : 報告 #編號／要問使用者
+NodeAgent -[#548235,bold]right-> NodeDomain : **分工（程式核對過）**\n／使用者的回答
+NodeDomain -[#548235]left-> NodeAgent : 報告 #編號（每個領域一份）\n＋查得到的領域／要問使用者
 NodeDomain -[#548235]down-> NodeSkills : 照決策圖執行腳本（讀收據）\n／子工作階段一步一步執行
 NodeSub -[hidden]down-> NodeDomain
 NodeStore -right-> NodeAgent : 檢索清單、最新摘要與使用者原話、\n常駐記憶；recall 讀回原文

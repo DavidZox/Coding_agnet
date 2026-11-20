@@ -774,7 +774,11 @@ function subStageHtml(v, id) {
     const answers = (v.items || []).map((item, i) => {
       const a = (v.answers || []).find((x) => x.item === i + 1);
       const p = probs[String(i + 1)];
-      const body = !a ? '（沒有回答）' : a.status === 'not_found' ? `查不到：${esc(a.text)}` : `${esc(a.text)}<div class="hint">出處：${esc((a.refs || []).join('、'))}</div>`;
+      // 查不到、不屬於的那一項：哪個領域查得到（第 5 步 5-4；none＝它說都不是）
+      const route = a && a.domain && a.domain !== 'none' ? `<div class="hint">查得到的領域：${esc(a.domain)}</div>` : '';
+      const body = !a ? '（沒有回答）' : a.status === 'not_found' ? `查不到：${esc(a.text)}${route}`
+        : a.status === 'out_of_domain' ? `不屬於這個領域：${esc(a.text)}${route}`
+        : `${esc(a.text)}<div class="hint">出處：${esc((a.refs || []).join('、'))}</div>`;
       return `<li><b>${i + 1}. ${esc(item)}</b>：${body}${p ? `<div class="c-bad">沒有通過核對：${esc(p.join('；'))}</div>` : ''}</li>`;
     }).join('');
     const ask = v.need_user ? `<h4>在等使用者（確認關卡）</h4><div class="askbox" style="white-space:pre-wrap">${esc(v.need_user.question || '')}</div>` : '';

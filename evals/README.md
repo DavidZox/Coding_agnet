@@ -280,7 +280,7 @@ python3 evals/mid/run.py --rescore evals/results/<結果目錄>   # 不跑模型
 python3 evals/orch/selftest.py                              # 離線（幾秒）：假的主模型與中階的模型、真的中階與工具
 ```
 
-- **離線**（`selftest.py`，32 項）：system prompt 的「領域」一節與技能索引（領域讀內容的工具不列；沒有 `DOMAIN.md` 時照舊）、回覆的 schema 多「分工」（5-3 之前是「交給領域」）、
+- **離線**（`selftest.py`，35 項）：system prompt 的「領域」一節與技能索引（領域讀內容的工具不列；沒有 `DOMAIN.md` 時照舊）、回覆的 schema 多「分工」（5-3 之前是「交給領域」）、
   擋領域的工具（技能名稱、腳本、規格；共用的工具（列目錄、找檔案、回顧存檔）與其他技能照舊）、交給領域 → 中階 → 報告存成 #編號 交回主模型（不提煉）、決策圖的連結先推給畫面、
   find_lines 的報告（提到的行）照「檔案:行號」寫出處通過核對、核對（沒有的領域、子目標是空的、項目數、一樣的再交一次）、依報告回答的出處不在報告裡提醒一次、不屬於這個領域的排除
   與高 4 的紀錄、問使用者（Web 的 `run_turn` 與 `answer_domain_turn`、經過 HTTP 的 `/api/send` 與 `/api/decision`、CLI 的 `cli.main()`：回答不合法再問、
@@ -304,7 +304,10 @@ python3 evals/orch/selftest.py                              # 離線（幾秒）
   第幾項沒過，沒過就一項都不執行；`t_plan_validation`）；分工停在確認關卡、回答之後接著做下一項（`t_plan_pause`）；子工作階段回「不屬於這個領域」
   （每一項都是＝排除、分工裡其他的照做；只有幾項寫進報告；只有子工作階段的 schema 有；`t_sub_out_of_domain`）；主對話的核對不收報告文字裡出現、
   不是這一回合工具結果的 #編號（`t_old_archive_ref`）；子工作階段的兩階段協議照抄 AGENT.md（`t_sub_prompt`）。在暫存區把每一個改動拿掉（21 個），
-  對應的測試都會失敗。
+  對應的測試都會失敗。5-3 之後的修正：回覆的欄位順序 action 放最後（兩種 schema、每個範例的結尾、存回對話的 JSON；`t_reply_order`）。
+  5-4（查不到時寫明誰查得到）：子工作階段的 answers 每一項兩種形狀（答到的沒有 domain；查不到、不屬於的一定有，選項是其他領域與 none）、system prompt
+  列其他領域、報告寫「查得到的領域」、分工的結果列「第 N 項：X 說要交給 Y 查」並照它再分工、Y 查過這一項或排除過的附上、none 不列（`t_sub_route`）；
+  主對話叫複合技能的名稱回交給哪個領域、子工作階段裡也擋（`t_gate_composite`）。在暫存區把每一個改動拿掉（12 個），對應的測試都會失敗。
 - **真模型**：沒有自己的一組；主對話接上中階之後的結果看真實專案評測（`repo/run.py`），有沒有退步看主對話（`chat/`）與維運（`ops/`）。
   評測的 worker（`chat/worker.py`、`ops/worker.py`，真實專案評測借用後者）收尾與記法相同（`evals/domain_calls.py`）：中階要問使用者時取消
   （評測裡沒有人回答，`domain_asks` 記下問了什麼；取消之後跟使用者按取消一樣接著開子工作階段）；子工作階段或中階的確認關卡照情境的 `guard` 回答
