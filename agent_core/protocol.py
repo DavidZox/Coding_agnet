@@ -29,7 +29,8 @@ def quote_cli_arg(arg):
 
 
 def _answers(value):
-    """依報告回答的 answers（4-2）→ [{"item": int, "status": "answered"／"not_found", "text": str, "refs": [str]}]；格式不對的那一筆不要。"""
+    """依報告回答的 answers（4-2）→ [{"item": int, "status": "answered"／"not_found"／"out_of_domain", "text": str, "refs": [str]}]；
+    格式不對的那一筆不要。out_of_domain 只有子工作階段的 schema 有（這一項不屬於這個領域，第 5 步 5-3）。"""
     out = []
     for a in value if isinstance(value, list) else []:
         if not isinstance(a, dict):
@@ -41,16 +42,23 @@ def _answers(value):
         refs = a.get("refs")
         refs = [" ".join(str(x).split()) for x in (refs if isinstance(refs, list) else [refs]) if x is not None and str(x).strip()]
         status = str(a.get("status") or "").strip()
-        out.append({"item": item, "status": status if status in ("answered", "not_found") else "answered",
+        out.append({"item": item, "status": status if status in ("answered", "not_found", "out_of_domain") else "answered",
                     "text": str(a.get("text") or "").strip(), "refs": refs})
     return out
+
+
+def _domain_entry(e):
+    """分工的一項 → {"domain", "goal", "items"}（去掉多餘的空白、空的項目）。"""
+    items = e.get("items")
+    items = [" ".join(str(x).split()) for x in (items if isinstance(items, list) else [items]) if x is not None and str(x).strip()]
+    return {"domain": str(e["domain"]).strip(), "goal": " ".join(str(e.get("goal") or "").split()), "items": items}
 
 
 def parse_agent_reply(raw):
     """模型回覆（JSON 字串）→ {"thought", "reply", "action", "answers", "valid", "cut"}。
 
-    action 正規化為 None、{"command": str, "args": str}，或「交給領域」{"domain": str, "goal": str, "items": [str]}（新架構的高階，
-    agent_core/orchestrator.py；項目去掉空白與空的，數量與長度由高階核對）。不是合法 JSON 時 valid=False、reply=原文、
+    action 正規化為 None、{"command": str, "args": str}，或「分工」{"domains": [{"domain": str, "goal": str, "items": [str]}, …]}
+    （新架構的高階，agent_core/orchestrator.py；項目去掉空白與空的，數量、長度與重複的領域由高階核對）。不是合法 JSON 時 valid=False、reply=原文、
     action=None：降級成「只顯示文字、不執行任何東西」，絕不退回用文字比對找指令（那正是要避免的誤觸發來源）。
     對非 format= 強制的後端保留一點容錯：args 給成陣列／物件、把整行 `EXECUTE: ...` 塞進 command、
     command 裡夾帶參數，都會被整理成同一種形狀；command 寫成 null／none 的跟 action 填 null 一樣（e4b 收尾時這樣寫，第 5 步 5-1 的評測）。
@@ -77,10 +85,9 @@ def parse_agent_reply(raw):
     if isinstance(action, dict):
         cut += [k for k, n in _ACTION_CAPS if isinstance(action.get(k), str) and len(action[k]) >= n]
     norm = None
-    if isinstance(action, dict) and str(action.get("domain") or "").strip():
-        items = action.get("items")
-        items = [" ".join(str(x).split()) for x in (items if isinstance(items, list) else [items]) if x is not None and str(x).strip()]
-        norm = {"domain": str(action["domain"]).strip(), "goal": " ".join(str(action.get("goal") or "").split()), "items": items}
+    if isinstance(action, dict) and isinstance(action.get("domains"), list):
+        entries = [_domain_entry(e) for e in action["domains"] if isinstance(e, dict) and str(e.get("domain") or "").strip()]
+        norm = {"domains": entries} if entries else None
         return {"thought": thought, "reply": reply, "action": norm, "answers": answers, "valid": True, "cut": cut}
     if isinstance(action, str) and action.strip().lower() not in ("", "null", "none"):
         action = {"command": action, "args": ""}
@@ -126,11 +133,11 @@ def answers_text(answers):
 
 
 def action_text(action):
-    """action 的單行文字表示（顯示與軌跡用）：`command args`；交給領域是「→ 領域：子目標（項目：…）」。"""
+    """action 的單行文字表示（顯示與軌跡用）：`command args`；分工是每個領域一段「→ 領域：子目標（項目：…）」，用｜隔開。"""
     if not action:
         return ""
-    if action.get("domain"):
-        return f"→ {action['domain']}：{action.get('goal', '')}（項目：{'；'.join(action.get('items') or [])}）"
+    if action.get("domains"):
+        return "｜".join(f"→ {e['domain']}：{e.get('goal', '')}（項目：{'；'.join(e.get('items') or [])}）" for e in action["domains"])
     return f"{action['command']} {action['args']}".strip()
 
 
@@ -144,8 +151,8 @@ def tool_result_message(content, action=None):
     「感謝您提供的語義地圖」。影像分析結果（web_app.flows._run_vision_subsession）用的是同一招。
     action 可給 parse_reply 的 action dict 或指令字串，只取腳本檔名放進框架句方便模型對應。"""
     label = ""
-    if isinstance(action, dict) and action.get("domain"):
-        label = str(action["domain"])
+    if isinstance(action, dict) and action.get("domains"):
+        label = "、".join(str(e.get("domain")) for e in action["domains"])
     elif isinstance(action, dict) and action.get("command"):
         label = os.path.basename(str(action["command"]).strip())
     elif isinstance(action, str) and action.strip():

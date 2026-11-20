@@ -128,7 +128,7 @@ def answer_problems(items, answers, cited, allowed, source, unknown=None):
         a, bad_why = got.get(k), []
         if a is None:
             bad_why.append(why("why_missing"))
-        elif a["status"] == "not_found":
+        elif a["status"] in ("not_found", "out_of_domain"):      # 不屬於這個領域（子工作階段，5-3）跟查不到一樣要寫理由
             if not a["text"]:
                 bad_why.append(why("why_no_reason"))
         else:

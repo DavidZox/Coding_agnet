@@ -92,7 +92,8 @@ SCENARIOS = [
 
     # ================================================================ Docker（沙盒 daemon）
     S("dk_overview", "docker", "現在有哪些容器？哪些在跑、哪些停了？停掉的結束碼是多少？",
-      [("reply_all", "web_cache", "log_writer", "nav2_test", "db_backup", "scratch_tools"), ("reply_re_any", r"exited \(1\)", r"exit(ed)? code:? ?1\b", r"結束碼[^\d]{0,4}1\b", r"\(1\)")],
+      [("reply_all", "web_cache", "log_writer", "nav2_test", "db_backup", "scratch_tools"), ("reply_re_any", r"exited \(1\)", r"exit(ed)? code:? ?1\b", r"結束碼[^\d]{0,4}1\b", r"\(1\)",
+                                                                                          r"nav2_test[^\n\d]{0,12}(?<![\d.])1(?![\d.])")],
       world={"containers": DOCKER_SET}, forbid=("docker_changed_any",)),
     S("dk_restart_backup", "docker", "db_backup 這個容器停了，幫我重新啟動它，確認有沒有正常跑完（看它的輸出）。",
       [("docker_restarted", "db_backup"), ("reply_any", "128 rows", "backup finished", "128")],

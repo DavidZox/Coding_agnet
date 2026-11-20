@@ -643,7 +643,9 @@ class Worker:
         names = list(domain["skills"])
         entries = "\n".join(_i("skill_entry", name=n, description=s["meta"]["description"], answers="、".join(s["answers"]),
                                when=s["sections"].get("什麼時候用", "").replace("\n", "\n  ")) for n, s in domain["skills"].items())
-        parts = [_i("question", question=job["question"])] + ([_i("goal", goal=job["goal"])] if job["goal"] != job["question"] else [])
+        # 5-3：挑技能、判斷屬不屬於這個領域只看這一層的子目標，原始問題是背景（以前看整個問題：子目標是讀設定檔，問題提到正在跑的系統就整題排除）
+        parts = ([_i("goal", goal=job["goal"]), _i("select_question", question=job["question"])] if job["goal"] != job["question"]
+                 else [_i("question", question=job["question"])])
         parts += [_i("domain", domain=domain["title"], intro=domain["intro"]), _i("skills", skills=entries)] + self._previous_part(job)
         out = self.model("select", prompt_files.load("mid/select.md"), "\n\n".join(parts), mid_select_schema(names, KINDS),
                          MID_SELECT_PREDICT, self._log(job["id"]))

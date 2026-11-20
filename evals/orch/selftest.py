@@ -54,7 +54,13 @@ def select(skill, reason="理由", asks=("位置",)):
 
 
 def dispatch(goal, items, domain="repo_analysis"):
-    return {"thought": "交給領域", "reply": "交給領域查。", "action": {"domain": domain, "goal": goal, "items": items}}
+    """只用到一個領域的分工。"""
+    return plan((domain, goal, items))
+
+
+def plan(*entries):
+    """分工（第 5 步 5-3）：entries＝[(領域, 子目標, 項目)]，照順序做。"""
+    return {"thought": "分工", "reply": "交給領域查。", "action": {"domains": [{"domain": d, "goal": g, "items": list(i)} for d, g, i in entries]}}
 
 
 def step(cmd, args=""):
@@ -99,7 +105,7 @@ class FakeChat:
         return sum(1 for c in self.calls if c["role"] == role)
 
 
-SUB_MARK = "的子工作階段：主對話把一個問題交給這個領域"     # 子工作階段的 system prompt（prompts/sub/session.md）
+SUB_MARK = "的子工作階段：主對話把使用者的問題分給幾個領域"     # 子工作階段的 system prompt（prompts/sub/session.md）
 
 
 def _item_enum(fmt):
@@ -196,11 +202,13 @@ def main():
             assert not [t for t in HIDDEN if f"[{t}]" in skills], "領域的工具不列在主對話的技能索引"
             assert all(f"[{t}]" in skills for t in SHARED + ("change_dir", "file_ops")), "共用的工具（列目錄、找檔案、回顧存檔）與其他技能照舊"
             act = agent_reply_schema(agent.domain_names())["properties"]["action"]["anyOf"]
-            assert act[2]["properties"]["domain"]["enum"] == DOMAINS and act[2]["properties"]["items"]["maxItems"] == 6, act
+            entry = act[2]["properties"]["domains"]["items"]["properties"]
+            assert entry["domain"]["enum"] == DOMAINS and entry["items"]["maxItems"] == 6 and act[2]["properties"]["domains"]["maxItems"] == 4, act
+            assert "分工" in sp and '{"domains": [{"domain": "<領域名稱>"' in sp, "「領域」一節寫分工的格式"
             fake = FakeChat(main=[say("你好。")])
             turn("你好", fake)
             fmt = next(c["format"] for c in fake.calls if c["role"] == "main")
-            assert len(fmt["properties"]["action"]["anyOf"]) == 3, "主對話送的 schema 有「交給領域」"
+            assert len(fmt["properties"]["action"]["anyOf"]) == 3, "主對話送的 schema 有「分工」"
             path = os.path.join(tmp, "skills_system", "DOMAIN.md")
             os.rename(path, path + ".off")
             try:
@@ -217,7 +225,7 @@ def main():
                                   step("scripts/find_file_cmd.py", "mod.py ."), say("好")])
             events, _ = turn("找 alpha", fake)
             tools = tools_of(events)
-            assert tools[0].startswith("[ERROR] search_text 是 repo_analysis 領域的工具") and "交給領域" in tools[0], tools[0]
+            assert tools[0].startswith("[ERROR] search_text 是 repo_analysis 領域的工具") and '「分工」{"domains": [{"domain": "repo_analysis"' in tools[0], tools[0]
             assert tools[1].startswith("[ERROR] search_text 是 repo_analysis 領域的工具"), "腳本對回技能一樣擋"
             assert tools[2].startswith("[ERROR] view_file 是 repo_analysis 領域的工具") and tools[3].startswith("[ERROR] view_file 是"), "規格也不給"
             assert tools[4].startswith(SKILL_DOC_PREFIX) and tools[5].startswith(SKILL_DOC_PREFIX), "其他技能、共用的工具照舊載入規格"
@@ -231,7 +239,7 @@ def main():
             assert not awaiting
             text = tools_of(events)[0]
             assert text.startswith(DOMAIN_RESULT_HEAD + "repo_analysis 的報告（做完；做法 py_usage）"), text[:200]
-            assert "pkg/mod.py:1" in text and "- 要回答的項目 2：哪些地方呼叫 alpha" in text and "依這份報告回答使用者" in text, text
+            assert "pkg/mod.py:1" in text and "- 要回答的項目 2：哪些地方呼叫 alpha" in text and "依上面的報告回答使用者" in text, text
             assert "這一回合要回答的項目（answers 照這個編號）：\n1. alpha 定義在哪個檔案\n2. 哪些地方呼叫 alpha" in text, "報告後面列這一回合的項目"
             links = [e["text"] for e in events if e["channel"] == "progress" and e["text"].startswith("🔗 決策圖：/topology?src=logs&ref=mid_jobs/")]
             assert links, "決策圖的連結先推給畫面"
@@ -377,7 +385,7 @@ def main():
             assert fake.count("select") == 3, "第 4 次不執行中階"
 
         def t_validation():
-            bad = [{"thought": "", "reply": "", "action": {"domain": "nope", "goal": "g", "items": ["a"]}}, dispatch("", ["a"]),
+            bad = [dispatch("g", ["a"], domain="nope"), dispatch("", ["a"]),
                    dispatch("在 pkg 找", []), dispatch("在 pkg 找", [f"項目{i}" for i in range(7)]),
                    dispatch("列出 pkg 的檔案", ["有哪些檔案"]), dispatch("列出 pkg 的檔案", ["有哪些檔案"]), say("好")]
             fake = FakeChat(main=bad, select=[select("none", "沒有列目錄的做法")])
@@ -432,7 +440,7 @@ def main():
                             select=[select("out_of_domain", "問的是正在跑的容器", asks=("內容",))])
             events, _ = turn("cam_box 容器現在在跑嗎？", fake)
             tools = tools_of(events)
-            assert "repo_analysis 說這個問題不屬於它：問的是正在跑的容器" in tools[0] and "交給別的領域" in tools[0] and "[view_file]" not in tools[0], tools[0]
+            assert "repo_analysis 說它的子目標不屬於它：問的是正在跑的容器" in tools[0] and "重新分工時交給別的領域" in tools[0] and "[view_file]" not in tools[0], tools[0]
             assert tools[1].startswith("[ERROR] 這個問題已經交給過 repo_analysis，它說不屬於它") and "1. repo_analysis（做法 —）：不屬於這個領域，決策圖 /topology" in tools[1], tools[1]
             assert tools[2].startswith("[ERROR] view_file 是 repo_analysis 領域的工具"), "不屬於的也不放行（第 5 步）"
             assert fake.count("sub") == 0, "不屬於這個領域不開子工作階段"
@@ -554,7 +562,7 @@ def main():
             assert calls[0]["skill"] == "repo_analysis" and calls[0]["mid_status"] == "done" and calls[0]["mid_skill"] == "py_usage", calls[0]
             via = {c["skill"] for c in calls[1:] if c.get("via") == "repo_analysis"}
             assert via == {"search_text", "code_ast_reader"}, calls
-            assert domain_calls.calls(agent, {"action": {"domain": "nope", "goal": "g", "items": []}}, "[ERROR] x")[0]["status"] == "ERROR"
+            assert domain_calls.calls(agent, {"action": dispatch("g", [], domain="nope")["action"]}, "[ERROR] x")[0]["status"] == "ERROR"
             ollama.chat = FakeChat(select=[SEL_PY], contract=[con_py(path="pkgx")])
             agent.set_current_task("pkgx 裡的 alpha 定義在哪？")
             parsed = {"action": dispatch("在 pkgx 裡找 alpha", ["alpha 定義在哪"])["action"]}
@@ -800,7 +808,173 @@ def main():
             assert agent.analysis_reply_check({"reply": "是雷達斷線導致的（E2）", "action": None, "valid": True}), "之後的回合也核對"
             assert agent.analysis_reply_check({"reply": "好的，還有別的問題嗎？", "action": None, "valid": True}) is None, "跟報告無關的不核對"
 
-        for name, fn in [("領域：system prompt 的「領域」一節、技能索引拿掉領域的工具、schema 多「交給領域」；沒有 DOMAIN.md 時照舊", t_registry),
+        def t_plan_two_domains():
+            # 5-3 分工：一次選兩個領域、照順序做；後面的領域收到前面的領域查到的（子工作階段一項一項的回答）與這個問題的分工（哪一項是它、
+            # 主對話這一回合已經做過的）；子工作階段的第一則先放它的子目標，原始問題只當對照，提煉的錨點只放子目標與項目；報告一起交回、
+            # 每個領域各自存成 #編號，最後列一次這一回合所有的項目；評測的 worker 每個領域記一筆
+            from agent_core import sub as subm
+            from evals import domain_calls
+            seen = {}
+
+            def fin1(messages):
+                seen["first"] = messages[1]["content"]
+                rid = re.findall(r"存檔是 #(\d+)", "\n".join(m["content"] for m in messages))[-1]
+                return {"thought": "收尾", "reply": "列好了。", "action": None,
+                        "answers": [{"item": 1, "status": "answered", "text": "pkg 裡有 mod.py 與 use.py", "refs": [f"#{rid}"]}]}
+
+            def fin2(messages):
+                seen["second"] = messages[1]["content"]
+                return {"thought": "收尾", "reply": "查不到。", "action": None,
+                        "answers": [{"item": 1, "status": "not_found", "text": "（測試）調度系統沒有這些檔案的紀錄", "refs": []}]}
+
+            def main_ans(messages):
+                rid = agent._domain_turn["dispatches"][0]["result_id"]
+                return answer("見報告。", [(1, "answered", "pkg 裡有 mod.py 與 use.py", [f"#{rid}"]), (2, "not_found", "調度系統沒有紀錄", [])])
+            two = plan(("robotics_infra", "列出 pkg 有哪些檔案", ["pkg 有哪些檔案"]), ("rmf_dispatch", "查調度系統裡有沒有 pkg 的檔案的紀錄", ["有沒有紀錄"]))
+            fake = FakeChat(main=[step("list_dir"), step("scripts/ls_cmd.py", "docs"), two, main_ans],
+                            sub=[step("list_dir"), step("scripts/ls_cmd.py", "pkg"), fin1, fin2])
+            events, _ = turn("pkg 裡有哪些檔案？調度系統有沒有它們的紀錄？", fake)
+            d1, d2 = agent._domain_turn["dispatches"]
+            assert (d1["domain"], d2["domain"], d1["kind"], d2["kind"]) == ("robotics_infra", "rmf_dispatch", "sub", "sub"), (d1, d2)
+            assert d1["result_id"] and d2["result_id"] and d1["result_id"] != d2["result_id"], "每個領域的結果各自存成 #編號"
+            first, second = seen["first"], seen["second"]
+            assert first.startswith("【你的子目標】（你要做的只有這個）\n列出 pkg 有哪些檔案"), first[:200]
+            assert first.index("【要回答的項目】") < first.index("【這個問題的分工】") < first.index("【使用者的原始問題】（只用來對照"), first
+            assert "1. robotics_infra：列出 pkg 有哪些檔案（你）" in first and "2. rmf_dispatch：查調度系統裡有沒有 pkg 的檔案的紀錄（之後由它做）" in first, first
+            assert "- 主對話這一回合已經做的：scripts/ls_cmd.py docs → [PASS]" in first and "【前面的領域查到的】" not in first, first
+            assert "【前面的領域查到的】（系統從它們的報告取，可以直接用）\n- robotics_infra：pkg 有哪些檔案：pkg 裡有 mod.py 與 use.py（出處：#" in second, second
+            assert "1. robotics_infra：列出 pkg 有哪些檔案（做完了，結果在上面）" in second and "2. rmf_dispatch：查調度系統裡有沒有 pkg 的檔案的紀錄（你）" in second
+            assert second.count("主對話這一回合已經做的：") == 1, "子工作階段（分工執行期間）的工具不算主對話做的"
+            job1 = sub_job(d1["job"])
+            anchor = subm.Session._anchor(job1)
+            assert "列出 pkg 有哪些檔案" in anchor and "調度系統有沒有它們的紀錄" not in anchor, "提煉的錨點只放子目標與項目"
+            text = tools_of(events)[-1]
+            assert text.startswith(DOMAIN_RESULT_HEAD + "robotics_infra 的報告（做完") and "\n\nrmf_dispatch 的報告（做完" in text, text[:300]
+            assert text.count("這一回合要回答的項目（answers 照這個編號）") == 1 and "這一回合要回答的項目（answers 照這個編號）：\n1. pkg 有哪些檔案\n2. 有沒有紀錄" in text
+            shown = chats(events)[-1]
+            assert "1. pkg 有哪些檔案：pkg 裡有 mod.py 與 use.py（出處：#" in shown and "2. 有沒有紀錄：查不到。調度系統沒有紀錄" in shown, shown
+            calls = [c for c in domain_calls.calls(agent, {"action": two["action"]}, text) if not c.get("via")]
+            assert [(c["skill"], c["result_id"], c["sub_status"]) for c in calls] == [("robotics_infra", d1["result_id"], "done"),
+                                                                                   ("rmf_dispatch", d2["result_id"], "done")], calls
+
+        def t_plan_known_mid():
+            # 分工的後一項是有複合技能的領域（中階）：前面的領域查到的接在中階收到的問題後面（合約可以從那裡抄）；挑技能時子目標在前、
+            # 使用者的問題當背景（5-3：挑技能、判斷屬不屬於這個領域只看子目標）
+            fin = {"thought": "收尾", "reply": "查到了。", "action": None,
+                   "answers": [{"item": 1, "status": "not_found", "text": "（測試）要找的名稱是 alpha", "refs": []}]}
+            fake = FakeChat(main=[plan(("rmf_dispatch", "查要找的名稱", ["要找哪個名稱"]), ("repo_analysis", "在 pkg 的 .py 裡找那個名稱定義在哪", ["定義在哪"])), cite],
+                            select=[SEL_PY], contract=[con_py()], sub=[fin])
+            turn("先查要找的名稱，再找它在 pkg 裡定義在哪", fake)
+            d = agent._domain_turn["dispatches"][-1]
+            job = mid_job(d["job"])
+            assert job["question"].startswith("先查要找的名稱") and "【前面的領域查到的】" in job["question"] and "（測試）要找的名稱是 alpha" in job["question"], job["question"]
+            calls = open(os.path.join(tmp, "logs", "mid_jobs", d["job"], "calls.jsonl"), encoding="utf-8").read()
+            assert calls.index("【這一層的子目標】") < calls.index("【使用者的原始問題】（背景：裡面其他的事分給了別的領域或主對話"), "挑技能：子目標在前、問題當背景"
+
+        def t_plan_validation():
+            # 分工的核對：超過 4 個領域、同一個領域兩次、某一項沒過（寫明第幾項）；沒過就一項都不執行；domains 是空的＝沒有動作
+            five = plan(*[(d, "查一下", ["a"]) for d in DOMAINS])
+            dup = plan(("robotics_infra", "查 A", ["a"]), ("robotics_infra", "查 B", ["b"]))
+            bad2 = plan(("robotics_infra", "查 A", ["a"]), ("nope", "查 B", ["b"]))
+            fake = FakeChat(main=[five, dup, bad2, say("好")])
+            events, _ = turn("查一下", fake)
+            tools = tools_of(events)
+            assert tools[0].startswith("[ERROR] 分工列了 5 個領域（要 1～4 個）"), tools[0]
+            assert tools[1].startswith("[ERROR] 分工裡 robotics_infra 出現了不只一次"), tools[1]
+            assert tools[2].startswith("[ERROR] 分工的第 2 項（nope）：沒有「nope」這個領域"), tools[2]
+            assert fake.count("sub") == 0 and agent._domain_turn["dispatches"] == [] and agent._domain_turn["plan"] is None, "沒過就一項都不執行"
+            assert agent.parse_reply(json.dumps({"thought": "", "reply": "好", "action": {"domains": []}}))["action"] is None
+
+        def t_plan_pause():
+            # 分工的第 1 項停在確認關卡：先問使用者（等回答的說明進主對話），回答之後接回那一項、接著做第 2 項，報告一起交回
+            def body():
+                def fin_ok(messages):
+                    rid = re.findall(r"存檔是 #(\d+)", "\n".join(m["content"] for m in messages))[-1]
+                    return {"thought": "收尾", "reply": "寫好了。", "action": None,
+                            "answers": [{"item": 1, "status": "answered", "text": "寫好了", "refs": [f"#{rid}"]}]}
+                fin2 = {"thought": "收尾", "reply": "好。", "action": None,
+                        "answers": [{"item": 1, "status": "not_found", "text": "（測試）沒有紀錄", "refs": []}]}
+                fake = FakeChat(main=[plan(("test_ops", "在工作目錄寫 plan_notes", ["寫好了沒"]), ("rmf_dispatch", "查調度系統的紀錄", ["有沒有紀錄"])),
+                                      say("好")],
+                                sub=[step("file_ops"), step("scripts/file_ops_cmd.py", 'write plan_notes.txt --text "hi"'), fin_ok, fin2])
+                events, awaiting = turn("寫 plan_notes，再查調度系統的紀錄", fake)
+                assert awaiting and agent.domain_pending["domain"] == "test_ops" and agent._domain_turn["plan"]["next"] == 0, agent.domain_pending
+                assert fake.count("sub") == 2, "第 2 項還沒開始"
+                last = agent.messages[-1]["content"]
+                assert "test_ops 停下來要問使用者" in last and "分工裡還沒做的也會接著做" in last, last
+                ev = []
+                assert flows.answer_domain_turn("是", ev) is False and agent.domain_pending is None and agent._domain_turn["plan"] is None
+                text = tools_of(ev)[0]
+                assert text.startswith(DOMAIN_RESULT_HEAD + "使用者回答「是」之後，test_ops 接著做完：test_ops 的報告（做完"), text[:200]
+                assert "\n\nrmf_dispatch 的報告（做完" in text and "1. 寫好了沒\n2. 有沒有紀錄" in text and fake.count("sub") == 4, text
+                assert os.path.exists(os.path.join(tmp, "plan_notes.txt"))
+            with_test_domain(body)
+
+        def t_sub_out_of_domain():
+            # 子工作階段一項一項回「不屬於這個領域」（5-3）：每一項都是＝排除這個領域（照中階的處理），沒有報告、分工裡其他的照樣做；
+            # 只有幾項：報告寫明，項目照樣要回答；schema 只有子工作階段多 out_of_domain
+            ood = {"thought": "不屬於", "reply": "這不是容器的事。", "action": None,
+                   "answers": [{"item": 1, "status": "out_of_domain", "text": "問的是程式碼裡的定義", "refs": []}]}
+            fin2 = {"thought": "收尾", "reply": "好。", "action": None, "answers": [{"item": 1, "status": "not_found", "text": "（測試）沒有紀錄", "refs": []}]}
+            fake = FakeChat(main=[plan(("robotics_infra", "alpha 定義在哪", ["alpha 定義在哪"]), ("rmf_dispatch", "查調度系統的紀錄", ["有沒有紀錄"])),
+                                  plan(("robotics_infra", "再查 alpha", ["alpha 在哪"])), say("好")], sub=[ood, fin2])
+            events, _ = turn("alpha 定義在哪？調度系統有沒有紀錄？", fake)
+            tools = tools_of(events)
+            d1, d2 = agent._domain_turn["dispatches"]
+            assert d1["status"] == "out_of_domain" and agent._domain_turn["excluded"]["robotics_infra"] == "問的是程式碼裡的定義", d1
+            assert "robotics_infra 說它的子目標不屬於它：問的是程式碼裡的定義" in tools[0] and "rmf_dispatch 的報告（做完" in tools[0], tools[0][:400]
+            assert agent.domain_items() == ["有沒有紀錄"], "不屬於的那一個沒有報告：項目不算"
+            assert tools[1].startswith("[ERROR] 這個問題已經交給過 robotics_infra，它說不屬於它"), tools[1]
+            part = {"thought": "收尾", "reply": "一項查不到、一項不屬於。", "action": None, "answers": [
+                {"item": 1, "status": "not_found", "text": "（測試）沒有紀錄", "refs": []},
+                {"item": 2, "status": "out_of_domain", "text": "設定在工作目錄的檔案", "refs": []}]}
+            fake = FakeChat(main=[plan(("rmf_dispatch", "查紀錄與設定", ["有沒有紀錄", "設定檔寫什麼"])), say("好")], sub=[part])
+            turn("調度系統有沒有紀錄？設定檔寫什麼？", fake)
+            d = agent._domain_turn["dispatches"][-1]
+            job = sub_job(d["job"])
+            assert d["status"] == "done" and "2. 設定檔寫什麼：不屬於這個領域。設定在工作目錄的檔案" in job["result"]["report"], job["result"]["report"]
+            assert agent.domain_items() == ["有沒有紀錄", "設定檔寫什麼"] and "rmf_dispatch" not in agent._domain_turn["excluded"]
+            fmt_sub = next(c["format"] for c in fake.calls if c["role"] == "sub")
+            assert "out_of_domain" in fmt_sub["properties"]["answers"]["items"]["properties"]["status"]["enum"]
+            fmt_main = [c["format"] for c in fake.calls if c["role"] == "main"][-1]
+            assert "out_of_domain" not in fmt_main["properties"]["answers"]["items"]["properties"]["status"]["enum"], "主對話沒有這一種"
+
+        def t_old_archive_ref():
+            # 主對話的核對不收報告文字裡出現、但不是這一回合的工具結果的 #編號（5-3）：子工作階段引用之前的存檔、自己的核對標了沒過，
+            # 主對話照樣引用也擋
+            ollama.chat = FakeChat()
+            agent.set_current_task("先列一下 docs")
+            agent.run_tool({"action": {"command": "scripts/ls_cmd.py", "args": "docs"}})
+            old = agent.last_result_id
+            stale = {"thought": "收尾", "reply": "照之前的結果。", "action": None,
+                     "answers": [{"item": 1, "status": "answered", "text": "docs 有 guide.md", "refs": [f"#{old}"]}]}
+            fake = FakeChat(main=[dispatch("現在 docs 裡有哪些檔案", ["有哪些檔案"], domain="robotics_infra"),
+                                  answer("見報告。", [(1, "answered", "docs 有 guide.md", [f"#{old}"])]), say("好")], sub=[stale, stale])
+            turn("docs 現在有哪些檔案？", fake)
+            job = sub_job(agent._domain_turn["dispatches"][-1]["job"])
+            assert f"⚠️ 沒有通過核對：出處 #{old} 不在這個子工作階段的工具結果裡" in job["result"]["report"], job["result"]["report"]
+            assert agent._cited(f"#{old}")[0] == "unknown", "報告裡寫了、但不是這一回合的工具結果：不算出處"
+            nudges = [m["content"] for m in agent.messages if m["role"] == "user" and m["content"].startswith("【系統核對】")]
+            assert nudges and f"出處 #{old} 不在這一回合的報告與工具結果裡" in nudges[-1], nudges[-1:]
+
+        def t_sub_prompt():
+            # 子工作階段的說明：兩階段協議那幾行照抄 AGENT.md（跟主對話同一份寫法與範例）；只做子目標、做不到的寫還需要什麼、不屬於、
+            # 現在的狀態要重查
+            with open(os.path.join(tmp, "prompts", "AGENT.md"), encoding="utf-8") as f:
+                prof = f.read().split("\n")
+            i = next(k for k, ln in enumerate(prof) if ln.startswith("2. **兩階段執行"))
+            rows = []
+            for ln in prof[i + 1:]:
+                if not ln.startswith("   - "):
+                    break
+                rows.append(ln)
+            rows += [ln for ln in prof if ln.startswith(("   - 範例（選取技能，取得規格）", "   - 範例（依規格內容執行）"))]
+            system = agent._sub("robotics_infra")._system()
+            assert len(rows) == 7 and all(r in system for r in rows), [r for r in rows if r not in system]
+            for want in ("只做【你的子目標】", "不要用這個領域的工具繞過去做", "status 寫 out_of_domain", "問的是現在的狀態", "用工具重新查"):
+                assert want in system, want
+
+        for name, fn in [("領域：system prompt 的「領域」一節、技能索引拿掉領域的工具、schema 多「分工」；沒有 DOMAIN.md 時照舊", t_registry),
                          ("擋領域的工具：技能名稱、腳本、規格都擋，其他技能與共用的工具（列目錄、找檔案、回顧存檔）照舊", t_gate),
                          ("交給領域 → 中階 → 報告存成 #編號 交回主模型（不提煉），決策圖的連結先推給畫面；使用者看到照項目排好的回答", t_dispatch_report),
                          ("依報告回答的 schema：有報告時多 answers（項目的編號、先寫動作再寫回答），新的問題歸零", t_answers_schema),
@@ -830,7 +1004,16 @@ def main():
                          ("決策圖：子工作階段在清單裡、整理成每一步與收尾的回答、串起上一次", t_sub_topology),
                          ("凍結的四個領域（5-2）：「領域」一節、索引拿掉它們的工具與整節的說明、子工作階段的工具帶那一節的說明、〈做法〉搬過去、擋與放行",
                           t_frozen_domains),
-                         ("數據分析在子工作階段裡（G4）：報告原樣附上、主對話照它核對回答（answers 寫成因果提醒一次）、之後的回合也核對", t_sub_analysis)]:
+                         ("數據分析在子工作階段裡（G4）：報告原樣附上、主對話照它核對回答（answers 寫成因果提醒一次）、之後的回合也核對", t_sub_analysis),
+                         ("分工（5-3）：兩個領域照順序做、後面的收到前面查到的與分工（主對話做過的）、子目標在前、錨點只放子目標、報告一起交回、"
+                          "評測每個領域記一筆", t_plan_two_domains),
+                         ("分工的後一項是中階：前面查到的接在問題後面；挑技能時子目標在前、問題當背景", t_plan_known_mid),
+                         ("分工的核對：超過 4 個、同一個領域兩次、第幾項沒過；沒過就一項都不執行", t_plan_validation),
+                         ("分工停在確認關卡：先問使用者，回答之後接回、接著做下一項，報告一起交回", t_plan_pause),
+                         ("子工作階段回「不屬於這個領域」：每一項都是＝排除（分工裡其他的照做）、只有幾項寫進報告；只有子工作階段的 schema 有",
+                          t_sub_out_of_domain),
+                         ("主對話的核對不收報告文字裡出現、不是這一回合工具結果的 #編號（子工作階段引用舊存檔）", t_old_archive_ref),
+                         ("子工作階段的說明：兩階段協議照抄 AGENT.md、只做子目標、做不到寫還需要什麼、不屬於、現在的狀態要重查", t_sub_prompt)]:
             check(name, fn)
     finally:
         os.chdir(cwd)

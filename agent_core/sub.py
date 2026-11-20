@@ -2,15 +2,17 @@
 失敗、使用者取消），程式開一個子工作階段，用這個領域的工具照現在主對話的方式一步一步做（D2：不寫 SOP），做完由程式整理成報告交回主對話。
 
 1. **自己的對話**（架構圖的「子工作階段隔離」、D7）：system prompt 是這個領域的說明、〈做法〉（SKILLS.md 的那一節，現在的做法）、能用的工具
-   與長期記憶；第一則訊息是原始問題、子目標、要回答的項目（再交時加上一次的經過）。試錯（載入規格、參數寫錯重下）只在這裡，存在
-   logs/sub_jobs/<編號>/job.json 的 messages；主對話只收到報告。
+   與長期記憶；第一則訊息是它的子目標、要回答的項目、前面的領域查到的、這個問題的分工（每個領域的子目標、主對話這一回合做過的）、
+   使用者的原始問題（只用來對照名稱與數值），再交時加上一次的經過（第 5 步 5-3：高階分工，下一層只做自己的子目標）。試錯（載入規格、
+   參數寫錯重下）只在這裡，存在 logs/sub_jobs/<編號>/job.json 的 messages；主對話只收到報告。
 2. **每一步跟主對話走同一條路**（agent._run_tool_once）：先載入規格再執行、存檔 #編號、收據、狀態標記的同步（docker_open 換目標容器，主對話
    之後也看得到）；太長的工具回傳照舊提煉（錨點換成原始問題、子目標與這一步的目的）；卡住偵測照主對話的規則（turn_guard.RepeatTracker，
    卡住就收尾）。只能用這個領域的工具與共用的工具（DOMAIN.md），其他的回 [ERROR]（orchestrator.domain_gate 看 agent._sub_allowed）。
    對話太長時，送給模型的那一份把舊的工具結果換成存檔編號（存著的對話不動）。
 3. **確認關卡**：會改狀態的工具照舊先問使用者——子工作階段停下來（need_user），高階轉問（domain_pending），resume 接回同一步；拒絕就把
    [DENIED] 交給模型接著做；cancel（使用者取消）照做到的收尾。
-4. **收尾**：模型回 action null 加 answers（每一項：答到／查不到、回答、出處＝這個子工作階段的工具結果 #編號，或收據裡的 檔案:行號），
+4. **收尾**：模型回 action null 加 answers（每一項：答到／查不到／不屬於這個領域、回答或理由、出處＝這個子工作階段的工具結果 #編號，或收據裡的
+   檔案:行號；每一項都不屬於這個領域＝這個子工作階段不屬於這個領域，高階照中階的處理排除、交回主模型重新分工），
    程式照 4-2 核對（answers.answer_problems：出處在自己的工具結果裡、數字與名稱在出處裡、查不到的寫原因），沒過的交回修一次；
    步數用完（SUB_STEPS_MAX）、卡住、使用者取消、模型沒有回覆也收尾，報告寫明做到哪裡。每一則不是用工具就是收尾：action null、answers
    也是空的（沒有動作也沒有回答）不算收尾，提醒一次（上一步之後只提醒一次，不算交回修）；寫到字串上限被截斷的回覆不執行、重問一次
@@ -33,7 +35,7 @@ from .turn import _content_for_context
 from .turn_guard import RepeatTracker
 
 STATUS_TEXT = {"running": "執行中", "need_user": "等使用者回答", "done": "做完", "stopped": "停下來（步數用完或卡住）",
-               "cancelled": "使用者取消", "failed": "失敗（模型沒有回覆）"}
+               "cancelled": "使用者取消", "failed": "失敗（模型沒有回覆）", "out_of_domain": "不屬於這個領域"}
 STEP_SKILL = "一步一步（子工作階段）"      # 交給中階的上一次的經過、報告、主對話看到的「做法」
 _KEEP_RESULTS = 3                           # 對話太長時，最新的這幾份工具結果不清
 
@@ -93,15 +95,16 @@ class Session:
         self.store = JobStore(os.path.join(agent.script_dir, "logs", SUB_JOBS_DIRNAME))
 
     # ---------------------------------------------------------------- 進入點
-    def start(self, question, goal, items, on_start=None, previous=None, attempt=1):
+    def start(self, question, goal, items, on_start=None, previous=None, attempt=1, known="", division=""):
         """previous：同一個問題之前交給這個領域的經過（[{"n", "job", "kind", "skill", "params", "status", "status_text", "note", "searched",
-        "items"}]，高階取的；中階剛剛沒做完的那一次也在裡面）；attempt：這是第幾次。"""
+        "items"}]，高階取的；中階剛剛沒做完的那一次也在裡面）；attempt：這是第幾次；known、division：前面的領域查到的、這個問題的分工
+        （高階組好的文字，orchestrator._known_text、_division_text）。"""
         jid = self.store.new_id()
         self.store.prune(SUB_JOBS_KEEP)
         previous = list(previous or [])
         job = {"id": jid, "kind": "sub", "status": "running", "created": _now(), "updated": _now(), "cwd": self.agent.current_cwd,
                "domain": self.domain, "question": question, "goal": (goal or question).strip(), "items": list(items or []),
-               "attempt": attempt, "previous": previous, "tools": self.tools, "system": self._system(),
+               "attempt": attempt, "previous": previous, "known": known, "division": division, "tools": self.tools, "system": self._system(),
                "messages": [], "steps": [], "need_user": None, "asked": [], "nudged": False, "empty_at": None, "answers": [], "problems": {},
                "result": None}
         job["messages"].append({"role": "user", "content": self._first(job)})
@@ -165,6 +168,10 @@ class Session:
                     self.store.save(job)
                     self._note(job["id"], f"🧩 回答有 {len(problems)} 項沒有通過核對，交回修一次")
                     continue
+                given = [a for a in parsed["answers"] if 1 <= a["item"] <= len(job["items"])]
+                if given and len({a["item"] for a in given}) == len(job["items"]) and all(a["status"] == "out_of_domain" for a in given):
+                    return self._finish(job, "out_of_domain", note="；".join(dict.fromkeys(a["text"] for a in given if a["text"])) or "—",
+                                        reply=parsed["reply"], answered=parsed["answers"], problems=problems)
                 return self._finish(job, "done", reply=parsed["reply"], answered=parsed["answers"], problems=problems)
             guard = self.agent.guard_check(parsed)
             if guard:
@@ -215,7 +222,7 @@ class Session:
         return None
 
     def _execute(self, action, approved):
-        if action.get("domain"):                    # 子工作階段的 schema 沒有這一種，保險
+        if action.get("domains"):                   # 子工作階段的 schema 沒有這一種，保險
             return "[ERROR] " + _s("not_my_tool", tool="交給領域", domain=self.domain, tools="、".join(self.tools))
         self.agent._sub_allowed = {"domain": self.domain, "tools": set(self.tools)}
         try:
@@ -229,7 +236,7 @@ class Session:
         存進對話的是不含截斷參數的 JSON）。每次呼叫記進 calls.jsonl（送出的最後一則與回覆；system prompt 在 job.json 的 system，
         前面的對話在 messages）。"""
         msgs = self._fit(job)
-        schema = agent_reply_schema((), len(job["items"]))
+        schema = agent_reply_schema((), len(job["items"]), out_of_domain=True)
         model = SUB_MODEL or self.agent.model
         raw = ""
         for attempt in range(2):
@@ -343,6 +350,8 @@ class Session:
                 lines.append(f"{k}. {item}：（沒有回答）")
             elif a["status"] == "not_found":
                 lines.append(f"{k}. {item}：查不到。{a['text']}")
+            elif a["status"] == "out_of_domain":
+                lines.append(f"{k}. {item}：不屬於這個領域。{a['text']}")
             else:
                 refs = list(dict.fromkeys(answers.ref_label(r) for r in a["refs"]))
                 lines.append(f"{k}. {item}：{a['text']}" + (f"（出處：{'、'.join(refs)}）" if refs else ""))
@@ -382,11 +391,13 @@ class Session:
                        status=p.get("status_text") or p.get("status") or "—", note=f"（{p['note']}）" if p.get("note") else "",
                        searched="、".join(p.get("searched") or []) or "—", items="；".join(p.get("items") or []) or "—") for p in job["previous"]]
             prev = _s("previous", count=len({p.get("n") for p in job["previous"]}), attempts="\n".join(rows))
-        return _s("first", question=job["question"], goal=job["goal"], items=items, previous=prev)
+        return _s("first", question=job["question"], goal=job["goal"], items=items, known=job.get("known") or "",
+                  division=job.get("division") or "", previous=prev)
 
     @staticmethod
     def _anchor(job):
-        return _s("anchor", question=job["question"], goal=job["goal"], items="；".join(job["items"]))
+        """提煉長輸出時的「使用者想知道什麼」：只放這一層的子目標與項目（5-3：原始問題裡其他的事分給了別的領域）。"""
+        return _s("anchor", goal=job["goal"], items="；".join(job["items"]))
 
     def _link(self, previous, jid, attempt):
         """之前的工作（中階或子工作階段）記下這一次（決策圖從上一次連到下一次，4-2 的 I.4）。"""

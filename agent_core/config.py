@@ -225,7 +225,8 @@ REPLY_COMMAND_CHARS = 200
 REPLY_ARGS_CHARS = 2000
 
 # 🗺️ 新架構的高階（agent_core/orchestrator.py，D10 第 4 步）：主對話就是高階（D1）。skills_system/DOMAIN.md 列領域（每個領域一行，
-# 連到它的 SKILLS.md）與〈共用的工具〉；主模型在回覆的 action 填「交給領域」{"domain", "goal", "items"}，程式核對之後執行中階。
+# 連到它的 SKILLS.md）與〈共用的工具〉；主模型在回覆的 action 填「分工」{"domains": [{"domain", "goal", "items"}, …]}（第 5 步 5-3：
+# 要用的領域一次選出來，每個領域各自的子目標），程式核對之後照順序交給中階或子工作階段。
 DOMAIN_INDEX_NAME = "DOMAIN.md"
 # 交給領域的結果（報告、要問使用者、沒有適合的做法…）的開頭：程式整理好的，不再交給提煉（protocol.is_exempt_result）
 DOMAIN_RESULT_HEAD = "[PASS] 🗺️ "
@@ -233,6 +234,10 @@ DOMAIN_RESULT_HEAD = "[PASS] 🗺️ "
 DOMAIN_GOAL_CHARS = 300
 DOMAIN_ITEM_CHARS = 120
 DOMAIN_ITEMS_MAX = 6
+# 一次分工最多幾個領域（領域有 5 個；一個問題要查的系統通常 1～3 個：檔案、正在跑的系統、調度系統）
+DOMAIN_PLAN_MAX = 4
+# 交給後面的領域「前面的領域查到的」：中階的報告沒有一項一項的回答，取報告的前面這麼多字（全文在 #編號，子工作階段可以用 result_view 看）
+DOMAIN_KNOWN_CHARS = 1500
 # 依報告回答（4-2，G4）：每一項的回答與出處的上限（回覆的 schema；回答要放得下報告列的每個檔案：20 行左右的完整路徑與次數）；
 # 使用者看到的回答由程式照項目排，每一項最多附幾行出處的原文（I.5）
 DOMAIN_ANSWER_CHARS = 1500

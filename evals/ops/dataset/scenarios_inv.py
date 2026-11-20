@@ -25,7 +25,8 @@ def _errors(day):
 
 ERR_1010 = _errors("2026-10-10")
 E2001_TB3 = next(t for t, r, c in ERR_1010 if r == "tb3" and c == "E2001")
-NOT_THERE = (r"site_b[^\n]{0,40}(還沒|尚未|沒有|不存在|找不到|not found)", r"(還沒|尚未|沒有|不存在|找不到)[^\n]{0,30}site_b")
+NOT_THERE = (r"site_b[^\n]{0,40}(還沒|尚未|沒有|不存在|找不到|缺失|缺少|not found|missing)",
+             r"(還沒|尚未|沒有|不存在|找不到|缺失|缺少)[^\n]{0,30}site_b")
 
 INVESTIGATE = [
     # ================================================================ 調查（只查不改）

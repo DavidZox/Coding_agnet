@@ -7,17 +7,23 @@
    （架構圖的入口技能；沒有複合技能的領域寫明在子工作階段裡一步一步做）。領域的工具（共用的以外）從主對話的技能索引拿掉
    （skills_index_text），主模型直接叫的時候程式擋下來（domain_gate；子工作階段裡只能用那個領域的工具與共用的工具）。規格有問題的領域
    不列、它的工具也不擋（主對話照舊能用），問題放進通知。
-2. **交給領域**（run_domain）：主模型在回覆的 action 填 {"domain", "goal", "items"}。程式核對：領域在 DOMAIN.md、這個問題沒有排除過、
-   子目標不是空的、項目 1～DOMAIN_ITEMS_MAX 項、跟這一回合交過的不一樣（一樣的再交一次結果也一樣：不收斂）、同一個項目最多
-   DOMAIN_ITEM_TRIES 次（G5）。核對過就執行：有複合技能的領域交給中階（mid.Worker），沒有的直接開子工作階段（sub.Session，第 5 步：
-   照現在的方式一步一步做，試錯留在裡面）。結果存成 #編號 交回主模型（DOMAIN_RESULT_HEAD 開頭：程式整理好的，不再提煉）。
+2. **分工**（run_plan，第 5 步 5-3）：主模型在回覆的 action 填 {"domains": [{"domain", "goal", "items"}, …]}——要用的領域一次選出來，
+   每個領域各自的子目標與項目（高階決定原始問題裡每個領域要回答什麼）。程式先核對每一項（_check_entry：領域在 DOMAIN.md、這個問題
+   沒有排除過、子目標不是空的、項目 1～DOMAIN_ITEMS_MAX 項、跟這一回合交過的不一樣（一樣的再交一次結果也一樣：不收斂）、同一個項目
+   最多 DOMAIN_ITEM_TRIES 次（G5）；一次最多 DOMAIN_PLAN_MAX 個領域、同一個領域只出現一次），全部過了才照順序執行：有複合技能的領域
+   交給中階（mid.Worker），沒有的開子工作階段（sub.Session，第 5 步：照現在的方式一步一步做，試錯留在裡面）。後面的領域收到前面的領域
+   查到的（_known_text，程式從報告取）；子工作階段另外收到這個問題的分工與主對話這一回合已經做過的（_division_text）：它只做自己的
+   子目標，原始問題只用來對照名稱與數值。每個領域的結果各自存成 #編號，全部做完接在一起交回主模型（DOMAIN_RESULT_HEAD 開頭：程式
+   整理好的，不再提煉；_plan_done）；中途要問使用者時分工停在 _domain_turn["plan"]，回答之後接著做剩下的。
 3. **問使用者**（D7）：中階或子工作階段停下來要問時，程式把問題與候選直接給使用者（domain_pending、domain_ask_text），使用者的回答由
    answer_domain 交給它接回同一個工作（不合法就再問，不經過主模型）；cancel_domain 取消。
-4. **第 3 級**（D5 高 1）：中階回「不屬於這個領域」時記下排除的領域，這個問題不能再交給它；再交時程式附這一回合做過的事（高 4）。
+4. **第 3 級**（D5 高 1）：中階回「不屬於這個領域」、或子工作階段每一項都回不屬於（5-3）時記下排除的領域，這個問題不能再交給它；
+   分工裡其他的領域照樣做完，理由跟報告一起交回主模型重新分工；再交時程式附這一回合做過的事（高 4）。
    中階沒有做完、也沒有報告時（沒有適合的複合技能、失敗、使用者取消），程式接著開子工作階段，用這個領域的工具一步一步做，帶著中階
    停下來的原因（第 5 步 G3；取代 4-1 的放行：主對話不再直接用領域的工具）。
 5. **依報告回答**（4-2，G4）：這一回合有領域的報告時，回覆的 schema 多 answers（domain_items 的每一項一筆：答到／查不到、回答、出處）。
-   domain_reply_check 核對（answers.answer_problems）：每一項都有、答到的出處在報告裡（或這一回合自己執行過的工具結果）、回答裡的數字與
+   domain_reply_check 核對（answers.answer_problems）：每一項都有、答到的出處在報告裡（#編號要是交給領域的結果或這一回合執行過的
+   工具結果，_known_ids）、回答裡的數字與
    名稱在出處那幾段裡、查不到的寫了原因，回覆開頭寫的出處也要在報告裡；沒過的只把那幾項交回修一次。domain_render 照項目排使用者看到的
    回答，每一項附出處那一行的原文（從報告取，I.5），還是沒過的標「沒有通過核對」。
 6. **帶著上一次的經過再交**（4-2，I）：同一個問題再交給同一個領域時（之前那幾次沒有做完，或這次的項目之前交過），程式把之前幾次的
@@ -28,8 +34,8 @@ import os
 import re
 
 from . import answers, mid, prompt_files, sub
-from .config import (DOMAIN_INDEX_NAME, DOMAIN_ITEM_TRIES, DOMAIN_ITEMS_MAX, DOMAIN_QUOTE_LINES, DOMAIN_RESULT_HEAD, MID_JOBS_DIRNAME,
-                     SUB_JOBS_DIRNAME)
+from .config import (DOMAIN_INDEX_NAME, DOMAIN_ITEM_TRIES, DOMAIN_ITEMS_MAX, DOMAIN_KNOWN_CHARS, DOMAIN_PLAN_MAX, DOMAIN_QUOTE_LINES,
+                     DOMAIN_RESULT_HEAD, MID_JOBS_DIRNAME, SUB_JOBS_DIRNAME)
 
 _ENTRY = re.compile(r"^- \[([A-Za-z0-9_]+)\]\(([^)]+)\)")
 _INDEX_LINE = re.compile(r"^- \[([A-Za-z0-9_]+)\]\(tools/[^)]+\)")
@@ -40,6 +46,11 @@ REPORTED = ("done", "dead_end", "circuit_break", "repeated")    # 中階有報�
 def _d(key, /, **fields):
     """prompts/harness/domain.md 的一則：交給領域的結果、核對沒過的說明。"""
     return prompt_files.load("harness/domain.md", key, **fields)
+
+
+def _p(key, /, **fields):
+    """prompts/harness/plan.md 的一則：分工交給下一層的文字（前面的領域查到的、這個問題的分工）。"""
+    return prompt_files.load("harness/plan.md", key, **fields)
 
 
 def load_registry(base_path, tools_dir):
@@ -118,7 +129,7 @@ class DomainMixin:
                                      or prompt_files.load("harness/system_prompt.md", "domain_no_skill"))
                    for d in reg["domains"].values()]
         return prompt_files.load("harness/system_prompt.md", "domains", domains="\n\n".join(entries), max=DOMAIN_ITEMS_MAX,
-                                 tries=DOMAIN_ITEM_TRIES)
+                                 tries=DOMAIN_ITEM_TRIES, plan=DOMAIN_PLAN_MAX)
 
     def _index_blocks(self):
         """技能索引（SKILLS.md）→ [[一節的每一行]]：第一塊是第一個 ## 之前的開頭，之後每一塊從 ## 標題開始（標題、> 開頭的說明、工具）。"""
@@ -164,7 +175,7 @@ class DomainMixin:
     # ---------------------------------------------------------------- 一回合的狀態
     def _reset_domain_turn(self):
         """使用者送出新的問題：這一回合交過的領域、排除的領域、報告歸零（回答中階的問題不算新的問題）。"""
-        self._domain_turn = {"dispatches": [], "excluded": {}, "reports": [], "reply_nudged": False,
+        self._domain_turn = {"dispatches": [], "excluded": {}, "reports": [], "reply_nudged": False, "plan": None, "spans": [],
                              "since": len(getattr(self, "trajectory", None) or [])}     # 這一回合的工具結果從軌跡的第幾筆開始
 
     def _tool_of(self, token):
@@ -190,45 +201,147 @@ class DomainMixin:
             return None
         return "[ERROR] " + _d("tool_blocked", tool=skill, domain=hidden[skill])
 
-    # ---------------------------------------------------------------- 交給領域
-    def run_domain(self, action):
-        """交給領域：核對 → 中階或子工作階段 → 結果（存成 #編號）。核對沒過回 [ERROR]（附下一步），不執行。"""
+    # ---------------------------------------------------------------- 分工（交給領域）
+    def run_plan(self, action):
+        """分工（第 5 步 5-3）：核對每一項 → 照順序交給中階或子工作階段（後面的領域收到前面的領域查到的）→ 報告一起交回（每個領域的
+        結果各自存成 #編號）。核對沒過回 [ERROR]（附下一步），一項都不執行。"""
+        entries = action.get("domains") or []
+        if not 1 <= len(entries) <= DOMAIN_PLAN_MAX:
+            return "[ERROR] " + _d("err_plan_size", count=len(entries), max=DOMAIN_PLAN_MAX)
+        names = [e["domain"] for e in entries]
+        dup = next((n for n in names if names.count(n) > 1), None)
+        if dup:
+            return "[ERROR] " + _d("err_plan_dup", domain=dup)
+        for k, e in enumerate(entries, 1):
+            why = self._check_entry(e)
+            if why:
+                return "[ERROR] " + (_d("err_plan_entry", k=k, domain=e["domain"]) if len(entries) > 1 else "") + why
+        turn = self._domain_turn
+        start = len(getattr(self, "trajectory", None) or [])
+        turn["plan"] = {"entries": entries, "next": 0, "texts": []}
+        turn["spans"].append([start, None])             # 分工執行期間的軌跡（中階、子工作階段的工具）：不算主對話自己做的
+        return self._plan_run()
+
+    def _check_entry(self, e):
+        """分工的一項的核對：領域在 DOMAIN.md、這個問題沒有排除過、子目標不是空的、項目 1～DOMAIN_ITEMS_MAX 項、跟這一回合交過的不一樣
+        （一樣的再交一次結果也一樣：不收斂）、同一個項目最多 DOMAIN_ITEM_TRIES 次（G5）。過了回 None，沒過回說明（不含 [ERROR]）。"""
         reg, turn = self.domain_registry(), self._domain_turn
-        name, goal, items = action["domain"], action.get("goal") or "", action.get("items") or []
+        name, goal, items = e["domain"], e.get("goal") or "", e.get("items") or []
         if name not in reg["domains"]:
-            return "[ERROR] " + _d("err_unknown", domain=name, names="、".join(reg["domains"]) or "—")
+            return _d("err_unknown", domain=name, names="、".join(reg["domains"]) or "—")
         if name in turn["excluded"]:
-            return "[ERROR] " + _d("err_excluded", domain=name, reason=turn["excluded"][name], history=self._domain_history())
+            return _d("err_excluded", domain=name, reason=turn["excluded"][name], history=self._domain_history())
         if not goal:
-            return "[ERROR] " + _d("err_goal", domain=name)
+            return _d("err_goal", domain=name)
         if not 1 <= len(items) <= DOMAIN_ITEMS_MAX:
-            return "[ERROR] " + _d("err_items", count=len(items), max=DOMAIN_ITEMS_MAX)
-        key = [name, goal, items]
-        same = next((x for x in turn["dispatches"] if x["key"] == key), None)
+            return _d("err_items", count=len(items), max=DOMAIN_ITEMS_MAX)
+        same = next((x for x in turn["dispatches"] if x["key"] == [name, goal, items]), None)
         if same:
-            return "[ERROR] " + _d("err_same", domain=name, status=_status_text(same["kind"], same["status"]))
+            return _d("err_same", domain=name, status=_status_text(same["kind"], same["status"]))
         mine = [x for x in turn["dispatches"] if x["domain"] == name]
         for it in items:                                   # G5：同一個項目最多交 DOMAIN_ITEM_TRIES 次
             tries = [x for x in mine if answers.norm(it) in {answers.norm(y) for y in x["items"]}]
             if len(tries) >= DOMAIN_ITEM_TRIES:
-                return "[ERROR] " + _d("err_item_tries", item=it, domain=name, n=len(tries), max=DOMAIN_ITEM_TRIES,
-                                       history=self._domain_history(tries))
+                return _d("err_item_tries", item=it, domain=name, n=len(tries), max=DOMAIN_ITEM_TRIES, history=self._domain_history(tries))
+        return None
+
+    def _plan_run(self):
+        """做分工的下一項；全部做完回所有的報告。"""
+        plan = self._domain_turn["plan"]
+        if plan["next"] >= len(plan["entries"]):
+            return self._plan_done()
+        job, entry, before = self._start_entry(plan, plan["next"])
+        return self._plan_next(self._domain_finish(entry, job, before))
+
+    def _plan_next(self, text):
+        """分工的一項有了結果：停下來要問使用者就回等回答的說明（分工留在 _domain_turn["plan"]，回答之後 answer_domain 接著做）；
+        做完了記下它的報告、接著做下一項。"""
+        plan = self._domain_turn.get("plan")
+        if self.domain_pending or not plan:
+            return DOMAIN_RESULT_HEAD + text
+        plan["texts"].append(text)
+        plan["next"] += 1
+        return self._plan_run()
+
+    def _plan_done(self, extra=()):
+        """分工做完（或 /clear 取消）：每個領域的結果接在一起，最後是依報告回答的說明與這一回合要回答的項目（有報告時）。"""
+        turn = self._domain_turn
+        plan, turn["plan"] = turn["plan"], None
+        turn["spans"][-1][1] = len(getattr(self, "trajectory", None) or [])
+        items = self.domain_items()
+        hint = [_d("answer_hint", items="\n".join(f"{k}. {x}" for k, x in enumerate(items, 1)))] if items else []
+        return DOMAIN_RESULT_HEAD + "\n\n".join(plan["texts"] + list(extra) + hint)
+
+    def _start_entry(self, plan, k):
+        """分工的第 k 項（從 0 算）：記一筆交給領域的紀錄，交給中階（有複合技能）或子工作階段（沒有）。中階收到的問題後面接前面的領域
+        查到的（合約可以從那裡抄參數）；子工作階段另外收到這個問題的分工。回傳 (job, 紀錄, 開始時的工作目錄與目標容器)。"""
+        reg, turn = self.domain_registry(), self._domain_turn
+        e = plan["entries"][k]
+        name, goal, items = e["domain"], e["goal"], e["items"]
+        mine = [x for x in turn["dispatches"] if x["domain"] == name]
         # 4-2 的 I：之前那幾次沒有做完、或這次的項目之前交過的，經過交下去（中階從挑技能、合約重新規劃；子工作階段從停下來的地方接著做）
         mine_items = {answers.norm(y) for y in items}
         previous = [x for x in mine if x["job"] and (x["status"] != "done" or mine_items & {answers.norm(y) for y in x["items"]})]
-        entry = {"key": key, "domain": name, "goal": goal, "items": items, "kind": None, "job": None, "status": None, "skill": None,
-                 "calls": [], "n": len(mine) + 1, "previous": [x["job"] for x in previous],
+        context = {"known": self._known_text(), "division": self._division_text(plan, k)}
+        entry = {"key": [name, goal, items], "domain": name, "goal": goal, "items": items, "kind": None, "job": None, "status": None,
+                 "skill": None, "calls": [], "n": len(mine) + 1, "previous": [x["job"] for x in previous],
                  "previous_info": [i for x in previous for i in self._attempt_infos(x)], "params": {}, "note": "", "searched": [],
-                 "result_id": None, "mid": None}
+                 "result_id": None, "mid": None, "answers": [], "context": context}
         turn["dispatches"].append(entry)
         before = (self.current_cwd, self.container_cwd, self.target_container)
+        question = self.current_task or goal
         if reg["domains"][name]["skills"]:
-            job = mid.Worker(self, name).start(self.current_task or goal, goal, items=items, on_start=self._domain_started,
-                                               previous=entry["previous_info"], attempt=entry["n"])
+            job = mid.Worker(self, name).start(question + ("\n\n" + context["known"] if context["known"] else ""), goal, items=items,
+                                               on_start=self._domain_started, previous=entry["previous_info"], attempt=entry["n"])
         else:                                              # 沒有複合技能的領域：直接開子工作階段（第 5 步）
-            job = self._sub(name).start(self.current_task or goal, goal, items, on_start=lambda jid: self._domain_started(jid, "sub"),
-                                        previous=entry["previous_info"], attempt=entry["n"])
-        return self._domain_finish(entry, job, before)
+            job = self._sub_start(name, entry)
+        return job, entry, before
+
+    def _sub_start(self, name, entry, previous=None):
+        """開這個領域的子工作階段（分工的一項，或中階沒做完時接著做；previous 不給就用這一次的上一次的經過）。"""
+        return self._sub(name).start(self.current_task or entry["goal"], entry["goal"], entry["items"],
+                                     on_start=lambda jid: self._domain_started(jid, "sub"),
+                                     previous=entry["previous_info"] if previous is None else previous, attempt=entry["n"],
+                                     known=entry["context"]["known"], division=entry["context"]["division"])
+
+    def _known_text(self):
+        """這一回合前面的領域查到的（交給後面的領域，程式從報告取）：子工作階段一項一項的回答；中階的報告沒有一項一項的回答，取報告的
+        前面 DOMAIN_KNOWN_CHARS 字（全文在 #編號）。沒有回空字串。"""
+        rows = []
+        for x in self._domain_turn["dispatches"]:
+            if not x.get("job") or not self._reported(x):
+                continue
+            if x["kind"] == "sub":
+                for a in x.get("answers") or []:
+                    if 1 <= a["item"] <= len(x["items"]):
+                        item = x["items"][a["item"] - 1]
+                        if a["status"] == "answered":
+                            rows.append(_p("known_answer", domain=x["domain"], item=item, text=a["text"],
+                                           refs="、".join(answers.ref_label(r) for r in a["refs"]) or "—"))
+                        else:
+                            rows.append(_p("known_not_found" if a["status"] == "not_found" else "known_out_of_domain",
+                                           domain=x["domain"], item=item, text=a["text"]))
+            elif x.get("report"):
+                body = x["report"].split("\n", 1)[-1].strip()
+                rows.append(_p("known_report", domain=x["domain"], rid=x.get("result_id") or "—",
+                               text=body[:DOMAIN_KNOWN_CHARS] + ("…" if len(body) > DOMAIN_KNOWN_CHARS else "")))
+        return _p("known", rows="\n".join(rows)) if rows else ""
+
+    def _division_text(self, plan, k):
+        """這個問題的分工（給子工作階段：每個領域的子目標、哪一項是它、做完了沒），加上主對話這一回合已經做過的（工具與結果的第一行）。"""
+        rows = [_p("division_entry", n=i + 1, domain=e["domain"], goal=e["goal"],
+                   state=_p("state_you" if i == k else "state_done" if i < k else "state_todo"))
+                for i, e in enumerate(plan["entries"])]
+        rows += [_p("division_main", command=str(r.get("command") or r.get("script") or "—").removeprefix("EXECUTE: "),
+                    head=(str(r.get("output_head") or "").strip().splitlines() or ["—"])[0][:160]) for r in self._main_calls()]
+        return _p("division", rows="\n".join(rows))
+
+    def _main_calls(self):
+        """主對話這一回合自己執行過的工具（軌跡；分工執行期間的——中階、子工作階段的工具——不算，交給領域的結果本身也不算）。"""
+        traj, turn = getattr(self, "trajectory", None) or [], self._domain_turn
+        spans = [(a, len(traj) if b is None else b) for a, b in turn["spans"]]
+        return [r for i, r in enumerate(traj) if i >= turn["since"] and r.get("kind") == "exec"
+                and not str(r.get("script") or "").startswith("domain_") and not any(a <= i < b for a, b in spans)]
 
     @staticmethod
     def _attempt_info(x):
@@ -261,17 +374,17 @@ class DomainMixin:
                 pass
 
     def _domain_finish(self, entry, job, before, prefix="", follow=True):
-        """中階或子工作階段的 job → 交回主模型的文字（存成 #編號）；要問使用者時設 domain_pending。"""
-        text = DOMAIN_RESULT_HEAD + prefix + self._domain_outcome(entry, job, follow)
+        """中階或子工作階段的 job → 這個領域的結果（存成 #編號；分工的報告接在一起交回主模型，_plan_done）；要問使用者時設 domain_pending。"""
+        text = prefix + self._domain_outcome(entry, job, follow)
         self.last_receipt = None
-        self._record_trajectory(f"domain_{entry['domain']}", [entry["goal"]] + entry["items"], text, *before)
+        self._record_trajectory(f"domain_{entry['domain']}", [entry["goal"]] + entry["items"], DOMAIN_RESULT_HEAD + text, *before)
         entry["result_id"] = self.last_result_id
         return text
 
     def _reported(self, x):
-        """這一次交給領域有沒有報告（照報告回答）：子工作階段結束了一律有；中階是做完、死路、熔斷、跟之前一樣。"""
+        """這一次交給領域有沒有報告（照報告回答）：子工作階段結束了都有（每一項都不屬於這個領域的除外）；中階是做完、死路、熔斷、跟之前一樣。"""
         if x.get("kind") == "sub":
-            return x["status"] not in (None, "running", "need_user")
+            return x["status"] not in (None, "running", "need_user", "out_of_domain")
         return x["status"] in REPORTED
 
     def _domain_outcome(self, entry, job, follow=True):
@@ -280,7 +393,7 @@ class DomainMixin:
         url, note = topology_url(job["id"], kind), (job.get("result") or {}).get("note") or ""
         if kind == "sub":
             entry.update(kind="sub", job=job["id"], status=st, skill=sub.STEP_SKILL, calls=sub.calls(job), note=note,
-                         searched=sub.searched(job), params={})
+                         searched=sub.searched(job), params={}, answers=list(job.get("answers") or []))
         else:
             calls = []                                # 中階在領域裡用到的工具（每一版的圖的工具節點；從收據帶入的參數不列）
             for g in job.get("graphs") or []:
@@ -305,20 +418,17 @@ class DomainMixin:
             if analysis:                # G4：子工作階段裡執行的數據分析（原樣附在報告裡），主對話的回答照它核對（analysis_reply_check）
                 self.note_analysis_report(analysis[-1][1])
             self._domain_turn["reports"].append(report)
-            items = "\n".join(f"{k}. {x}" for k, x in enumerate(self.domain_items(), 1))
-            return _d("report", domain=name, status=_status_text(kind, st), skill=entry["skill"] or "—", url=url, report=report,
-                      items=_d("items", items=items))
-        if st == "out_of_domain":
+            entry["report"] = report
+            return _d("report", domain=name, status=_status_text(kind, st), skill=entry["skill"] or "—", url=url, report=report)
+        if st == "out_of_domain":                     # 中階挑技能時、或子工作階段每一項都說不屬於這個領域（5-3）
             self._domain_turn["excluded"][name] = note or "—"
             return _d("out_of_domain", domain=name, reason=note or "—", url=url)
-        if not follow or kind == "sub":               # /clear 取消：照實記下，不再接著做（子工作階段結束了一律有報告，不會到這裡）
+        if not follow or kind == "sub":               # /clear 取消：照實記下，不再接著做（子工作階段結束了都有報告，不會到這裡）
             return _d("cancelled", domain=name, url=url)
         # 中階沒有做完、也沒有報告（沒有適合的做法、失敗、使用者取消）：接著開子工作階段，用這個領域的工具一步一步做（第 5 步 G3，
         # 取代 4-1 的放行）。中階這一次也算進上一次的經過（停下來的原因交給子工作階段）。
         entry["mid"] = {"job": job["id"], "status": st, "skill": job.get("skill"), "note": note, "calls": entry["calls"]}
-        prev = entry["previous_info"] + [self._attempt_info(entry)]
-        follow_job = self._sub(name).start(self.current_task or entry["goal"], entry["goal"], entry["items"],
-                                           on_start=lambda jid: self._domain_started(jid, "sub"), previous=prev, attempt=entry["n"])
+        follow_job = self._sub_start(name, entry, previous=entry["previous_info"] + [self._attempt_info(entry)])
         return _d("stepwise", domain=name, status=_status_text("mid", st), reason=note or "—", url=url) + "\n" + self._domain_outcome(entry, follow_job)
 
     def _domain_history(self, entries=None):
@@ -364,15 +474,16 @@ class DomainMixin:
             job = mid.Worker(self, p["domain"]).resume(p["job"], answer=text)
         if not job:
             self.domain_pending = None
+            self._plan_drop()
             return "[ERROR] " + _d("err_lost", domain=p["domain"])
         if job["status"] == "need_user":
             self._domain_outcome(p["entry"], job)       # 更新 domain_pending（同一個問題附錯誤，或下一個問題）
             return None
-        return self._domain_finish(p["entry"], job, before, prefix=_d("answered", domain=p["domain"], answer=text))
+        return self._plan_next(self._domain_finish(p["entry"], job, before, prefix=_d("answered", domain=p["domain"], answer=text)))
 
     def cancel_domain(self, follow=True):
-        """使用者取消中階或子工作階段的問題：結束成「使用者取消」，交回主模型的文字。中階取消之後照舊接著開子工作階段一步一步做
-        （follow；/clear 不接著做）。"""
+        """使用者取消中階或子工作階段的問題：結束成「使用者取消」，接著做分工裡還沒做的，交回主模型的文字。中階取消之後照舊接著開
+        子工作階段一步一步做（follow；/clear 不接著做，分工裡還沒做的也不做）。"""
         p = self.domain_pending
         if not p:
             return None
@@ -380,8 +491,20 @@ class DomainMixin:
         job = (self._sub(p["domain"]) if p.get("worker") == "sub" else mid.Worker(self, p["domain"])).cancel(p["job"])
         self.domain_pending = None
         if not job:
+            self._plan_drop()
             return "[ERROR] " + _d("err_lost", domain=p["domain"])
-        return self._domain_finish(p["entry"], job, before, follow=follow)
+        text = self._domain_finish(p["entry"], job, before, follow=follow)
+        if not follow:
+            self._plan_drop()
+            return DOMAIN_RESULT_HEAD + text
+        return self._plan_next(text)
+
+    def _plan_drop(self):
+        """分工不再接著做（/clear、找不到工作紀錄）：分工執行期間的軌跡到這裡為止。"""
+        turn = self._domain_turn
+        if turn.get("plan"):
+            turn["plan"] = None
+            turn["spans"][-1][1] = len(getattr(self, "trajectory", None) or [])
 
     # ---------------------------------------------------------------- 依報告回答（4-2：每一項的回答由程式核對、照項目排）
     def domain_items(self):
@@ -403,9 +526,10 @@ class DomainMixin:
                 if r.get("result_file") and not str(r.get("script") or "").startswith("domain_")]
 
     def _known_ids(self):
+        """依報告回答時能當出處的 #編號：交給領域的結果本身、這一回合執行過的工具結果（子工作階段與中階執行的也在軌跡裡）。報告文字裡
+        出現、但不是這些的不算（第 5 步 5-3：子工作階段引用之前的存檔，自己的核對標了沒過，主對話以前因為報告裡寫了那個編號就收）。"""
         turn = self._domain_turn
-        return ({str(x["result_id"]) for x in turn["dispatches"] if x.get("result_id")}
-                | {m for rep in turn["reports"] for m in answers.ID.findall(rep)} | {str(r["id"]) for r, _ in self._turn_results()})
+        return {str(x["result_id"]) for x in turn["dispatches"] if x.get("result_id")} | {str(r["id"]) for r, _ in self._turn_results()}
 
     def _cited(self, ref):
         """一個出處 → (種類, 對到的行, 那幾段的文字, 行號)。種類：line（檔案:行號）、id（#編號）、unknown（報告與這一回合的工具結果都沒有）、

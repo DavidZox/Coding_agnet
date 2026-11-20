@@ -1,7 +1,7 @@
 # robotics_infra：容器與 ROS 2
 
 正在跑的系統：容器的狀態、log、設定與啟停，容器裡的 ROS 2 topic、node、參數（現在的值、發布訊息）。
-不包含：工作目錄裡的檔案（程式碼、設定檔、文字的 log 檔：repo_analysis）、錄製的數據（MCAP：data_analysis）、調度系統的工作包與機器人的授權交握（rmf_dispatch）。
+不包含：工作目錄裡的檔案（程式碼、設定檔、文字的 log 檔：repo_analysis）、錄製的數據（MCAP：data_analysis）、調度系統的工作包、站點與語義地圖、機器人的授權交握（rmf_dispatch）。
 
 ## 做法
 - 容器技能直接用 CURRENT_TARGET_CONTAINER，**不要再問使用者要看哪個容器**；未設定時先 docker_containers 查、docker_open 選定；換容器用 docker_open。

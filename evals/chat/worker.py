@@ -169,7 +169,7 @@ def main():
             token = os.path.basename(payload.split()[0]) if payload else ""
             script = agent._normalize_script_name(token)
             is_doc = os.path.exists(os.path.join(agent.tools_dir, (token[:-3] if token.endswith(".md") else token) + ".md"))
-            if parsed["action"].get("domain"):                 # 交給領域：領域本身與它在裡面用到的工具（evals/domain_calls.py）
+            if parsed["action"].get("domains"):                # 分工：每個領域與它在裡面用到的工具（evals/domain_calls.py）
                 for call in domain_calls.calls(agent, parsed, result):
                     turn["tool_calls"].append(call)
                     all_calls.append(call)
