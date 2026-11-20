@@ -1,9 +1,9 @@
 {
- "date": "2026-11-19",
+ "date": "2026-11-20",
  "dirs": [
-  "20261119_114247_phase"
+  "20261120_124338_phase"
  ],
- "label": "第 4 步 4-2",
+ "label": "第 5 步（6958dac）",
  "per": {
   "compare_two_archives": {
    "passed": 3,
@@ -26,7 +26,7 @@
    "runs": 3
   },
   "error_recovery": {
-   "passed": 3,
+   "passed": 2,
    "runs": 3
   },
   "fleet_battery": {
@@ -38,7 +38,7 @@
    "runs": 3
   },
   "followup_in_context": {
-   "passed": 3,
+   "passed": 2,
    "runs": 3
   },
   "guard_dispatch": {

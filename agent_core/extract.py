@@ -59,7 +59,8 @@ def _x(key, /, **fields):
 # =====================================================================================================================
 # 核對：一句話寫的數字與名稱，是否真的在引用的原文裡
 # =====================================================================================================================
-_REF_TEXT = re.compile(r"[（(]?\s*(?:#\d+\s*)?(?:行|第|lines?\b|L(?=\d))\s*[:：]?\s*\d+(?:\s*[-~～–,，、]\s*\d+)*\s*行?\s*[)）]?", re.I)
+# 名稱裡面的不算（WP_L2 的 L2、max_lines 的 lines：前面接英數字或底線的不是行號的寫法；待辦 4j ①）
+_REF_TEXT = re.compile(r"[（(]?\s*(?:#\d+\s*)?(?<![A-Za-z0-9_])(?:行|第|lines?\b|L(?=\d))\s*[:：]?\s*\d+(?:\s*[-~～–,，、]\s*\d+)*\s*行?\s*[)）]?", re.I)
 # 句子裡夾的行號（模型常把「(lines: 34)」「（行 40）」寫進句子）：行號另外有欄位、排版時另外附，句子裡的拿掉
 _INLINE_REF = re.compile(r"\s*[（(]\s*(?:#\d+\s*)?(?:lines?|行|L)\s*[:：]?\s*\d+(?:\s*[-~～–,，、]\s*\d+)*\s*[)）]", re.I)
 _NUM = re.compile(r"(?<![A-Za-z_\d.])\d+(?:\.\d+)?")
@@ -68,6 +69,15 @@ _IDENT = re.compile(r"[A-Za-z_/~][A-Za-z0-9_/.\-:~]*")
 _LINE_SPEC = re.compile(r"(\d+)(?:\s*[-~～–]\s*(\d+))?")
 # 總數的寫法（共 7 台、總共有 12 個、合計 3 筆）：原文要有這個數字（不算名稱裡的，例如 amr_07 的 7）——實測 26b 列了 7 台卻寫「共有 6 台」
 _COUNT = re.compile(r"(?:總共|共計|合計|一共|共)\s*(?:有\s*)?(\d+)\s*(?:台|個|筆|項|則|次|條|件|輛|位|段|行|種)")
+
+
+def _has_name(name, text):
+    """名稱（小寫）整個出現在 text（小寫）裡：開頭是英數字的，前面不能接英數字；結尾是英數字的，後面不能接英數字（待辦 4j ①：以前用子字串比，
+    寫錯的 av2_test 因為在 nav2_test 裡面就算對上）。底線、斜線、點、冒號都算分隔：nav2 對得上 nav2_test，mod.py 對得上 pkg/mod.py，WP_A 對得上
+    WP_A::0；開頭是斜線的 /odom 對得上 /tb1/odom（不要求前面）。"""
+    left = r"(?<![a-z0-9])" if name[:1].isalnum() else ""
+    right = r"(?![a-z0-9])" if name[-1:].isalnum() else ""
+    return re.search(left + re.escape(name) + right, text) is not None
 
 
 def _num_values(text):
@@ -84,8 +94,9 @@ def missing_tokens(text, evidence, source, allowed="", counts=(), refs=()):
     """text 裡對不上的字（清單）：
     - 數字要在 evidence（引用的那幾行）裡，寫法不同但數值一樣也算（15.5＝15.50）；
     - 看起來像名稱的英數字要在 evidence 裡：含底線、斜線、點、冒號的（tb_1、/odom、rmf_sim、exp_5090），或字母加數字、而原文別的地方有
-      同樣寫法的（引用的行沒有＝寫錯對象；原文有 tb1～tb12、寫了 tb13＝編出來的）。只有字母加數字、原文完全沒有這種寫法的（ROS2）是
-      一般的詞，不核對；
+      同樣寫法的（引用的行沒有＝寫錯對象；原文有 tb1～tb12、寫了 tb13＝編出來的）。名稱要整個對上（_has_name：av2_test 不算 nav2_test 裡有、
+      tb1 不算 tb12 裡有；數字開頭的 9c19c17b-1 連前面的數字一起比；WP_L2 的 L2 不當成行號拿掉）。只有字母加數字、原文完全沒有這種寫法的（ROS2）
+      是一般的詞，不核對；
     - allowed（使用者的問題、執行的指令）裡本來就有的字不核對（「電量低於 20%」的 20）；10 以下的整數不核對（序號、自己數的幾個）。
     - 總數（共 7 台、合計 3 筆）不管大小都核對，而且要是原文裡單獨出現的數字（原文沒有寫總數＝模型自己數的，數錯過）；counts 是程式
       自己數的數量（整合列了幾條核對過的事實），等於它也算有根據。
@@ -106,11 +117,14 @@ def missing_tokens(text, evidence, source, allowed="", counts=(), refs=()):
         if float(m.group(1)) not in standalone:
             bad.append(f"共 {m.group(1)}")
     for m in _IDENT.finditer(t):
-        w = m.group().rstrip(".:-~")
+        start = m.start()
+        while start and t[start - 1].isascii() and t[start - 1].isdigit():   # 數字開頭的名稱（9c19c17b-1）：_IDENT 從字母開始，前面的數字補回來
+            start -= 1
+        w = t[start:m.end()].rstrip(".:-~")
         if len(w) < 2 or not re.search(r"[A-Za-z0-9]", w):
             continue
         wl = w.lower()
-        if wl in ev_low or wl in ok_low:
+        if _has_name(wl, ev_low) or _has_name(wl, ok_low):
             continue
         if re.search(r"[_/.:]", w):
             bad.append(w)

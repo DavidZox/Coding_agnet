@@ -5,6 +5,7 @@
 測的是 harness 的程式（不是模型能力；模型能力用 evals/chat/run.py 量）：
 - 切段：依結構切（章節、--- #序號、表格的列），每段附前情（狀態列、章節標題、表頭），大綱；
 - 核對：事實寫的數字與名稱要在引用的行（前後 2 行＋縮排的上層）裡——寫錯對象、編出來的名稱擋下，一般的詞、使用者問題裡的數字放行；
+  名稱要整個對上（av2_test 不算 nav2_test 裡有；待辦 4j ①）；
 - 一次寫完（短的輸出）與分段（worker → 整合）：每條事實附行號、對不上的拿掉、回答找不到的字請整合修一次、還是不行就標明；
   整合失敗由程式排出各段的事實；每一次的切段、模型呼叫、結果都存在 logs/extract_jobs/<編號>/；
 - result_recall：好幾份一起讀、編號錯／檔案被清掉的說明、提煉失敗照實回報；
@@ -294,6 +295,29 @@ def main():
             assert out.startswith("[PASS]"), "換回專案目錄後照常執行"
             agent.current_cwd = tmp
 
+        def t_name_whole():
+            # 待辦 4j ①：名稱要整個對上（以前用子字串比：子工作階段寫錯的 av2_test 因為在 nav2_test 裡面就算對上，寫進了交班報告）；
+            # 底線、斜線、點、冒號是分隔，開頭是斜線的不要求前面；依報告回答與子工作階段收尾的核對用同一個函式，對不上的附相近的寫法
+            from agent_core import answers
+            ev = "[PASS] 容器（含已停止）：共 3 個\n- nav2_test  Exited (1)\n- rmf_sim  Up\n- /tb1/odom 10 Hz\n- WP_A::0::0 COMPLETED\n- pkg/mod.py:3"
+            assert extract.missing_tokens("av2_test 已停止", ev, ev) == ["av2_test"], "少了開頭的字母：不算對上"
+            assert extract.missing_tokens("nav2_tes 已停止", ev, ev) == ["nav2_tes"], "少了結尾的字母：不算對上"
+            for ok in ("nav2_test 已停止", "nav2 停了", "/odom 有資料", "WP_A 已完成", "mod.py 第 3 行", "rmf_sim 在跑"):
+                assert extract.missing_tokens(ok, ev, ev) == [], ok
+            src = ev + "\n- tb1 82.0\n- tb12 64.0"
+            assert extract.missing_tokens("tb1 電量 64.0", "- tb12 64.0", src) == ["tb1"], "tb1 不算 tb12 裡有（寫錯對象）"
+            assert extract.missing_tokens("av2_test", "", ev, allowed="nav2_test 的狀態") == ["av2_test"], "問題裡的字也要整個對上"
+            # 名稱被切成半截不算（4j ① 的評測：WP_L2 的 L2 被當成行號拿掉、數字開頭的 9c19c17b-1 從 c 開始，半截的前面接著英數字就對不上）
+            wp = "工作項 WP_L2::0::0::9c19c17b-1 DISPATCHED，已 confirm 給 tb2\nmax_lines: 30"
+            assert extract.missing_tokens("工作項 WP_L2::0::0::9c19c17b-1 等 tb2 回報", wp, wp) == [], "完整的編號：對得上"
+            assert extract.missing_tokens("編號 9c19c17b-1 完成", wp, wp) == [], "數字開頭的名稱連前面的數字一起比"
+            assert extract.missing_tokens("工作項 WP_L3::0::0::9c19c17b-1", wp, wp) == ["WP_L3::0::0::9c19c17b-1"], "WP_L3 的 L3 不當成行號拿掉：寫錯擋下"
+            assert extract.missing_tokens("max_lines: 40", wp, wp) == ["40"] and extract.missing_tokens("max_lines: 30（行 2）", wp, wp) == [], \
+                "名稱裡的 lines 不是行號的寫法，句子裡的（行 2）照舊拿掉"
+            got = answers.answer_problems(["每個容器的狀態"], [{"item": 1, "status": "answered", "text": "av2_test: Exited", "refs": ["#1"]}],
+                                          lambda ref: ("id", [], [ev], []), "每個容器的狀態", ev)
+            assert list(got) == [1] and "「av2_test」在出處的那幾段裡找不到" in got[1][0] and "nav2_test" in got[1][0], got
+
         for name, fn in [("切段：依結構切（不切在縮排的中間）、前情帶狀態列、章節與表頭、大綱", t_chunker),
                          ("核對：名字在縮排的上層也算、寫錯對象與編出來的車號擋下、一般的詞與問題裡的數字放行", t_grounding),
                          ("一次寫完（短的輸出）：一次呼叫、每條附行號、存檔（job.json、calls.jsonl）", t_direct),
@@ -305,7 +329,9 @@ def main():
                          ("行號：result_view、result_grep、claude_code 的截斷說明同一套；result_view --outline", t_line_numbers),
                          ("存檔：照編號排（#1000 在 #999 後面）、新編號接在目錄裡最大的編號後面", t_prune_order),
                          ("狀態標記只認輸出最後的那幾行", t_trailing_markers),
-                         ("工作目錄不能用：換回專案目錄並回 [ERROR]，下一次照常執行", t_bad_cwd)]:
+                         ("工作目錄不能用：換回專案目錄並回 [ERROR]，下一次照常執行", t_bad_cwd),
+                         ("名稱要整個對上（待辦 4j ①）：av2_test 不算 nav2_test 裡有、tb1 不算 tb12 裡有；分隔與開頭的斜線照舊對得上；名稱不被切成半截"
+                          "（WP_L2 的 L2 不當行號、數字開頭的連數字一起比）；回答的核對附相近的寫法", t_name_whole)]:
             check(name, fn)
     finally:
         os.chdir(cwd)

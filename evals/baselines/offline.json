@@ -1,76 +1,76 @@
 {
  "analysis_selftest": {
-  "label": "第 4 階段（任務引擎，三次完整跑）（2026-10-24）",
+  "label": "第 5 步（6958dac）（2026-11-20）",
   "passed": 12,
   "total": 12
  },
  "chat_selftest": {
-  "label": "第 5 步 5-1b（2026-11-19）",
+  "label": "第 5 步（6958dac）（2026-11-20）",
   "passed": 19,
   "total": 19
  },
  "containers_sandbox": {
-  "label": "第 4 階段（任務引擎，三次完整跑）（2026-10-24）",
+  "label": "第 5 步（6958dac）（2026-11-20）",
   "passed": 29,
   "total": 29
  },
  "data_live": {
-  "label": "第 4 階段（任務引擎，三次完整跑）（2026-10-24）",
+  "label": "第 5 步（6958dac）（2026-11-20）",
   "passed": 8,
   "total": 8
  },
  "edg_selftest": {
-  "label": "第 3 步 3a（2026-11-18）",
+  "label": "第 5 步（6958dac）（2026-11-20）",
   "passed": 13,
   "total": 13
  },
  "extract_selftest": {
-  "label": "第 4 階段（任務引擎，三次完整跑）（2026-10-24）",
-  "passed": 12,
-  "total": 12
+  "label": "待辦 4j ①（2026-11-20）",
+  "passed": 13,
+  "total": 13
  },
  "integrity": {
-  "label": "拿掉任務引擎與 Plan 模式（2026-11-18）",
+  "label": "第 5 步（6958dac）（2026-11-20）",
   "passed": 8,
   "total": 8
  },
  "mid_selftest": {
-  "label": "第 5 步 5-1（2026-11-19）",
+  "label": "第 5 步（6958dac）（2026-11-20）",
   "passed": 29,
   "total": 29
  },
  "ops_selftest": {
-  "label": "評測 worker 的家目錄（待辦 4f ③）（2026-11-19）",
+  "label": "第 5 步（6958dac）（2026-11-20）",
   "passed": 4,
   "total": 4
  },
  "orch_selftest": {
-  "label": "第 5 步 5-4（2026-11-20）",
+  "label": "第 5 步（6958dac）（2026-11-20）",
   "passed": 35,
   "total": 35
  },
  "repo_selftest": {
-  "label": "第 4 步 4-2（2026-11-19）",
+  "label": "第 5 步（6958dac）（2026-11-20）",
   "passed": 10,
   "total": 10
  },
  "skills": {
-  "label": "第 3 步 3b（2026-11-18）",
+  "label": "第 5 步（6958dac）（2026-11-20）",
   "passed": 113,
   "total": 113
  },
  "skills_sandbox": {
-  "label": "待辦 20、23（2026-10-25）",
+  "label": "第 5 步（6958dac）（2026-11-20）",
   "passed": 27,
   "total": 27
  },
  "tools_live:exp_5090_overheat": {
-  "label": "第 4 階段（任務引擎，三次完整跑）（2026-10-24）",
+  "label": "第 5 步（6958dac）（2026-11-20）",
   "passed": 21,
   "total": 21
  },
  "tools_live:gen_s1_005": {
-  "label": "第 4 階段（任務引擎，三次完整跑）（2026-10-24）",
+  "label": "第 5 步（6958dac）（2026-11-20）",
   "passed": 24,
   "total": 24
  }

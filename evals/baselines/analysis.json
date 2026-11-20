@@ -1,7 +1,7 @@
 {
  "sets": {
   "gen_s1": {
-   "label": "第 2 階段（8210509）（2026-10-23，analysis_p2_gen_s1）",
+   "label": "第 5 步（6958dac）（2026-11-20，analysis_phase_20261120_123638_gen_s1）",
    "per": {
     "gen_s1_000": {
      "clean": [
@@ -1382,7 +1382,7 @@
    }
   },
   "gen_s2": {
-   "label": "第 2 階段（8210509）（2026-10-23，analysis_p2_gen_s2）",
+   "label": "第 5 步（6958dac）（2026-11-20，analysis_phase_20261120_123638_gen_s2）",
    "per": {
     "gen_s2_000": {
      "clean": [
@@ -2747,7 +2747,7 @@
    }
   },
   "gen_s3": {
-   "label": "第 2 階段（8210509）（2026-10-23，analysis_p2_gen_s3）",
+   "label": "第 5 步（6958dac）（2026-11-20，analysis_phase_20261120_123638_gen_s3）",
    "per": {
     "gen_s3_000": {
      "clean": [
@@ -3176,7 +3176,7 @@
     0,
     1070
    ],
-   "label": "第 2 階段（8210509）（2026-10-23，analysis_p2_real）",
+   "label": "第 5 步（6958dac）（2026-11-20，analysis_phase_20261120_123638_real）",
    "per": {
     "aggkill": {
      "clean": [

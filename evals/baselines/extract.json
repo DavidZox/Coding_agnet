@@ -1,7 +1,7 @@
 {
  "labels": {
-  "gemma4:26b": "第 2 階段（8210509）（2026-10-23，20261023_204315_extract_gemma4-26b_baseline）；robot_heading 2026-10-24 加（20261024_103853_extract_gemma4-26b_p3fix）",
-  "gemma4:e4b": "第 2 階段（8210509）（2026-10-23，20261023_204431_extract_gemma4-e4b_baseline）；robot_heading 2026-10-24 加（20261024_104008_extract_gemma4-e4b_p3fix）"
+  "gemma4:26b": "第 5 步（6958dac）（2026-11-20，20261120_124131_extract_gemma4-26b_phase）",
+  "gemma4:e4b": "第 5 步（6958dac）（2026-11-20，20261120_124241_extract_gemma4-e4b_phase）"
  },
  "models": {
   "gemma4:26b": {
@@ -9,42 +9,42 @@
     "count_ok": true,
     "extra": 0,
     "found": 30,
-    "seconds": 13.9,
+    "seconds": 13.6,
     "total": 30
    },
    "fleet_40": {
     "count_ok": null,
     "extra": 0,
     "found": 7,
-    "seconds": 7.9,
+    "seconds": 8.2,
     "total": 7
    },
    "fleet_80": {
     "count_ok": true,
     "extra": 0,
     "found": 21,
-    "seconds": 9.8,
+    "seconds": 9.7,
     "total": 21
    },
    "log_200k": {
     "count_ok": null,
     "extra": 0,
     "found": 6,
-    "seconds": 14.2,
+    "seconds": 13.7,
     "total": 6
    },
    "recall_fleet_120": {
     "count_ok": null,
     "extra": 0,
     "found": 11,
-    "seconds": 8.1,
+    "seconds": 7.7,
     "total": 11
    },
    "robot_heading": {
     "count_ok": null,
     "extra": 0,
     "found": 1,
-    "seconds": 2.4,
+    "seconds": 2.5,
     "total": 1
    }
   },
@@ -53,42 +53,42 @@
     "count_ok": null,
     "extra": 0,
     "found": 30,
-    "seconds": 11.1,
+    "seconds": 11.4,
     "total": 30
    },
    "fleet_40": {
     "count_ok": null,
     "extra": 0,
-    "found": 7,
-    "seconds": 5.8,
+    "found": 6,
+    "seconds": 5.6,
     "total": 7
    },
    "fleet_80": {
     "count_ok": null,
     "extra": 0,
     "found": 21,
-    "seconds": 8.4,
+    "seconds": 7.3,
     "total": 21
    },
    "log_200k": {
     "count_ok": null,
     "extra": 0,
     "found": 6,
-    "seconds": 10.8,
+    "seconds": 10.5,
     "total": 6
    },
    "recall_fleet_120": {
     "count_ok": null,
     "extra": 0,
-    "found": 9,
-    "seconds": 9.1,
+    "found": 10,
+    "seconds": 9.0,
     "total": 11
    },
    "robot_heading": {
     "count_ok": null,
     "extra": 0,
     "found": 1,
-    "seconds": 2.1,
+    "seconds": 2.4,
     "total": 1
    }
   }
