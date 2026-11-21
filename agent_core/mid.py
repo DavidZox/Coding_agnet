@@ -104,9 +104,10 @@ def _param_sig(values):
 # =====================================================================================================================
 def load_domain(base_path, tools_dir, name):
     """skills_system/<領域>/SKILLS.md 與它列的複合技能 → {"name", "title", "intro", "skills": {名稱: 規格}, "catalog": {名稱: 那一行的說明},
-    "tools", "practice", "problems"}。catalog 是高階分流看的入口技能（agent_core/orchestrator.py）；practice 是〈做法〉一節（現在的做法，
-    只給子工作階段看，agent_core/sub.py）。沒有複合技能的領域照樣能用：交給它的問題在子工作階段裡一步一步做（第 5 步）。"""
-    out = {"name": name, "title": name, "intro": "", "skills": {}, "catalog": {}, "tools": [], "practice": "", "problems": []}
+    "tools", "board_tools", "practice", "problems"}。catalog 是高階分流看的入口技能（agent_core/orchestrator.py）；practice 是〈做法〉一節（現在的做法，
+    只給子工作階段看，agent_core/sub.py）；board_tools 是〈公佈欄的工具〉（方向的實驗：AGENT_DOMAIN_BOARD 列的領域交給公佈欄的 worker，
+    它只用這幾個工具，agent_core/board.py）。沒有複合技能的領域照樣能用：交給它的問題在子工作階段裡一步一步做（第 5 步）。"""
+    out = {"name": name, "title": name, "intro": "", "skills": {}, "catalog": {}, "tools": [], "board_tools": [], "practice": "", "problems": []}
     try:
         with open(os.path.join(base_path, name, "SKILLS.md"), encoding="utf-8") as f:
             lines = f.read().split("\n")
@@ -123,14 +124,15 @@ def load_domain(base_path, tools_dir, name):
             intro.append(ln)
         elif section == "做法":
             practice.append(ln)
-        elif (m := _ENTRY.match(ln)) and section in ("複合技能", "工具"):
+        elif (m := _ENTRY.match(ln)) and section in ("複合技能", "工具", "公佈欄的工具"):
             entries.append((section, m.group(1), m.group(2)))
             if section == "複合技能":
                 out["catalog"][m.group(1)] = ln[m.end():].strip().lstrip("—-– ").strip()
     out["intro"] = "\n".join(intro).strip()
     out["practice"] = "\n".join(practice).strip()
     out["tools"] = [n for s, n, _ in entries if s == "工具"]
-    for t in out["tools"]:
+    out["board_tools"] = [n for s, n, _ in entries if s == "公佈欄的工具"]     # 方向的實驗：公佈欄的 worker 用的工具（agent_core/board.py）
+    for t in out["tools"] + [x for x in out["board_tools"] if x not in out["tools"]]:
         if not os.path.exists(os.path.join(tools_dir, f"{t}.md")):
             out["problems"].append(f"工具 {t} 沒有規格（skills_system/tools/{t}.md）")
     for _, sname, rel in [e for e in entries if e[0] == "複合技能"]:

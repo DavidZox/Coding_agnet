@@ -1,5 +1,5 @@
 """第一版領域的技能的收據（新架構 D4，skills_system/scripts/_receipt_common.py）：search_text、find_file、list_dir、view_file、
-code_ast_reader、result_list、result_grep、result_view。
+code_ast_reader、result_list、result_grep、result_view，與方向的實驗加的 code_defs、py_refs（公佈欄的 worker 用）。
 
 每一種出口都記收據（pass、empty、error 與錯誤的種類）；數量跟給模型的文字一致；收據比文字完整（文字只列前幾筆，收據記全部）；
 給模型的文字有沒有寫收據都一模一樣；規格的 parameters、receipt 欄位跟腳本寫的一致，而且載入給模型時拿掉。
@@ -19,7 +19,7 @@ from selftest import PROJECT, SCRIPTS, Skip, run_script
 IS_ROOT = hasattr(os, "geteuid") and os.geteuid() == 0
 V1 = {"search_text": "grep_cmd.py", "find_file": "find_file_cmd.py", "list_dir": "ls_cmd.py", "view_file": "cat_cmd.py",
       "code_ast_reader": "code_ast_reader_cmd.py", "result_list": "result_list_cmd.py", "result_grep": "result_grep_cmd.py",
-      "result_view": "result_view_cmd.py"}
+      "result_view": "result_view_cmd.py", "code_defs": "code_defs_cmd.py", "py_refs": "py_refs_cmd.py"}
 COMMON = {"version", "tool", "cwd", "status", "error_kind", "counts", "items", "truncated"}
 SEEN = {}            # 技能 → 這一組測試收到的收據（最後一個情境核對規格用）
 RECEIPTS = tempfile.mkdtemp(prefix="skills_receipt_out_")   # 收據寫在被測的目錄外面（不然 search_text 會搜到收據本身）
@@ -242,6 +242,55 @@ def t_code_ast_reader_refs():
     _error("code_ast_reader", "args", "m.py", "--refs", "a.b", d=d)
 
 
+# ---------------------------------------------------------------- code_defs、py_refs（方向的實驗：公佈欄的 worker 用）
+def t_code_defs():
+    """code_defs：數量跟標頭一致；每一個定義一筆（路徑、行號、結束的行、種類、名稱、qualname），每份檔案的行數與數量（per_file）；
+    文字只列前幾個時收據照樣全部記；沒有符合的檔案＝empty；路徑、選項錯＝args"""
+    d = _tmp()
+    _w(d, "p/a.py", "class A:\n    def m(self):\n        pass\n\n\ndef f():\n    pass\n")
+    _w(d, "p/b.cpp", "struct S { int x; };\nint S2::get() const {\n  return 1;\n}\n")
+    _w(d, "p/doc.md", "x\ny\n")
+    out, r = run("code_defs", "p", d=d)
+    m = re.search(r"(\d+) 份檔案、共 (\d+) 行；定義：類別 (\d+)、函式／方法 (\d+)", out)
+    assert m and r["status"] == "pass" and r["counts"] == {"files": int(m.group(1)), "lines": int(m.group(2)), "classes": int(m.group(3)),
+                                                           "functions": int(m.group(4))}, (out[:200], r["counts"])
+    assert r["counts"] == {"files": 3, "lines": 13, "classes": 2, "functions": 3}, r["counts"]
+    by = {(os.path.basename(i["path"]), i["qualname"]): i for i in r["items"]}
+    assert set(by) == {("a.py", "A"), ("a.py", "A.m"), ("a.py", "f"), ("b.cpp", "S"), ("b.cpp", "S2::get")}, set(by)
+    assert by[("a.py", "A.m")]["kind"] == "method" and by[("a.py", "A.m")]["line"] == 2 and by[("b.cpp", "S2::get")]["end"] == 4
+    assert [(os.path.basename(x["path"]), x["lines"]) for x in r["per_file"]] == [("a.py", 7), ("b.cpp", 4), ("doc.md", 2)], r["per_file"]
+    assert r["paths"] == [os.path.join(d, "p")] and "build" in r["exclude_dirs"]
+    _w(d, "big/many.py", "".join(f"def f{k}():\n    pass\n" for k in range(700)))
+    out, r = run("code_defs", "big", d=d)
+    assert "定義只列前 600 個" in out and len(r["items"]) == 700 and r["counts"]["functions"] == 700, "收據要有全部的定義"
+    out, r = run("code_defs", "p", "--include", "*.rs", d=d)
+    assert r["status"] == "empty" and r["counts"]["files"] == 0 and r["items"] == []
+    _error("code_defs", "args", "nope_dir", d=d)
+    _error("code_defs", "args", "p", "--kind", "x", d=d)
+
+
+def t_py_refs():
+    """py_refs：數量跟標頭一致；每一處一筆（路徑、行號、種類、所在的函式、原始碼；定義另有 qualname、in_class、行號範圍），每個檔案的
+    數量（per_file）；Python 沒有、C++ 檔有時記 cpp_files；沒有＝empty；名稱、路徑錯＝args"""
+    d = _tmp()
+    _w(d, "p/a.py", "def run():\n    pass\n\n\nclass B:\n    def go(self):\n        return run()\n")
+    _w(d, "p/c.py", "from p.a import run\nrun()\nrun()\n")
+    _w(d, "p/x.hpp", "void only_cpp();\n")
+    out, r = run("py_refs", "run", "p", d=d)
+    m = re.search(r"出現 (\d+) 處、(\d+) 份檔案", out)
+    assert m and r["status"] == "pass" and r["counts"]["refs"] == int(m.group(1)) and r["counts"]["files"] == int(m.group(2)), (out[:200], r)
+    assert r["counts"] == {"refs": 5, "files": 2, "defs": 1, "calls": 3, "imports": 1, "assigns": 0, "others": 0, "scanned": 2}, r["counts"]
+    defn = [i for i in r["items"] if i["kind"] == "def"][0]
+    assert defn["qualname"] == "run" and defn["start"] == 1 and defn["end"] == 2 and defn["path"] == os.path.join(d, "p", "a.py"), defn
+    call = [i for i in r["items"] if i["kind"] == "call" and i["path"].endswith("a.py")][0]
+    assert call["scope"] == "B.go" and call["line"] == 7 and call["text"] == "return run()", call
+    assert [(os.path.basename(x["path"]), x["refs"], x["call"]) for x in r["per_file"]] == [("a.py", 2, 1), ("c.py", 3, 2)], r["per_file"]
+    out, r = run("py_refs", "only_cpp", "p", d=d)
+    assert r["status"] == "empty" and r["cpp_files"] == [os.path.join(d, "p", "x.hpp")] and r["counts"]["refs"] == 0, r
+    _error("py_refs", "args", "a.b", "p", d=d)
+    _error("py_refs", "args", "run", "nope_dir", d=d)
+
+
 # ---------------------------------------------------------------- result_list／result_grep／result_view
 def _archive(d, session, rid, stem, body):
     name = f"{session}_{rid:03d}_{stem}.md"
@@ -374,7 +423,8 @@ def t_parse_args_contract():
     sys.path.insert(0, PROJECT)
     from agent_core import skill_spec
     ok_args = {"search_text": ["x", "."], "find_file": ["x", "."], "list_dir": ["."], "view_file": ["a.txt"],
-               "code_ast_reader": ["a.py", "--refs", "x"], "result_list": [], "result_grep": ["latest", "x"], "result_view": ["latest"]}
+               "code_ast_reader": ["a.py", "--refs", "x"], "result_list": [], "result_grep": ["latest", "x"], "result_view": ["latest"],
+               "code_defs": ["."], "py_refs": ["x", "."]}
     narrowed = []
     for skill, script in V1.items():
         with open(os.path.join(PROJECT, "skills_system", "tools", f"{skill}.md"), encoding="utf-8") as f:
@@ -391,4 +441,4 @@ def t_parse_args_contract():
             assert isinstance(out[0], dict) and set(narrow) <= set(out[0]), (skill, set(narrow) - set(out[0] or {}))
             assert all(r["rule"] in ("inside", "added") and r.get("arg") for r in narrow.values()), (skill, narrow)
             assert "\nnarrow:" not in skill_spec.for_model(text), skill
-    assert sorted(narrowed) == ["find_file", "search_text"], narrowed
+    assert sorted(narrowed) == ["code_defs", "find_file", "py_refs", "search_text"], narrowed

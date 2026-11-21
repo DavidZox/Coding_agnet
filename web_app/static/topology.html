@@ -184,8 +184,9 @@ const EDG_CLASS = { done: 'ok', judgment: 'info', stopped: 'bad', need_user: 'wa
 const MID_CLASS = { done: 'ok', dead_end: 'bad', circuit_break: 'bad', failed: 'bad', no_skill: 'warn', out_of_domain: 'warn', need_user: 'wait', running: 'info',
                     cancelled: 'warn', repeated: 'warn' };
 const SUB_CLASS = { done: 'ok', stopped: 'bad', cancelled: 'warn', failed: 'bad', need_user: 'wait', running: 'info' };   // 子工作階段（第 5 步）
-const STEP_CLASS = { PASS: 'ok', ERROR: 'bad', DENIED: 'warn' };
-const KIND_TEXT = { mid: '中階', sub: '子工作階段', edg: '低階' };
+const STEP_CLASS = { PASS: 'ok', ERROR: 'bad', DENIED: 'warn', EMPTY: 'warn', REPEAT: 'skip' };
+const BOARD_CLASS = { done: 'ok', stopped: 'warn', failed: 'bad', out_of_domain: 'warn', running: 'info' };   // 公佈欄（方向的實驗）
+const KIND_TEXT = { mid: '中階', sub: '子工作階段', board: '公佈欄', edg: '低階' };
 const SOURCE_TEXT = { question: '原文', default: '預設', fetch: '自己查到的', user: '使用者回答', switch: '換技能時帶過來' };
 const ATT_STATUS = { pass: '成功', empty: '0 筆', error: '錯誤' };
 const ERROR_KIND = { args: '參數錯', timeout: '逾時', env: '環境的問題', parse: '腳本的錯' };
@@ -233,7 +234,7 @@ function jobStatusText(s) {
 }
 
 function statusChip(kind, status, text) {
-  const cls = (kind === 'mid' ? MID_CLASS : kind === 'sub' ? SUB_CLASS : EDG_CLASS)[status] || 'skip';
+  const cls = (kind === 'mid' ? MID_CLASS : kind === 'sub' ? SUB_CLASS : kind === 'board' ? BOARD_CLASS : EDG_CLASS)[status] || 'skip';
   return `<span class="chip c-${cls}">${esc(text || (kind === 'edg' ? EDG_STATUS[status] || status : status))}</span>`;
 }
 
@@ -248,6 +249,7 @@ function renderList() {
       <div class="row1">${statusChip(j.kind, j.status, j.status_text)}<span>${esc(j.case || j.created || j.id)}</span>
         ${j.kind === 'edg' ? '<span class="chip c-skip">低階</span>' : ''}
         ${j.kind === 'sub' ? `<span class="chip c-skip">子工作階段</span><span title="做了幾步">${esc(j.steps)} 步</span>` : ''}
+        ${j.kind === 'board' ? `<span class="chip c-skip">公佈欄</span><span title="做了幾步">${esc(j.steps)} 步</span>` : ''}
         ${j.versions > 1 ? `<span title="重排過">${j.versions} 版</span>` : ''}
         ${(j.fallbacks || []).length ? `<span class="c-fb" title="用了回退">↻ ${esc(j.fallbacks.join('、'))}</span>` : ''}
         ${j.judged ? `<span class="c-judge" title="判斷節點判斷了幾次">⚖ ${esc(j.judged)}</span>` : ''}
@@ -317,7 +319,7 @@ function renderHead() {
     ${v.question && v.goal && v.goal !== v.question ? `<div class="hint">子目標：${esc(v.goal)}</div>` : ''}
     ${chainHtml(v.chain)}
     ${(v.items || []).length ? `<div class="hint">要回答的項目：${v.items.map((x, i) => `${i + 1}. ${esc(x)}`).join('　')}</div>` : ''}
-    ${v.kind === 'sub' ? `<div class="head-row">做法 <b>${esc(v.skill)}</b>（${(v.steps || []).length} 步）</div>`
+    ${v.kind === 'sub' || v.kind === 'board' ? `<div class="head-row">做法 <b>${esc(v.skill)}</b>（${(v.steps || []).length} 步）</div>`
       : v.skill ? `<div class="head-row">複合技能 <b>${esc(v.skill)}</b> ${params}</div>` : ''}
     ${v.cwd ? `<div class="hint">工作目錄：${esc(v.cwd)}</div>` : ''}
     ${v.originals ? '' : '<div class="hint">評測的工作只留了收據：#編號的原文沒有留下來。</div>'}`;
@@ -353,6 +355,16 @@ function stages(v) {
     }
     if (v.status === 'need_user' && v.need_user) out.push({ id: 'ask', name: '等使用者', cls: 'wait', html: esc(v.need_user.command || '確認關卡') });
     out.push({ id: 'result', name: '結果', cls: SUB_CLASS[v.status] || 'skip', html: esc(v.status_text) });
+    return out;
+  }
+  if (v.kind === 'board') {                   // 公佈欄：每一步一段（工具、結果、新的事實），接著是它長出來的決策圖與結果
+    for (const st of v.steps || []) {
+      const what = st.status === 'REPEAT' ? `${esc(st.tool)}：跟第 ${esc(st.same)} 步一樣，沒有執行`
+        : `${esc(st.tool)}・${esc(st.status)}${st.result_id ? `・#${esc(st.result_id)}` : ''}${(st.facts || []).length ? `・事實 ${st.facts.length}` : ''}`;
+      out.push({ id: `s${st.n}`, name: `第 ${st.n} 步`, cls: STEP_CLASS[st.status] || 'skip', html: what });
+    }
+    if ((v.versions || []).length) out.push({ id: 'v0', version: 0, name: '決策圖', cls: EDG_CLASS[v.versions[0].status] || 'skip', html: `${v.versions[0].graph.nodes.length} 個節點` });
+    out.push({ id: 'result', name: '結果', cls: BOARD_CLASS[v.status] || 'skip', html: esc(v.status_text) });
     return out;
   }
   if (v.kind === 'edg') {
@@ -687,6 +699,7 @@ function renderGraph() {
 
 function noGraphText(v) {
   if (v.kind === 'sub') return '子工作階段沒有決策圖：每一步排在上面的流程列（點一步看模型的想法、動作與結果）。';
+  if (v.kind === 'board') return '這個公佈欄的工作沒有執行任何工具。點上面的流程看每一步。';
   if (v.kind !== 'mid') return '這個工作沒有圖。';
   const where = !v.selection ? '挑技能之前' : !v.skill ? '挑技能' : '補參數';
   if (v.status === 'need_user' && v.need_user) return `這個工作還沒排圖：在等使用者回答（${v.need_user.question}）。`;
@@ -732,6 +745,7 @@ function renderDetail() {
 function overviewHtml(v) {
   const r = v.result || {};
   if (v.kind === 'sub') return subStageHtml(v, 'result');
+  if (v.kind === 'board') return boardStageHtml(v, 'result');
   return `<h3>${v.kind === 'mid' ? '中階的工作' : '低階的工作'}</h3>
     <p class="hint">點上面流程的一段、圖上的節點或邊看細節；回退與問使用者畫成虛線框，回退加的節點在下一版。</p>
     ${kv([['狀態', v.kind === 'mid' ? v.status_text : (EDG_STATUS[v.status] || v.status)], ['說明', r.note],
@@ -800,8 +814,40 @@ function subStageHtml(v, id) {
     ['時間', st.time]])}${calls.length ? `<h4>模型呼叫</h4>${calls.map(callHtml).join('')}` : ''}`;
 }
 
+// 公佈欄（方向的實驗）：結果＝每一項的回答與公佈欄的事實；一步＝規劃的理解、要找的、工具與參數、結果與新的事實、模型呼叫
+function boardStageHtml(v, id) {
+  const facts = Object.fromEntries((v.facts || []).map((f) => [f.id, f]));
+  const factLi = (f) => `<li><b>F${esc(f.id)}</b>（第 ${esc(f.step)} 步，${esc(f.source)}）：${esc(f.text)}<div class="hint">出處：${esc((f.refs || []).join('、'))}</div>`
+    + `${(f.rows || []).map((r) => `<div class="hint">&gt; ${esc(r)}</div>`).join('')}</li>`;
+  if (id === 'result') {
+    const r = v.result || {}, probs = v.problems || {};
+    const answers = (v.items || []).map((item, i) => {
+      const a = (v.answers || []).find((x) => x.item === i + 1), p = probs[String(i + 1)];
+      const body = !a ? '（沒有回答）' : a.status === 'not_found' ? `查不到：${esc(a.text)}` : a.status === 'out_of_domain' ? `不屬於這個領域：${esc(a.text)}`
+        : `${esc(a.text)}<div class="hint">根據 ${(a.facts || []).map((x) => `F${esc(x)}`).join('、') || '—'}；出處：${esc((a.refs || []).join('、'))}</div>`;
+      return `<li><b>${i + 1}. ${esc(item)}</b>：${body}${p ? `<div class="c-bad">沒有通過核對：${esc(p.join('；'))}</div>` : ''}</li>`;
+    }).join('');
+    return `<h3>公佈欄</h3>${kv([['狀態', v.status_text], ['說明', r.note], ['出處', (r.sources || []).map(resultLink).join(' '), true],
+      ['能用的工具', (v.tools || []).join('、')], ['開始', v.created], ['更新', v.updated]])}
+      ${answers ? `<h4>每一項的回答（程式核對過名稱與數值在事實裡）</h4><ul class="plain">${answers}</ul>` : ''}
+      <h4>公佈欄的事實（${(v.facts || []).length} 則）</h4><ul class="plain">${(v.facts || []).map(factLi).join('') || '<li class="hint">沒有</li>'}</ul>
+      ${callsOf(v, 'answer').concat(callsOf(v, 'answer_fix')).length ? `<h4>回答的模型呼叫</h4>${callsOf(v, 'answer').concat(callsOf(v, 'answer_fix')).map(callHtml).join('')}` : ''}`;
+  }
+  const st = (v.steps || []).find((x) => `s${x.n}` === id);
+  if (!st) return '';
+  const calls = (v.calls || []).filter((c) => c.role === 'plan' && c.step === st.n);
+  return `<h3>第 ${esc(st.n)} 步</h3>${kv([['規劃的理解', st.understanding], ['為第幾項', st.item ? `第 ${st.item} 項` : '好幾項'], ['要找的', st.look_for],
+    ['工具', st.tool], ['參數', JSON.stringify(st.args)], ['實際執行', st.ran_args && JSON.stringify(st.ran_args) !== JSON.stringify(st.args) ? JSON.stringify(st.ran_args) : ''],
+    ['第 1 級修正', st.fixed ? `${JSON.stringify(st.fixed.args)}（${st.fixed.reason}）` : ''], ['結果', `${st.status}：${st.summary || st.head}`],
+    ['出處', st.result_id ? resultLink(st.result_id) : '', true], ['提煉', st.extract_job ? `${st.extract_job}（${st.read}/${st.chunks} 段；拿掉 ${st.dropped} 則對不上原文的）` : ''],
+    ['時間', st.time]])}
+    ${(st.facts || []).length ? `<h4>新的事實</h4><ul class="plain">${st.facts.map((i) => facts[i] ? factLi(facts[i]) : '').join('')}</ul>` : ''}
+    ${calls.length ? `<h4>規劃的模型呼叫</h4>${calls.map(callHtml).join('')}` : ''}`;
+}
+
 function stageHtml(v, id) {
   if (v.kind === 'sub') return subStageHtml(v, id);
+  if (v.kind === 'board' && id !== 'v0') return boardStageHtml(v, id);
   if (id === 'select') {
     const s = v.selection;
     if (!s) return `<h3>挑技能</h3><p class="hint">沒有挑：${esc((v.result || {}).note || '還沒到這一步')}</p>`;

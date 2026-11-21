@@ -195,3 +195,35 @@ def mid_judge_schema(sources, files, labels, branches, max_lines, fix_lines=Fals
         props["reason"] = _text(300)
     return {"type": "object", "properties": props, "required": list(props)}
 
+
+# 公佈欄的 worker（agent_core/board.py，方向的實驗）：規劃一次決定一步——先寫理解（每一項還缺什麼），再寫下一步是用工具還是回答、為第幾項
+# （0＝好幾項共用）、要在輸出裡找什麼（提煉的錨點），最後是工具與參數（一個一個的字串；回答時 tool 寫 none、args 空的）。
+def board_plan_schema(tools, n_items):
+    return {"type": "object",
+            "properties": {"understanding": _text(500), "next": {"type": "string", "enum": ["tool", "answer"]},
+                           "item": {"type": "integer", "enum": list(range(0, n_items + 1))}, "look_for": _text(200),
+                           "tool": {"type": "string", "enum": list(tools) + ["none"]},
+                           "args": {"type": "array", "items": _text(300), "maxItems": 16}},
+            "required": ["understanding", "next", "item", "look_for", "tool", "args"]}
+
+
+# 公佈欄的「看」：一份工具輸出（太長時的一段）摘出跟問題有關的事實，每一則附輸出的行號（程式核對名稱與數值在那幾行，再換成 檔案:行號）。
+def board_look_schema(max_facts, fact_chars):
+    return {"type": "object",
+            "properties": {"relevant": {"type": "boolean"},
+                           "facts": {"type": "array", "items": {"type": "object", "properties": {"text": _text(fact_chars), "lines": _text(40)},
+                                                                "required": ["text", "lines"]}, "maxItems": max_facts}},
+            "required": ["relevant", "facts"]}
+
+
+# 公佈欄的回答：每一項一筆——答到、查不到或不屬於這個領域，回答或理由，根據的事實編號（程式核對回答裡的名稱與數值在那幾則事實裡）。
+def board_answer_schema(n_items, n_facts, answer_chars, refs_max):
+    one = {"type": "object",
+           "properties": {"item": {"type": "integer", "enum": list(range(1, n_items + 1))},
+                          "status": {"type": "string", "enum": ["answered", "not_found", "out_of_domain"]}, "text": _text(answer_chars),
+                          "facts": {"type": "array", "items": {"type": "integer", "enum": list(range(1, n_facts + 1)) or [0]},
+                                    "maxItems": refs_max}},
+           "required": ["item", "status", "text", "facts"]}
+    return {"type": "object", "properties": {"answers": {"type": "array", "items": one, "minItems": 1, "maxItems": n_items}},
+            "required": ["answers"]}
+

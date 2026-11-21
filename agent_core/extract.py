@@ -357,6 +357,47 @@ class Extraction:
         "mode": direct／merge, "job": 編號, "chunks": 段數, "read": 讀了幾段, "notes": 程式寫的未涵蓋（沒讀到、失敗的段落）,
         "answer_missing": 回答裡在原文找不到的字, "dropped": 拿掉的事實數, "fallback": 整合失敗、由程式排各段事實}。"""
         t0 = time.time()
+        total = self._setup()
+        try:
+            out = self._direct() if total <= EXTRACT_CHUNK_CHARS else self._merge()
+            self.job["status"] = "done"
+        except Exception as e:
+            self.job.update(status="failed", error=f"{type(e).__name__}: {e}")
+            raise
+        finally:
+            self.job["seconds"] = round(time.time() - t0, 1)
+            self.store.save(self.job)
+            self.store.prune(EXTRACT_JOBS_KEEP)
+        out["job"] = self.jid
+        return out
+
+    def facts_only(self, system, schema, predict):
+        """只讓 worker 摘事實、不整合（方向的實驗：公佈欄的 worker 每一份工具輸出都用問題提煉，agent_core/board.py）：照結構切段（放得進一段的
+        就是一段）、段數超過 EXTRACT_MAX_CHUNKS 時照問題挑著讀，每段一次（system、schema、predict 由呼叫端給），每一則照 _ground 核對。
+        回傳 {"facts": 核對過的事實（text、lines、src、nums）, "dropped": 對不上原文的, "chunks": 段數, "read": 讀了幾段, "unread": 沒讀的行號範圍,
+        "failed": 失敗的段數, "job": 編號}；存檔照舊（logs/extract_jobs/，mode＝facts）。"""
+        t0 = time.time()
+        self._setup()
+        self._worker_spec = (system, schema, predict)
+        self.job["mode"] = "facts"
+        try:
+            selected, unread = self._select()
+            with ThreadPoolExecutor(max_workers=max(1, min(EXTRACT_PARALLEL, len(selected)))) as ex:
+                results = list(ex.map(self._worker, selected))
+            self.job.update(workers=results, unread=[c["id"] for c in unread], status="done")
+        except Exception as e:
+            self.job.update(status="failed", error=f"{type(e).__name__}: {e}")
+            raise
+        finally:
+            self.job["seconds"] = round(time.time() - t0, 1)
+            self.store.save(self.job)
+            self.store.prune(EXTRACT_JOBS_KEEP)
+        return {"facts": [it for r in results if r["ok"] for it in r["facts"]], "dropped": [d for r in results if r["ok"] for d in r["dropped"]],
+                "chunks": len(self.chunks), "read": len(selected), "unread": self._ranges(unread) if unread else "",
+                "failed": sum(1 for r in results if not r["ok"]), "job": self.jid}
+
+    def _setup(self):
+        """切段、建 job（run 與 facts_only 共用）→ 原文的總字數。"""
         rids = "-".join(str(s["rid"]) for s in self.sources)[:40]
         self.jid = self.store.new_id(f"{self.kind}_{rids}")
         total = sum(len(t) + 1 for t in self.texts)
@@ -374,18 +415,7 @@ class Extraction:
                     "chunks": [{k: c[k] for k in ("id", "src", "start", "end", "chars")} for c in self.chunks],
                     "summary_max_chars": self.max_chars}
         self.store.save(self.job)
-        try:
-            out = self._direct() if total <= EXTRACT_CHUNK_CHARS else self._merge()
-            self.job["status"] = "done"
-        except Exception as e:
-            self.job.update(status="failed", error=f"{type(e).__name__}: {e}")
-            raise
-        finally:
-            self.job["seconds"] = round(time.time() - t0, 1)
-            self.store.save(self.job)
-            self.store.prune(EXTRACT_JOBS_KEEP)
-        out["job"] = self.jid
-        return out
+        return total
 
     def _background(self):
         return "\n".join(f"#{s['rid']}：{s['background']}" for s in self.sources if s.get("background"))
@@ -462,8 +492,9 @@ class Extraction:
                 + _x("worker_chunk", label=s["label"], count=len(lines), of=c["of"], k=c["k"], start=a + 1, end=b) + "\n"
                 + (_x("worker_context", lines="\n".join(rc.numbered(j + 1, _cut(lines[j], 300)) for j in ctx)) + "\n" if ctx else "")
                 + "\n" + _x("worker_body", lines="\n".join(rc.numbered(i + 1, _cut(lines[i], limit)) for i in range(a, b))))
-        data, raw, err = self._call("worker", read_prompt("worker.md", max_facts=EXTRACT_WORKER_FACTS), user, EXTRACT_WORKER_SCHEMA,
-                                    EXTRACT_WORKER_PREDICT, chunk=c["id"])
+        system, schema, predict = (getattr(self, "_worker_spec", None)
+                                   or (read_prompt("worker.md", max_facts=EXTRACT_WORKER_FACTS), EXTRACT_WORKER_SCHEMA, EXTRACT_WORKER_PREDICT))
+        data, raw, err = self._call("worker", system, user, schema, predict, chunk=c["id"])
         if data is None:
             out = {"chunk": c["id"], "ok": False, "error": err}
         else:

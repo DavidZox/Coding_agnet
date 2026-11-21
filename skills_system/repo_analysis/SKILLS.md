@@ -20,3 +20,12 @@
 - [result_list](../tools/result_list.md)
 - [result_grep](../tools/result_grep.md)
 - [result_view](../tools/result_view.md)
+
+## 公佈欄的工具
+- [search_text](../tools/search_text.md)
+- [find_file](../tools/find_file.md)
+- [list_dir](../tools/list_dir.md)
+- [view_file](../tools/view_file.md)
+- [code_ast_reader](../tools/code_ast_reader.md)
+- [code_defs](../tools/code_defs.md)
+- [py_refs](../tools/py_refs.md)

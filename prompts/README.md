@@ -35,6 +35,8 @@ harness 送給模型的字都在這裡：改字不用改程式，存檔之後下
 | `mid/judge.md` | 中階的判斷節點：看原文挑出回答問題的行（來源、檔案、行號、一字不改的片段、標籤），從技能列的路選一條、填那條路的值（程式核對）的規則 | `mid.Worker._judge` |
 | `mid/inputs.md` | 中階的 user 訊息裡程式組的標籤（問題、挑技能時當背景的原始問題 `select_question`、領域、複合技能、參數與種類、沒過核對的參數；判斷的原文、之前挑出的行、找過的字、路與要填的值、沒過核對的片段；4-2：上一次的經過 `previous*`、參數跟之前一樣時重寫合約的原因 `reject_same`、判斷看的之前找過的字 `judge_searched_before`；第 5 步：再交時參數只從子目標抄 `redispatch_goal`、`redispatch_question`、`reject_quote_goal`） | `mid.py`、`judge.py` |
 | `sub/session.md` | 新架構的子工作階段（第 5 步）：沒有複合技能的領域、或中階沒有做完也沒有報告時，用領域的工具一步一步做的模型看到的字——system prompt（領域的說明、〈做法〉、能用的工具、其他領域（每個一行 `other_domain`：查不到、不屬於的那一項選哪個領域查得到，第 5 步 5-4）、只做自己的子目標與「不屬於這個領域」、怎麼回覆與收尾——兩階段協議那幾行照抄 AGENT.md、長期記憶）、第一則訊息（子目標、要回答的項目、前面的領域查到的、這個問題的分工、原始問題（只用來對照名稱）、上一次的經過）、每份工具結果前面的 #編號、收尾的核對沒過時交回修（`answers_fix`、`why_ref_unknown`）、不是這個領域的工具、回覆不是 JSON、沒有動作也沒有回答（`empty_turn`）、寫到長度上限被截斷（`cut`）、對話太長時清掉的舊結果、提煉的錨點 | `sub.py`、`orchestrator.domain_gate` |
+| `board/plan.md`、`look.md`、`answer.md` | 方向的實驗：公佈欄的 worker（設定 `AGENT_DOMAIN_BOARD` 的領域）——規劃（照公佈欄一次決定一步：工具、參數、為第幾項、要在輸出裡找什麼，或可以回答了；工具的用法由程式從規格的〈語法〉填）、看（一份工具輸出摘出跟問題有關的事實，附輸出的行號）、回答（照公佈欄的事實回答每一項，附根據的事實編號）的規則 | `board.Worker` |
+| `board/inputs.md` | 公佈欄的 worker 的 user 訊息裡程式組的部分：公佈欄（原始問題、子目標、項目與事實的數量、上一次的經過、核對過的事實、試過的步驟、還能走幾步）、提煉的錨點、回答時的事實清單、回答沒有通過核對的說明（`answers_fix`、`why_*`） | `board.py` |
 | `vision/extraction.md` | Web 附圖的影像提取（視覺模型的 system、純文字的退路、user 訊息） | `vision/extraction.py` |
 
 ## 範本的寫法

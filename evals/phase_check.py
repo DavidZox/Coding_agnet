@@ -40,6 +40,7 @@ OFFLINE = [("skills", "技能自我測試", ["evals/skills/selftest.py"]),
            ("mid_selftest", "中階的自我測試（挑技能、合約、排圖、第 2 級、判斷、換技能、報告、上一次的經過、Web 的拓撲圖）", ["evals/mid/selftest.py"]),
            ("orch_selftest", "高階的自我測試（領域、擋領域的工具、交給領域、問使用者的接回、第 3 級、依報告回答的核對與照項目排、帶著上一次的經過再交、"
                              "子工作階段）", ["evals/orch/selftest.py"]),
+           ("board_selftest", "公佈欄的自我測試（方向的實驗：一步一步、提煉成事實、照事實回答、上限、接上高階、決策圖）", ["evals/board/selftest.py"]),
            ("integrity", "評測的完整性（模型會讀的文字沒有評測世界的名稱）", ["evals/integrity/selftest.py"])]
 TEST_CONTAINER = "cah_analysis_test"
 LIVE_DATA = ["/workspace/experiment_logs/gen/s1/gen_s1_005", "/workspace/experiment_logs/exp_5090_overheat"]

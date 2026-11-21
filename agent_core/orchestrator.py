@@ -11,7 +11,8 @@
    每個領域各自的子目標與項目（高階決定原始問題裡每個領域要回答什麼）。程式先核對每一項（_check_entry：領域在 DOMAIN.md、這個問題
    沒有排除過、子目標不是空的、項目 1～DOMAIN_ITEMS_MAX 項、跟這一回合交過的不一樣（一樣的再交一次結果也一樣：不收斂）、同一個項目
    最多 DOMAIN_ITEM_TRIES 次（G5）；一次最多 DOMAIN_PLAN_MAX 個領域、同一個領域只出現一次），全部過了才照順序執行：有複合技能的領域
-   交給中階（mid.Worker），沒有的開子工作階段（sub.Session，第 5 步：照現在的方式一步一步做，試錯留在裡面）。後面的領域收到前面的領域
+   交給中階（mid.Worker），沒有的開子工作階段（sub.Session，第 5 步：照現在的方式一步一步做，試錯留在裡面）；設定 AGENT_DOMAIN_BOARD 列的
+   領域交給公佈欄的 worker（board.Worker，方向的實驗：照公佈欄一次決定一步、每一份輸出用問題提煉、照事實回答；結果跟子工作階段一樣一項一項）。後面的領域收到前面的領域
    查到的（_known_text，程式從報告取）；子工作階段另外收到這個問題的分工與主對話這一回合已經做過的（_division_text）：它只做自己的
    子目標，原始問題只用來對照名稱與數值。每個領域的結果各自存成 #編號，全部做完接在一起交回主模型（DOMAIN_RESULT_HEAD 開頭：程式
    整理好的，不再提煉；_plan_done）；中途要問使用者時分工停在 _domain_turn["plan"]，回答之後接著做剩下的。
@@ -35,9 +36,9 @@
 import os
 import re
 
-from . import answers, mid, prompt_files, sub
-from .config import (DOMAIN_INDEX_NAME, DOMAIN_ITEM_TRIES, DOMAIN_ITEMS_MAX, DOMAIN_KNOWN_CHARS, DOMAIN_PLAN_MAX, DOMAIN_QUOTE_LINES,
-                     DOMAIN_RESULT_HEAD, MID_JOBS_DIRNAME, SUB_JOBS_DIRNAME)
+from . import answers, board, mid, prompt_files, sub
+from .config import (BOARD_JOBS_DIRNAME, DOMAIN_BOARD, DOMAIN_INDEX_NAME, DOMAIN_ITEM_TRIES, DOMAIN_ITEMS_MAX, DOMAIN_KNOWN_CHARS, DOMAIN_PLAN_MAX,
+                     DOMAIN_QUOTE_LINES, DOMAIN_RESULT_HEAD, MID_JOBS_DIRNAME, SUB_JOBS_DIRNAME)
 
 _ENTRY = re.compile(r"^- \[([A-Za-z0-9_]+)\]\(([^)]+)\)")
 _INDEX_LINE = re.compile(r"^- \[([A-Za-z0-9_]+)\]\(tools/[^)]+\)")
@@ -76,7 +77,7 @@ def load_registry(base_path, tools_dir):
             out["problems"] += [f"{name}：{p}" for p in d["problems"]]
             continue
         out["domains"][name] = d
-        for t in d["tools"]:
+        for t in d["tools"] + d.get("board_tools", []):
             if t not in out["shared"]:
                 out["hidden"].setdefault(t, name)
         for sk in d["skills"]:
@@ -85,12 +86,20 @@ def load_registry(base_path, tools_dir):
 
 
 def topology_url(jid, kind="mid"):
-    """中階或子工作階段的工作在 Web 決策圖的網址（正式的 logs/）。"""
-    return f"/topology?src=logs&ref={SUB_JOBS_DIRNAME if kind == 'sub' else MID_JOBS_DIRNAME}/{jid}"
+    """中階、子工作階段或公佈欄的工作在 Web 決策圖的網址（正式的 logs/）。"""
+    return f"/topology?src=logs&ref={ {'sub': SUB_JOBS_DIRNAME, 'board': BOARD_JOBS_DIRNAME}.get(kind, MID_JOBS_DIRNAME) }/{jid}"
+
+
+def _quote(rows, ref):
+    """使用者看到的出處原文：報告裡寫到這個 檔案:行號 的行，先挑以它開頭的那一行（報告附的原文；子工作階段與公佈欄的報告裡回答那一行
+    也寫了出處，排在原文前面），沒有就用第一行。"""
+    label = answers.ref_label(ref)
+    rows = [r.lstrip("> ").strip() for r in rows]
+    return next((r for r in rows if r.startswith(label)), rows[0] if rows else None)
 
 
 def _status_text(kind, status):
-    return (sub.STATUS_TEXT if kind == "sub" else mid.STATUS_TEXT).get(status, status or "—")
+    return {"sub": sub.STATUS_TEXT, "board": board.STATUS_TEXT}.get(kind, mid.STATUS_TEXT).get(status, status or "—")
 
 
 class DomainMixin:
@@ -325,12 +334,22 @@ class DomainMixin:
         turn["dispatches"].append(entry)
         before = (self.current_cwd, self.container_cwd, self.target_container)
         question = self.current_task or goal
-        if reg["domains"][name]["skills"]:
+        if name in DOMAIN_BOARD and reg["domains"][name].get("board_tools"):     # 方向的實驗：公佈欄的 worker 取代中階（agent_core/board.py）
+            job = self._board_start(name, entry)
+        elif reg["domains"][name]["skills"]:
             job = mid.Worker(self, name).start(question + ("\n\n" + context["known"] if context["known"] else ""), goal, items=items,
                                                on_start=self._domain_started, previous=entry["previous_info"], attempt=entry["n"])
         else:                                              # 沒有複合技能的領域：直接開子工作階段（第 5 步）
             job = self._sub_start(name, entry)
         return job, entry, before
+
+    def _board_start(self, name, entry):
+        """交給這個領域的公佈欄 worker（方向的實驗，設定 AGENT_DOMAIN_BOARD）：跟子工作階段收到的一樣（原始問題、子目標、項目、前面的領域查到的、
+        這個問題的分工、上一次的經過），只用領域的〈公佈欄的工具〉。"""
+        d = self.domain_registry()["domains"][name]
+        return board.Worker(self, name, tools=d["board_tools"], title=d["title"], intro=d["intro"]).start(
+            self.current_task or entry["goal"], entry["goal"], entry["items"], on_start=lambda jid: self._domain_started(jid, "board"),
+            previous=entry["previous_info"], attempt=entry["n"], known=entry["context"]["known"], division=entry["context"]["division"])
 
     def _sub_start(self, name, entry, previous=None):
         """開這個領域的子工作階段（分工的一項，或中階沒做完時接著做；previous 不給就用這一次的上一次的經過）。"""
@@ -346,7 +365,7 @@ class DomainMixin:
         for x in self._domain_turn["dispatches"]:
             if not x.get("job") or not self._reported(x):
                 continue
-            if x["kind"] == "sub":
+            if x["kind"] in ("sub", "board"):
                 for a in x.get("answers") or []:
                     if 1 <= a["item"] <= len(x["items"]):
                         item = x["items"][a["item"] - 1]
@@ -419,16 +438,19 @@ class DomainMixin:
         return text
 
     def _reported(self, x):
-        """這一次交給領域有沒有報告（照報告回答）：子工作階段結束了都有（每一項都不屬於這個領域的除外）；中階是做完、死路、熔斷、跟之前一樣。"""
-        if x.get("kind") == "sub":
+        """這一次交給領域有沒有報告（照報告回答）：子工作階段與公佈欄結束了都有（每一項都不屬於這個領域的除外）；中階是做完、死路、熔斷、跟之前一樣。"""
+        if x.get("kind") in ("sub", "board"):
             return x["status"] not in (None, "running", "need_user", "out_of_domain")
         return x["status"] in REPORTED
 
     def _domain_outcome(self, entry, job, follow=True):
         name, st = entry["domain"], job["status"]
-        kind = "sub" if job.get("kind") == "sub" else "mid"
+        kind = job.get("kind") if job.get("kind") in ("sub", "board") else "mid"
         url, note = topology_url(job["id"], kind), (job.get("result") or {}).get("note") or ""
-        if kind == "sub":
+        if kind == "board":
+            entry.update(kind="board", job=job["id"], status=st, skill=board.STEP_SKILL, calls=board.calls(job), note=note,
+                         searched=board.searched(job), params={}, answers=list(job.get("answers") or []))
+        elif kind == "sub":
             entry.update(kind="sub", job=job["id"], status=st, skill=sub.STEP_SKILL, calls=sub.calls(job), note=note,
                          searched=sub.searched(job), params={}, answers=list(job.get("answers") or []))
         else:
@@ -460,7 +482,7 @@ class DomainMixin:
         if st == "out_of_domain":                     # 中階挑技能時、或子工作階段每一項都說不屬於這個領域（5-3）
             self._domain_turn["excluded"][name] = note or "—"
             return _d("out_of_domain", domain=name, reason=note or "—", url=url)
-        if not follow or kind == "sub":               # /clear 取消：照實記下，不再接著做（子工作階段結束了都有報告，不會到這裡）
+        if not follow or kind in ("sub", "board"):    # /clear 取消：照實記下，不再接著做（子工作階段、公佈欄結束了都有報告，不會到這裡）
             return _d("cancelled", domain=name, url=url)
         # 中階沒有做完、也沒有報告（沒有適合的做法、失敗、使用者取消）：接著開子工作階段，用這個領域的工具一步一步做（第 5 步 G3，
         # 取代 4-1 的放行）。中階這一次也算進上一次的經過（停下來的原因交給子工作階段）。
@@ -664,7 +686,9 @@ class DomainMixin:
                 quotes = []
                 for ref in a["refs"]:
                     kind, rows, _, _ = self._cited(ref)
-                    quotes += [r for r in rows[:1] if kind == "line" and r not in quotes]
+                    q = _quote(rows, ref) if kind == "line" else None
+                    if q and q not in quotes:
+                        quotes.append(q)
                 out += [f"   > {q}" for q in quotes[:DOMAIN_QUOTE_LINES]]
             if k in problems:
                 out.append(f"   ⚠️ 沒有通過核對：{'；'.join(problems[k])}（報告：{ids}）")

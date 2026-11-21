@@ -1,6 +1,6 @@
 # 評測（evals）
 
-評測依對象分成十一組，外加每個階段結束時跑的總執行器（`phase_check.py`，見最後一節）。**不用模型**的自我測試（假的 `ollama.chat` 照劇本回答，或直接執行腳本，幾秒到一分多鐘）改程式之後先跑；**真模型／實機**的評測要 Ollama、容器或沙盒。
+評測依對象分成十二組，外加每個階段結束時跑的總執行器（`phase_check.py`，見最後一節）。**不用模型**的自我測試（假的 `ollama.chat` 照劇本回答，或直接執行腳本，幾秒到一分多鐘）改程式之後先跑；**真模型／實機**的評測要 Ollama、容器或沙盒。
 每一次都在臨時目錄複製一份專案來跑，不碰正式的 `logs/` 與 `prompts/Memory.md`（數據分析回歸例外：job 照常寫進正式的 `logs/analysis_jobs/`，評分從那裡讀）；結果寫到 `evals/results/`（已在 `.gitignore`）。
 
 | 組 | 不用模型 | 真模型／實機 | 測什麼 |
@@ -12,9 +12,10 @@
 | `ops/` 多步驟維運 | `selftest.py`（file_ops、維運技能的確認關卡、沙盒 daemon 怎麼起） | `run.py`（情境在 `dataset/`，在 Docker-in-Docker 沙盒裡真的執行；`worker.py` 跑一個情境） | 主對話用技能做完維運任務（2026-11-18 起沒有任務引擎，多步驟由主對話自己做）；狀態、回覆、禁止動作由程式計分 |
 | `integrity/` 評測的完整性 | `selftest.py` | — | 模型會讀的文字（prompt、技能說明、程式回給模型的字）沒有評測世界的名稱（從評測的來源自動取）；`prompts/` 的範本跟程式對得上；沒人用的程式 |
 | `extract/` 提煉 | —（不用模型的在 `chat/extract_selftest.py`） | `run.py`（情境在 `cases.py`：程式產生已知答案的長輸出；`worker.py` 跑一個情境） | 工具回傳的提煉與 result_recall：找到幾個、多列幾個、數量的說法、切幾段讀幾段、程式拿掉幾條 |
-| `repo/` 真實專案（新架構的評測） | `selftest.py`（核對、每一題答得出來、答案跟快照一致、碰不到真的容器與主機的家目錄） | `run.py`（題目在 `questions.py`，答案 `answers.json` 由程式從固定版本的快照算；借用 `ops/worker.py` 跑一題） | 在真實專案（amr_base_sw、amr_base_hw、fih_rmf_system）裡找檔案與計數、讀長文件、Python 的定義與呼叫、C++、跨檔案的調查；最後的回覆由程式核對 |
+| `repo/` 真實專案（新架構的評測） | `selftest.py`（核對、每一題答得出來、答案跟快照一致、碰不到真的容器與主機的家目錄、分層） | `run.py`（題目在 `questions.py`，答案 `answers.json` 由程式從固定版本的快照算；借用 `ops/worker.py` 跑一題）；`layers.py`（沒過的分到第一個出錯的層） | 在真實專案（amr_base_sw、amr_base_hw、fih_rmf_system）裡找檔案與計數、讀長文件、Python 的定義與呼叫、C++、跨檔案的調查；最後的回覆由程式核對 |
 | `edg/` 低階執行器（新架構 D10 第 2 步） | `selftest.py`（寫好的圖、假的修正模型） | `run.py`（題目在 `cases.py`：一個工具節點故意錯一個參數，工作目錄是真實專案評測的快照） | 照決策圖執行、照收據守門、從收據帶入參數、重排；第 1 級修正：修得好的有沒有修好（收據的欄位與範圍由程式核對）、修不好的有沒有往上交 |
 | `mid/` 中階（新架構 D10 第 3 步） | `selftest.py`（假的模型、真的工具與低階執行器） | `run.py`（題目沿用真實專案評測的 30 題，`cases.py` 標每一題該用的複合技能與參數） | 每一層分開量：挑技能（模型挑的、換技能之後的）、合約（參數與原文的核對）、判斷（幾次、走的路、挑的行過不過核對）、最後的報告（`repo/checks.py`）；第 2 級（回退、換技能、問使用者、熔斷） |
+| `board/` 公佈欄的 worker（方向的實驗） | `selftest.py`（假的規劃、提煉、回答與主模型；真的低階、提煉的核對與工具） | —（真模型看 `repo/run.py`，設定 `AGENT_DOMAIN_BOARD=repo_analysis` 跟舊的比） | 照公佈欄一次決定一步、低階執行（決策圖一步長一個節點）、每一份輸出提煉成事實（檔案:行號、原文；對不上的拿掉；程式的數量另記）、照事實回答與核對、擋下重複、步數用完、模型沒有回覆、接上高階、決策圖 |
 | `orch/` 高階（新架構 D10 第 4 步） | `selftest.py`（假的主模型與中階的模型、真的中階、低階與工具，直接驅動 Web 的回合、Web 伺服器與 CLI） | —（真模型看 `repo/run.py`：主對話接上中階之後的結果；`chat/`、`ops/` 看有沒有退步） | 領域的清單（`skills_system/DOMAIN.md`）與 system prompt 的「領域」一節、擋領域的工具（列目錄、找檔案是共用的）、中階沒做完時接著開子工作階段、沒有複合技能的領域直接開子工作階段（確認關卡、上限、收尾的核對、回覆的協議、決策圖）、find_lines 的報告與出處、依報告回答的 answers 與核對、照項目排好的回答、帶著上一次的經過再交、交給領域的核對（沒有的領域、子目標、項目數、一樣的再交一次）、報告存成 #編號 交回主模型、決策圖的連結、問使用者的接回（Web、HTTP、CLI、取消、/clear）、第 3 級的排除、依報告回答的出處、評測的 worker 怎麼記 |
 
 改程式之後先跑不用模型的自我測試：
@@ -24,7 +25,7 @@ PY=~/aiagent_venv_env/.venv/bin/python     # 有 ollama 套件的 Python
 $PY evals/phase_check.py                   # 下面這幾組一次跑完、跟基準比（約 2 分鐘，見最後一節）
 $PY evals/chat/selftest.py && $PY evals/chat/extract_selftest.py && $PY evals/analysis/selftest.py && $PY evals/ops/selftest.py \
   && $PY evals/repo/selftest.py && $PY evals/edg/selftest.py && $PY evals/mid/selftest.py && $PY evals/orch/selftest.py \
-  && $PY evals/integrity/selftest.py
+  && $PY evals/board/selftest.py && $PY evals/integrity/selftest.py
 $PY evals/skills/selftest.py               # 技能腳本（需要容器的情境沒有沙盒就略過）；只跑某幾組：selftest.py fs containers rmf data
 ```
 
@@ -191,11 +192,13 @@ python3 evals/ops/run.py --only hs_lost_fin_fix --tag try1      # 只跑一個�
 ## 真實專案（`repo/`，新架構的評測）
 
 ```bash
-python3 evals/repo/selftest.py                              # 離線（幾秒）：核對、每一題答得出來、真實回覆的判斷、answers.json 跟快照一致、碰不到真的容器與主機的家目錄、階段驗證的比對
+python3 evals/repo/selftest.py                              # 離線（幾秒）：核對、每一題答得出來、真實回覆的判斷、answers.json 跟快照一致、碰不到真的容器與主機的家目錄、階段驗證的比對、分層
 python3 evals/repo/run.py --model gemma4:26b                # 真模型：主要的 25 題
 python3 evals/repo/run.py --model gemma4:e4b --set all      # 加上保留組（30 題）
 python3 evals/repo/run.py --only py_fleet_msg --tag try1    # 只跑某幾題
 python3 evals/repo/run.py --rescore evals/results/<結果目錄>   # 不跑模型：核對改了之後，用存下來的回覆重新計分
+python3 evals/repo/layers.py evals/results/<結果目錄>…       # 不跑模型：沒過的每一題分到第一個出錯的層（找、看、回答…；步驟 0 的方法），附交給領域的子目標
+AGENT_DOMAIN_BOARD=repo_analysis python3 evals/repo/run.py --model gemma4:26b --set all --tag board1   # 方向的實驗：repo_analysis 交給公佈欄的 worker（跟舊的比）
 python3 evals/repo/snapshot.py check                        # 快照在不在、內容對不對（build＝從 git 重建）
 python3 evals/repo/questions.py --check                     # answers.json 跟快照重算的一樣嗎（--write＝重寫）
 ```
@@ -221,6 +224,8 @@ python3 evals/repo/questions.py --check                     # answers.json 跟�
   主要 25 題 26b 15、e4b 7，保留組 26b 2、e4b 1（設計筆記 2.27、討論紀錄第 7 節）。
 - 結果在 `evals/results/<時間>_repo_<模型>[_holdout|_all][_<tag>]/`：`runs.jsonl`（每一題最後的回覆、每則事實對不對、工具呼叫；依報告回答的每一次
   answers 與沒過核對的項目 `answers`、交回修了幾次 `claim_nudges`）、`report.md`、`logs/<題目>/`（中階與低階的工作、工具的完整原文）。
+- **分層**（`layers.py`，設計筆記 2.44、2.45）：沒過的每一項在每一層有沒有出現——工具的原文 → 事實（提煉、公佈欄）→ 下一層的回答（公佈欄、子工作階段、
+  中階的報告）→ 最後的回覆，推第一個沒出現的層（寬鬆的比對）；分工程式看不出來，列出交給領域的子目標讓人看。推出來的只是起點，要打開紀錄確認。
 
 ## 低階執行器（`edg/`，新架構 D10 第 2 步）
 
@@ -316,6 +321,25 @@ python3 evals/orch/selftest.py                              # 離線（幾秒）
   看得到領域裡用的工具。
 - 主對話與提煉的自我測試在臨時副本裡拿掉 `DOMAIN.md`：它們測主迴圈本身（直接執行 ls、cat），分領域在這一組測。
 
+## 公佈欄的 worker（`board/`，方向的實驗）
+
+```bash
+python3 evals/board/selftest.py                              # 離線（幾秒）：假的規劃、提煉、回答與主模型；真的低階、提煉的核對與工具
+AGENT_DOMAIN_BOARD=repo_analysis python3 evals/repo/run.py --model gemma4:26b --set all --tag board1   # 真模型：真實專案 30 題交給公佈欄
+```
+
+- **為什麼**：步驟 0（設計筆記 2.44）看到現在剩下的錯大多在「看」的方法，不在交接；第一輪只把 repo_analysis 的中階換成公佈欄的 worker
+  （`agent_core/board.py`，討論紀錄第 5 節〈步驟 0 的結果與接下來的做法〉），用設定 `AGENT_DOMAIN_BOARD`（逗號分開的領域）切換新舊，同一份題目比，
+  實驗結束留下比較好的那一個。新的兩個工具（`code_defs`、`py_refs`）只列在領域 SKILLS.md 的〈公佈欄的工具〉：舊的做法（中階、子工作階段）看不到，
+  新舊比較時舊的不變。
+- **離線**（`selftest.py`，7 項）：一步一步（規劃 → 低階執行、決策圖一步長一個節點 → 提煉成事實：輸出的行號換成 檔案:行號、附那一行的原文、對不上原文的拿掉、
+  程式算好的數量另記一則 → 照事實回答 → 報告）與給規劃看的公佈欄；回答的核對（名稱與數值要在根據的事實裡、答到的要寫事實、查不到要寫原因，沒過交回修一次，
+  還是沒過的標出來）；試過的步驟（[ERROR]、跟之前一樣的工具與參數擋下、不排進圖，連續兩次＝卡住）；上限（步數用完、規劃或回答的模型沒有回覆、
+  每一項都不屬於這個領域）；輸出的行號 → 檔案:行號（search_text、view_file、code_defs）與規劃看到的工具用法；接上高階（分工交給公佈欄、報告、
+  依報告回答與使用者看到的出處原文、交給後面的領域、主對話不能直接用〈公佈欄的工具〉、評測的紀錄、決策圖的清單與每一步）；預設不開。
+- **真模型**：沒有自己的一組；看真實專案評測（`repo/run.py` 加 `AGENT_DOMAIN_BOARD=repo_analysis`），跟同一份題目的舊結果比。評測的紀錄多
+  `board_status`、`board_job`、`board_steps`，公佈欄的工作在結果目錄的 `logs/<題目>/board_jobs/`（決策圖的頁面看得到）。
+
 ## 評測的完整性（`integrity/`）
 
 ```bash
@@ -381,4 +405,4 @@ python3 evals/phase_check.py --save-baseline <結果目錄…> --label "第 N �
 - 近期加進來的案例：第 2 階段——提煉的真模型評測（〈提煉〉一節）、交握 status 連續幾次的判斷（`skills/rmf_test.py` 的 `t_sandbox_status_stable`）、
   數據技能的「不是錄製數據」判斷不擋任何一份真的錄製（`skills/data_test.py` 的 `t_not_recording_real_data`）、維運評測的 `logs/<情境>/`
   （每一步的紀錄）；第 4 階段——評測的完整性（`integrity`）、
-  數據分析的存檔只留最近幾次（`analysis_selftest`）；第 4 階段之後——`--until-done` 看得出卡住就提早結束、`--until-confirmed` 等授權有結果（`skills/rmf_test.py` 的 `t_until_done_stuck`、`t_until_confirmed`、`t_until_done_stuck_rules`）；2026-11-18——任務引擎與 Plan 模式拿掉（`task_selftest` 跟著拿掉），CLI 主迴圈的確認關卡改在 `chat_selftest` 測（`t_cli_guard`），範本的檢查改成每個 import 了 `prompt_files` 的模組各自核對（`integrity`，取代「至少 200 處」）；同一天——真實專案評測的自我測試（`repo_selftest`），完整性檢查也收它答案裡的名稱；收據（D10 第 1 步）——`skills/receipt_test.py` 8 項、`chat_selftest` 的 `t_receipts`；低階執行器（D10 第 2 步）——`edg_selftest` 12 項、`skills/receipt_test.py` 的 `t_parse_args_contract`（寫收據的腳本都有純函式 `parse_args`、規格的 `narrow`），`--model` 加上第 1 級修正的真模型評測（`edg`）。中階（D10 第 3 步的 3a）——`mid_selftest` 16 項、`edg_selftest` 的重排（13 項）、`skills/fs_test.py` 與 `receipt_test.py` 的 code_ast_reader `--refs`（技能 109 → 111），`--model` 加上中階的真模型評測（`mid`）；完整性檢查也掃各領域的 `skills_system/<領域>/*.md`、收中階評測標的參數。第 3 步的 3b——`mid_selftest` 26 項（判斷節點、換技能、拓撲圖的判斷）、`skills/fs_test.py` 與 `receipt_test.py` 的 view_file `--around`、search_text `--rank`（技能 111 → 113）、`edg_selftest` 的重排多核對重跑的收據不蓋掉前一版。第 4 步的 4-1——新的 `orch_selftest` 12 項。4-1 之後的三點——`mid_selftest` 27 項（`t_find_lines`）、`orch_selftest` 13 項（列目錄、找檔案是共用的工具；`t_find_lines_cite`）。第 4 步的 4-2——`orch_selftest` 19 項（answers 的 schema、核對、修過還是沒過、上一次的經過、repeated、同一個項目的次數）、`mid_selftest` 28 項（`t_previous`）、`repo_selftest` 10 項（`t_phase_baseline`），`--model` 加上真實專案評測（`repo`，每個模型 3 次）。第 5 步的 5-1——`orch_selftest` 22 項（子工作階段：`t_no_skill_sub`、`t_sub_domain_guard`、`t_sub_limits`、`t_sub_topology`）、`mid_selftest` 29 項（`t_redispatch_goal`：再交時合約只從子目標抄）。5-1b——`orch_selftest` 23 項（`t_sub_protocol`：子工作階段的回覆協議）、`chat_selftest` 19 項（`t_reply_cut`：回覆的字串上限、`{"command": "null"}`、寫到上限被截斷的重問）。待辦 4j ①（2026-11-20）——`extract_selftest` 13 項（`t_name_whole`：名稱要整個對上，av2_test 不算 nav2_test 裡有；回答的核對附相近的寫法）。
+  數據分析的存檔只留最近幾次（`analysis_selftest`）；第 4 階段之後——`--until-done` 看得出卡住就提早結束、`--until-confirmed` 等授權有結果（`skills/rmf_test.py` 的 `t_until_done_stuck`、`t_until_confirmed`、`t_until_done_stuck_rules`）；2026-11-18——任務引擎與 Plan 模式拿掉（`task_selftest` 跟著拿掉），CLI 主迴圈的確認關卡改在 `chat_selftest` 測（`t_cli_guard`），範本的檢查改成每個 import 了 `prompt_files` 的模組各自核對（`integrity`，取代「至少 200 處」）；同一天——真實專案評測的自我測試（`repo_selftest`），完整性檢查也收它答案裡的名稱；收據（D10 第 1 步）——`skills/receipt_test.py` 8 項、`chat_selftest` 的 `t_receipts`；低階執行器（D10 第 2 步）——`edg_selftest` 12 項、`skills/receipt_test.py` 的 `t_parse_args_contract`（寫收據的腳本都有純函式 `parse_args`、規格的 `narrow`），`--model` 加上第 1 級修正的真模型評測（`edg`）。中階（D10 第 3 步的 3a）——`mid_selftest` 16 項、`edg_selftest` 的重排（13 項）、`skills/fs_test.py` 與 `receipt_test.py` 的 code_ast_reader `--refs`（技能 109 → 111），`--model` 加上中階的真模型評測（`mid`）；完整性檢查也掃各領域的 `skills_system/<領域>/*.md`、收中階評測標的參數。第 3 步的 3b——`mid_selftest` 26 項（判斷節點、換技能、拓撲圖的判斷）、`skills/fs_test.py` 與 `receipt_test.py` 的 view_file `--around`、search_text `--rank`（技能 111 → 113）、`edg_selftest` 的重排多核對重跑的收據不蓋掉前一版。第 4 步的 4-1——新的 `orch_selftest` 12 項。4-1 之後的三點——`mid_selftest` 27 項（`t_find_lines`）、`orch_selftest` 13 項（列目錄、找檔案是共用的工具；`t_find_lines_cite`）。第 4 步的 4-2——`orch_selftest` 19 項（answers 的 schema、核對、修過還是沒過、上一次的經過、repeated、同一個項目的次數）、`mid_selftest` 28 項（`t_previous`）、`repo_selftest` 10 項（`t_phase_baseline`），`--model` 加上真實專案評測（`repo`，每個模型 3 次）。第 5 步的 5-1——`orch_selftest` 22 項（子工作階段：`t_no_skill_sub`、`t_sub_domain_guard`、`t_sub_limits`、`t_sub_topology`）、`mid_selftest` 29 項（`t_redispatch_goal`：再交時合約只從子目標抄）。5-1b——`orch_selftest` 23 項（`t_sub_protocol`：子工作階段的回覆協議）、`chat_selftest` 19 項（`t_reply_cut`：回覆的字串上限、`{"command": "null"}`、寫到上限被截斷的重問）。待辦 4j ①（2026-11-20）——`extract_selftest` 13 項（`t_name_whole`：名稱要整個對上，av2_test 不算 nav2_test 裡有；回答的核對附相近的寫法）。方向的實驗的原型（2026-11-21）——新的 `board_selftest` 9 項、`skills/fs_test.py` 與 `receipt_test.py` 的 code_defs、py_refs（技能 113 → 117）、`repo_selftest` 11 項（`t_layers`：沒過的分層）。

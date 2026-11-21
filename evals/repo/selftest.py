@@ -179,6 +179,32 @@ def t_rescore():
         assert report.startswith("# 真實專案評測：m") and "重新計分" in report and "✅" in report, report
 
 
+def t_layers():
+    """沒過的每一項分到第一個沒出現的層（原文 → 事實 → 下一層的回答 → 最後的回覆），一題取最前面的；過了的不列；交給領域的子目標列出來。"""
+    import layers
+    q = {"id": "lx", "items": [{"label": l, "all": [[w]]} for l, w in (("A", "alpha"), ("B", "beta"), ("C", "gamma"), ("D", "delta"), ("E", "epsil"))]}
+    with tempfile.TemporaryDirectory(prefix="repo_layers_") as d:
+        log = os.path.join(d, "logs", "lx")
+        os.makedirs(os.path.join(log, "tool_results"))
+        os.makedirs(os.path.join(log, "board_jobs", "j1"))
+        for name, text in (("001_grep.md", "---\nid: 1\n---\nalpha beta delta epsil"), ("002_domain_repo_analysis.md", "---\nid: 2\n---\nalpha beta gamma"),
+                           ("index.md", "gamma")):
+            with open(os.path.join(log, "tool_results", name), "w", encoding="utf-8") as f:
+                f.write(text)
+        with open(os.path.join(log, "board_jobs", "j1", "job.json"), "w", encoding="utf-8") as f:
+            json.dump({"facts": [{"text": "beta", "refs": ["#1"], "rows": ["x.py:3：delta"]}],
+                       "answers": [{"item": 1, "text": "delta", "refs": ["x.py:3"]}, {"item": 2, "text": "epsil"}]}, f)
+        fail = {"id": "lx", "set": "main", "model": "m", "reply": "epsil", "tool_calls": [{"domain": "repo_analysis", "goal": "g", "items": ["i"]}, {"skill": "x"}],
+                "score": {"passed": False, "items": [{"ok": False}] * 5}}
+        with open(os.path.join(d, "runs.jsonl"), "w", encoding="utf-8") as f:
+            f.write(json.dumps(fail) + "\n" + json.dumps(dict(fail, id="ok", score={"passed": True})) + "\n")
+        out = layers.trace(d, by_id={"lx": q})
+    assert len(out) == 1, out
+    got = {x["label"]: x["guess"] for x in out[0]["items"]}
+    assert got == {"A": "看", "B": "回答・下一層", "C": "找", "D": "回答・主對話", "E": "評測或算"}, got
+    assert out[0]["guess"] == "找" and out[0]["dispatch"] == [{"domain": "repo_analysis", "goal": "g", "items": ["i"]}], out[0]
+
+
 def t_final_reply():
     out = {"turns": [{"steps": [{"reply": "我先搜尋", "action": "EXECUTE: scripts/grep_cmd.py x"},
                                 {"reply": "答案在這裡", "action": None}]}], "replies": ["我先搜尋", "答案在這裡"]}
@@ -228,6 +254,7 @@ def main():
              ("answers.json 跟快照算出來的一樣；快照唯讀、不解開指到外面的連結", t_answers_match_snapshot),
              ("跑評測時碰不到真的容器與調度系統、主機的家目錄；確認關卡一律拒絕", t_runner_safety),
              ("核對改了之後用存下來的回覆重新計分（不跑模型），寫回 runs.jsonl 與報表", t_rescore),
+             ("沒過的分層（步驟 0 的方法）：每一項到第一個沒出現的層，一題取最前面的，列出交給領域的子目標", t_layers),
              ("最後的回覆：最後一步沒有動作的那則", t_final_reply),
              ("階段驗證：好幾次的結果合成一份，每一題與每一次的主要組通過數跟基準比", t_phase_baseline)]
     passed = skipped = 0

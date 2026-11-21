@@ -1,4 +1,4 @@
-"""本機檔案與指令類技能的離線測試：list_dir、search_text、find_file、code_ast_reader、change_dir、view_file、host_runcmd、csv_query、
+"""本機檔案與指令類技能的離線測試：list_dir、search_text、find_file、code_ast_reader、code_defs、py_refs、change_dir、view_file、host_runcmd、csv_query、
 file_ops、modify_memory、stt_engine、image_inspect（規範見 doc/技能撰寫規範.md）。
 
 每個情境在新的臨時目錄跑（cwd＝臨時目錄）；會寫檔的技能用 HARNESS_LOGS_DIR／HARNESS_MEMORY_FILE 指到臨時目錄，不碰正式的 logs/ 與
@@ -433,6 +433,99 @@ def t_ast_errors():
 
 
 # ================================================================ change_dir（cd_cmd.py）
+# ================================================================ code_defs（程式列舉）、py_refs（範圍裡名稱的每一處）
+CPP_SRC = """// class Fake { 註解裡的不算 void fake() {
+#include "engine.hpp"
+namespace demo {
+class Engine : public Base<int> {
+ public:
+  Engine() : rate_(10), name_{"x"} { start(); }
+  void run() override { if (ok()) { go(); } }
+  int value() const;
+ private:
+  int rate_;
+};
+enum class Mode { A, B };
+struct Point { double x; double y; };
+int Engine::value() const
+{
+  return rate_;
+}
+template <typename T>
+void Holder<T>::put(const T& v) {
+  items_.push_back(v);
+}
+static int helper(int a,
+                  int b) {
+  auto f = [](int x) { return x; };
+  return f(a) + b;
+}
+void declared_only(int);
+}  // namespace demo
+"""
+TEST_SRC = "def test_one():\n    pass\n\n\nclass TestBox:\n    def test_two(self):\n        pass\n\n    def helper(self):\n        pass\n"
+
+
+def t_code_defs():
+    """code_defs：每份檔案的行數與數量由腳本算；Python 照 AST（含方法、巢狀）、C++ 照定義的寫法（建構子的初始化、類別外的方法、樣板、
+    多行參數；註解、enum class、只有宣告、lambda 不算）；--include／--name／--kind 篩選；--files 每份一行、--sort lines 照行數；預設略過 build"""
+    d = _tmp()
+    _w(d, "src/engine.cpp", CPP_SRC)
+    _w(d, "src/tests/test_box.py", TEST_SRC)
+    _w(d, "src/notes.md", "# 標題\n\n一行\n")
+    _w(d, "src/build/skip.py", "def hidden():\n    pass\n")
+    _w(d, "src/blob.bin", b"\x00\x01\x02")
+    out = run("code_defs_cmd.py", "src", d=d)
+    assert first_line(out) == "[PASS] 範圍 src：3 份檔案、共 41 行；定義：類別 3、函式／方法 8", first_line(out)
+    assert "## src/engine.cpp（28 行；類別 2、函式 5）" in out and "- class Engine（行 4-11）" in out and "- class Point（行 13）" in out, out
+    for want in ("- def Engine::Engine（行 6）", "- def Engine::run（行 7）", "- def Engine::value（行 14-17）", "- def Holder::put（行 19-21）",
+                 "- def helper（行 22-26）"):
+        assert want in out, (want, out)
+    assert "Fake" not in out and "Mode" not in out and "declared_only" not in out and "hidden" not in out, out
+    assert "- def TestBox.test_two（行 6-7）" in out and "## src/notes.md（3 行）" in out and "1 份二進位檔" in out, out
+    out = run("code_defs_cmd.py", ".", "--include", "test_*.py", "--name", "^test", "--kind", "def", d=d)
+    assert first_line(out).startswith("[PASS] 範圍 .：1 份檔案、共 10 行；定義：類別 0、函式／方法 2（檔名 test_*.py、名稱符合「^test」、只算函式與方法）")
+    assert "- def test_one（行 1-2）" in out and "helper" not in out, out
+    out = run("code_defs_cmd.py", "src", "--files", "--sort", "lines", d=d)
+    rows = [ln for ln in out.split("\n") if ln.startswith("- ")]
+    assert rows == ["- src/engine.cpp：28 行；類別 2、函式 5", "- src/tests/test_box.py：10 行；類別 1、函式 3", "- src/notes.md：3 行"], rows
+    out = run("code_defs_cmd.py", "src", "--include", "*.rs", d=d)
+    assert out.startswith("[PASS] 範圍 src 裡沒有符合的檔案（0 份；檔名 *.rs）"), out
+    assert_error(run("code_defs_cmd.py", "nope", d=d), "找不到")
+    assert_error(run("code_defs_cmd.py", "src", "--kind", "method", d=d), "--kind 要是 class")
+    assert_error(run("code_defs_cmd.py", "src", "--name", "(", d=d), "正規表示式")
+    assert_error(run("code_defs_cmd.py", "src", "--bogus", d=d), "不支援的選項")
+    assert_error(run("code_defs_cmd.py", "/", d=d), "不列 /")
+
+
+def t_py_refs():
+    """py_refs：整個範圍一次分出每一處（AST：定義、呼叫、import…；註解與字串不算、同一行兩個呼叫算兩處），各檔案的數量由腳本算；
+    --exclude-dir、--kind；Python 沒有、C++ 檔有時寫出那幾份；名稱不合法、沒給名稱＝[ERROR]"""
+    d = _tmp()
+    _w(d, "pkg/m.py", REFS_SRC)
+    _w(d, "pkg/use.py", "from pkg.m import helper\n\n\ndef go():\n    return helper(1)  # helper\n")
+    _w(d, "pkg/tests/t.py", "from pkg.m import helper\nhelper(2)\n")
+    _w(d, "pkg/engine.cpp", CPP_SRC)
+    out = run("py_refs_cmd.py", "helper", "pkg", d=d)
+    assert first_line(out) == "[PASS] 「helper」在 pkg 的 Python 程式裡出現 16 處、3 份檔案（AST）：定義 2、呼叫 5、import 4、指定 3、其他用到 2", first_line(out)
+    assert "## pkg/m.py（12 處：定義 2、呼叫 3、import 2、指定 3、其他用到 2）" in out and "## pkg/use.py（2 處：呼叫 1、import 1）" in out, out
+    assert "- 呼叫 行 5（在 go）：return helper(1) # helper" in out and out.count("- 呼叫 行 17（在 Box.run）") == 2, out
+    assert "- 定義 行 6-7（模組層）：def helper(msg, helper=None):" in out, out
+    out = run("py_refs_cmd.py", "helper", "pkg", "--exclude-dir", "tests", "--kind", "call", d=d)
+    assert first_line(out).startswith("[PASS] 「helper」在 pkg 的 Python 程式裡出現 4 處、2 份檔案（AST）（只算呼叫）"), first_line(out)
+    out = run("py_refs_cmd.py", "helper", "pkg", "--exclude-dir", "tests", "--kind", "def|call", d=d)
+    assert first_line(out).startswith("[PASS] 「helper」在 pkg 的 Python 程式裡出現 6 處、2 份檔案（AST）（只算定義、呼叫）"), first_line(out)
+    assert_error(run("py_refs_cmd.py", "helper", "pkg", "--kind", "def|calls", d=d), "--kind 要是", "def|call")
+    out = run("py_refs_cmd.py", "rate_", "pkg", d=d)
+    assert out.startswith("[PASS] 範圍 pkg 的 Python 程式裡沒有「rate_」") and "C／C++ 檔有這個名稱（照字面）：pkg/engine.cpp" in out, out
+    out = run("py_refs_cmd.py", "nothing_here", "pkg", d=d)
+    assert "沒有「nothing_here」" in out and "search_text" in out, out
+    assert_error(run("py_refs_cmd.py", "a.helper", "pkg", d=d), "只寫最後一段")
+    assert_error(run("py_refs_cmd.py", "not a name", "pkg", d=d), "Python 的名稱")
+    assert_error(run("py_refs_cmd.py", d=d), "沒有給要找的名稱")
+    assert_error(run("py_refs_cmd.py", "helper", "nope", d=d), "找不到")
+
+
 def t_cd_pass_marker_last():
     """change_dir：[PASS] 與最後一行的 [CWD_CHANGED]；~ 展開"""
     d = _tmp()
