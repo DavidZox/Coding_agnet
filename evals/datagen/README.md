@@ -24,7 +24,7 @@ docker stop cah_analysis_test
   （重跑出來的情境跟原本不同的那一份不動——代表產生器的程式已經不是當時那一版）。
 - 先跑 `check_facts.py`：快、結果固定；程式的事實對了，再跑回歸評分（另外評重點的用詞、時間有根據、重點涵蓋）。它用的是分析程式本身
   （`mcap_analyzer --facts`、`rosout_parser`、`analysis_job.build_facts`），比對時間線該有的事件與 Topic 的類別。
-- `python3 evals/phase_check.py --live` 每次都跑 s1／s2／s3 的回歸（各 1 次），跟 `evals/baselines/analysis.json` 比。
+- `python3 evals/phase_check.py --tools` 每次都跑 s1／s2／s3 的回歸（各 1 次），跟 `evals/baselines/analysis.json` 比。
 - 一份 30～178 秒；60 份約 0.8 GB（`test_data/` 不進 git）。
 
 ## 評分標準怎麼來的
@@ -94,15 +94,14 @@ ROS 2 Jazzy（`amr_base:latest`），`test_data/recordings` 掛載成 `/workspac
 | `gen/s2` | 2 | 60 | 加了 fih_amr_bridge（含 Isaac Sim 的設定）之後的一般組合。`check_facts.py`：60/60 份全對、時間線 369/369、類別（含沒有事件）221/221 |
 | `gen/s3` | 3 | 20 | `--require bridge`：每一份都有 bridge（中途啟動、.env 的 WARN、重複的 bridge、停止、Isaac Sim 中途開或關；4 份只有 Log）。`check_facts.py`：20/20、78/78、59/59 |
 
-表裡 `check_facts.py` 的數字是產生時（2026-10-22）跑的。回歸評分（數據分析全部由程式做，不呼叫模型）：2026-10-23 第 3 階段的 phase_check（`evals/results/analysis_phase_20261023_230925_gen_s*/`）
-s1 60 份、s2 60 份、s3 20 份的時間線、類別、用詞、時間有根據、重點涵蓋、沒有事件全部通過，跟基準（第 2 階段）一樣。
-以前模型寫說明與重點時各輪的比較見 `doc/設計筆記與已知限制.md` 2.15〈六～八〉。
+表裡 `check_facts.py` 的數字是產生時跑的。回歸評分（數據分析全部由程式做，不呼叫模型）：現在的基準（`evals/baselines/analysis.json`，第 5 步 6958dac）
+s1 60 份、s2 60 份、s3 20 份的時間線、類別、用詞、時間有根據、重點涵蓋、沒有事件全部通過。
 
 ## 限制
 
 - **一個 domain**：真的系統裡 RMF 的 registry／distribute 在對外 domain、機器人的節點在本地 domain，錄在哪一邊看得到的不同；
   模擬把它們放在同一份錄製（bridge 的情境照本地 domain 的樣子）。
 - **內容是簡化的**：感測器的數值是合成的（雜訊、碰撞的尖峰），影像是全黑的小圖；分析程式只量長度與元素平均，不影響事實。
-- **JSON 字串的 Topic**（/robot_state、/amr_diagnostics…）：分析程式 2026-10-23 起把 JSON 的欄位展開成 Key 量（設計筆記 2.16），
+- **JSON 字串的 Topic**（/robot_state、/amr_diagnostics…）：分析程式把 JSON 的欄位展開成 Key 量（設計筆記 2.16），
   模擬沒有登記欄位的變化，評分標準不列這些事件（只評有登記的）。
 - 評分標準只列「照分析程式的定義看得到」的事件；分析程式的定義改了（例如中斷的門檻），用 `refresh_truth.py` 重算評分標準（數據不變）。

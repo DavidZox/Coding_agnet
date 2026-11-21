@@ -1,4 +1,4 @@
-"""判斷節點的原文與核對（新架構第 3 步 3b；〈新架構討論紀錄〉第 5 節 3b 的 B）。流程在 agent_core/mid.py（Worker._judgment）。
+"""判斷節點的原文與核對（新架構第 3 步 3b；〈新架構討論紀錄〉第 4 節〈第 3 步 3b〉的 B）。流程在 agent_core/mid.py（Worker._judgment）。
 
 - 原文（sources）：判斷節點依賴的節點，每個實例最後一次嘗試是一份（#編號）。行由程式照收據從檔案讀：search_text 命中的行與前後行
   （收據的 options.context）、view_file 看的那一段；每行有檔案、行號、內容、是不是命中的行（view_file 是 --around 的那一行）、

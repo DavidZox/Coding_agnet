@@ -20,9 +20,9 @@
   "total": 8
  },
  "edg_selftest": {
-  "label": "第 5 步（6958dac）（2026-11-20）",
-  "passed": 13,
-  "total": 13
+  "label": "原型之後的第一批（73b0756）（2026-11-21）",
+  "passed": 14,
+  "total": 14
  },
  "extract_selftest": {
   "label": "待辦 4j ①（2026-11-20）",
@@ -50,14 +50,14 @@
   "total": 35
  },
  "repo_selftest": {
-  "label": "第 5 步（6958dac）（2026-11-20）",
-  "passed": 10,
-  "total": 10
+  "label": "原型之後的第一批（73b0756）（2026-11-21）",
+  "passed": 11,
+  "total": 11
  },
  "skills": {
-  "label": "第 5 步（6958dac）（2026-11-20）",
-  "passed": 113,
-  "total": 113
+  "label": "原型之後的第一批（73b0756）（2026-11-21）",
+  "passed": 118,
+  "total": 118
  },
  "skills_sandbox": {
   "label": "第 5 步（6958dac）（2026-11-20）",
