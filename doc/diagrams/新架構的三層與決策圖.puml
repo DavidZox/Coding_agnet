@@ -1,0 +1,185 @@
+@startuml
+' 新架構的三層與 skills_system（結構）：每一層由哪個程式做、模型讀哪些字、讀 skills_system 的哪些文件、怎麼變成決策圖、存在哪裡。
+' 動態的流程（從問題到答案）見〈新架構從問題到答案的流程〉。
+skinparam RectangleWidthMax 380
+skinparam ranksep 55
+skinparam nodesep 40
+skinparam shadowing false
+skinparam defaultFontName "Microsoft JhengHei"
+skinparam ArrowFontSize 12
+skinparam ArrowColor #555555
+
+title 新架構的三層與 skills_system（結構）：每一層由哪個程式做、模型讀哪些字、讀 skills_system 的哪些文件、\n怎麼變成決策圖、存在哪裡\n藍＝程式（agent_core/、腳本）、橘＝模型與它讀的 prompts/、綠＝skills_system/ 的文件、黃＝決策圖、紫＝存檔（logs/）
+
+rectangle U #F5F5F5 [
+  **使用者**（CLI：agent_core/cli.py；Web：web_app/）
+  問一個問題；看到每一項的回答、出處那一行的原文、決策圖的連結
+]
+
+rectangle "高階：主對話（分工、照報告回答）" as HIGH #FBFBFB {
+  rectangle H_LLM #FFE6CC [
+    **主模型**（主對話，有對話歷史）
+    ----
+    讀：prompts/AGENT.md、harness/system_prompt.md（「領域」一節）、
+    harness/domain.md（分工的結果、answers 沒過的說明）、harness/plan.md
+    回 JSON {thought, reply, answers?, action}
+    action＝分工 {domains: [{domain, goal, items}…]}，或共用的工具
+  ]
+  rectangle H_CODE #DAE8FC [
+    **agent_core/orchestrator.py**（DomainMixin）＋ answers.py
+    ----
+    * load_registry、domain_block：從 DOMAIN.md 與領域的 SKILLS.md
+      組「領域」一節；domain_gate：領域的工具、複合技能不給主對話直接用
+    * run_plan → _check_entry：領域、子目標、項目 1～6、不重複、
+      同一項最多 3 次；最多 4 個領域，照順序做，後面的收到前面查到的
+    * _domain_outcome：報告存成 #編號；中階沒報告 → 子工作階段；
+      不屬於這個領域 → 排除（第 3 級）；要問使用者 → 程式直接問、接回
+    * _answer_problems：answers 的出處、數字與名稱；domain_render：照項目排
+  ]
+  rectangle H_DOC #D5E8D4 [
+    **skills_system/DOMAIN.md**（給程式讀）
+    ----
+    〈領域〉：repo_analysis、robotics_infra、rmf_dispatch、
+    data_analysis、multimodal（各連到自己的 SKILLS.md）
+    〈共用的工具〉：list_dir、find_file、result_list／grep／view
+    **skills_system/SKILLS.md**：主對話的技能索引（拿掉領域的工具）
+  ]
+}
+
+rectangle "中階：領域照寫好的做法做（有複合技能的領域：repo_analysis）" as MID #FBFBFB {
+  rectangle M_DOC #D5E8D4 [
+    **skills_system/repo_analysis/**
+    ----
+    SKILLS.md：領域的說明、不包含什麼、〈複合技能〉、〈工具〉
+    <複合技能>.md（py_usage、count_in_scope、find_lines、doc_lookup、
+    cpp_symbol、config_trace）：
+    * frontmatter：answers（答得了位置／數量／內容）、
+      parameters（種類、default、fetch、ask）
+    * 〈什麼時候用〉→ 挑技能的模型看
+    * 〈骨架〉→ 決策圖的樣板（{參數}、{"if": 參數}、判斷節點）
+    * 〈回退〉→ 第 2 級（when 照收據比對；change：add／ask／switch）
+    * 〈策略與 SOP〉
+  ]
+  rectangle M_CODE #DAE8FC [
+    **agent_core/mid.py**（Worker）＋ judge.py
+    ----
+    1 挑技能（模型）→ 程式核對：答得了問題要的每一種
+    2 合約（模型抄原文）→ 程式核對；預設、fetch 自己補、ask 問使用者
+    3 排圖：〈骨架〉代入參數＝決策圖（模型不寫節點）
+    4 交給低階執行
+    5 第 2 級：照收據比對〈回退〉→ 加節點重排（最多 3 次）、問、換技能
+    6 判斷節點：模型挑行、選路；judge.py 照收據從檔案讀原文、核對片段
+    7 報告：程式照收據整理，各附 #編號
+  ]
+  rectangle M_LLM #FFE6CC [
+    **中階的模型**（每次一個獨立的呼叫）
+    ----
+    prompts/mid/select.md：挑技能
+    prompts/mid/contract.md：合約（參數與抄的原文）
+    prompts/mid/judge.md：判斷節點
+    prompts/mid/inputs.md：程式組的標籤（含上一次的經過）
+  ]
+}
+
+rectangle GRAPH #FFF2CC [
+  **決策圖**（graph JSON；中階排、低階照著跑）
+  ----
+  * 工具節點 {id, tool, args, depends_on, expect, complete, report, lines, why}
+    args＝字面的值，或 {"from": 前面的節點, "field": 收據的欄位}
+    （帶入的一項一個實例，最多 50 個）
+  * 判斷節點 {kind: judgment, goal, labels, branches}
+    跑到就停、交回中階；選了有 add 的路 → 加節點
+  * 第 1 版＝〈骨架〉代入參數；〈回退〉的 add、判斷的路 → 新的一版
+    （Executor.replan：同一個工作，跑過的不重跑）
+  例：find_lines 的〈骨架〉只有一個節點
+  hits：search_text {keyword} {path} [--include {files}] -C 2
+]
+
+rectangle "低階：照決策圖執行" as LOW #FBFBFB {
+  rectangle L_CODE #DAE8FC [
+    **agent_core/edg.py**（validate、Executor）
+    ----
+    * 檢查圖：依賴、沒有循環、工具要寫收據、帶入的欄位要是
+      來源工具收據的項目、判斷節點不被依賴
+    * 每個實例：腳本的 parse_args 檢查 → 確認關卡（會改狀態的）
+      → dispatch.run_script 執行 → 守門（照收據比 expect、complete）
+    * 第 1 級：參數錯、逾時各修一次，程式核對（有改、不放大範圍、
+      逾時只照 narrow 縮小；相近的路徑有好幾個時不修，交回上一層）
+    * 同一個工具＋同樣的參數只跑一次
+  ]
+  rectangle L_LLM #FFE6CC [
+    **第 1 級修正的模型**
+    ----
+    prompts/edg/fix.md、inputs.md
+    只看工具規格、錯誤、子目標；只改字面參數
+  ]
+  rectangle T_DOC #D5E8D4 [
+    **skills_system/tools/<工具>.md**（規格）
+    ----
+    給程式：parameters（必填的 fetch／ask）、
+    receipt（counts、items、fields：能帶入的欄位）、
+    narrow（逾時能怎麼縮小）
+    給模型（載入時拿掉上面三個）：〈用途〉〈語法〉〈範例〉〈回傳〉〈異常〉
+  ]
+}
+
+rectangle SCRIPT #DAE8FC [
+  **skills_system/scripts/<工具>_cmd.py**（repo_analysis 的 10 個工具）
+  ----
+  search_text（grep_cmd）、find_file、list_dir（ls_cmd）、view_file（cat_cmd）、
+  code_ast_reader、code_defs、py_refs、result_list／grep／view
+  * parse_args：純函式（低階執行前、確認關卡都用它讀參數）
+  * execute → 給模型的文字（第一行 [PASS]／[ERROR]）
+  * _receipt_common：收據（status、error_kind、counts、items、
+    找不到路徑時的 near）；_path_common：路徑、相近的路徑、split_globs
+]
+
+rectangle SUB #FCE5CD [
+  **子工作階段**（agent_core/sub.py）
+  ----
+  沒有複合技能的領域（凍結的四個）、或中階沒做完也沒報告時：
+  * 自己的對話（prompts/sub/session.md）：領域的說明、〈做法〉、
+    能用的工具；照子目標一步一步做
+  * 每一步走主對話同一條路（載入規格、執行、存檔、收據、提煉、
+    確認關卡、卡住偵測、最多 20 步）
+  * 收尾 answers → 程式核對（answers.py）→ 報告
+]
+
+rectangle STORE #E1D5E7 [
+  **logs/**（存檔）
+  ----
+  * tool_results/<session>_<編號>_<腳本>.md：原文 #編號
+    ＋ <存檔>.receipt.json（收據）；交給領域的結果也是 #編號
+  * mid_jobs/<編號>/：技能、參數與原文、每一版的圖（graphs）、
+    回退、判斷、問使用者、report.md、calls.jsonl
+  * edg_jobs/<編號>/：圖、每個節點與實例的狀態、嘗試、第 1 級、receipts/
+  * sub_jobs/<編號>/：子工作階段的對話、每一步、report.md
+]
+
+rectangle WEB #F5F5F5 [
+  **Web 的決策圖**（/topology；web_app/topology.py、static/topology.html）
+  讀 mid_jobs、edg_jobs、sub_jobs：每一版的圖，點節點或邊看嘗試與收據
+]
+
+U -down-> H_LLM : 問題
+H_LLM -down-> H_CODE : 分工 action、answers
+H_CODE -up-> H_LLM : 「領域」一節、報告 #編號、\nanswers 沒過的項目
+H_CODE -up-> U : 照項目排好的回答
+H_DOC -right-> H_CODE : load_registry
+H_CODE -down-> M_CODE : 有複合技能：\nstart(問題, 子目標, 項目, 上一次的經過)
+H_CODE -down-> SUB : 沒有複合技能、\n中階沒報告
+M_DOC -right-> M_CODE : 技能清單、參數、\n骨架、回退
+M_CODE <-right-> M_LLM : 挑技能、合約、判斷
+M_CODE -down-> GRAPH : 排圖、重排
+GRAPH -down-> L_CODE : start／replan
+T_DOC -right-> L_CODE : receipt、narrow、規格
+L_CODE <-right-> L_LLM : 參數錯、逾時
+L_CODE -down-> SCRIPT : parse_args 檢查、執行
+SCRIPT -down-> STORE : 原文＋收據
+STORE .up.> L_CODE : 收據：守門、\n帶入下一個節點
+L_CODE -up-> M_CODE : 節點的狀態、停下來的原因、\n等判斷的節點
+M_CODE -up-> H_CODE : 報告（程式照收據整理）
+SUB -down-> SCRIPT : 一步一步執行\n（載入規格、存檔、收據）
+SUB -up-> H_CODE : 報告（answers 核對過）
+STORE .down.> WEB
+@enduml

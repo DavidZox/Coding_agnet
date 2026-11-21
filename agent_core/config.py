@@ -253,23 +253,6 @@ SUB_JOBS_KEEP = int(os.environ.get("AGENT_SUB_JOBS_KEEP", "300"))
 SUB_STEPS_MAX = 20           # 一個子工作階段最多幾步（資源的上限，跟主對話一個回合的步數上限同一級）；用完了照做到的收尾
 SUB_MODEL = os.environ.get("AGENT_SUB_MODEL", "")   # 子工作階段用的模型（空＝主模型；D8 第一版都用主模型）
 
-# 📌 公佈欄的 worker（agent_core/board.py，方向的實驗：〈新架構討論紀錄〉第 5 節〈步驟 0 的結果與接下來的做法〉）：列在 AGENT_DOMAIN_BOARD
-# 的領域（逗號分開，例如 repo_analysis）不交給中階，交給公佈欄的 worker——照公佈欄一次決定一步、低階執行、每一份輸出用問題提煉成事實、
-# 照事實回答。實驗用的設定：同一份題目新舊各跑一次比較，結束留下比較好的那一個。
-DOMAIN_BOARD = tuple(x.strip() for x in os.environ.get("AGENT_DOMAIN_BOARD", "").split(",") if x.strip())
-BOARD_JOBS_DIRNAME = "board_jobs"
-BOARD_JOBS_KEEP = int(os.environ.get("AGENT_BOARD_JOBS_KEEP", "300"))
-BOARD_STEPS_MAX = 12          # 一份工作最多幾步（每一步：規劃一次、低階執行一個工具、提煉它的輸出）；用完了照公佈欄的事實回答
-BOARD_REPEATS_MAX = 2         # 連續幾次排出跑過的工具與參數（程式擋下、沒有執行）就當成卡住，照公佈欄的事實回答
-BOARD_VIEW_PAGES = 3          # view_file 不指定範圍（整份）而輸出沒看完時，程式接著看下一段，連第一段最多幾段（做完了沒由程式判斷：整份就是整份）
-BOARD_FACTS_SHOWN = 60        # 交給規劃的公佈欄最多列幾則事實（回答時列全部）
-BOARD_FACT_CHARS = 200        # 一則事實最多幾個字（提煉的 schema）
-BOARD_LOOK_FACTS = 15         # 提煉一段最多寫幾則事實
-BOARD_PLAN_PREDICT = 900      # 規劃的輸出（理解＋下一步）的 num_predict 上限
-BOARD_LOOK_PREDICT = 2500     # 提煉一段的輸出的 num_predict 上限
-BOARD_ANSWER_PREDICT = 3000   # 回答（每一項的回答與根據的事實）的 num_predict 上限
-BOARD_MODEL = os.environ.get("AGENT_BOARD_MODEL", "").strip()   # 規劃與回答用的模型（空＝主模型）；提煉照提煉的模型
-
 # run_tool 載入技能規格文件時回傳字串的固定開頭。規格文件是「按需載入」機制的核心，
 # 內容（尤其是實際腳本路徑與參數格式）必須完整進入上下文，因此 _content_for_context
 # 對這類結果一律放行、不套用 TOOL_RESULT_TOKEN_THRESHOLD，Web Console 也不標記 ⚠️。

@@ -355,7 +355,8 @@ class Foo(Base, metaclass=Meta):
 
 
 def t_ast_signature_and_ranges():
-    """code_ast_reader：完整簽名（/、預設值、* 之後的參數）、有型別標註的常數、每個 def／class 的行號範圍、長的值截斷"""
+    """code_ast_reader：完整簽名（/、預設值、* 之後的參數）、有型別標註的常數、每個 def／class 的行號範圍（從 def 那一行算，裝飾器另寫一行）、
+    長的值截斷"""
     d = _tmp()
     _w(d, "sig.py", SIG_SRC)
     out = run("code_ast_reader_cmd.py", "sig.py", d=d)
@@ -363,7 +364,7 @@ def t_ast_signature_and_ranges():
     assert "_P = 1" not in out and "_hidden" not in out, out
     assert "def f(a, b=2, /, c=3, *args, d, e=5, **kw)  行 7-9" in out, out
     assert "def g(*, k: int = 1) -> int  行 12-13" in out and "class Foo(Base, metaclass=Meta):  行 16-24" in out, out
-    assert "def bar(self) -> str  行 19-21" in out and "- X: int = 5（行 2）" in out, out
+    assert "  @property  行 19\n  def bar(self) -> str  行 20-21\n" in out and "- X: int = 5（行 2）" in out, ("def 的行號不算裝飾器", out)
     assert "NAME = 'aaaa" in out and "…（行 3）" in out and "a" * 200 not in out, out
     out = run("code_ast_reader_cmd.py", "sig.py", "--private", "--no-docstrings", d=d)
     assert "def _hidden(self)  行 23-24" in out and "- _P = 1（行 4）" in out and '"""' not in out, out

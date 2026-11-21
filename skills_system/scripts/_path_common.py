@@ -6,7 +6,8 @@ csv_query、file_ops、image_inspect 共用。只用標準庫。
 2. suggest()：路徑找不到時的「你是不是要找」。小模型最常見的錯是路徑差一點：大小寫、少一層目錄、拼錯一個字（launch／lauch）、
    把檔名當目錄。只回「不存在」時它常常換個更離譜的猜法、或一直重試同一個路徑（主對話的卡住偵測會在第三次停下來）；直接列出
    實際存在、最像的幾個路徑，下一步就對了。做法：從要找的路徑往上找到第一個存在的目錄，在那裡比對缺的那一段（不分大小寫、
-   difflib 相似度）；另外在目前工作目錄底下（最多 4 層、最多看 5000 個項目）找同名的檔案或目錄。
+   difflib 相似度）；另外在目前工作目錄底下（最多 4 層、最多看 5000 個項目）找同名的檔案或目錄。候選的清單是 near_paths()，
+   找不到路徑的錯誤把它帶在 ToolError 的 near（收據記成 near：低階執行器的第 1 級照它判斷，好幾個候選時不替上一層選）。
 3. DEFAULT_EXCLUDES：search_text、find_file 預設略過的目錄（ROS 2 Workspace 的 build／install／log、.git、虛擬環境…）。
 4. newest_line()：「最新修改：A（時間）；其次：B、C」（list_dir、find_file 共用；數值由腳本算、模型照抄）。
 5. harness_logs_dir()：技能要寫的檔案（file_ops 的備份、stt_engine 的辨識結果）一律放 harness 的 logs/，不寫進使用者的目錄。
@@ -61,20 +62,20 @@ def display(path):
         return path
 
 
-def suggest(path, want="any", limit=5):
-    """回傳一句「相近的路徑：…」（找不到相近的回空字串）。want：any／dir／file。
+def near_paths(path, want="any", limit=5):
+    """相近的路徑：候選的清單（給模型看的寫法；找不到相近的回 []）。want：any／dir／file。
     評測的對照組用 AGENT_ABLATE=path_suggest 關掉（平常不要設）。"""
     if "path_suggest" in os.environ.get("AGENT_ABLATE", ""):
-        return ""
+        return []
     try:
         target = os.path.abspath(expand(path))
     except (TypeError, ValueError):
-        return ""
+        return []
     missing, cur = [], target
     while not os.path.exists(cur):
         parent = os.path.dirname(cur)
         if parent == cur:
-            return ""
+            return []
         missing.insert(0, os.path.basename(cur))
         cur = parent
     out = []
@@ -108,9 +109,13 @@ def suggest(path, want="any", limit=5):
                     out.append(_show(full))
             if seen > 5000 or len(out) >= limit:
                 break
-    if not out:
-        return ""
-    return "相近的路徑：" + "、".join(out[:limit]) + "（確認拼字與大小寫；不確定時先用 list_dir 看目錄內容）"
+    return out[:limit]
+
+
+def suggest(path, want="any", limit=5, near=None):
+    """回傳一句「相近的路徑：…」（找不到相近的回空字串）；near 是已經算好的 near_paths。"""
+    near = near_paths(path, want, limit) if near is None else near
+    return ("相近的路徑：" + "、".join(near) + "（確認拼字與大小寫；不確定時先用 list_dir 看目錄內容）") if near else ""
 
 
 def _nearest_existing(abs_path):
@@ -147,7 +152,8 @@ def not_found(path, want="any", noun=None):
     abs_path = os.path.abspath(expand(path))
     shown = path if abs_path == os.path.abspath(path) and not str(path).startswith(("~", "$")) else f"{path}（展開為 {abs_path}）"
     msg = f"[ERROR] 找不到{noun}：{shown}（目前工作目錄 {os.getcwd()}）"
-    hint = suggest(path, want)
+    near = near_paths(path, want)
+    hint = suggest(path, want, near=near)
     if hint:
         msg += "\n" + hint
     else:
@@ -158,7 +164,7 @@ def not_found(path, want="any", noun=None):
     container = (os.environ.get("TARGET_CONTAINER") or "").strip()
     if container and os.path.isabs(abs_path):
         msg += f"（如果這是容器 {container} 裡的路徑：本機技能看不到容器內，改用 docker_runcmd）"
-    return ToolError(msg, "args")
+    return ToolError(msg, "args", near=near)
 
 
 def resolve(path, want="any", noun=None, dir_hint=None, file_hint=None):
@@ -184,6 +190,13 @@ def resolve(path, want="any", noun=None, dir_hint=None, file_hint=None):
         return None, ToolError(f"[ERROR] 沒有權限讀取{noun}：{path}（{_perm_text(abs_path)}）。"
                                f"下一步：改用有權限的路徑；一定要看這裡的內容就請使用者自己處理權限（技能不會用 sudo）", "env")
     return abs_path, None
+
+
+def split_globs(value):
+    """--include、--exclude、--exclude-dir 一次一種寫法；模型常把幾種寫在一起、用 | 分開（"*.cpp|*.hpp"：檔名的寫法裡 | 是字面，
+    一份都對不到）→ 拆成幾個；沒有 | 照原樣。"""
+    parts = [p.strip() for p in str(value).split("|") if p.strip()]
+    return parts if len(parts) > 1 else [value]
 
 
 def join_if_exists(parts):

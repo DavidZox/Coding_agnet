@@ -1,13 +1,13 @@
 """py_refs：Python 的一個名稱在一個範圍（目錄或檔案，可以好幾個）裡的每一處——用 AST 分成定義、呼叫、import、指定、其他用到，每一處附
 檔案、行號與所在的函式；各檔案幾處、總共幾處由程式算。複合技能 py_usage 由程式做的部分（search_text 找出提到名稱的 .py，每個檔案
-code_ast_reader --refs）做成一次執行的工具（方向的實驗：公佈欄的 worker 讓規劃自己選，〈新架構討論紀錄〉第 5 節〈步驟 0 的結果與接下來的做法〉）。
+code_ast_reader --refs）做成一次執行的工具（repo_analysis 的工具，子工作階段用；2026-11-21 方向的實驗做的，設計筆記 2.45）。
 
 - 範圍：預設略過 _path_common.DEFAULT_EXCLUDES 的目錄（指定的路徑本身在裡面的照算），--exclude-dir 多略過；只看 Python 檔（.py、.pyw、
   .pyi、第一行是 python 的 #!；--include 改成只看這種檔名）。先照字面挑出有這個名稱（整個字）的檔案，再用 code_ast_reader 的 _RefVisitor 分
   每一處：註解與字串裡提到的、名稱更長的相似名稱不算；import 不算呼叫。語法錯誤的檔案不算，計數寫在最後一行。
 - --kind 只列一種（def、call、import、assign、ref）。範圍裡的 Python 一處都沒有時，另外照字面看範圍裡的 C／C++ 檔有沒有這個名稱（寫在回覆裡）。
 收據（_receipt_common，欄位見規格的 receipt）：每一處一筆（路徑、行號、種類、所在的函式、那一行的原始碼；定義另有 qualname、in_class、
-行號範圍），每個檔案的數量（per_file）。
+結束的行、有裝飾器的另記 decorator——定義的行號與範圍從 def／class 那一行算），每個檔案的數量（per_file）。
 """
 import ast
 import fnmatch
@@ -47,9 +47,9 @@ def parse_args(argv):
                 return None, f"[ERROR] {a} 後面需要值。\n{USAGE}"
             v = args[i + 1]
             if a == "--exclude-dir":
-                o["exclude_dir"].append(v.strip("/"))
+                o["exclude_dir"] += [x.strip("/") for x in pc.split_globs(v)]
             elif a == "--include":
-                o["include"].append(v)
+                o["include"] += pc.split_globs(v)               # "test_*.py|*_test.py" 拆成兩種（_path_common.split_globs）
             else:
                 kinds = [k.strip() for k in re.split(r"[|,，、]", v) if k.strip()]
                 bad = [k for k in kinds if k not in KINDS]
@@ -212,8 +212,9 @@ def _render(o, roots, refs, per_file, cpp_hits, scanned, syntax, timed_out, skip
                 break
             shown += 1
             kind = "def" if r["kind"] in ("def", "class") else r["kind"]
-            span = f"行 {r['start']}-{r['end']}" if kind == "def" and r.get("end") and r["end"] != r.get("start") else f"行 {r['line']}"
-            out.append(f"  - {REF_KINDS[kind]} {span}（{'在 ' + r['scope'] if r['scope'] else '模組層'}）：{r['text']}")   # 縮排：提煉核對時上層的 ## 檔案 也算
+            span = f"行 {r['line']}-{r['end']}" if kind == "def" and r.get("end") and r["end"] != r["line"] else f"行 {r['line']}"
+            where = ("在 " + r["scope"] if r["scope"] else "模組層") + (f"；裝飾器在行 {r['decorator']}" if r.get("decorator") else "")
+            out.append(f"  - {REF_KINDS[kind]} {span}（{where}）：{r['text']}")   # 縮排：提煉核對時上層的 ## 檔案 也算
     if len(refs) > SHOWN_REFS:
         tail.insert(0, f"只列前 {SHOWN_REFS} 處（共 {len(refs)} 處；數量照樣全部算）")
     out.append("（註解與字串裡提到的不算；import 不算呼叫" + ("；" + "；".join(tail) if tail else "") + "）")

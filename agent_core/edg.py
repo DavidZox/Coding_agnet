@@ -11,7 +11,8 @@
    成功但不合預期是 unexpected（中 1：結果沒有用），交回中階換做法。
 5. **第 1 級**：參數錯（args）與逾時（timeout）每個實例修一次——交給修正的模型（只給工具規格、錯誤、子目標；D5），程式核對新的參數
    不一樣、過得了 parse_args、逾時只用規格 narrow 列出的縮小方式、參數錯的修正不能把範圍（narrow 標 inside 的路徑）換成上層，
-   才重跑一次；修完還是錯就往上報。環境（env）、腳本的錯（parse）不修。
+   才重跑一次；修完還是錯就往上報。環境（env）、腳本的錯（parse）不修。找不到路徑而相近的路徑（收據的 near）有好幾個時也不修：
+   要哪一個是上一層的決定（第 1 級曾經挑第一個、跑到別的專案的同名目錄），候選附在原因裡往上報。
 6. **往上交**（低 → 中）：每個節點的狀態、每次嘗試的收據摘要與 #編號、修正的紀錄；停下來的原因（stops）、等中階判斷的節點（judgments）。
 7. **重排**（replan，中階的第 2 級用）：照新的圖接著跑同一個工作——定義沒變、依賴也沒重跑的節點保留狀態（不重跑）；新的、改了的重新跑；
    圖上拿掉的與重跑的節點，原本的狀態記在 replans（收據檔都還在）。同一個工具＋同樣的參數之前跑過的，直接用之前的收據（D5 中 4）。
@@ -578,6 +579,8 @@ class Executor:
         rec["receipt_file"] = self._save_receipt(job, n["id"], i, len(inst["attempts"]), receipt)
         if rec["status"] == "error":
             rec["text"] = text[:ERROR_TEXT_MAX]
+            if receipt.get("near"):
+                rec["near"] = list(receipt["near"])
         else:
             self._cache[key] = rec
         return rec
@@ -596,8 +599,13 @@ class Executor:
         return "done", ""
 
     def _fix(self, job, n, spec, args, rec):
-        """第 1 級：修正一次 → {"reason", "fixable", "args", "accepted", "why"}；程式核對過才 accepted。"""
+        """第 1 級：修正一次 → {"reason", "fixable", "args", "accepted", "why"}；程式核對過才 accepted。找不到路徑而相近的路徑有好幾個時
+        不交給修正的模型（要哪一個是上一層的決定）→ {"accepted": False, "near": 候選, "why"}。"""
         kind = rec["error_kind"]
+        near = rec.get("near") or []
+        if kind == "args" and len(near) > 1:
+            return {"accepted": False, "near": list(near),
+                    "why": f"找不到路徑，相近的路徑有 {len(near)} 個（{'、'.join(near)}）：第 1 級不替上一層選，交回上一層決定"}
         scope = spec["contract"].get("narrow")
         narrow = scope if kind == "timeout" else None
         if kind == "timeout" and not narrow:

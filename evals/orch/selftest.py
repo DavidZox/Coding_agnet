@@ -431,6 +431,9 @@ def main():
                          "2. scripts/cat_cmd.py pkg/mod.py → [PASS]", "- 第 1 次交給這個領域（之前：第 1 次 —：這個領域沒有適合的複合技能（沒有比較兩個檔案的做法））"):
                 assert want in tools[0], (want, tools[0])
             assert tools[1].startswith("[ERROR] view_file 是 repo_analysis 領域的工具"), "主對話照舊不能直接用（沒有放行）"
+            shown = chats(events)[-1]
+            assert "1. 兩個檔案差在哪：mod.py 定義 alpha（出處：pkg/mod.py:1）\n   > pkg/mod.py:1：def alpha(x):" in shown and "   > 1. " not in shown, \
+                ("使用者看到的出處原文是報告附的那一行，不是報告裡同樣寫了出處的回答那一行", shown)
             assert not any(SKILL_DOC_PREFIX in m["content"] and "view_file" in m["content"] for m in agent.messages[before:]), "子工作階段的試錯不進主對話"
             assert fake.count("sub") == 4 and any("ref=sub_jobs/" in e["text"] for e in events if e["channel"] == "progress")
             d = agent._domain_turn["dispatches"][-1]

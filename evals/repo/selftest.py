@@ -89,6 +89,10 @@ def t_known_wrong_answers():
     assert not _ok(q, "\n".join(lines[:-1])), "少列一個呼叫的地方不能過"
     q = BY_ID["doc_task_confirm"]
     assert _ok(q, "TSK-S08：不同 task_id 的 confirm，狀態不變，繼續等。\nTSK-S06：同一筆的 authorize 又來，重發 yes，不重新計時。")
+    q = BY_ID["cpp_laser_qos"]
+    where = q["items"][0]["label"]
+    assert _ok(q, f"{where}：rclcpp::QoS(rclcpp::KeepLast(1)).best_effort().durability_volatile()"), "程式裡的寫法 durability_volatile 也算 volatile（待辦 4j ③）"
+    assert not _ok(q, f"{where}：KeepLast(1)、best_effort，durability 是 transient_local"), "durability 答錯不能過"
     assert checks.score(q, "TSK-S08：繼續等\nTSK-S06：重發 yes，不重新計時", guards=1)["forbidden"], "碰到確認關卡要算錯"
 
 
@@ -186,14 +190,16 @@ def t_layers():
     with tempfile.TemporaryDirectory(prefix="repo_layers_") as d:
         log = os.path.join(d, "logs", "lx")
         os.makedirs(os.path.join(log, "tool_results"))
-        os.makedirs(os.path.join(log, "board_jobs", "j1"))
+        os.makedirs(os.path.join(log, "extract_jobs", "j1"))
+        os.makedirs(os.path.join(log, "sub_jobs", "j1"))
         for name, text in (("001_grep.md", "---\nid: 1\n---\nalpha beta delta epsil"), ("002_domain_repo_analysis.md", "---\nid: 2\n---\nalpha beta gamma"),
                            ("index.md", "gamma")):
             with open(os.path.join(log, "tool_results", name), "w", encoding="utf-8") as f:
                 f.write(text)
-        with open(os.path.join(log, "board_jobs", "j1", "job.json"), "w", encoding="utf-8") as f:
-            json.dump({"facts": [{"text": "beta", "refs": ["#1"], "rows": ["x.py:3：delta"]}],
-                       "answers": [{"item": 1, "text": "delta", "refs": ["x.py:3"]}, {"item": 2, "text": "epsil"}]}, f)
+        with open(os.path.join(log, "extract_jobs", "j1", "job.json"), "w", encoding="utf-8") as f:
+            json.dump({"final": {"answer": "", "facts": [{"text": "beta"}, {"text": "x.py:3：delta"}]}}, f)
+        with open(os.path.join(log, "sub_jobs", "j1", "job.json"), "w", encoding="utf-8") as f:
+            json.dump({"answers": [{"item": 1, "text": "delta"}, {"item": 2, "text": "epsil"}]}, f)
         fail = {"id": "lx", "set": "main", "model": "m", "reply": "epsil", "tool_calls": [{"domain": "repo_analysis", "goal": "g", "items": ["i"]}, {"skill": "x"}],
                 "score": {"passed": False, "items": [{"ok": False}] * 5}}
         with open(os.path.join(d, "runs.jsonl"), "w", encoding="utf-8") as f:

@@ -189,6 +189,29 @@ def main():
         assert inst["state"] == "failed" and "修正之後還是錯" in inst["reason"] and len(inst["attempts"]) == 2, inst
         assert len(fixer.reqs) == 1, "每個節點只修一次"
 
+    def t_fix_ambiguous_path():
+        # 找不到路徑、相近的路徑（收據的 near）有好幾個：不交給修正的模型（要哪一個是上一層的決定），候選附在原因裡往上報；只有一個照常修
+        for rel in ("proj_x/specs/a.md", "proj_y/specs/b.md", "solo/notes/c.md"):
+            path = os.path.join(work, rel)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("spec\n")
+        try:
+            fixer = FakeFixer({"reason": "用第一個相近的路徑", "fixable": True, "args": ["spec", "proj_x/specs"]})
+            job = run({"goal": "在 specs 搜 spec", "nodes": [{"id": "s", "tool": "search_text", "args": ["spec", "specs"]}]}, fixer)
+            inst = node(job, "s")["instances"][0]
+            assert job["status"] == "stopped" and inst["state"] == "failed" and not fixer.reqs and len(inst["attempts"]) == 1, inst
+            assert sorted(inst["attempts"][0]["near"]) == ["proj_x/specs", "proj_y/specs"] and sorted(inst["fix"]["near"]) == sorted(inst["attempts"][0]["near"])
+            assert "相近的路徑有 2 個（" in inst["reason"] and "proj_y/specs" in inst["reason"] and "第 1 級不替上一層選，交回上一層決定" in inst["reason"], inst["reason"]
+            fixer = FakeFixer({"reason": "照相近的路徑", "fixable": True, "args": ["spec", "solo/notes"]})
+            job = run({"goal": "在 notes 搜 spec", "nodes": [{"id": "s", "tool": "search_text", "args": ["spec", "notes"]}]}, fixer)
+            inst = node(job, "s")["instances"][0]
+            assert inst["state"] == "done" and inst["fixed"] and len(fixer.reqs) == 1 and inst["attempts"][0]["near"] == ["solo/notes"], inst
+            assert "solo/notes" in fixer.reqs[0]["error"], "只有一個候選：照常交給修正的模型（錯誤原文附相近的路徑）"
+        finally:
+            for d in ("proj_x", "proj_y", "solo"):
+                shutil.rmtree(os.path.join(work, d), ignore_errors=True)
+
     def t_env_not_fixed():
         if os.geteuid() == 0:
             raise Skip("root 讀得到沒有權限的目錄")
@@ -410,6 +433,7 @@ def main():
              ("守門照收據：expect（0 筆算不算答案）、complete（不完整算不合預期）", t_expect_and_complete),
              ("第 1 級：執行前的參數檢查擋下來 → 修一次 → 執行；修正只拿到規格、錯誤、子目標", t_fix_precheck),
              ("第 1 級：程式核對修正（沒改、過不了檢查、多了 shell 的引號、修不好、沒回覆、範圍放大都不重跑）；修完還是錯就往上報，只修一次", t_fix_rejected),
+             ("第 1 級：找不到路徑而相近的路徑有好幾個時不修（不替上一層選），候選附在原因裡往上報；只有一個照常修", t_fix_ambiguous_path),
              ("第 1 級：環境的錯（沒有權限）不修，往上報", t_env_not_fixed),
              ("第 1 級：逾時只照規格的 narrow 縮小（加 --include、換成裡面的路徑）；規格沒列的工具不修", t_timeout_narrow),
              ("依賴的節點沒成功就跳過；不相干的節點照跑", t_blocked_and_independent),

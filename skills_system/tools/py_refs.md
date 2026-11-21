@@ -2,10 +2,10 @@
 type: Tool
 title: Python 名稱的每一處
 description: 一個 Python 的名稱在範圍裡的每一處（AST：定義、呼叫、import、指定、其他用到），附檔案、行號與所在的函式；各檔案幾處、總共幾處由腳本算好。
-version: 1.0.0
+version: 1.1.0
 dependencies: []
 parameters: [{"name": "name", "required": true, "ask": "要找哪一個 Python 的名稱（函式、方法、類別、變數）？"}, {"name": "path", "required": false, "default": ".", "fetch": "find_file <目錄名稱>"}]
-receipt: {"counts": ["refs", "files", "defs", "calls", "imports", "assigns", "others", "scanned"], "items": ["name", "kind", "line", "scope", "text", "path", "qualname?", "in_class?", "start?", "end?"], "fields": ["per_file", "name", "paths", "kind", "exclude_dirs", "cpp_files", "syntax_errors", "timed_out"]}
+receipt: {"counts": ["refs", "files", "defs", "calls", "imports", "assigns", "others", "scanned"], "items": ["name", "kind", "line", "scope", "text", "path", "qualname?", "in_class?", "decorator?", "end?"], "fields": ["per_file", "name", "paths", "kind", "exclude_dirs", "cpp_files", "syntax_errors", "timed_out"]}
 narrow: {"paths": {"rule": "inside", "arg": "路徑"}}
 ---
 
@@ -27,7 +27,8 @@ Python 程式裡的一個名稱（函式、方法、類別、變數）定義在�
 
 # 回傳
 `[PASS] 「名稱」在 <路徑> 的 Python 程式裡出現 N 處、M 份檔案（AST）：定義 a、呼叫 b、import c、指定 d、其他用到 e`，每份檔案一節
-`## 路徑（N 處：…）`，每一處一行（縮排）`  - 呼叫 行 45（在 類別.函式）：那一行的原始碼`（定義寫行號範圍；模組層寫「模組層」）。
+`## 路徑（N 處：…）`，每一處一行（縮排）`  - 呼叫 行 45（在 類別.函式）：那一行的原始碼`（定義寫行號範圍，從 def／class 那一行算，
+有裝飾器的另外寫「裝飾器在行 N」；模組層寫「模組層」）。
 沒有：`[PASS] 範圍 … 的 Python 程式裡沒有「名稱」（AST；看了 K 份 Python 檔…）`，C/C++ 檔有的話列出來。
 
 # 異常

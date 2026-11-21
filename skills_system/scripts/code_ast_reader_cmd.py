@@ -139,9 +139,8 @@ class CodeASTVisitor(ast.NodeVisitor):
 
     @staticmethod
     def _range(node):
-        start = min([node.lineno] + [d.lineno for d in node.decorator_list])
         end = getattr(node, "end_lineno", None) or node.lineno
-        return f"行 {start}-{end}" if end != start else f"行 {start}"
+        return f"行 {node.lineno}-{end}" if end != node.lineno else f"行 {node.lineno}"
 
     def _room(self):
         if self.items >= MAX_ITEMS:
@@ -187,7 +186,7 @@ class CodeASTVisitor(ast.NodeVisitor):
         bases = [_unparse(b) for b in node.bases] + [_unparse(k) for k in node.keywords]
         base_str = f"({', '.join(bases)})" if bases else ""
         for d in node.decorator_list:
-            self.output.append(f"{self._indent()}@{_unparse(d, 120)}")
+            self.output.append(f"{self._indent()}@{_unparse(d, 120)}  行 {d.lineno}")
         self.output.append(f"{self._indent()}class {node.name}{base_str}:  {self._range(node)}")
         self._format_docstring(node)
         self.indent_level += 1
@@ -208,7 +207,7 @@ class CodeASTVisitor(ast.NodeVisitor):
             return
         self.n_funcs += 1
         for d in node.decorator_list:
-            self.output.append(f"{self._indent()}@{_unparse(d, 120)}")
+            self.output.append(f"{self._indent()}@{_unparse(d, 120)}  行 {d.lineno}")
         prefix = "async def" if is_async else "def"
         self.output.append(f"{self._indent()}{prefix} {node.name}{self._format_signature(node)}  {self._range(node)}")
         self._format_docstring(node)
@@ -229,8 +228,14 @@ def _timeout_handler(signum, frame):
     raise TimeoutError
 
 
+def _decorator_line(node):
+    """def／class 有裝飾器時 → {"decorator": 第一個裝飾器的行}，沒有 → {}（收據另記；定義的行號與範圍從 def／class 那一行算）。"""
+    return {"decorator": min(d.lineno for d in node.decorator_list)} if node.decorator_list else {}
+
+
 def _definitions(tree):
-    """全部的 def／class（含私有、巢狀）：名稱、qualname、種類（class／method／function）、行號範圍（start 含 decorator）、所在的類別或函式。"""
+    """全部的 def／class（含私有、巢狀）：名稱、qualname、種類（class／method／function）、行號範圍（line＝def／class 那一行到 end；
+    有裝飾器的另記 decorator）、所在的類別或函式。"""
     out = []
 
     def walk(node, stack):
@@ -242,8 +247,7 @@ def _definitions(tree):
             parent = stack[-1] if stack else None
             out.append({"name": child.name, "qualname": ".".join([n for n, _ in stack] + [child.name]),
                         "kind": "class" if is_class else ("method" if parent and parent[1] == "class" else "function"),
-                        "async": isinstance(child, ast.AsyncFunctionDef), "line": child.lineno,
-                        "start": min([child.lineno] + [d.lineno for d in child.decorator_list]),
+                        "async": isinstance(child, ast.AsyncFunctionDef), "line": child.lineno, **_decorator_line(child),
                         "end": getattr(child, "end_lineno", None) or child.lineno, "parent": parent[0] if parent else None,
                         "private": child.name.startswith("_") and not (child.name.startswith("__") and child.name.endswith("__"))})
             walk(child, stack + [(child.name, "class" if is_class else "function")])
@@ -317,7 +321,7 @@ def analyze_ast(file_path, show_docstrings=True, show_private=False):
 class _RefVisitor(ast.NodeVisitor):
     """--refs：一個名稱在檔案裡的每一處（定義、呼叫、import、指定、其他用到）與所在的函式（最內層的 def／class 的 qualname，模組層是 None）。
     decorator、預設值、型別標註、基底類別屬於外面那一層；參數屬於那個函式。呼叫只算一次（被呼叫的名稱本身不再算成「其他用到」）。
-    定義另外記 qualname、in_class（直接定義在哪個類別裡：方法；不是方法是 None）與行號範圍。"""
+    定義另外記 qualname、in_class（直接定義在哪個類別裡：方法；不是方法是 None）與行號範圍（從 def／class 那一行算；有裝飾器的另記 decorator）。"""
 
     def __init__(self, name, lines, path):
         self.name, self.lines, self.path = name, lines, path
@@ -338,8 +342,7 @@ class _RefVisitor(ast.NodeVisitor):
             outer = self._scope()
             self._add("class" if is_class else "def", node, qualname=".".join([n for n, _ in self.stack] + [node.name]),
                       in_class=self.stack[-1][0] if self.stack and self.stack[-1][1] else None,
-                      start=min([node.lineno] + [d.lineno for d in node.decorator_list]),
-                      end=getattr(node, "end_lineno", None) or node.lineno, scope=outer)
+                      end=getattr(node, "end_lineno", None) or node.lineno, scope=outer, **_decorator_line(node))
         for d in node.decorator_list:
             self.visit(d)
         if is_class:
@@ -433,8 +436,8 @@ def analyze_refs(file_path, name):
             if shown >= MAX_ITEMS:
                 break
             shown += 1
-            where = f"在 {r['scope']}" if r["scope"] else "模組層"
-            span = f"行 {r['start']}-{r['end']}" if k == "def" and r["end"] != r["start"] else f"行 {r['line']}"
+            where = (f"在 {r['scope']}" if r["scope"] else "模組層") + (f"；裝飾器在行 {r['decorator']}" if r.get("decorator") else "")
+            span = f"行 {r['line']}-{r['end']}" if k == "def" and r["end"] != r["line"] else f"行 {r['line']}"
             out.append(f"- {span}（{where}）：{r['text']}")
     out.append(f"（註解與字串裡提到的不算；import 不算呼叫。看前後：view_file {file_path} --from <行號> --lines <行數>）")
     return "\n".join(out)

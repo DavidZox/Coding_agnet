@@ -3,7 +3,7 @@
 - 中階要問使用者（參數）時：評測裡沒有人回答，取消（記下問了什麼）；取消之後的結果才是這一步的結果（跟使用者按取消一樣：中階取消之後
   接著開子工作階段一步一步做）。確認關卡（子工作階段或中階的低階碰到會改狀態的工具）照情境的 guard 回答（approve 同意、deny 不同意），
   跟主對話的確認關卡一樣算進 guards。
-- 記成 tool_calls：分工的每個領域一筆（skill＝領域名稱，附子目標、項目、中階、子工作階段或公佈欄的狀態與做法、工作編號、那個領域的結果 #編號），
+- 記成 tool_calls：分工的每個領域一筆（skill＝領域名稱，附子目標、項目、中階或子工作階段的狀態與做法、工作編號、那個領域的結果 #編號），
   領域裡用到的工具各一筆（via＝領域；中階的參數照每一版的圖，從收據帶入的不列；子工作階段的是每一步執行的）——情境的「用了哪個工具」照樣
   看得到領域裡用的工具。分工沒過核對（[ERROR]）時每個領域一筆、狀態 ERROR。
 - 依報告回答（4-2）：這一步的 answers 與核對的結果記進那一步（record_answers）；最後的回答換成程式照項目排好的那一份（finalize：
@@ -48,12 +48,10 @@ def calls(agent, parsed, result):
             entry.update(mid_status=mid_part["status"], mid_skill=mid_part["skill"], mid_job=mid_part["job"])
         if d.get("kind") == "sub":
             entry.update(sub_status=d["status"], sub_job=d["job"], sub_steps=len(d.get("calls") or []))
-        if d.get("kind") == "board":                                             # 方向的實驗：公佈欄的 worker
-            entry.update(board_status=d["status"], board_job=d["job"], board_steps=len(d.get("calls") or []))
         via = [{"script": None, "skill": c["tool"], "via": e["domain"], "args": c["args"], "status": "PASS"}
                for c in (mid_part or {}).get("calls") or []]
         via += [{"script": c.get("script"), "skill": c["tool"], "via": e["domain"], "args": c["args"], "status": c["status"],
-                 "head": c.get("head", "")} for c in (d.get("calls") or [] if d.get("kind") in ("sub", "board") else [])]
+                 "head": c.get("head", "")} for c in (d.get("calls") or [] if d.get("kind") == "sub" else [])]
         out += [entry] + via
     return out
 

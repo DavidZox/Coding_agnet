@@ -389,7 +389,8 @@ def cpp_laser_qos(root):
     assert "KeepLast(1)" in line and "best_effort()" in line and "durability_volatile()" in line, line
     return {"answer": f"KeepLast(1)、best_effort、durability_volatile（{os.path.basename(rel)}:{n}）",
             "items": [_file_line(rel, n), item("保留 1 筆", g("KeepLast", "keep last", "keep_last", "保留", "depth", "深度"), g("1"), line=True),
-                      item("best effort", g("best_effort", "best effort", "besteffort", "best-effort")), item("volatile", g("volatile"))],
+                      item("best effort", g("best_effort", "best effort", "besteffort", "best-effort")),
+                      item("volatile", g("volatile", "durability_volatile"))],
             "forbid": []}
 
 

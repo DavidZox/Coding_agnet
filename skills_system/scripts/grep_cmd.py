@@ -90,7 +90,10 @@ def parse_args(argv):
                 elif name in ("--include", "--exclude", "--exclude-dir"):
                     v = val if eq else need_value(name)
                     i += 0 if eq else 1
-                    o[{"--include": "include", "--exclude": "exclude", "--exclude-dir": "exclude_dir"}[name]].append(v)
+                    parts = pc.split_globs(v)
+                    if len(parts) > 1:
+                        o["notes"].append(f"{name} 一次一種寫法：「{v}」拆成 {'、'.join(parts)}")
+                    o[{"--include": "include", "--exclude": "exclude", "--exclude-dir": "exclude_dir"}[name]] += parts
                 elif name == "--context":
                     v = val if eq else need_value(name)
                     i += 0 if eq else 1

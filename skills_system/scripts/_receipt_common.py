@@ -13,6 +13,7 @@ harness 執行腳本時用環境變數 AGENT_RECEIPT_PATH 指定收據寫到哪�
   - env：環境擋住（沒有權限、找不到指令、裝置讀不到）——換參數修不好；
   - timeout：逾時，而且沒有任何結果（有部分結果時是 pass，truncated 為真）；
   - parse：腳本自己出錯（未預期的例外、沒有記收據）——要修程式；
+- near（error 時，有才記）：找不到路徑時的相近路徑（_path_common.near_paths 的候選；低階執行器的第 1 級照它判斷：好幾個時不替上一層選）；
 - counts：程式算好的數量；items：項目清單（路徑、行號、名稱…），最多 ITEMS_MAX 筆；truncated：結果或清單不完整；
 - tool、version、cwd，與各工具自己的欄位。
 """
@@ -29,13 +30,20 @@ _state = {}
 
 
 class ToolError(str):
-    """[ERROR] 的文字（照舊給模型）加上錯誤的種類（給收據）。它就是 str：凍結的工具拿共用層的錯誤當字串用，照舊。"""
+    """[ERROR] 的文字（照舊給模型）加上錯誤的種類與相近的路徑（給收據）。它就是 str：凍結的工具拿共用層的錯誤當字串用，照舊
+    （接上別的字就變回一般的 str，種類照呼叫 fail 時給的，相近的路徑不記）。"""
 
-    def __new__(cls, text, kind):
+    def __new__(cls, text, kind, near=None):
         assert kind in ERROR_KINDS, kind
         obj = super().__new__(cls, text)
         obj.kind = kind
+        obj.near = list(near or [])
         return obj
+
+
+def _near(text):
+    near = getattr(text, "near", None)
+    return {"near": list(near)} if near else {}
 
 
 def fail(text, kind=None):
@@ -43,8 +51,8 @@ def fail(text, kind=None):
     kind = kind or getattr(text, "kind", None)
     assert kind in ERROR_KINDS, (kind, str(text)[:120])
     _state.clear()
-    _state.update(status="error", error_kind=kind)
-    return ToolError(text, kind)
+    _state.update(status="error", error_kind=kind, **_near(text))
+    return ToolError(text, kind, getattr(text, "near", None))
 
 
 def result(status, counts=None, items=None, truncated=False, **fields):
@@ -62,7 +70,7 @@ def _final(text):
     if _state and (_state["status"] == "error") == is_error:
         return dict(_state)
     if is_error and isinstance(text, ToolError):
-        return {"status": "error", "error_kind": text.kind}
+        return {"status": "error", "error_kind": text.kind, **_near(text)}
     return {"status": "error", "error_kind": "parse", "note": "腳本沒有記收據，或記的跟回傳的文字對不上"}
 
 

@@ -2,10 +2,10 @@
 type: Tool
 title: 程式列舉
 description: 一次列出範圍裡每份檔案的行數，與程式檔的類別、函式定義（Python 用 AST、C/C++ 照定義的寫法）；各檔案幾個、總共幾個由腳本算好。
-version: 1.0.0
+version: 1.1.0
 dependencies: []
 parameters: [{"name": "path", "required": false, "default": ".", "fetch": "find_file <目錄名稱>"}]
-receipt: {"counts": ["files", "lines", "classes", "functions"], "items": ["path", "line", "end", "kind", "name", "qualname"], "fields": ["per_file", "paths", "include", "exclude_dirs", "name", "kind", "timed_out"]}
+receipt: {"counts": ["files", "lines", "classes", "functions"], "items": ["path", "line", "end", "kind", "name", "qualname", "decorator?"], "fields": ["per_file", "paths", "include", "exclude_dirs", "name", "kind", "timed_out"]}
 narrow: {"paths": {"rule": "inside", "arg": "路徑"}, "include": {"rule": "added", "arg": "--include"}}
 ---
 
@@ -28,8 +28,9 @@ Python 照語法分（含巢狀與 `_` 開頭的；方法寫成 `類別.方法`�
 
 # 回傳
 `[PASS] 範圍 <路徑>：N 份檔案、共 L 行；定義：類別 C、函式／方法 F[（篩選）]`，每份檔案一節 `## 路徑（L 行；類別 c、函式 f）`、
-每個定義一行（縮排）`  - class 名稱（行 a-b）`／`  - def 類別.方法（行 a-b）`（--files 時每份檔案一行 `- 路徑：L 行；…`）。列不下、沒有算的（二進位檔、
-語法錯誤只算行數的）寫在最後一行。沒有符合的檔案：`[PASS] 範圍 … 裡沒有符合的檔案（0 份）`。
+每個定義一行（縮排）`  - class 名稱（行 a-b）`／`  - def 類別.方法（行 a-b）`（行號從 def／class 那一行算，有裝飾器的另外寫
+「裝飾器在行 N」；--files 時每份檔案一行 `- 路徑：L 行；…`）。列不下、沒有算的（二進位檔、語法錯誤只算行數的）寫在最後一行。
+沒有符合的檔案：`[PASS] 範圍 … 裡沒有符合的檔案（0 份）`。
 
 # 異常
 * `[ERROR] 找不到路徑`：照「相近的路徑」修正。`不列 /`：指定具體的目錄。

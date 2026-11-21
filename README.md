@@ -121,7 +121,7 @@ Web 左欄是對話，右欄是系統與工具回傳（另一個分頁是「📊
 | 分類 | 技能 |
 |---|---|
 | ROS 2 數據解析（凍結；領域 `data_analysis`） | `analysis_run`（程式整理的事實報告）、`mcap_recorder`、`rosout_parser`、`mcap_analyzer`、`mcap_feature_measure`、`mcap_slicer` |
-| 檔案系統 | `list_dir`、`search_text`、`find_file`、`change_dir`、`view_file`、`code_ast_reader`、`host_runcmd`、`file_ops`、`csv_query` |
+| 檔案系統 | `list_dir`、`search_text`、`find_file`、`change_dir`、`view_file`、`code_ast_reader`、`code_defs`、`py_refs`、`host_runcmd`、`file_ops`、`csv_query`（`code_defs`、`py_refs` 是領域 `repo_analysis` 的工具，子工作階段用） |
 | 容器（凍結；領域 `robotics_infra`） | `docker_containers`、`docker_images`、`docker_est`、`docker_open`、`docker_runcmd`、`docker_ctl`、`ROS2_workspace_env` |
 | ROS 2（容器內，凍結；領域 `robotics_infra`） | `ROS2_domain_id`、`ROS2_topic_list`、`ROS2_topic_echo`、`ROS2_node_list`、`ROS2_node_info`、`ROS2_param`、`ROS2_topic_pub` |
 | 調度系統（凍結；領域 `rmf_dispatch`） | `workpackage_send`、`workpackage_status`、`workpackage_cancel`、`overpending_cancel`、`semantic_map`、`rmf_handshake` |

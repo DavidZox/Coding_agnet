@@ -1,6 +1,6 @@
 """code_defs：程式列舉——一個範圍（目錄或檔案，可以好幾個）裡每份檔案的行數，與程式檔裡的類別、函式定義（Python 用 AST；C／C++ 照
 定義的寫法），各檔案幾個、總共幾個由程式算。要回答「有幾份檔案、各幾行、最長的是哪幾份」「範圍裡有哪些類別、哪些函式（名稱符合的）、
-各幾個」時一次列完，不用一份一份看（方向的實驗：步驟 0 裡「要列出全部」的那一類，〈新架構討論紀錄〉第 5 節〈步驟 0 的結果與接下來的做法〉）。
+各幾個」時一次列完，不用一份一份看（repo_analysis 的工具，子工作階段用；步驟 0 裡「要列出全部」的那一類，設計筆記 2.44、2.45）。
 
 - 範圍：預設略過 _path_common.DEFAULT_EXCLUDES 的目錄（build、install、log、.git…；指定的路徑本身在裡面的照算），--exclude-dir 多略過；
   --include 只算這種檔名；二進位檔不算（計數）。
@@ -10,7 +10,8 @@
   不算）；有本體的函式定義（名稱後面的括號配對之後接 `{`，或建構子的 `:` 初始化再接 `{`；if、for、while、switch、catch… 不算），在類別
   本體裡的、或寫成 `類別::名稱` 的是方法（qualname 是 類別::名稱）。只有宣告（`;` 結尾的原型）不列。
 - --name（正規表示式，分大小寫）、--kind（class／def）篩定義；--files 只列每份檔案的行數與定義的數量；--sort lines 照行數由多到少。
-收據（_receipt_common，欄位見規格的 receipt）：每一個定義一筆（路徑、行號、結束的行、種類、名稱、qualname），每份檔案的行數與數量（per_file）。
+收據（_receipt_common，欄位見規格的 receipt）：每一個定義一筆（路徑、行號、結束的行、種類、名稱、qualname；Python 有裝飾器的另記 decorator——
+定義的行號從 def／class 那一行算），每份檔案的行數與數量（per_file）。
 """
 import fnmatch
 import os
@@ -56,9 +57,9 @@ def parse_args(argv):
                 return None, f"[ERROR] {a} 後面需要值。\n{USAGE}"
             v = args[i + 1]
             if a == "--include":
-                o["include"].append(v)
+                o["include"] += pc.split_globs(v)               # "*.h|*.cpp" 拆成兩種（_path_common.split_globs）
             elif a == "--exclude-dir":
-                o["exclude_dir"].append(v.strip("/"))
+                o["exclude_dir"] += [x.strip("/") for x in pc.split_globs(v)]
             elif a == "--name":
                 try:
                     re.compile(v)
@@ -136,7 +137,8 @@ def _py_defs(text, path):
         tree = ast.parse(text, filename=path)
     except (SyntaxError, ValueError):
         return None
-    return [{"line": d["line"], "end": d["end"], "kind": d["kind"], "name": d["name"], "qualname": d["qualname"]} for d in _definitions(tree)]
+    return [{"line": d["line"], "end": d["end"], "kind": d["kind"], "name": d["name"], "qualname": d["qualname"],
+             **({"decorator": d["decorator"]} if d.get("decorator") else {})} for d in _definitions(tree)]
 
 
 # ---------------------------------------------------------------- C／C++
@@ -350,7 +352,8 @@ def _render(o, roots, per_file, items, notes, over, skipped_dirs, excludes, time
             if shown_defs >= SHOWN_DEFS:
                 break
             shown_defs += 1
-            span = f"行 {d['line']}-{d['end']}" if d["end"] and d["end"] != d["line"] else f"行 {d['line']}"
+            span = (f"行 {d['line']}-{d['end']}" if d["end"] and d["end"] != d["line"] else f"行 {d['line']}") \
+                + (f"；裝飾器在行 {d['decorator']}" if d.get("decorator") else "")
             out.append(f"  - {'class' if d['kind'] == 'class' else 'def'} {d['qualname']}（{span}）")   # 縮排：提煉核對時上層的 ## 檔案 也算
     tail = []
     if len(rows) > SHOWN_FILES:

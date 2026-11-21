@@ -89,7 +89,7 @@ def make_env():
         "src/gamma/tests/test_g.py": "def test_one():\n    pass\n\n\ndef test_two():\n    handle_cmd(1)\n",
         "src/dup/x.py": "y = 1\n", "lib/dup/z.py": "z = 2\n", "src/beta/notes.py": "# note_only 只在註解裡\nx = 'note_only'\n",
         "logs/run1.log": "E9001 start\nE9001 again\nok\n", "logs/run2.log": "E9001\n", "logs/note.txt": "E9001 in notes\n",
-        "locked/m.py": "handle_cmd = 1\n",
+        "locked/m.py": "handle_cmd = 1\n", "deco/d.py": "class Delta:\n    @staticmethod\n    def build_it():\n        return 1\n\n\nDelta.build_it()\n",
         "docs/spec_alpha.md": SPEC_ALPHA, "docs/test_spec_alpha.md": "# spec_alpha 的測試\nRUNNING 的測試\n",
         "cpp/widget.h": "class Widget {\n public:\n  int make_widget(int size);\n};\n",
         "cpp/widget.cpp": '#include "widget.h"\n\nint Widget::make_widget(int size) {\n  return size * 2;\n}\n',
@@ -339,6 +339,9 @@ def main():
         assert "有好幾個" in job["need_user"]["question"]
         job = mid.Worker(agent, model=FakeModel(), fixer=lambda req, log: None).resume(job["id"], answer="src/dup")
         assert job["status"] == "done" and job["params"]["path"]["value"] == "src/dup" and job["graphs"][0]["cause"] is None, "還沒排過圖：不算重排"
+        job = run("deco 裡 build_it 定義在哪？", py_usage("build_it 定義在哪", "build_it", "deco 裡", "deco"))
+        assert job["status"] == "done" and "- 定義（1）：\n  - deco/d.py:3　def Delta.build_it（類別 Delta 的方法），行 3-4（裝飾器在行 2）" in job["result"]["report"], \
+            ("定義的行號與範圍從 def 那一行算，裝飾器另外寫", job["result"]["report"])
         job = run("nowhere_zz 裡誰呼叫 handle_cmd？", py_usage("誰呼叫 handle_cmd", "handle_cmd", "nowhere_zz 裡", "nowhere_zz"))
         assert job["status"] == "need_user" and job["need_user"]["candidates"] == [] and "找不到「nowhere_zz」" in job["need_user"]["question"]
 

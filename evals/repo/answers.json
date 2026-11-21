@@ -1929,7 +1929,8 @@
      "label": "volatile",
      "all": [
       [
-       "volatile"
+       "volatile",
+       "durability_volatile"
       ]
      ],
      "near": null,
