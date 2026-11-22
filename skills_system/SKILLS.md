@@ -19,6 +19,8 @@
 - [search_text](tools/search_text.md) — 在檔案「內部文字」裡搜關鍵字（`a|b` 同義詞、不分大小寫），依檔案分組並算好命中筆數；Log 檔、設定檔都能搜；預設略過 colcon 的 build／install／log 目錄與 .git（指定的路徑本身在裡面就照搜）
 - [find_file](tools/find_file.md) — 依「名稱關鍵字」遞迴找檔案與目錄（`"*.launch.py"` 萬用字元、含 / 比對路徑），依目錄分組並算好數量；只看一層或找最新的用 list_dir --newest
 - [code_ast_reader](tools/code_ast_reader.md) — 先看一個 Python 檔的結構（類別、函式完整簽名、docstring、每個 def 的行號範圍），再用 view_file --from 只讀需要的那段
+- [code_defs](tools/code_defs.md) — 一次列出範圍裡每份檔案的行數，與程式檔的類別、函式定義（Python 用 AST、C/C++ 照定義的寫法）；各檔案幾個、總共幾個算好
+- [py_refs](tools/py_refs.md) — 一個 Python 的名稱在範圍裡的每一處（AST：定義、呼叫、import、指定、其他用到），附檔案、行號與所在的函式；各檔案幾處、總共幾處算好
 - [change_dir](tools/change_dir.md) — 切換本機的工作目錄（之後的本機技能與相對路徑都以這裡為準；host_runcmd 指令裡的 cd 不會保留）
 - [view_file](tools/view_file.md) — 看本機文字檔（每行附行號；--from／--lines 看一段、--tail 看最後幾行、--around 看某一行前後）；技能規格文件由 EXECUTE 自動載入，不用這個
 - [host_runcmd](tools/host_runcmd.md) — 其他技能做不到的本機 shell 指令（不能互動、不保留背景程序；唯讀的直接執行，其他的會先請使用者確認）

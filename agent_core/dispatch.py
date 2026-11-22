@@ -215,7 +215,9 @@ class DispatchMixin:
             blocked = None if direct else self.domain_gate(raw_token)
             if blocked:
                 return blocked
-            skill_doc = self._load_skill_doc(raw_token)
+            composites = (getattr(self, "_sub_allowed", None) or {}).get("composites") or {}   # 子工作階段能叫的複合工具（建議 3）
+            name = raw_token[:-3] if raw_token.endswith(".md") else raw_token
+            skill_doc = self.composite_doc(name) if name in composites else self._load_skill_doc(raw_token)
             if skill_doc is not None:
                 print(f"📖 Agent 選擇技能索引: {raw_token}（載入規格文件，尚未執行）")
                 # 回給模型的這段話是兩階段流程裡最關鍵的一句：實測 JSON 協議下小模型載完規格容易停下來解釋規格或
@@ -230,6 +232,9 @@ class DispatchMixin:
                 return _d("loaded_skill", prefix=SKILL_DOC_PREFIX, name=raw_token, next=next_step, doc=skill_doc)
 
             script_name = self._normalize_script_name(raw_token)
+            if script_name[:-len("_cmd.py")] in composites:
+                # 複合工具：沒有實體腳本，交給中階照骨架做（orchestrator.run_composite；參數由程式核對、報告存成 #編號）
+                return self.run_composite(script_name[:-len("_cmd.py")], remainder)
             if script_name == "result_recall_cmd.py":
                 # 偽技能：result_recall 沒有實體 scripts/result_recall_cmd.py（要呼叫 ollama.chat，只能在本
                 # process 內做；核心邏輯都在 agent_core，見 doc/架構說明.md），必須在存在性檢查前攔截，

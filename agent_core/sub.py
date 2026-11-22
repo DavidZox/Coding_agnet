@@ -9,6 +9,8 @@
    之後也看得到）；太長的工具回傳照舊提煉（錨點換成原始問題、子目標與這一步的目的）；卡住偵測照主對話的規則（turn_guard.RepeatTracker，
    卡住就收尾）。只能用這個領域的工具與共用的工具（DOMAIN.md），其他的回 [ERROR]（orchestrator.domain_gate 看 agent._sub_allowed）；
    提煉結尾的下一步建議、怎麼回存檔看也只寫它能用的（result_grep、result_view；設計筆記 2.47：以前叫它用 result_recall，全部被擋）。
+   能叫複合工具時（建議 3，config.DOMAIN_SUB；composites）：工具清單前面先列這個領域的複合技能，載入規格與執行跟其他工具一樣
+   （orchestrator.composite_doc、run_composite）；報告不提煉，回答的 檔案:行號 照報告裡寫到的那一行核對（_cited）。
    對話太長時，送給模型的那一份把舊的工具結果換成存檔編號（存著的對話不動）。
 3. **確認關卡**：會改狀態的工具照舊先問使用者——子工作階段停下來（need_user），高階轉問（domain_pending），resume 接回同一步；拒絕就把
    [DENIED] 交給模型接著做；cancel（使用者取消）照做到的收尾。
@@ -89,12 +91,14 @@ def calls(job):
 class Session:
     """一個領域的子工作階段：start(問題, 子目標, 項目) → job（也存成 job.json）；停在確認關卡時 resume(編號, approve=…)，使用者不回答
     cancel(編號)。tools：這一次能用的工具（領域的工具加上共用的工具）；title、intro、practice：領域的標題、說明與〈做法〉（mid.load_domain）；
-    others：其他領域 [(名稱, 標題, 說明的第一行)]（查不到、不屬於的那一項選哪個領域查得到，第 5 步 5-4）。"""
+    others：其他領域 [(名稱, 標題, 說明的第一行)]（查不到、不屬於的那一項選哪個領域查得到，第 5 步 5-4）；composites：能直接叫的複合技能
+    {名稱: 一行說明}（建議 3，DOMAIN_SUB 的領域；其他的是空的）。"""
 
-    def __init__(self, agent, domain, tools=(), title="", intro="", practice="", others=()):
+    def __init__(self, agent, domain, tools=(), title="", intro="", practice="", others=(), composites=None):
         self.agent = agent
         self.domain = domain
-        self.tools = list(dict.fromkeys(tools))
+        self.composites = dict(composites or {})   # 複合工具（建議 3）：{名稱: 一行說明}
+        self.tools = list(dict.fromkeys(list(self.composites) + list(tools)))
         self.title, self.intro, self.practice = title or domain, intro, practice
         self.others = [tuple(o) for o in others if o[0] != domain]
         self.store = JobStore(os.path.join(agent.script_dir, "logs", SUB_JOBS_DIRNAME))
@@ -192,10 +196,11 @@ class Session:
         parts = payload.split(maxsplit=1)
         token = os.path.basename(parts[0]) if parts else ""
         script = self.agent._normalize_script_name(token)
-        tool = self.agent._script_skill_map().get(script) or (token[:-3] if token.endswith(".md") else token)
+        composite = script[:-len("_cmd.py")] if script[:-len("_cmd.py")] in self.composites else None
+        tool = composite or self.agent._script_skill_map().get(script) or (token[:-3] if token.endswith(".md") else token)
         denied = output is not None
         if not denied:
-            output = self._execute(action, approved) or ""
+            output = self._execute(job, action, approved) or ""
         doc = is_skill_doc_result(output)
         rid = None if doc or denied else self.agent.last_result_id
         receipt = None if doc or denied else self.agent.last_receipt
@@ -209,7 +214,9 @@ class Session:
                 "status": "DENIED" if denied else "ERROR" if output.lstrip().startswith("[ERROR]") else "PASS",
                 "result_id": rid, "head": output.strip().splitlines()[0][:200] if output.strip() else "", "rep": output.strip()[:500],
                 "receipt": {k: receipt.get(k) for k in ("status", "error_kind", "counts", "truncated")} if receipt else None,
-                "guard": {"approve": not denied} if guarded else None}
+                "guard": {"approve": not denied} if guarded else None,
+                "mid_job": getattr(self.agent, "last_composite_job", None) if composite and not doc and not denied else None,
+                "sources": list(getattr(self.agent, "last_composite_sources", None) or []) if composite and not doc and not denied else []}
         content = shown
         if not doc and not denied:
             content = _content_for_context(shown, self.agent.count_tokens(shown), self.agent, use_summary=TOOL_SUMMARY_DEFAULT,
@@ -227,10 +234,12 @@ class Session:
             return f"同樣的動作 {times} 次都得到同樣的結果（{payload[:60]}），卡住了，照做到的收尾"
         return None
 
-    def _execute(self, action, approved):
+    def _execute(self, job, action, approved):
         if action.get("domains"):                   # 子工作階段的 schema 沒有這一種，保險
             return "[ERROR] " + _s("not_my_tool", tool="交給領域", domain=self.domain, tools="、".join(self.tools))
-        self.agent._sub_allowed = {"domain": self.domain, "tools": set(self.tools)}
+        # 複合工具（run_composite）要這個子工作階段的問題、子目標與項目（判斷節點看它們）
+        self.agent._sub_allowed = {"domain": self.domain, "tools": set(self.tools), "composites": self.composites,
+                                   "question": job["question"], "goal": job["goal"], "items": job["items"]}
         try:
             return self.agent._run_tool_once({"action": action, "thought": "", "reply": "", "valid": True}, approved)
         finally:
@@ -294,20 +303,27 @@ class Session:
 
     # ---------------------------------------------------------------- 收尾：核對與報告
     def _archives(self, job):
-        """這個子工作階段的工具結果：[(#編號, 存檔的路徑)]。"""
-        out = []
+        """這個子工作階段的工具結果：[(#編號, 存檔的路徑)]；複合工具那一步另外加中階執行的工具結果（報告的「出處：#編號」，sources）。"""
+        out, seen = [], set()
         for st in job["steps"]:
-            path = self.agent.result_file_path(st["result_id"]) if st.get("result_id") else None
-            if path:
-                out.append((st["result_id"], path))
+            for rid in ([st["result_id"]] if st.get("result_id") else []) + list(st.get("sources") or []):
+                path = self.agent.result_file_path(rid) if str(rid) not in seen else None
+                if path:
+                    seen.add(str(rid))
+                    out.append((rid, path))
         return out
 
     def _cited(self, job, ref, archives):
-        """一個出處 → (種類, 對到的行, 那幾段的文字, 行號)：#編號 要是這個子工作階段的存檔；檔案:行號 要在它們的收據裡（那一行由程式從檔案讀）。"""
+        """一個出處 → (種類, 對到的行, 那幾段的文字, 行號)：#編號 要是這個子工作階段的存檔；檔案:行號 要在它們的收據裡（那一行由程式從檔案讀），
+        或是複合工具的報告寫到的那一行（跟主對話照中階的報告核對一樣，orchestrator._rows_for）。"""
         m = answers.CITE.search(ref)
         if m:
             path, first, last = answers.span(m)
             rows, texts = answers.rows_from_archives([p for _, p in archives], path, first, last, job["cwd"])
+            if not rows and self.composites:
+                reports = [answers.read(self.agent.result_file_path(st["result_id"])) for st in job["steps"]
+                           if st.get("result_id") and st["tool"] in self.composites and self.agent.result_file_path(st["result_id"])]
+                rows, texts = self.agent._rows_for(path, first, last, reports)
             return ("line" if rows else "unknown"), rows, texts, list(range(first, last + 1))
         m = answers.ID.search(ref)
         if m:
@@ -390,9 +406,11 @@ class Session:
     def _system(self):
         practice = _s("practice", practice=self.practice) if self.practice else ""
         others = "\n".join(_s("other_domain", title=t, intro=i) for _, t, i in self.others) or _s("no_other_domain")
+        tools = self.agent._index_lines([t for t in self.tools if t not in self.composites])
+        if self.composites:                 # 複合工具（建議 3）：先列，後面接其他工具
+            tools = _s("composite_tools", tools="\n".join(f"- {n} — {d}" for n, d in self.composites.items())) + "\n" + tools
         return _s("system", title=self.title, domain=self.domain, intro=self.intro or "—", practice=practice,
-                  tools=self.agent._index_lines(self.tools), others=others, none=NO_ROUTE, steps=SUB_STEPS_MAX,
-                  memory=self.agent.load_long_term_memory())
+                  tools=tools, others=others, none=NO_ROUTE, steps=SUB_STEPS_MAX, memory=self.agent.load_long_term_memory())
 
     def _first(self, job):
         items = "\n".join(f"{k}. {x}" for k, x in enumerate(job["items"], 1))

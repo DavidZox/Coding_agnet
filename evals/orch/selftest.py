@@ -23,6 +23,8 @@
 - 回覆的欄位順序（5-3 之後）：action 放最後；
 - 查得到的領域（5-4）：子工作階段查不到、不屬於的那一項寫哪個領域查得到（schema 的欄位），報告寫明、分工的結果列出「第 N 項：X 說要交給 Y 查」
   （查過、排除的附上），主模型照它再分工；主對話叫複合技能的名稱回交給哪個領域、子工作階段裡也擋。
+- 建議 3（開關 AGENT_DOMAIN_SUB，預設空的＝照舊）：列的領域不交給中階、直接開子工作階段，複合技能是它的工具（名稱載入規格、
+  `scripts/<名稱>_cmd.py` 執行、參數由程式核對、報告不提煉、回答照報告的出處核對、參數不對與路徑找不到回 [ERROR]）。
 
     python3 evals/orch/selftest.py
 """
@@ -447,6 +449,68 @@ def main():
             calls = domain_calls.calls(agent, {"action": dispatch("比較 pkg/mod.py 與 pkg/use.py", ["兩個檔案差在哪"])["action"]}, tools[0])
             assert calls[0]["mid_status"] == "no_skill" and calls[0]["sub_status"] == "done" and calls[0]["sub_steps"] == 2, calls[0]
             assert [(c["skill"], c["via"], c["args"]) for c in calls[1:]] == [("view_file", "repo_analysis", ["pkg/mod.py"]), ("view_file", "repo_analysis", ["pkg/use.py"])], calls
+
+        def t_composite_tools():
+            # 建議 3（〈新架構討論紀錄〉第 5 節〈框架的簡化〉）：DOMAIN_SUB 列的領域直接開子工作階段（不挑技能、不寫合約），它的複合技能是
+            # 子工作階段的工具——名稱載入規格（說明、〈什麼時候用〉、參數；骨架不給）、scripts/<名稱>_cmd.py 執行（參數由程式核對）、
+            # 中階照骨架做、報告存成 #編號 不提煉；回答照報告寫到的 檔案:行號 通過核對。參數不對、路徑找不到回 [ERROR] 附下一步。
+            # 預設（空的）照舊：先交給中階，子工作階段沒有複合工具
+            from agent_core import config as cfg, orchestrator as orch
+            assert cfg.DOMAIN_SUB == () and orch.DOMAIN_SUB == () and agent._sub("repo_analysis").composites == {}, "預設照舊"
+
+            def report_of(messages):
+                return next(m["content"] for m in messages if m["role"] == "user" and "[PASS] 🧰 複合工具 py_usage 的報告" in m["content"])
+
+            def sub_fin(messages):
+                rep = report_of(messages)
+                defs = re.findall(r"pkg/mod\.py:1(?!\d)", rep)
+                calls = re.findall(r"pkg/use\.py:5(?!\d)", rep)
+                assert defs and calls, rep
+                src = re.search(r"- 出處：#(\d+)", rep).group(1)      # 報告的出處是中階執行的工具結果：子工作階段引用它們也算
+                return {"thought": "收尾", "reply": "查到了。", "action": None,
+                        "answers": [{"item": 1, "status": "answered", "text": "alpha 定義在 pkg/mod.py 第 1 行", "refs": ["pkg/mod.py:1"]},
+                                    {"item": 2, "status": "answered", "text": "pkg/use.py 的 gamma 呼叫 alpha", "refs": ["pkg/use.py:5", f"#{src}"]}]}
+            orch.DOMAIN_SUB = ("repo_analysis",)
+            try:
+                assert set(agent._sub("repo_analysis").composites) == set(agent.domain_registry()["domains"]["repo_analysis"]["skills"])
+                fake = FakeChat(main=[dispatch("找 alpha 定義在哪、誰呼叫", ["alpha 定義在哪", "誰呼叫 alpha"]), cite],
+                                sub=[step("py_usage"), step("scripts/py_usage_cmd.py", "--name alpha --path pkg"), sub_fin])
+                events, _ = turn("alpha 定義在哪、誰呼叫？", fake)
+                assert fake.count("select") == 0 and fake.count("contract") == 0 and fake.count("sub") == 3, "不挑技能、不寫合約"
+                job = sub_job(agent._domain_turn["dispatches"][-1]["job"])
+                assert "複合工具（一次做完一種常見的查法" in job["system"] and "- py_usage — " in job["system"] and "- find_lines — " in job["system"]
+                assert job["system"].index("- py_usage — ") < job["system"].index("其他工具：") < job["system"].index("search_text"), "複合工具先列"
+                doc = job["messages"][2]["content"]
+                for want in ("# py_usage：Python 的名稱用在哪裡（複合工具）", "## 什麼時候用\n問題提到程式裡的一個名稱", "- --name（名稱，必填）：",
+                             "- --path（路徑，可以不寫，預設 .）", "EXECUTE: scripts/py_usage_cmd.py --name <名稱> [--path <路徑>] [--exclude <名稱清單>]"):
+                    assert want in doc, (want, doc)
+                assert "骨架" not in doc and '"nodes"' not in doc and "回退" not in doc and "策略" not in doc, "骨架、回退、策略不給"
+                assert [st["tool"] for st in job["steps"]] == ["py_usage", "py_usage"] and job["steps"][0]["doc"], job["steps"]
+                st = job["steps"][1]
+                assert st["status"] == "PASS" and st["mid_job"] and st["sources"] and not st["summarized"] and \
+                    st["head"].startswith("[PASS] 🧰 複合工具 py_usage 的報告：做完"), st
+                rep = report_of(job["messages"])
+                assert "# 複合工具的結果：做完" in rep and "- 參數：name＝alpha（子工作階段給的）；path＝pkg（子工作階段給的）" in rep and \
+                    "[tool result - 任務導向摘要]" not in rep, rep
+                assert job["status"] == "done" and job["problems"] == {}, ("出處照報告寫到的那一行通過核對", job["problems"])
+                mj = mid_job(st["mid_job"])
+                assert mj["tool"] and mj["skill"] == "py_usage" and mj["status"] == "done" and mj["selection"]["via"] == "tool"
+                tools = tools_of(events)
+                assert "repo_analysis 的報告（做完；做法 一步一步（子工作階段））" in tools[0] and \
+                    "2. scripts/py_usage_cmd.py --name alpha --path pkg → [PASS] 🧰 複合工具 py_usage 的報告：做完" in tools[0], tools[0]
+                fake = FakeChat(main=[dispatch("找 alpha", ["alpha 定義在哪"]), say("好")],
+                                sub=[step("scripts/py_usage_cmd.py", "--path pkg"), step("scripts/py_usage_cmd.py", "--nam alpha"),
+                                     step("scripts/py_usage_cmd.py", '"alpha beta"'), step("scripts/py_usage_cmd.py", "alpha --path nowhere"),
+                                     step("scripts/py_usage_cmd.py", "alpha")])
+                turn("alpha 定義在哪？", fake)
+            finally:
+                orch.DOMAIN_SUB = ()
+            heads = [st["head"] for st in sub_job(agent._domain_turn["dispatches"][-1]["job"])["steps"]]
+            assert heads[0].startswith("[ERROR] 🧰 複合工具 py_usage 的參數有問題：缺 --name（要查哪一個函式、類別或變數？）") and \
+                "EXECUTE: scripts/py_usage_cmd.py --name <名稱>" in heads[0], heads[0]
+            assert "沒有 --nam 這個參數" in heads[1] and "--name：要是一個名稱" in heads[2], heads[1:3]
+            assert heads[3].startswith("[ERROR] 🧰 複合工具 py_usage 要改參數：參數 path：工作目錄底下找不到「nowhere」"), heads[3]
+            assert heads[4].startswith("[PASS] 🧰 複合工具 py_usage 的報告：做完"), "只寫名稱（第一個必填的參數）：範圍用預設的 ."
 
         def t_out_of_domain():
             fake = FakeChat(main=[dispatch("看 cam_box 容器在不在跑", ["cam_box 現在的狀態"]), dispatch("再找一次 cam_box", ["狀態"]),
@@ -1109,6 +1173,7 @@ def main():
                 '「分工」{"domains": [{"domain": "repo_analysis"' in tools[0], tools[0]
             assert tools[1].startswith("[ERROR] doc_lookup 是 repo_analysis 領域寫好的做法"), tools[1]
             assert tools[2].startswith("[ERROR] 沒有 `no_such_skill` 這個技能"), "不是任何技能的照舊"
+            assert agent.domain_gate("scripts/py_usage_cmd.py").startswith("[ERROR] py_usage 是 repo_analysis 領域寫好的做法"), "複合工具的寫法也擋"
             reg = agent.domain_registry()
             assert reg["skills"]["py_usage"] == "repo_analysis" and set(reg["skills"]) == set(reg["domains"]["repo_analysis"]["skills"])
             agent._sub_allowed = {"domain": "robotics_infra", "tools": set(reg["domains"]["robotics_infra"]["tools"] + reg["shared"])}
@@ -1135,6 +1200,8 @@ def main():
                          ("核對：沒有的領域、子目標是空的、項目數、一樣的再交一次", t_validation),
                          ("沒有適合的做法：接著開子工作階段一步一步做（主對話看不到試錯、照舊擋）；報告附每一項的回答、出處的原文與每一步；評測照 via 記",
                           t_no_skill_sub),
+                         ("複合工具（建議 3）：DOMAIN_SUB 的領域直接開子工作階段，複合技能是它的工具（規格只給說明、什麼時候用與參數；參數由程式核對；"
+                          "中階照骨架做；報告不提煉；回答照報告的行通過核對；參數不對、路徑找不到回 [ERROR]）；預設照舊", t_composite_tools),
                          ("不屬於這個領域：排除，再交時附這一回合做過的事；不開子工作階段、也不放行", t_out_of_domain),
                          ("問使用者（Web）：停下來、回答不合法再問、回答之後接回同一個工作", t_ask_web),
                          ("問使用者：取消（接著開子工作階段）、/clear 一起取消（不接著做）", t_ask_cancel),

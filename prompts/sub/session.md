@@ -2,7 +2,8 @@
 system prompt（system、practice、其他領域的一行 other_domain；兩階段協議的那幾行照抄 AGENT.md，orch_selftest 核對兩邊一樣）、第一則訊息（first 與它的各段；前面的領域查到的、
 這個問題的分工在 harness/plan.md）、每份工具結果前面的編號（result_id）、收尾的核對沒過時交回修（answers_fix、
 why_ref_unknown；其他原因的說法用 harness/domain.md 的 why_*）、不是這個領域的工具（not_my_tool）、回覆不是 JSON（retry）、
-沒有動作也沒有回答（empty_turn）、寫到長度上限被截斷（cut）、對話太長時清掉的舊結果（cleared）、提煉時的「使用者想知道什麼」（anchor）。
+沒有動作也沒有回答（empty_turn）、寫到長度上限被截斷（cut）、對話太長時清掉的舊結果（cleared）、提煉時的「使用者想知道什麼」（anchor）、
+能用複合工具時工具清單前面那一段（composite_tools；建議 3，config.DOMAIN_SUB，複合工具的規格與回傳在 sub/composite.md）。
 {名稱} 是程式填的值。
 
 <!-- @system -->
@@ -42,6 +43,11 @@ why_ref_unknown；其他原因的說法用 harness/domain.md 的 why_*）、不�
 
 ## 長期記憶（使用者要記住的事）
 {memory}
+
+<!-- @composite_tools -->
+複合工具（一次做完一種常見的查法：程式照寫好的步驟搜尋、看檔案、分析程式，照收據整理成報告——每一處附 檔案:行號 與 #編號，數量由程式算）。問題是它們做得到的，先用它們；報告寫沒做完、或問題不是這幾種，再用後面的工具一步一步查。用法跟其他工具一樣：先用名稱載入規格，再照規格執行。
+{tools}
+其他工具：
 
 <!-- @practice -->
 ## 這個領域現在的做法

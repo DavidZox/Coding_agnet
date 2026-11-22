@@ -31,13 +31,20 @@
 6. **帶著上一次的經過再交**（4-2，I）：同一個問題再交給同一個領域時（之前那幾次沒有做完，或這次的項目之前交過），程式把之前幾次的
    做法、參數、結果、原因、找過的字交給中階或子工作階段（previous），中階從挑技能、合約重新規劃（合約只從新的子目標抄，第 5 步 G9），
    一樣的做法由中階擋（repeated）。
+7. **複合工具**（建議 3 的比較，〈新架構討論紀錄〉第 5 節〈框架的簡化〉；config.DOMAIN_SUB，預設是空的）：列在 AGENT_DOMAIN_SUB 的領域
+   不交給中階，直接開子工作階段，它的複合技能變成子工作階段的工具（_sub）。叫法跟其他工具一樣：名稱載入規格（composite_doc：說明、
+   〈什麼時候用〉、參數與執行的寫法；骨架、回退、判斷不給），`scripts/<名稱>_cmd.py --<參數> <值>` 執行（run_composite）：參數由程式核對
+   （mid.parse_tool_args，取代挑技能與合約兩次模型呼叫），交給中階照骨架做（mid.Worker.run_tool：排圖、低階、回退、判斷、報告），
+   報告存成 #編號 回給子工作階段（COMPOSITE_HEADS 開頭：程式整理好的，不再提煉）。要問使用者的（路徑找不到、範圍太大）不問，
+   回 [ERROR] 附要改的參數與候選。
 """
 import os
 import re
+import shlex
 
 from . import answers, mid, prompt_files, sub
-from .config import (DOMAIN_INDEX_NAME, DOMAIN_ITEM_TRIES, DOMAIN_ITEMS_MAX, DOMAIN_KNOWN_CHARS, DOMAIN_PLAN_MAX, DOMAIN_QUOTE_LINES,
-                     DOMAIN_RESULT_HEAD, MID_JOBS_DIRNAME, SUB_JOBS_DIRNAME)
+from .config import (COMPOSITE_HEADS, DOMAIN_INDEX_NAME, DOMAIN_ITEM_TRIES, DOMAIN_ITEMS_MAX, DOMAIN_KNOWN_CHARS, DOMAIN_PLAN_MAX,
+                     DOMAIN_QUOTE_LINES, DOMAIN_RESULT_HEAD, DOMAIN_SUB, MID_JOBS_DIRNAME, SUB_JOBS_DIRNAME)
 
 _ENTRY = re.compile(r"^- \[([A-Za-z0-9_]+)\]\(([^)]+)\)")
 _INDEX_LINE = re.compile(r"^- \[([A-Za-z0-9_]+)\]\(tools/[^)]+\)")
@@ -48,6 +55,11 @@ REPORTED = ("done", "dead_end", "circuit_break", "repeated")    # 中階有報�
 def _d(key, /, **fields):
     """prompts/harness/domain.md 的一則：交給領域的結果、核對沒過的說明。"""
     return prompt_files.load("harness/domain.md", key, **fields)
+
+
+def _c(key, /, **fields):
+    """prompts/sub/composite.md 的一則：複合工具的規格、回傳的第一行與下一步（建議 3）。"""
+    return prompt_files.load("sub/composite.md", key, **fields)
 
 
 def _p(key, /, **fields):
@@ -199,17 +211,18 @@ class DomainMixin:
         return self._script_skill_map().get(self._normalize_script_name(name))
 
     def domain_gate(self, token):
-        """主模型直接叫領域的工具（技能名稱或腳本）回 [ERROR]（附下一步）；叫領域的複合技能的名稱也一樣（複合技能由中階執行，不是工具；
-        第 5 步 5-4：以前落到「沒有這個技能（已經移除的名稱）」，沒有說要交給哪個領域）。子工作階段裡（agent._sub_allowed）只能用那個
-        領域的工具與共用的工具。可以用回 None（不是任何技能的照舊交給後面的檢查）。"""
+        """主模型直接叫領域的工具（技能名稱或腳本）回 [ERROR]（附下一步）；叫領域的複合技能的名稱（或 <名稱>_cmd.py）也一樣（複合技能由中階
+        執行，不是主對話的工具；第 5 步 5-4：以前落到「沒有這個技能（已經移除的名稱）」，沒有說要交給哪個領域）。子工作階段裡
+        （agent._sub_allowed）只能用那個領域的工具與共用的工具，能叫複合工具的（DOMAIN_SUB）再加那個領域的複合技能。可以用回 None
+        （不是任何技能的照舊交給後面的檢查）。"""
         skill = self._tool_of(token)
         reg = self.domain_registry()
         name = os.path.basename(token)
-        name = name[:-3] if name.endswith(".md") else name
+        name = name[:-3] if name.endswith(".md") else name[:-len("_cmd.py")] if name.endswith("_cmd.py") else name
         composite = reg["skills"].get(name) if skill is None else None
         allowed = getattr(self, "_sub_allowed", None)
         if allowed is not None:
-            if (skill is None and composite is None) or skill in allowed["tools"]:
+            if (skill is None and composite is None) or (skill or name) in allowed["tools"]:
                 return None
             return "[ERROR] " + prompt_files.load("sub/session.md", "not_my_tool", tool=skill or name, domain=allowed["domain"],
                                                   tools="、".join(sorted(allowed["tools"])))
@@ -333,10 +346,10 @@ class DomainMixin:
         turn["dispatches"].append(entry)
         before = (self.current_cwd, self.container_cwd, self.target_container)
         question = self.current_task or goal
-        if reg["domains"][name]["skills"]:
+        if reg["domains"][name]["skills"] and name not in DOMAIN_SUB:
             job = mid.Worker(self, name).start(question + ("\n\n" + context["known"] if context["known"] else ""), goal, items=items,
                                                on_start=self._domain_started, previous=entry["previous_info"], attempt=entry["n"])
-        else:                                              # 沒有複合技能的領域：直接開子工作階段（第 5 步）
+        else:                     # 沒有複合技能的領域（第 5 步）、DOMAIN_SUB 列的（建議 3：複合技能是子工作階段的工具）：直接開子工作階段
             job = self._sub_start(name, entry)
         return job, entry, before
 
@@ -400,12 +413,74 @@ class DomainMixin:
         return head + [self._attempt_info(x)]
 
     def _sub(self, name):
-        """這個領域的子工作階段：能用領域的工具加上共用的工具；其他領域的標題與說明的第一行（查不到、不屬於的那一項選哪個領域查得到）。"""
+        """這個領域的子工作階段：能用領域的工具加上共用的工具（DOMAIN_SUB 列的領域再加它的複合技能：複合工具，建議 3）；其他領域的標題與
+        說明的第一行（查不到、不屬於的那一項選哪個領域查得到）。"""
         reg = self.domain_registry()
         d = reg["domains"][name]
         others = [(n, o["title"], (o["intro"].split("\n") or [""])[0]) for n, o in reg["domains"].items() if n != name]
+        composites = {k: d["catalog"].get(k) or s["meta"]["description"] for k, s in d["skills"].items()} if name in DOMAIN_SUB else {}
         return sub.Session(self, name, tools=d["tools"] + reg["shared"], title=d["title"], intro=d["intro"], practice=d.get("practice", ""),
-                           others=others)
+                           others=others, composites=composites)
+
+    # ---------------------------------------------------------------- 複合工具（建議 3：子工作階段直接叫的複合技能）
+    def _composite_spec(self, name):
+        reg = self.domain_registry()
+        domain = reg["skills"][name]
+        return domain, reg["domains"][domain]["skills"][name]
+
+    @staticmethod
+    def _composite_usage(spec):
+        kinds = mid.param_kinds()
+        return " ".join(_c("usage_required", name=p["name"], kind=kinds[p["type"]]) if p.get("required")
+                        else _c("usage_optional", name=p["name"], kind=kinds[p["type"]]) for p in spec["parameters"])
+
+    def composite_doc(self, name):
+        """複合工具的規格（給子工作階段的模型）：說明、〈什麼時候用〉、參數與執行的寫法。骨架、回退、判斷、策略不給：程式照它們做。"""
+        _, spec = self._composite_spec(name)
+        kinds, rows = mid.param_kinds(), []
+        for p in spec["parameters"]:
+            if p.get("required"):
+                rows.append(_c("param_required", name=p["name"], kind=kinds[p["type"]], desc=p["desc"]))
+            elif "default" in p:
+                rows.append(_c("param_default", name=p["name"], kind=kinds[p["type"]], desc=p["desc"], default=p["default"]))
+            else:
+                rows.append(_c("param_optional", name=p["name"], kind=kinds[p["type"]], desc=p["desc"]))
+        return _c("doc", name=name, title=spec["meta"]["title"], description=spec["meta"]["description"],
+                  when=spec["sections"].get("什麼時候用", "").strip(), params="\n".join(rows), usage=self._composite_usage(spec))
+
+    def run_composite(self, name, remainder):
+        """子工作階段叫複合工具：參數由程式核對（mid.parse_tool_args），交給中階照骨架做（mid.Worker.run_tool），結果存成 #編號 回給
+        子工作階段。做完、死路、熔斷有報告：[PASS] 開頭；參數不對、要改參數、失敗：[ERROR] 開頭附下一步（都是 COMPOSITE_HEADS，不再提煉）。
+        中階的工作編號記在 last_composite_job（子工作階段記進那一步，決策圖連得到）；中階執行的工具結果（報告的「出處：#編號」）記在
+        last_composite_sources（子工作階段把它們當成自己的工具結果：回答引用那些 #編號、收據裡的 檔案:行號 都算）。"""
+        allowed = getattr(self, "_sub_allowed", None) or {}
+        domain, spec = self._composite_spec(name)
+        before = (self.current_cwd, self.container_cwd, self.target_container)
+        self.last_composite_job, self.last_composite_sources = None, []
+        values, err = mid.parse_tool_args(spec, remainder)
+        if err:
+            out = COMPOSITE_HEADS[1] + _c("err_args", name=name, why=err, usage=self._composite_usage(spec))
+        else:
+            job = mid.Worker(self, domain).run_tool(allowed.get("question") or self.current_task or "", allowed.get("goal") or "",
+                                                    allowed.get("items") or [], name, values)
+            self.last_composite_job = job["id"]
+            self.last_composite_sources = [str(r) for r in (job.get("result") or {}).get("sources") or []]
+            st, note = job["status"], (job.get("result") or {}).get("note") or ""
+            report = (job.get("result") or {}).get("report") or ""
+            if st in REPORTED:
+                out = COMPOSITE_HEADS[0] + _c("head", name=name, status=mid.STATUS_TEXT[st]) + "\n" + report
+            elif st == "need_params":
+                out = COMPOSITE_HEADS[1] + _c("err_params", name=name, why=note) + "\n" + report
+            else:
+                out = (COMPOSITE_HEADS[1] + _c("err_failed", name=name, status=mid.STATUS_TEXT.get(st, st), why=f"（{note}）" if note else "")
+                       + "\n" + report)
+        try:
+            args = shlex.split(remainder or "")
+        except ValueError:
+            args = [remainder]
+        self.last_receipt = None
+        self._record_trajectory(f"{name}_cmd.py", args, out, *before)
+        return out
 
     def _domain_started(self, jid, kind="mid"):
         """中階或子工作階段的工作建好了：決策圖的連結先推給畫面（執行中就能看，4b ①）。"""

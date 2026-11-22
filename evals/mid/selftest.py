@@ -8,6 +8,8 @@ Web 的拓撲圖（web_app/topology.py 整理的資料、/topology 頁面與 /ap
 3b：判斷節點（規格的核對；原文照收據讀、交給模型的原文與預算、片段的比對與行號；回答、接著找、看前後、沒寫、交回修、重選路、找過的字、
 次數用完、沒有輸入、模型沒有回覆）、換技能（py_usage 的 .py 沒有、C++ 檔有 → cpp_symbol；答不了就不換）、搜尋的字的合約、拓撲圖的判斷。
 4-2：帶著上一次的經過（挑技能、合約、判斷看得到；一樣的技能與參數先重寫合約，還是一樣就停）。
+建議 3：複合工具（子工作階段直接叫，Worker.run_tool）——參數由程式核對（parse_tool_args）、不挑技能不寫合約、報告從技能與參數寫起、
+要問使用者的不問（結束成 need_params，附要改的參數與候選）。
 
     python3 evals/mid/selftest.py
 """
@@ -284,6 +286,39 @@ def main():
         note = run("src/beta 裡誰呼叫 note_only？", py_usage("誰呼叫 note_only", "note_only", "src/beta 裡", "src/beta"))
         assert note["status"] == "done", ("只在註解裡提到的檔案：AST 0 處也是答案", note["result"]["report"])
         assert "- 只在註解或字串裡提到、程式裡沒有用到的檔案（1）：src/beta/notes.py" in note["result"]["report"], note["result"]["report"]
+
+    def t_run_tool():
+        # 建議 3（〈新架構討論紀錄〉第 5 節〈框架的簡化〉）：子工作階段直接叫的複合工具——參數由程式核對（parse_tool_args：--參數 值、
+        # 沒寫名稱的給第一個必填、種類的核對、漏了必填、沒有的參數）；run_tool 不挑技能、不寫合約（沒有模型呼叫），之後照骨架做；
+        # 要問使用者的（路徑找不到、範圍太大）不問，結束成 need_params（說明寫參數與候選）
+        spec = mid.load_domain(agent.base_path, agent.tools_dir, "repo_analysis")["skills"]["py_usage"]
+        pa = mid.parse_tool_args
+        assert pa(spec, "--name handle_cmd --path ./src/") == ({"name": "handle_cmd", "path": "src"}, None)
+        assert pa(spec, "handle_cmd --exclude beta,gamma") == ({"name": "handle_cmd", "exclude": ["beta", "gamma"]}, None), "沒寫名稱的給第一個必填"
+        assert pa(spec, "--name=handle_cmd --exclude beta --exclude gamma")[0]["exclude"] == ["beta", "gamma"], "名稱清單可以重複寫"
+        for args, why in (("--path src", "缺 --name（要查哪一個函式、類別或變數？）"), ("--nam x", "沒有 --nam 這個參數"),
+                          ("a.b", "--name：要是一個名稱"), ("a b", "多了沒有參數名稱的值「a b」"), ("--name a --name b", "--name 只能給一個值"),
+                          ("--name", "--name 後面要接值"), ('--name "a', "引號沒有成對"), ("a --exclude 'x y|z'", "--exclude：每一項要是一個目錄的名稱")):
+            got = pa(spec, args)
+            assert got[0] is None and why in got[1], (args, got)
+        model = FakeModel()
+        tool = mid.Worker(agent, model=model, fixer=lambda req, log: None)
+        job = tool.run_tool("src 裡誰呼叫 handle_cmd？", "找 handle_cmd 的呼叫", ["誰呼叫"], "py_usage", {"name": "handle_cmd", "path": "src"})
+        assert job["status"] == "done" and job["tool"] and job["selection"] == {"via": "tool", "skill": "py_usage"}, job["status"]
+        assert job["params"]["path"] == {"value": "src", "source": "tool", "checked": True} and not model.calls, "不挑技能、不寫合約"
+        report = job["result"]["report"]
+        assert report.startswith("# 複合工具的結果：做完\n- 複合技能：py_usage\n- 參數：name＝handle_cmd（子工作階段給的）") and "- 問題：" not in report, report
+        assert "- 呼叫：總共 4 次（3 個檔案）" in report, report
+        job = tool.run_tool("q", "g", [], "py_usage", {"name": "handle_cmd", "path": "nowhere"})
+        assert job["status"] == "need_params" and "參數 path：工作目錄底下找不到「nowhere」" in job["result"]["note"] and not job["asked"], job["result"]
+        real = edg.EDG_EACH_MAX
+        edg.EDG_EACH_MAX = 2
+        try:
+            job = tool.run_tool("q", "g", [], "py_usage", {"name": "handle_cmd", "path": "src"})
+        finally:
+            edg.EDG_EACH_MAX = real
+        assert job["status"] == "need_params" and "src/beta（3 筆）" in job["result"]["note"] and job["need_user"] is None, job["result"]
+        assert [f["result"] for f in job["fallbacks"]] == ["ask"] and job["result"]["report"].startswith("# 複合工具的結果：參數要改")
 
     def t_contract_fix():
         model = FakeModel(select=[{"understanding": "u", "skill": "py_usage", "reason": "r"}],
@@ -1023,6 +1058,8 @@ def main():
              ("合約的核對：原文要在問題裡；名稱、路徑、名稱清單原樣在原文裡；文字與檔案名稱的寫法每一段都在原文裡；使用者的回答", t_verify),
              ("排圖：if 群組（名稱清單一項一組）、節點的 if、依賴沒排的節點也不排", t_expand),
              ("py_usage 走一遍：挑技能 → 合約 → 排圖 → 低階 → 報告（定義、呼叫、每個檔案幾次、總數、import 不算呼叫、#編號）；存檔與模型的輸入", t_py_usage_flow),
+             ("複合工具（建議 3）：參數由程式核對（--參數 值、沒寫名稱的給第一個必填、種類、漏了必填、沒有的參數）；不挑技能、不寫合約，照骨架做、"
+              "報告從技能與參數寫起；路徑找不到、範圍太大不問使用者，結束成 need_params（參數與候選）", t_run_tool),
              ("合約沒過核對（或漏了必填的參數）：只把這幾個交回修一次；修了還是不對就當成沒提到", t_contract_fix),
              ("必填的參數沒提到：問使用者 → 回答不合法再問 → 回答之後接著做（問了什麼、不合法的回答、最後的回答都記下來）", t_ask_and_resume),
              ("路徑找不到：照 fetch 查一次，剛好一個就自己補（報告寫明）；好幾個或沒有就問使用者", t_fetch),
