@@ -3,14 +3,13 @@
 code_ast_reader --refs）做成一次執行的工具（repo_analysis 的工具，子工作階段用；2026-11-21 方向的實驗做的，設計筆記 2.45）。
 
 - 範圍：預設略過 _path_common.DEFAULT_EXCLUDES 的目錄（指定的路徑本身在裡面的照算），--exclude-dir 多略過；只看 Python 檔（.py、.pyw、
-  .pyi、第一行是 python 的 #!；--include 改成只看這種檔名）。先照字面挑出有這個名稱（整個字）的檔案，再用 code_ast_reader 的 _RefVisitor 分
+  .pyi、第一行是 python 的 #!；--include 改成只看這種檔名，含 / 時比對整個路徑）。先照字面挑出有這個名稱（整個字）的檔案，再用 code_ast_reader 的 _RefVisitor 分
   每一處：註解與字串裡提到的、名稱更長的相似名稱不算；import 不算呼叫。語法錯誤的檔案不算，計數寫在最後一行。
 - --kind 只列一種（def、call、import、assign、ref）。範圍裡的 Python 一處都沒有時，另外照字面看範圍裡的 C／C++ 檔有沒有這個名稱（寫在回覆裡）。
 收據（_receipt_common，欄位見規格的 receipt）：每一處一筆（路徑、行號、種類、所在的函式、那一行的原始碼；定義另有 qualname、in_class、
 結束的行、有裝飾器的另記 decorator——定義的行號與範圍從 def／class 那一行算），每個檔案的數量（per_file）。
 """
 import ast
-import fnmatch
 import os
 import re
 import signal
@@ -30,7 +29,7 @@ KINDS = ("def", "call", "import", "assign", "ref")
 USAGE = ('用法: scripts/py_refs_cmd.py <名稱> [路徑…] [--exclude-dir <名稱>] [--include "<檔名寫法>"] [--kind <種類>]\n'
          '  名稱：一個 Python 的名稱（函式、方法、類別、變數；a.b 只寫最後一段）\n'
          '  路徑：目錄或檔案，可以好幾個，預設 .（目前工作目錄）；不能是 /。\n'
-         '  --exclude-dir 名稱：多略過一個目錄（可重複）　--include "test_*.py"：只看這種檔名（可重複，預設全部的 Python 檔）\n'
+         '  --exclude-dir 名稱：多略過一個目錄（可重複）　--include "test_*.py"：只看這種檔名（可重複，含 / 時比對整個路徑；預設全部的 Python 檔）\n'
          '  --kind call：只列這幾種（def 定義、call 呼叫、import、assign 指定、ref 其他用到；幾種用 | 分開：def|call）')
 _NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -130,8 +129,7 @@ def execute(argv):
         files, skipped_dirs = _walk(roots, excludes)
         over = max(0, len(files) - FILES_MAX)
         for path in files[:FILES_MAX]:
-            base = os.path.basename(path)
-            is_py = (any(fnmatch.fnmatch(base, g) for g in o["include"]) if o["include"] else _is_python(path))
+            is_py = pc.include_ok(path, o["include"]) if o["include"] else _is_python(path)   # 含 / 的比對整個路徑（同 search_text、find_file）
             if not is_py:
                 if path.endswith(CPP_EXT):
                     text = _read(path)

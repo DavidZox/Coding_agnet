@@ -447,6 +447,14 @@ def main():
                      "- 總共 3 筆（2 個檔案）", "- 搜尋「E9001」，範圍：logs；只看 *.log"):
             assert want in report, (want, report)
         assert "note.txt" not in report
+        # 待辦 4l ②：files 寫成含目錄的寫法——找檔案與搜尋兩個節點照同一條規則比對路徑（以前搜尋的 --include 只比對檔名：找到檔案、0 筆、做完）
+        model = FakeModel(select=[{"understanding": "u", "skill": "count_in_scope", "reason": "r"}],
+                          contract=[{"understanding": "u", "keyword": cell("handle_cmd 出現幾行", "handle_cmd"),
+                                     "files": cell("beta 目錄裡的 .py", "beta/*.py"), "path": cell(), "exclude": cell()}])
+        job = run("beta 目錄裡的 .py，handle_cmd 出現幾行？", model)
+        report = job["result"]["report"]
+        assert job["status"] == "done" and "- 總共 3 筆（1 個檔案）" in report and "    - src/beta/node_b.py：3 筆" in report, report
+        assert "src/beta/notes.py" in report and "README.md" not in report, "找檔案的節點找到的兩個 .py 都在報告裡"
         model = FakeModel(select=[{"understanding": "u", "skill": "count_in_scope", "reason": "r"}],
                           contract=[{"understanding": "u", "keyword": cell(), "files": cell("檔名 test_ 開頭的 .py", "test_*.py"),
                                      "path": cell(), "exclude": cell("不含 gamma", "gamma")}])

@@ -450,6 +450,28 @@ def main():
             assert calls[0]["mid_status"] == "no_skill" and calls[0]["sub_status"] == "done" and calls[0]["sub_steps"] == 2, calls[0]
             assert [(c["skill"], c["via"], c["args"]) for c in calls[1:]] == [("view_file", "repo_analysis", ["pkg/mod.py"]), ("view_file", "repo_analysis", ["pkg/use.py"])], calls
 
+        def t_sub_inline_cite():
+            # 回答的內文寫「檔案:行號」、出處寫 #編號（待辦 4l ①）：內文的 檔案:行號 跟出處一樣照收據核對。收據裡有的通過；以前整串當成一個名稱，
+            # 在 search_text 的原文（每一行寫成「行號→」）裡找不到，一定擋。收據裡沒有的照樣擋（交回修一次，還是一樣就標出來）
+            def sub_ans(line):
+                def f(messages):
+                    rid = re.findall(r"存檔是 #(\d+)", "\n".join(m["content"] for m in messages))[-1]
+                    return {"thought": "收尾", "reply": "找到了。", "action": None,
+                            "answers": [{"item": 1, "status": "answered", "text": f"alpha 定義在pkg/mod.py:{line}", "refs": [f"#{rid}"]}]}
+                return f
+            for line, ok in ((1, True), (5, False)):
+                fake = FakeChat(main=[dispatch("在 pkg 裡找 alpha 的定義", ["alpha 定義在哪"]), say("好")],
+                                select=[select("none", "沒有適合的做法")],
+                                sub=[step("search_text"), step("scripts/grep_cmd.py", '"def alpha" pkg'), sub_ans(line), sub_ans(line)])
+                turn("pkg 裡的 alpha 定義在哪？", fake)
+                job = sub_job(agent._domain_turn["dispatches"][-1]["job"])
+                fix = [m["content"] for m in job["messages"] if m["role"] == "user" and m["content"].startswith("【系統核對】")]
+                assert job["steps"][-1]["status"] == "PASS" and job["status"] == "done", (job["steps"][-1], job["status"])
+                if ok:
+                    assert not fix and not job["problems"], (fix, job["problems"])
+                else:
+                    assert len(fix) == 1 and "pkg/mod.py:5" in fix[0] and "pkg/mod.py:5" in "".join(job["problems"]["1"]), (fix, job["problems"])
+
         def t_composite_tools():
             # 建議 3（〈新架構討論紀錄〉第 5 節〈框架的簡化〉）：DOMAIN_SUB 列的領域直接開子工作階段（不挑技能、不寫合約），它的複合技能是
             # 子工作階段的工具——名稱載入規格（說明、〈什麼時候用〉、參數；骨架不給）、scripts/<名稱>_cmd.py 執行（參數由程式核對）、
@@ -1200,6 +1222,8 @@ def main():
                          ("核對：沒有的領域、子目標是空的、項目數、一樣的再交一次", t_validation),
                          ("沒有適合的做法：接著開子工作階段一步一步做（主對話看不到試錯、照舊擋）；報告附每一項的回答、出處的原文與每一步；評測照 via 記",
                           t_no_skill_sub),
+                         ("子工作階段的回答內文寫「檔案:行號」、出處寫 #編號：內文的照收據核對（待辦 4l ①：收據裡有的通過，沒有的照樣擋）",
+                          t_sub_inline_cite),
                          ("複合工具（建議 3）：DOMAIN_SUB 的領域直接開子工作階段，複合技能是它的工具（規格只給說明、什麼時候用與參數；參數由程式核對；"
                           "中階照骨架做；報告不提煉；回答照報告的行通過核對；參數不對、路徑找不到回 [ERROR]）；預設照舊", t_composite_tools),
                          ("不屬於這個領域：排除，再交時附這一回合做過的事；不開子工作階段、也不放行", t_out_of_domain),

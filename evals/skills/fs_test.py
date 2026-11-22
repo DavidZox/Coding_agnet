@@ -215,6 +215,24 @@ def t_search_files_mode_and_context():
     assert ">    3→fail two" in out and "     2→ok" in out, out
 
 
+def t_search_include_path():
+    """search_text --include 含 / 時比對整個路徑，不分大小寫，跟 find_file 的名稱關鍵字同一條規則（_path_common.path_glob）。
+    待辦 4l ②：以前原樣交給 grep 的 --include，只比對檔名，「<目錄>/*.py」一份都對不到、回 0 筆。不含 / 的照舊只比對檔名；兩種可以一起用"""
+    d = _tmp()
+    _grep_tree(d)
+    out = run("grep_cmd.py", "error", ".", "--include", "pkg/*.log", d=d)
+    assert first_line(out).startswith("[PASS] 搜尋「error」：共 30 筆命中，分布在 1 個檔案") and "## src/pkg/many.log" in out, out
+    assert "只搜路徑符合 pkg/*.log 的檔案" in out, out
+    out = run("grep_cmd.py", "error", ".", "--include", "SRC/*.py", "-l", d=d)
+    assert "共 1 筆命中" in first_line(out) and "- src/a.py（1 筆）" in out, out
+    out = run("grep_cmd.py", "error", ".", "--include", "*.txt", "--include", "pkg/*.log", d=d)
+    assert "共 31 筆命中，分布在 2 個檔案" in first_line(out) and "只搜檔名符合 *.txt、路徑符合 pkg/*.log 的檔案" in out, out
+    out = run("grep_cmd.py", "error", ".", "--include", "*.log", d=d)
+    assert "共 30 筆命中" in first_line(out), "不含 / 的照舊只比對檔名"
+    found = run("find_file_cmd.py", "pkg/*.log", ".", "--type", "f", d=d)
+    assert found.startswith("[PASS] 找到 1 個路徑含「pkg/*.log」"), found
+
+
 def t_search_rank():
     """search_text --rank：命中超過上限時先列同一行含最多個不同的字的行（照檔案順序會截掉檔尾的答案）；檔案照最多的那一行排；
     只有一個字時照檔案順序並說明；沒挑到的命中在前後行的範圍裡當前後行列（不標 >）"""
@@ -492,6 +510,9 @@ def t_code_defs():
     assert rows == ["- src/engine.cpp：28 行；類別 2、函式 5", "- src/tests/test_box.py：10 行；類別 1、函式 3", "- src/notes.md：3 行"], rows
     out = run("code_defs_cmd.py", "src", "--include", "*.rs", d=d)
     assert out.startswith("[PASS] 範圍 src 裡沒有符合的檔案（0 份；檔名 *.rs）"), out
+    out = run("code_defs_cmd.py", ".", "--include", "tests/*.py", d=d)
+    assert first_line(out).startswith("[PASS] 範圍 .：1 份檔案、共 10 行") and "路徑符合 tests/*.py" in first_line(out), \
+        ("--include 含 / 時比對整個路徑（同 search_text、find_file）", first_line(out))
     assert_error(run("code_defs_cmd.py", "nope", d=d), "找不到")
     assert_error(run("code_defs_cmd.py", "src", "--kind", "method", d=d), "--kind 要是 class")
     assert_error(run("code_defs_cmd.py", "src", "--name", "(", d=d), "正規表示式")
@@ -517,6 +538,9 @@ def t_py_refs():
     out = run("py_refs_cmd.py", "helper", "pkg", "--exclude-dir", "tests", "--kind", "def|call", d=d)
     assert first_line(out).startswith("[PASS] 「helper」在 pkg 的 Python 程式裡出現 6 處、2 份檔案（AST）（只算定義、呼叫）"), first_line(out)
     assert_error(run("py_refs_cmd.py", "helper", "pkg", "--kind", "def|calls", d=d), "--kind 要是", "def|call")
+    out = run("py_refs_cmd.py", "helper", "pkg", "--include", "tests/*.py", d=d)
+    assert first_line(out).startswith("[PASS] 「helper」在 pkg 的 Python 程式裡出現 2 處、1 份檔案"), \
+        ("--include 含 / 時比對整個路徑（同 search_text、find_file）", first_line(out))
     out = run("py_refs_cmd.py", "rate_", "pkg", d=d)
     assert out.startswith("[PASS] 範圍 pkg 的 Python 程式裡沒有「rate_」") and "C／C++ 檔有這個名稱（照字面）：pkg/engine.cpp" in out, out
     out = run("py_refs_cmd.py", "nothing_here", "pkg", d=d)

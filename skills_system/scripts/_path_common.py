@@ -13,8 +13,11 @@ csv_query、file_ops、image_inspect 共用。只用標準庫。
 5. harness_logs_dir()：技能要寫的檔案（file_ops 的備份、stt_engine 的辨識結果）一律放 harness 的 logs/，不寫進使用者的目錄。
 6. 錯誤是 _receipt_common.ToolError（就是 str，另外帶收據用的種類）：找不到、種類不對、失效的連結＝args（換路徑就好），
    沒有權限＝env（換參數修不好）。
+7. path_glob()、include_ok()：名稱的寫法含 / 時比對整個路徑（不分大小寫）。find_file 的名稱關鍵字與 search_text、code_defs、py_refs 的
+   --include 用同一條規則；不含 / 的 --include 照舊只比對檔名。
 """
 import difflib
+import fnmatch
 import os
 import stat
 import sys
@@ -197,6 +200,26 @@ def split_globs(value):
     一份都對不到）→ 拆成幾個；沒有 | 照原樣。"""
     parts = [p.strip() for p in str(value).split("|") if p.strip()]
     return parts if len(parts) > 1 else [value]
+
+
+def path_glob(value):
+    """名稱的寫法含 / 時比對整個路徑 → fnmatch／find -ipath 的寫法：前面補 *（哪一層都可以），沒有萬用字元的是「路徑含這一段」，
+    開頭的 ./ 拿掉；不含 / 的回 None（只比對名稱）。待辦 4l ②：以前 --include 原樣交給 grep、只比對檔名，「<目錄>/*.py」一份都對不到，
+    同一個值給 find_file 卻照路徑找得到。"""
+    if "/" not in value:
+        return None
+    value = value[2:] if value.startswith("./") else value
+    pat = value if any(c in value for c in "*?[") else f"*{value.strip('/')}*"
+    return pat if pat.startswith("*") else f"*{pat}"
+
+
+def include_ok(path, globs):
+    """path 符合 --include 的其中一種寫法（沒有寫法都算）：不含 / 的比對檔名（同 grep 的 --include，分大小寫），含 / 的照 path_glob 比對
+    整個路徑（絕對路徑，不分大小寫，同 find_file 的 -ipath）。"""
+    if not globs:
+        return True
+    base, full = os.path.basename(path), os.path.abspath(path).lower()
+    return any(fnmatch.fnmatchcase(full, pat.lower()) if (pat := path_glob(g)) else fnmatch.fnmatchcase(base, g) for g in globs)
 
 
 def join_if_exists(parts):

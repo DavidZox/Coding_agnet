@@ -3,7 +3,7 @@
 各幾個」時一次列完，不用一份一份看（repo_analysis 的工具，子工作階段用；步驟 0 裡「要列出全部」的那一類，設計筆記 2.44、2.45）。
 
 - 範圍：預設略過 _path_common.DEFAULT_EXCLUDES 的目錄（build、install、log、.git…；指定的路徑本身在裡面的照算），--exclude-dir 多略過；
-  --include 只算這種檔名；二進位檔不算（計數）。
+  --include 只算這種檔名（含 / 時比對整個路徑，同 search_text、find_file）；二進位檔不算（計數）。
 - Python（.py、.pyw、.pyi、第一行是 python 的 #!）：code_ast_reader 的 _definitions（全部的 def／class，含巢狀與 _ 開頭的；方法的 qualname
   是 類別.方法）。語法錯誤的檔案只算行數，計數寫在最後一行。
 - C／C++（.h、.hh、.hpp、.hxx、.c、.cc、.cpp、.cxx）：先把註解與字串換成空白（行號不變），class／struct 有本體的定義（前向宣告、enum class
@@ -13,7 +13,6 @@
 收據（_receipt_common，欄位見規格的 receipt）：每一個定義一筆（路徑、行號、結束的行、種類、名稱、qualname；Python 有裝飾器的另記 decorator——
 定義的行號從 def／class 那一行算），每份檔案的行數與數量（per_file）。
 """
-import fnmatch
 import os
 import re
 import signal
@@ -34,7 +33,7 @@ BLOCKED = ("/", "/proc", "/sys", "/dev")
 USAGE = ('用法: scripts/code_defs_cmd.py [路徑…] [--include "<檔名寫法>"] [--exclude-dir <名稱>] [--name "<名稱的寫法>"] '
          '[--kind class|def] [--files] [--sort lines]\n'
          '  路徑：目錄或檔案，可以好幾個，預設 .（目前工作目錄）；不能是 /。\n'
-         '  --include "*.py"：只算這種檔名（可重複；不給就是全部的文字檔）　--exclude-dir 名稱：多略過一個目錄（可重複）\n'
+         '  --include "*.py"：只算這種檔名（可重複；含 / 時比對整個路徑；不給就是全部的文字檔）　--exclude-dir 名稱：多略過一個目錄（可重複）\n'
          '  --name "^test"：只列名稱符合這個正規表示式的定義（分大小寫；^ 是開頭、$ 是結尾）　--kind class 只列類別、def 只列函式與方法\n'
          '  --files：只列每份檔案的行數與定義的數量　--sort lines：檔案照行數由多到少排（預設照路徑）')
 _KEYWORDS = {"if", "for", "while", "switch", "catch", "return", "sizeof", "alignof", "decltype", "static_assert", "new", "delete",
@@ -93,7 +92,7 @@ def _timeout_handler(signum, frame):
 
 # ---------------------------------------------------------------- 檔案
 def _walk(roots, excludes, include):
-    """(檔案的絕對路徑清單, 略過的目錄數)：照路徑排序；目錄照預設與指定的略過，檔名照 include。"""
+    """(檔案的絕對路徑清單, 略過的目錄數)：照路徑排序；目錄照預設與指定的略過，檔名照 include（含 / 的比對整個路徑，_path_common.include_ok）。"""
     out, skipped = [], 0
     for root in roots:
         if os.path.isfile(root):
@@ -108,7 +107,7 @@ def _walk(roots, excludes, include):
                     keep.append(x)
             dirs[:] = keep
             for f in sorted(files):
-                if include and not any(fnmatch.fnmatch(f, g) for g in include):
+                if not pc.include_ok(os.path.join(d, f), include):
                     continue
                 out.append(os.path.join(d, f))
     return list(dict.fromkeys(out)), skipped
@@ -319,7 +318,8 @@ def _render(o, roots, per_file, items, notes, over, skipped_dirs, excludes, time
     n_cls, n_fn = sum(r["classes"] for r in per_file), sum(r["functions"] for r in per_file)
     filt = []
     if o["include"]:
-        filt.append("檔名 " + "、".join(o["include"]))
+        names, paths = [g for g in o["include"] if "/" not in g], [g for g in o["include"] if "/" in g]
+        filt += ([f"檔名 {'、'.join(names)}"] if names else []) + ([f"路徑符合 {'、'.join(paths)}"] if paths else [])
     if o["name"]:
         filt.append(f"名稱符合「{o['name']}」")
     if o["kind"]:

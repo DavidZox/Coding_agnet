@@ -8,6 +8,8 @@
 現在：關鍵字一律 `-E -e 關鍵字 --`（a|b 是同義詞；不是合法的正規表示式就改成照字面再搜一次並註明）；只接受少數幾個選項
 （不認識的回 [ERROR]）；預設略過 _path_common.DEFAULT_EXCLUDES 的目錄（--all-dirs 取消）；沒有權限的路徑略過並計數；
 每個檔案最多列 20 筆、總共 200 筆、單行 300 字，截掉的都寫明怎麼縮小；逾時保留已經找到的結果。
+--include 含 / 時比對整個路徑（同 find_file 的名稱關鍵字，_path_common.path_glob；待辦 4l ②）：grep 的 --include 只比對檔名，
+這種寫法不交給 grep，搜完由 Collector 照 _path_common.include_ok 篩。
 收據（_receipt_common，欄位見規格的 receipt）：每個檔案的筆數（全部）、命中的行（路徑、行號；最多 RECEIPT_LINES 行）。
 --rank（新架構 3b）：好幾個字（a|b|c）時，命中太多、列不完的情況先列「同一行含最多個不同的字」的行（長文件照檔案順序會截掉後面的答案）；
 檔案照它最多的那一行排，檔案裡照行號；收據的每一行多記 words（含幾個不同的字）。
@@ -37,7 +39,7 @@ USAGE = ('用法: scripts/grep_cmd.py "<關鍵字>" [路徑…] [選項]\n'
          '以 - 開頭的關鍵字寫成 -e "<關鍵字>"。\n'
          '  路徑：檔案或目錄，可以給好幾個，預設 .（目前工作目錄）；不能是 /。\n'
          f'  選項：-w 整個字　-F 照字面　--case 分大小寫　-l 只列檔名與筆數　-C N 前後各 N 行（上限 {MAX_CONTEXT}）\n'
-         '        --include "*.py" 只搜這種檔名（可重複）　--exclude-dir 名稱 多略過一個目錄　'
+         '        --include "*.py" 只搜這種檔名（可重複；含 / 時比對整個路徑，同 find_file）　--exclude-dir 名稱 多略過一個目錄　'
          '--all-dirs 連預設略過的 build、install、log、.git 等目錄也搜\n'
          '        --rank 好幾個字（a|b|c）時先列同一行含最多個不同的字的行')
 _NOOP_SHORT = set("rRnHiIEPs")            # 舊習慣的 grep 旗標：本來就是這樣（遞迴、行號、不分大小寫、跳過二進位檔、延伸正規表示式）
@@ -217,8 +219,8 @@ class Collector:
     """grep -Z 的輸出逐行收進來：每個檔案的命中筆數（全部都算）、保留前幾筆（含前後行）。
     score（--rank）：每個命中的行含幾個不同的字，記進收據；要照它挑行時 per_file 給 KEEP_LIMIT（先全部留著，render 再挑）。"""
 
-    def __init__(self, per_file, ctx, score=None):
-        self.per_file, self.ctx, self.score = per_file, ctx, score
+    def __init__(self, per_file, ctx, score=None, keep=None):
+        self.per_file, self.ctx, self.score, self.keep = per_file, ctx, score, keep
         self.files = {}
         self.kept = 0
         self.hit_lines = 0                    # 收據記了幾個命中的行號
@@ -230,6 +232,8 @@ class Collector:
         if nul < 0:
             return
         path = raw[:nul].decode("utf-8", errors="replace")
+        if self.keep and not self.keep(path):   # --include 含 / 的寫法：grep 搜完再照整個路徑篩
+            return
         m = re.match(rb"(\d+)([:-])", raw[nul + 1:])
         if not m:
             return
@@ -276,7 +280,9 @@ def _run(o, pattern, fixed, excludes, collector, timeout):
         cmd.append("-w")
     if o["ctx"]:
         cmd.append(f"-C{o['ctx']}")
-    cmd += [f"--include={g}" for g in o["include"]] + [f"--exclude={g}" for g in o["exclude"]]
+    if not any("/" in g for g in o["include"]):
+        cmd += [f"--include={g}" for g in o["include"]]
+    cmd += [f"--exclude={g}" for g in o["exclude"]]
     cmd += [f"--exclude-dir={d}" for d in excludes + o["exclude_dir"]]
     cmd += ["-e", pattern, "--"] + o["paths"]
     perm, other = [], []
@@ -338,7 +344,8 @@ def execute(argv):
     excludes = pc.excludes_for(o["paths"], o["all_dirs"])
     pattern = o["pattern"] if o["fixed"] else _fix_pattern(o["pattern"])
     score = _scorer(o, pattern, o["fixed"])
-    collector = Collector(KEEP_LIMIT if score and not o["files"] else per_file, o["ctx"], score)
+    keep = (lambda path: pc.include_ok(path, o["include"])) if any("/" in g for g in o["include"]) else None
+    collector = Collector(KEEP_LIMIT if score and not o["files"] else per_file, o["ctx"], score, keep)
     r, perm, other = _run(o, pattern, o["fixed"], excludes, collector, TIMEOUT_SECONDS)
     fixed = o["fixed"]
     if r.spawn_error:
@@ -347,7 +354,7 @@ def execute(argv):
         reason = next(x for x in other if _REGEX_ERR.search(x)).split(":", 1)[-1].strip()
         o["notes"].append(f"關鍵字不是合法的正規表示式（{reason}），已改成照字面搜尋")
         fixed = True
-        collector = Collector(per_file, o["ctx"])               # 照字面：整串是一個字，--rank 沒有作用
+        collector = Collector(per_file, o["ctx"], keep=keep)    # 照字面：整串是一個字，--rank 沒有作用
         r, perm, other = _run(o, o["pattern"], True, excludes, collector, TIMEOUT_SECONDS)
     return render(o, collector, r, perm, other, excludes, per_file, total_cap, fixed, single_file)
 
@@ -368,7 +375,9 @@ def render(o, col, r, perm, other, excludes, per_file, total_cap, fixed, single_
     if excludes and searched_dirs:
         tail_notes.append(f"預設略過 {'／'.join(excludes[:4])} 等目錄（要一起搜加 --all-dirs）")
     if o["include"]:
-        tail_notes.append(f"只搜檔名符合 {'、'.join(o['include'])} 的檔案")
+        names, paths = [g for g in o["include"] if "/" not in g], [g for g in o["include"] if "/" in g]
+        tail_notes.append("只搜" + "、".join(([f"檔名符合 {'、'.join(names)}"] if names else []) + ([f"路徑符合 {'、'.join(paths)}"] if paths else []))
+                          + " 的檔案")
     if o["rank"] and not col.score:
         tail_notes.append("--rank 要有好幾個字（a|b|c）才有作用：照檔案順序列")
     elif o["rank"] and o["files"]:

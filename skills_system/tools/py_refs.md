@@ -18,7 +18,7 @@ Python 程式裡的一個名稱（函式、方法、類別、變數）定義在�
 `EXECUTE: scripts/py_refs_cmd.py <名稱> [路徑…] [--exclude-dir <名稱>] [--include "<檔名寫法>"] [--kind <種類>]`
 * 名稱：一個 Python 的名稱（`a.b` 只寫最後一段）。
 * 路徑：目錄或檔案，可多個，預設 `.`，可用 `~`，不能是 `/`。預設略過 build、install、log、.git、node_modules、__pycache__、venv、.venv。
-* `--exclude-dir 名稱`：多略過一個目錄（可重複）。`--include "test_*.py"`：只看這種檔名（可重複；預設全部的 Python 檔）。
+* `--exclude-dir 名稱`：多略過一個目錄（可重複）。`--include "test_*.py"`：只看這種檔名（可重複；含 `/` 時比對整個路徑，同 find_file；預設全部的 Python 檔）。
 * `--kind call`：只列這幾種（def 定義、call 呼叫、import、assign 指定、ref 其他用到；幾種用 `|` 分開：`def|call`）。不加就是全部。
 * 最多列 400 處（數量照樣全部算）；最多看 5000 份檔案；逾時 30 秒。
 

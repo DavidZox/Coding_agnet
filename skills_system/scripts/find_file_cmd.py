@@ -93,11 +93,9 @@ _MATCH = {"名稱含": "contains", "名稱符合": "glob", "路徑含": "path"} 
 
 def _name_test(keyword):
     """→ (find 的比對參數, 說明)。"""
-    has_glob = any(c in keyword for c in "*?[")
-    if "/" in keyword:
-        pat = keyword if has_glob else f"*{keyword.strip('/')}*"
-        return ["-ipath", pat if pat.startswith("*") else f"*{pat}"], "路徑含"
-    if has_glob:
+    if "/" in keyword:                      # 比對整個路徑：search_text、code_defs、py_refs 的 --include 同一條規則（_path_common.path_glob）
+        return ["-ipath", pc.path_glob(keyword)], "路徑含"
+    if any(c in keyword for c in "*?["):
         return ["-iname", keyword], "名稱符合"
     return ["-iname", f"*{keyword}*"], "名稱含"
 

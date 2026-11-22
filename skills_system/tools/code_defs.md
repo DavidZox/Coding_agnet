@@ -17,7 +17,7 @@ Python 照語法分（含巢狀與 `_` 開頭的；方法寫成 `類別.方法`�
 # 語法
 `EXECUTE: scripts/code_defs_cmd.py [路徑…] [--include "<檔名寫法>"] [--exclude-dir <名稱>] [--name "<名稱的寫法>"] [--kind class|def] [--files] [--sort lines]`
 * 路徑：目錄或檔案，可多個，預設 `.`，可用 `~`，不能是 `/`。預設略過 build、install、log、.git、node_modules、__pycache__、venv、.venv。
-* `--include "*.md"`：只算這種檔名（可重複）。`--exclude-dir 名稱`：多略過一個目錄（可重複）。
+* `--include "*.md"`：只算這種檔名（可重複；含 `/` 時比對整個路徑，同 find_file）。`--exclude-dir 名稱`：多略過一個目錄（可重複）。
 * `--name "^test"`：只列名稱符合的定義（正規表示式、分大小寫：`^` 開頭、`$` 結尾）。`--kind class` 只列類別、`--kind def` 只列函式與方法。
 * `--files`：每份檔案一行（行數與定義的數量），不列定義。`--sort lines`：照行數由多到少排。
 * 最多列 300 份檔案、600 個定義（數量照樣全部算）；最多看 5000 份檔案；逾時 30 秒。

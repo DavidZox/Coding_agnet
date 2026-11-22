@@ -45,9 +45,9 @@
   "total": 4
  },
  "orch_selftest": {
-  "label": "建議 3（複合技能變成子工作階段的工具，開關 AGENT_DOMAIN_SUB）（2026-11-22）",
-  "passed": 37,
-  "total": 37
+  "label": "待辦 4l 修好之後（設計筆記 2.50）（2026-11-22）",
+  "passed": 38,
+  "total": 38
  },
  "repo_selftest": {
   "label": "原型之後的第一批（73b0756）（2026-11-21）",
@@ -55,9 +55,9 @@
   "total": 11
  },
  "skills": {
-  "label": "原型之後的第一批（73b0756）（2026-11-21）",
-  "passed": 118,
-  "total": 118
+  "label": "待辦 4l 修好之後（設計筆記 2.50）（2026-11-22）",
+  "passed": 119,
+  "total": 119
  },
  "skills_sandbox": {
   "label": "第 5 步（6958dac）（2026-11-20）",

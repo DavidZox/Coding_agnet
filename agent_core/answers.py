@@ -12,6 +12,8 @@ from .extract import missing_tokens
 REF = re.compile(r"[\w./-]*\w\.[A-Za-z][A-Za-z0-9]*:\d+")      # 出處：檔案:行號（副檔名是字母開頭，時間、IP 不算）
 CITE = re.compile(r"(" + REF.pattern + r")(?:\s*[-~～]\s*(\d+))?")    # 出處：檔案:行號，可以是一段（a.py:31-35）
 ID = re.compile(r"#(\d+)")
+# 回答的內文寫的 檔案:行號（待辦 4l ①）：只認英數字的路徑（CITE 的 \w 連中文也算，「定義在pkg/a.py:3」會整串當成路徑）
+_TEXT_CITE = re.compile(r"(?<![A-Za-z0-9_./-])([A-Za-z0-9_./-]*[A-Za-z0-9_]\.[A-Za-z][A-Za-z0-9]*:\d+)(?:\s*[-~～]\s*(\d+))?")
 _WORD = re.compile(r"[A-Za-z_][\w./-]*[\w]")
 
 
@@ -117,6 +119,19 @@ def rows_from_archives(archives, path, first, last, cwd):
     return rows, texts
 
 
+def _located(text, cited, evidence, lines):
+    """回答的內文寫的 檔案:行號 跟出處一樣照收據核對（cited）：對到的從內文拿掉（那幾段與行號加進 evidence、lines），不當成名稱在原文裡找——
+    search_text 的原文每一行寫成「行號→」，沒有這種寫法，以前一定擋（待辦 4l ①）；對不到的留著，照舊當成名稱核對。→ 拿掉之後的內文。"""
+    def one(m):
+        kind, _, texts, nums = cited(m.group())
+        if kind != "line":
+            return m.group()
+        evidence.extend(texts)
+        lines.extend(nums)
+        return " "
+    return _TEXT_CITE.sub(one, str(text or ""))
+
+
 def answer_problems(items, answers, cited, allowed, source, unknown=None):
     """answers 每一項的核對（G4 的步驟 7）→ {項目編號: [沒過的原因]}；全部過了是空的。
     items：要回答的項目；answers：parse 過的每一項 {item, status, text, refs}；cited(ref) → (種類, 對到的行, 那幾段的文字, 行號)，
@@ -143,9 +158,10 @@ def answer_problems(items, answers, cited, allowed, source, unknown=None):
                     bad_why.append(unknown(ref) if unknown else why("why_ref_unknown", ref=ref))
                 evidence += texts
                 lines += nums
+            said = _located(a["text"], cited, evidence, lines)
             if len(evidence) > len(a["refs"]):
                 text = "\n".join(evidence)
-                bad = missing_tokens(a["text"], text, source, allowed, refs=lines)
+                bad = missing_tokens(said, text, source, allowed, refs=lines)
                 if bad:
                     close = near(bad, text)
                     bad_why.append(why("why_tokens", tokens="、".join(bad)) + (why("why_near", near="、".join(close)) if close else ""))
