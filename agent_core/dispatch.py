@@ -215,7 +215,7 @@ class DispatchMixin:
             blocked = None if direct else self.domain_gate(raw_token)
             if blocked:
                 return blocked
-            composites = (getattr(self, "_sub_allowed", None) or {}).get("composites") or {}   # 子工作階段能叫的複合工具（建議 3）
+            composites = (getattr(self, "_sub_allowed", None) or {}).get("composites") or {}   # 子工作階段能叫的複合工具（A′）
             name = raw_token[:-3] if raw_token.endswith(".md") else raw_token
             skill_doc = self.composite_doc(name) if name in composites else self._load_skill_doc(raw_token)
             if skill_doc is not None:

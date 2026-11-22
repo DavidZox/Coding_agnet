@@ -46,6 +46,8 @@ def calls(agent, parsed, result):
         mid_part = d.get("mid") or (d if d.get("kind") == "mid" else None)       # 中階（中階沒做完接著開子工作階段時兩個都有）
         if mid_part:
             entry.update(mid_status=mid_part["status"], mid_skill=mid_part["skill"], mid_job=mid_part["job"])
+            if mid_part.get("trigger"):            # A′：中階沒做完、接著開子工作階段的原因（orchestrator._domain_outcome）
+                entry["retry"] = mid_part["trigger"]
         if d.get("kind") == "sub":
             entry.update(sub_status=d["status"], sub_job=d["job"], sub_steps=len(d.get("calls") or []))
         via = [{"script": None, "skill": c["tool"], "via": e["domain"], "args": c["args"], "status": "PASS"}

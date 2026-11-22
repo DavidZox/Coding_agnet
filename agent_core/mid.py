@@ -102,8 +102,8 @@ def searched(job):
     return out
 
 
-def _param_sig(values):
-    """參數（{名稱: 值}）比對用的寫法：同一個技能、這個寫法一樣＝同樣的參數。"""
+def param_sig(values):
+    """參數（{名稱: 值}）比對用的寫法：同一個技能、這個寫法一樣＝同樣的參數（中階的再交、A′ 擋跟中階一樣的複合工具都用它）。"""
     return json.dumps({k: values[k] for k in sorted(values or {})}, ensure_ascii=False)
 
 
@@ -516,7 +516,7 @@ def check_answer(p, answer, cwd):
 
 
 def parse_tool_args(spec, remainder):
-    """複合工具的參數（子工作階段直接叫的複合技能，config.DOMAIN_SUB）→ ({名稱: 值}, 錯誤)。寫法 `--<參數> <值>`（或 `--<參數>=<值>`）；
+    """複合工具的參數（子工作階段直接叫的複合技能，A′：config.NODE_RETRY）→ ({名稱: 值}, 錯誤)。寫法 `--<參數> <值>`（或 `--<參數>=<值>`）；
     沒有寫 --名稱 的值給第一個還沒給的必填參數（名稱清單、字可以是好幾個）。值照種類核對（同 check_answer：名稱、目錄名稱、字的寫法）；
     名稱清單與字可以用「、」或逗號分開，也可以重複寫同一個參數。路徑在不在工作目錄不在這裡查（Worker._complete 照 fetch 查）。
     漏了必填的、沒有這個參數、一個值的參數給了好幾個都回錯誤（附那個參數的問法）。"""
@@ -654,7 +654,7 @@ class Worker:
         return self._proceed(job, domain)
 
     def run_tool(self, question, goal, items, skill, values):
-        """複合工具（建議 3：子工作階段直接叫，config.DOMAIN_SUB）：技能與參數是子工作階段給、程式核對過的（parse_tool_args；不挑技能、
+        """複合工具（A′：子工作階段直接叫，config.NODE_RETRY）：技能與參數是子工作階段給、程式核對過的（parse_tool_args；不挑技能、
         不寫合約）；之後照舊——補預設值、路徑找不到照 fetch 查、排圖、低階、回退（加節點、換技能）、判斷、報告。要問使用者的（必填的沒有、
         路徑有好幾個或找不到、範圍太大）不問：結束成 need_params，說明寫要改什麼與候選，子工作階段改參數再叫一次（_wait）。"""
         job = self._new_job(question, goal, items)
@@ -858,8 +858,8 @@ class Worker:
 
     def _same_as_before(self, job):
         """這次的技能與參數跟之前哪一次一模一樣：回傳那一次的紀錄，沒有回 None。"""
-        mine = _param_sig({k: v["value"] for k, v in job["params"].items()})
-        return next((p for p in job.get("previous") or [] if p.get("skill") == job["skill"] and _param_sig(p.get("params")) == mine), None)
+        mine = param_sig({k: v["value"] for k, v in job["params"].items()})
+        return next((p for p in job.get("previous") or [] if p.get("skill") == job["skill"] and param_sig(p.get("params")) == mine), None)
 
     def _recontract(self, job, spec, same):
         """參數跟之前某一次一模一樣：整份合約交回修一次（附那一次的結果與原因），照原本的核對重來（之前補的、查的不留）。"""

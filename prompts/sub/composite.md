@@ -1,4 +1,4 @@
-子工作階段直接叫的複合工具（建議 3，config.DOMAIN_SUB；agent_core/orchestrator.py 的 composite_doc、run_composite）：給模型的規格
+子工作階段直接叫的複合工具（A′，config.NODE_RETRY；agent_core/orchestrator.py 的 composite_doc、run_composite）：給模型的規格
 （說明、〈什麼時候用〉、參數與執行的寫法；骨架、回退、判斷不給，程式照它們做）、參數的每一行、回傳的第一行與下一步。
 參數的種類用 prompts/mid/inputs.md 的 type_*（合約也用同一份）。{名稱} 是程式填的值。
 
@@ -43,3 +43,6 @@ EXECUTE: scripts/{name}_cmd.py {usage}
 
 <!-- @err_failed -->
 複合工具 {name} 沒有做完：{status}{why}。下一步：用其他工具一步一步查。
+
+<!-- @err_same -->
+複合工具 {name} 跟中階第 {n} 次試過的一樣（參數 {params}；結果：{status}）：同樣的參數不會有新的結果。下一步：換參數（查到的結果裡的字、範圍），或換一個複合工具，或用其他工具一步一步查。

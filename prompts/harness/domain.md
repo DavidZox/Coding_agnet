@@ -58,6 +58,12 @@ text 寫回答，not_found 寫原因（照報告寫的說明、沒有做完的�
 <!-- @stepwise -->
 {domain} 的中階沒有做完（{status}：{reason}；決策圖：{url}），系統接著在子工作階段裡用這個領域的工具一步一步做：
 
+<!-- @retry -->
+{domain} 的中階有報告、但沒有做完（{status}：{reason}；決策圖：{url}）。中階的報告照樣附上，可以照它回答：
+{report}
+
+系統接著帶著這份報告，在子工作階段裡換個做法再做一次：
+
 <!-- @history_line -->
 {n}. {domain}（做法 {skill}）：{status}，決策圖 {url}
 
