@@ -1,0 +1,56 @@
+@startuml
+' 複合技能 count_in_scope 的〈骨架〉與〈回退〉畫成流程（2026-11-21）；來源 skills_system/repo_analysis/count_in_scope.md。
+skinparam shadowing false
+skinparam defaultFontName "Microsoft JhengHei"
+skinparam ActivityFontSize 13
+skinparam NoteFontSize 12
+skinparam LegendFontSize 12
+skinparam ArrowColor #555555
+skinparam ActivityDiamondFontSize 12
+title count_in_scope：範圍裡的數量（一段文字出現在幾行、名稱符合的檔案有幾個）
+
+start
+:參數（模型填）
+・keyword：要數的一段文字（可以不寫）
+・files：檔名的寫法，例如 *.yaml（可以不寫）
+・path：範圍（沒寫＝整個工作目錄）
+・exclude：範圍裡不要的子目錄（可以不寫）; <<#FFE6CC>>
+:程式核對參數：種類對不對、必填的有沒有；沒寫的用預設值；
+路徑在工作目錄找不到時用 find_file 找一次
+（剛好一個就自己補，好幾個或沒有就要改參數）; <<#D5E8D4>>
+if (keyword、files 都沒寫？) then (是)
+  :要改參數：要找什麼？
+  keyword、files 至少要有一個; <<#F8CECC>>
+  stop
+else (至少有一個)
+endif
+if (有 files？) then (有)
+  :① files（find_file，只找檔案）
+  數範圍裡名稱符合 files 的檔案; <<#DAE8FC>>
+else (沒有)
+endif
+if (有 keyword？) then (有)
+  :② hits（search_text，只列檔名與筆數）
+  數範圍裡每個檔案有幾行提到 keyword
+  （有 files 就只看那種檔；exclude 的子目錄不看）; <<#DAE8FC>>
+  if (搜尋逾時、沒有搜完？) then (是)
+    :【回退 search_timed_out】
+    數字不是全部：要改參數，縮小 path
+    （附目前找到的各子目錄筆數）; <<#F8CECC>>
+    stop
+  else (搜完了)
+  endif
+else (沒有)
+endif
+:報告（程式從收據算，模型不數）
+・名稱符合的檔案：幾個、哪些
+・每個檔案的筆數與總數；出處 #編號; <<#E1D5E7>>
+stop
+legend bottom
+  顏色：橘＝模型做（填參數、判斷節點）、綠＝程式核對、藍＝程式照〈骨架〉做、黃＝〈回退〉（程式照條件自動改做）、紅＝要改參數、紫＝程式寫的報告。
+  回退的條件在步驟跑完之後由程式照收據比對（照〈回退〉列的順序，取第一個符合、還沒用過的；重排最多 3 次）。
+  紅色「要改參數」：中階停下來，由程式直接問使用者，回答之後照新的參數接著做。
+  模型不寫步驟：參數由中階的合約填（程式核對），判斷節點只在寫好的幾條路裡選。
+  來源：skills_system/repo_analysis/count_in_scope.md 的 parameters、〈骨架〉與〈回退〉（改了技能要一起改這張圖）。
+endlegend
+@enduml

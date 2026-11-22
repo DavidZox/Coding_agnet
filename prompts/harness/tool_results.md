@@ -1,5 +1,6 @@
 主對話收到工具結果時程式包上的字：每一則工具結果的框架句（agent_core/protocol.py 的 tool_result_message，前面的【系統回傳】是程式認的
-標記，留在程式裡）、使用者沒把結果加入時的通知、harness 模式沒有提煉時只給成功／失敗的那一則（agent_core/turn.py）。{名稱} 是程式填的值。
+標記，留在程式裡）、使用者沒把結果加入時的通知、harness 模式沒有提煉時只給成功／失敗的那一則（agent_core/turn.py；子工作階段的
+reduced_sub 只寫它能用的 result_grep、result_view）。{名稱} 是程式填的值。
 
 <!-- @frame -->
 以下是系統執行{what}的結果，由系統自動產生、不是使用者提供的（使用者也看到同一份）。回覆時稱「執行結果」或「系統回傳」，不要感謝使用者、不要說「您提供的」。
@@ -27,6 +28,9 @@
 
 <!-- @reduced_recall -->
 完整原始輸出已存成結果檔 #{rid}：需要內容時由你自己執行 result_recall {rid} "<使用者的問題>"（交給獨立 session 依問題提煉）、或 result_view {rid} --outline 看有哪幾節再 --from <行號> 看那一段（不要叫使用者去看），不要重新執行同一個工具
+
+<!-- @reduced_sub -->
+完整原始輸出已存成結果檔 #{rid}：需要內容時用 result_grep {rid} "<關鍵字>" 找、或 result_view {rid} --outline 看有哪幾節再 --from <行號> 看那一段，不要重新執行同一個工具
 
 <!-- @reduced_no_recall -->
 需要內容時請換更精確的參數重新執行工具

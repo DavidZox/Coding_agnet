@@ -1,6 +1,7 @@
 提煉結果（summarize_tool_result、result_recall）最後給主對話的下一步建議（agent_core/tool_summary.py 的 _followup_guidance）：
 獨立 session 看過完整原文與檢索清單之後的判斷，依序挑一則接在「完整原始輸出已存成…」（base）或「不要再對…重複」（recalled_base）後面。
-claude_code 模式（cc_*）只陳述原文在哪、哪裡沒涵蓋，下一步由模型自己決定。{名稱} 是程式填的值。
+claude_code 模式（cc_*）只陳述原文在哪、哪裡沒涵蓋，下一步由模型自己決定。子工作階段（sub_*）照它能用的工具寫：回原文看用共用的
+result_grep、result_view（它沒有 result_recall），也沒有使用者可以問。{名稱} 是程式填的值。
 
 <!-- @no_ids -->
 你看不到原始輸出：需要其他資訊時，換更精確的參數重新執行工具，不要憑空補上。
@@ -49,3 +50,21 @@ claude_code 模式（cc_*）只陳述原文在哪、哪裡沒涵蓋，下一步�
 
 <!-- @cc_no_reason -->
 （未給理由）
+
+<!-- @sub_base -->
+完整原始輸出已存成 #{id}：要上面沒寫到的內容就回原文看——找某個字串用 result_grep {id} "<關鍵字>"、看某一段用 result_view {id} --from <行號> --lines 30，不要重新執行同一個工具。
+
+<!-- @sub_failed -->
+提煉沒有成功（獨立 session 的回覆不是預期的格式），上面是它的原文，可能不完整：需要細節時用 result_grep／result_view 看存檔 {label} 的原文；不要憑空補上。
+
+<!-- @sub_need_more -->
+獨立 session 認為這個問題還要一起看之前的存檔 {records}：需要時用 result_grep／result_view 看那幾份的原文。
+
+<!-- @sub_unread -->
+有些段落這次沒有讀到（見「未涵蓋」）：要的正好在沒讀到的那幾行時，用 result_grep {id} "<關鍵字>" 找，或 result_view {id} --from <行號> 看那幾行。
+
+<!-- @sub_gap -->
+「未涵蓋」寫的這份原文裡沒有：不要從這份補上。
+
+<!-- @sub_answered -->
+上面已經回答了這一步要找的：據此做下一步或收尾。

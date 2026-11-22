@@ -8,8 +8,12 @@
    上幾行）；對不上的不交給整合，記在存檔裡。段數超過 EXTRACT_MAX_CHUNKS 時依問題裡的名稱、數字出現在哪幾段挑著讀，沒讀的行號範圍由程式
    寫進「未涵蓋」——不會假裝讀過。
 3. 整合（synthesizer）：拿各段核對過的事實＋那幾行的原文（程式附上）＋原文的開頭與大綱，寫成交給主對話的重點：回答、相關事實（附行號）、
-   錯誤、未涵蓋、之後可能想知道的、檢索清單的描述、還需要的舊存檔。程式再核對一次：寫了原文沒有的名稱或數值 → 帶著問題請它修一次；
-   還是對不上的事實拿掉，回答裡找不到的字由呼叫端標明。整合失敗（回覆不是 JSON）時改由程式把各段的事實排成清單，不丟掉 worker 的結果。
+   錯誤、未涵蓋、之後可能想知道的、檢索清單的描述、還需要的舊存檔。程式再核對一次：寫了原文沒有的名稱或數值、把存檔的行號寫成檔案的
+   行號 → 帶著問題請它修一次；還是對不上的事實拿掉，回答裡找不到的字與寫錯的行號由呼叫端標明。整合失敗（回覆不是 JSON）時改由程式把
+   各段的事實排成清單，不丟掉 worker 的結果。
+   檔案的行號：view_file、search_text 這類工具的每一行本身就有 `N→`（檔案的行號），前面再加一層存檔的行號（設計筆記 2.47：模型把存檔的
+   第 149 行寫成檔案的第 149 行，其實是第 49 行）。呼叫端照收據把每一行對到檔案（來源的 origins，_results_common.file_lines）：交給整合的
+   事實、交給主對話的事實都附「檔案:行號」，回答的行號由程式核對。
 4. 存檔（JobStore，logs/extract_jobs/<編號>/）：job.json（切段、每段的結果與核對、整合、最後的重點）、calls.jsonl（每次模型呼叫的
    prompt 與原文回覆）、events.jsonl（進度）。"""
 import json
@@ -69,6 +73,10 @@ _IDENT = re.compile(r"[A-Za-z_/~][A-Za-z0-9_/.\-:~]*")
 _LINE_SPEC = re.compile(r"(\d+)(?:\s*[-~～–]\s*(\d+))?")
 # 總數的寫法（共 7 台、總共有 12 個、合計 3 筆）：原文要有這個數字（不算名稱裡的，例如 amr_07 的 7）——實測 26b 列了 7 台卻寫「共有 6 台」
 _COUNT = re.compile(r"(?:總共|共計|合計|一共|共)\s*(?:有\s*)?(\d+)\s*(?:台|個|筆|項|則|次|條|件|輛|位|段|行|種)")
+# 回答裡寫的行號（第 149 行、（行 149）、line 149、L149、a.cpp:149；可以是一段）：核對是不是把存檔的行號寫成檔案的行號（Extraction._misplaced）
+_RANGE = r"(\d+)(?:\s*[-~～–]\s*(\d+))?"
+_LINE_WRITTEN = re.compile(r"第\s*" + _RANGE + r"\s*行|(?<![A-Za-z0-9_\u4e00-\u9fff])(?:行|lines?|L)\s*[:：]?\s*" + _RANGE
+                           + r"|[A-Za-z0-9_./-]*\.[A-Za-z][A-Za-z0-9]*:" + _RANGE, re.I)
 
 
 def _has_name(name, text):
@@ -341,6 +349,33 @@ class Extraction:
                 best = bad
         return None, best or []
 
+    def _at(self, si, nums):
+        """引用的行（存檔的行號）在檔案裡的位置：「<路徑>:28-29、49」（來源的 origins＝_results_common.file_lines；對不到檔案的行不寫）。"""
+        origins = (self.sources[si].get("origins") or {}) if si is not None and si < len(self.sources) else {}
+        by = {}
+        for n in nums or []:
+            if n in origins:
+                by.setdefault(origins[n][0], []).append(origins[n][1])
+        return "、".join(f"{p}:{lines_text(sorted(set(v)))}" for p, v in by.items())
+
+    def _misplaced(self, answer, items):
+        """回答寫的行號是存檔的行號、不是檔案的行號（設計筆記 2.47：檔案的第 49 行寫成存檔裡的第 149 行）→ [(寫法, 那一行在檔案裡的位置)]。
+        只看事實引用、而且對得到檔案的行：寫的數字是那一行的存檔行號、檔案的行號不一樣，而且不是任何一條引用的行在檔案裡的行號才算。"""
+        cited, real = {}, set()
+        for it in items:
+            origins = self.sources[it["src"]].get("origins") or {}
+            for n in it["nums"]:
+                if n in origins:
+                    cited.setdefault(n, origins[n])
+                    real.add(origins[n][1])
+        out = []
+        for m in _LINE_WRITTEN.finditer(answer or ""):
+            for n in (int(g) for g in m.groups() if g):
+                if n in cited and cited[n][1] != n and n not in real:
+                    out.append((m.group().strip(), f"{cited[n][0]}:{cited[n][1]}"))
+                    break
+        return out
+
     def _ground_all(self, items, si=None, within=None):
         kept, dropped = [], []
         for it in items:
@@ -355,7 +390,8 @@ class Extraction:
     def run(self):
         """回傳 {"data": 整合的結果（facts／errors 已核對、附 src 與 nums）或 None, "structured": bool, "raw": 模型最後的原文,
         "mode": direct／merge, "job": 編號, "chunks": 段數, "read": 讀了幾段, "notes": 程式寫的未涵蓋（沒讀到、失敗的段落）,
-        "answer_missing": 回答裡在原文找不到的字, "dropped": 拿掉的事實數, "fallback": 整合失敗、由程式排各段事實}。"""
+        "answer_missing": 回答裡在原文找不到的字, "answer_lines": 回答把存檔的行號寫成檔案的行號的 [(寫法, 檔案:行號)],
+        "dropped": 拿掉的事實數, "fallback": 整合失敗、由程式排各段事實}。facts／errors 每條另附 at＝引用的行在檔案裡的位置（對得到才有）。"""
         t0 = time.time()
         rids = "-".join(str(s["rid"]) for s in self.sources)[:40]
         self.jid = self.store.new_id(f"{self.kind}_{rids}")
@@ -418,7 +454,7 @@ class Extraction:
     def _failed(self, raw, err):
         """沒有可以用的結果：模型有回覆但不是 JSON → raw 交給呼叫端照實轉交；沒有回覆（連線失敗、逾時）→ error。"""
         return {"data": None, "structured": False, "raw": raw or "", "error": None if raw else err, "mode": self.job.get("mode"),
-                "chunks": len(self.chunks), "read": 0, "notes": [], "answer_missing": [], "dropped": 0, "fallback": False}
+                "chunks": len(self.chunks), "read": 0, "notes": [], "answer_missing": [], "answer_lines": [], "dropped": 0, "fallback": False}
 
     # ---------------------------------------------------------------- 分段：workers → 整合
     def _select(self):
@@ -538,7 +574,9 @@ class Extraction:
                 parts.append(_x("merge_chunk_summary", title=title, summary=r["summary"] or _x("merge_no_summary")))
                 for label, items in (("", r["facts"]), (_x("merge_error_label"), r["errors"])):
                     for it in items:
-                        parts.append(_x("merge_fact", label=label, text=it["text"], lines=lines_text(it["nums"]) or _x("merge_unknown_lines")))
+                        at = self._at(si, it["nums"])
+                        where = (lines_text(it["nums"]) + (f"＝{at}" if at else "")) or _x("merge_unknown_lines")
+                        parts.append(_x("merge_fact", label=label, text=it["text"], lines=where))
                         new = [x for x in evidence_lines(lines, it["nums"], span=0) if (si, x) not in shown][:EVIDENCE_LINES_PER_FACT]
                         text = "\n".join("      " + rc.numbered(x, _cut(lines[x - 1], 300)).lstrip() for x in new)
                         if new and budget - len(text) > 0:
@@ -551,13 +589,13 @@ class Extraction:
 
     def _fallback(self, results, notes, raw):
         """整合失敗：各段核對過的事實由程式排成清單（不丟掉 worker 的結果），回答留空、由呼叫端說明。"""
-        facts = [it for r in results if r["ok"] for it in r["facts"]]
-        errors = [it for r in results if r["ok"] for it in r["errors"]]
+        facts = [dict(it, at=self._at(it["src"], it["nums"])) for r in results if r["ok"] for it in r["facts"]]
+        errors = [dict(it, at=self._at(it["src"], it["nums"])) for r in results if r["ok"] for it in r["errors"]]
         data = {"answer": "", "facts": facts, "errors": errors, "not_covered": "；".join(notes) or "無", "suggested_questions": [],
                 "index_hint": "", "related_records": []}
         self.job["final"] = {k: v for k, v in data.items()}
         return {"data": data, "structured": True, "raw": raw, "mode": "merge", "chunks": len(self.chunks), "read": len(results),
-                "notes": notes, "answer_missing": [], "dropped": 0, "fallback": True}
+                "notes": notes, "answer_missing": [], "answer_lines": [], "dropped": 0, "fallback": True}
 
     # ---------------------------------------------------------------- 整合結果的核對（與一次修正）
     def _check(self, data):
@@ -565,17 +603,19 @@ class Extraction:
         errors, dropped_e = self._ground_all(cited_items(data.get("errors")))
         answer = " ".join(str(data.get("answer") or "").split())
         missing = missing_tokens(answer, self.all_text, self.all_text, self.allowed, counts={len(facts)})
-        return facts, errors, dropped + dropped_e, answer, missing
+        return facts, errors, dropped + dropped_e, answer, missing, self._misplaced(answer, facts + errors)
 
     def _finish(self, data, raw, notes):
-        facts, errors, dropped, answer, missing = self._check(data)
+        facts, errors, dropped, answer, missing, wrong = self._check(data)
         repaired = False
-        if missing or (dropped and len(dropped) * 2 >= len(cited_items(data.get("facts"))) + len(cited_items(data.get("errors")))):
-            fixed, raw2 = self._repair(data, dropped, missing)
+        if missing or wrong or (dropped and len(dropped) * 2 >= len(cited_items(data.get("facts"))) + len(cited_items(data.get("errors")))):
+            fixed, raw2 = self._repair(data, dropped, missing, wrong)
             if fixed is not None:
-                f2, e2, d2, a2, m2 = self._check(fixed)
-                if len(m2) + len(d2) <= len(missing) + len(dropped):
-                    data, raw, facts, errors, dropped, answer, missing, repaired = fixed, raw2, f2, e2, d2, a2, m2, True
+                f2, e2, d2, a2, m2, w2 = self._check(fixed)
+                if len(m2) + len(d2) + len(w2) <= len(missing) + len(dropped) + len(wrong):
+                    data, raw, facts, errors, dropped, answer, missing, wrong, repaired = fixed, raw2, f2, e2, d2, a2, m2, w2, True
+        for it in facts + errors:
+            it["at"] = self._at(it["src"], it["nums"])
         out = dict(data)
         out.update(answer=answer, facts=facts, errors=errors)
         nc = " ".join(str(out.get("not_covered") or "").split())
@@ -583,19 +623,20 @@ class Extraction:
         extra = [n for n in notes if n not in nc and not (re.search(r"\d+～\d+", n) and re.search(r"\d+～\d+", n).group() in nc)]
         if extra:
             out["not_covered"] = "；".join(([nc] if nc and nc.rstrip("。.") not in ("無", "沒有") else []) + extra)
-        self.job["synth"] = {"repaired": repaired, "dropped": dropped, "answer_missing": missing}
+        self.job["synth"] = {"repaired": repaired, "dropped": dropped, "answer_missing": missing, "answer_lines": wrong}
         self.job["final"] = {k: (v if k not in ("facts", "errors") else [{"text": x["text"], "lines": lines_text(x["nums"]),
-                                                                          "record": self.sources[x["src"]]["rid"]} for x in v])
+                                                                          "record": self.sources[x["src"]]["rid"], "at": x["at"]} for x in v])
                              for k, v in out.items()}
         return {"data": out, "structured": True, "raw": raw, "mode": self.job["mode"], "chunks": len(self.chunks),
-                "read": len(self.job.get("workers") or [1]), "notes": notes, "answer_missing": missing, "dropped": len(dropped),
-                "fallback": False}
+                "read": len(self.job.get("workers") or [1]), "notes": notes, "answer_missing": missing, "answer_lines": wrong,
+                "dropped": len(dropped), "fallback": False}
 
-    def _repair(self, data, dropped, missing):
-        """帶著程式核對的問題請整合者修一次：只改對不上的地方（照原文改，或拿掉找不到根據的內容）。"""
+    def _repair(self, data, dropped, missing, wrong=()):
+        """帶著程式核對的問題請整合者修一次：只改對不上的地方（照原文改，或拿掉找不到根據的內容；行號寫成存檔的，給檔案的行號）。"""
         problems = []
         if missing:
             problems.append(_x("repair_answer_missing", tokens='」「'.join(missing)))
+        problems += [_x("repair_answer_line", written=w, at=at) for w, at in wrong]
         for d in dropped[:8]:
             problems.append(_x("repair_fact_missing", text=d["text"], lines=d.get("lines") or _x("merge_unknown_lines"),
                                missing="」「".join(d["missing"]) or _x("repair_missing_default")))

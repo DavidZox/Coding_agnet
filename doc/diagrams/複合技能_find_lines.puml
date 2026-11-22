@@ -1,0 +1,43 @@
+@startuml
+' 複合技能 find_lines 的〈骨架〉與〈回退〉畫成流程（2026-11-21）；來源 skills_system/repo_analysis/find_lines.md。
+skinparam shadowing false
+skinparam defaultFontName "Microsoft JhengHei"
+skinparam ActivityFontSize 13
+skinparam NoteFontSize 12
+skinparam LegendFontSize 12
+skinparam ArrowColor #555555
+skinparam ActivityDiamondFontSize 12
+title find_lines：範圍裡提到一段文字的行（每一行與前後兩行、每個檔案幾筆）
+
+start
+:參數（模型填）
+・keyword：要找的一段文字（必填）
+・files：檔名的寫法，例如 *.log（可以不寫）
+・path：範圍（沒寫＝整個工作目錄）
+・exclude：範圍裡不要的子目錄（可以不寫）; <<#FFE6CC>>
+:程式核對參數：種類對不對、必填的有沒有；沒寫的用預設值；
+路徑在工作目錄找不到時用 find_file 找一次
+（剛好一個就自己補，好幾個或沒有就要改參數）; <<#D5E8D4>>
+:① hits（search_text，附前後 2 行）
+列出範圍裡提到 keyword 的每一行
+（有 files 就只看那種檔；exclude 的子目錄不看）; <<#DAE8FC>>
+if (搜尋逾時、沒有搜完？) then (是)
+  :【回退 search_timed_out】
+  列的行不是全部：要改參數，縮小 path
+  （附目前找到的各子目錄筆數）; <<#F8CECC>>
+  stop
+else (搜完了)
+endif
+:報告（程式照收據從檔案讀那幾行）
+・每一處：檔案:行號：內容，附前後兩行
+・每個檔案幾筆、總共幾筆
+・行太多時先拿掉前後行，還列不下就寫明還有幾處；出處 #編號; <<#E1D5E7>>
+stop
+legend bottom
+  顏色：橘＝模型做（填參數、判斷節點）、綠＝程式核對、藍＝程式照〈骨架〉做、黃＝〈回退〉（程式照條件自動改做）、紅＝要改參數、紫＝程式寫的報告。
+  回退的條件在步驟跑完之後由程式照收據比對（照〈回退〉列的順序，取第一個符合、還沒用過的；重排最多 3 次）。
+  紅色「要改參數」：中階停下來，由程式直接問使用者，回答之後照新的參數接著做。
+  模型不寫步驟：參數由中階的合約填（程式核對），判斷節點只在寫好的幾條路裡選。
+  來源：skills_system/repo_analysis/find_lines.md 的 parameters、〈骨架〉與〈回退〉（改了技能要一起改這張圖）。
+endlegend
+@enduml

@@ -10,6 +10,9 @@
   整合失敗由程式排出各段的事實；每一次的切段、模型呼叫、結果都存在 logs/extract_jobs/<編號>/；
 - result_recall：好幾份一起讀、編號錯／檔案被清掉的說明、提煉失敗照實回報；
 - 行號：result_view、result_grep、提煉結果、claude_code 模式的截斷說明都是原文的行號；result_view --outline；
+  檔案的行號（待辦 4k ②）：照收據把存檔的每一行對到檔案（只認收據裡的絕對路徑，result_grep 的存檔編號不算），事實附「檔案:行號」，
+  回答把存檔的行號寫成檔案的行號交回修一次、還是錯就標明；
+- 子工作階段的說法（待辦 4k ①）：提煉結尾的下一步建議、沒有提煉時的說明、claude_code 的截斷說明只寫 result_grep、result_view；
 - 存檔：刪最舊的照編號（#1000 不會排在 #999 前面）、清單不列原始檔已經被清掉的；
 - dispatch：只認輸出最後的狀態標記；工作目錄不能用時換回專案目錄並回 [ERROR]。
 每一個情境都在臨時目錄複製一份專案，不碰正式的 logs/。"""
@@ -318,6 +321,82 @@ def main():
                                           lambda ref: ("id", [], [ev], []), "每個容器的狀態", ev)
             assert list(got) == [1] and "「av2_test」在出處的那幾段裡找不到" in got[1][0] and "nav2_test" in got[1][0], got
 
+        def t_file_lines():
+            # 待辦 4k ②（設計筆記 2.47）：view_file、search_text 每一行的 N→ 是檔案的行號，提煉前面又加一層存檔的行號，模型把存檔的行號
+            # 寫成檔案的行號。程式照收據把每一行對到檔案：事實附「檔案:行號」、回答寫錯的交回修一次，還是錯就標明
+            grep = ["[PASS] 搜尋「q」：共 3 筆命中，分布在 2 個檔案", "## a.cpp（2 筆）", "    12→  int q = 1;", ">   49→  q = make_q(q);",
+                    "## x/a.cpp（1 筆）", "     7→  // q"]
+            rec = {"cwd": "/w", "items": [{"path": "/w/a.cpp", "line": 12}, {"path": "/w/a.cpp", "line": 49}, {"path": "/w/x/a.cpp", "line": 7}]}
+            assert rc.file_lines(grep, rec) == {3: ("a.cpp", 12), 4: ("a.cpp", 49), 6: ("x/a.cpp", 7)}, "一個檔案一節；x/a.cpp 那一節不算 a.cpp 的"
+            cat = ["[PASS] 檔案內容 (src/m.py)：共 2 行", "     1→def f():", "     2→    return 1"]
+            assert rc.file_lines(cat, {"cwd": "/w", "path": "/w/src/m.py", "items": [{"path": "/w/src/m.py", "from": 1, "to": 2}]}) == \
+                {2: ("src/m.py", 1), 3: ("src/m.py", 2)}, "只有一個檔案：每一行都是它的"
+            assert rc.file_lines(grep, None) == {} and rc.file_lines(grep, {"cwd": "/w", "items": []}) == {}, "沒有收據、收據沒有檔案：不對"
+            regrep = ["[PASS] 在存檔 #5 搜「q」：2 筆", ">   58→    49→  q = make_q(q);", ">   60→     7→  // q"]
+            assert rc.file_lines(regrep, {"cwd": "/w", "tool": "result_grep", "per_file": {"5": 2}, "items": [{"line": 58}, {"line": 60}]}) == {}, \
+                "result_grep 的收據記的是存檔編號、N→ 是存檔的行號：不對到檔案"
+
+            class FakeLines:
+                """一次寫完：回答寫 wrong（存檔的行號）；修的那一次（看得到「存檔行號」的問題）回答寫 fixed。"""
+
+                def __init__(self, wrong, fixed):
+                    self.wrong, self.fixed, self.users = wrong, fixed, []
+
+                def __call__(self, model=None, messages=None, format=None, **kw):
+                    user = messages[-1]["content"]
+                    self.users.append(user)
+                    where = self.fixed if "存檔行號" in user else self.wrong
+                    data = {"answer": f"q 在 a.cpp {where}", "facts": [{"text": "q = make_q(q)", "lines": "4"}], "errors": [],
+                            "not_covered": "無", "suggested_questions": [], "index_hint": "q 的位置", "related_records": []}
+                    return {"message": {"content": json.dumps(data, ensure_ascii=False)}, "prompt_eval_count": 10, "eval_count": 5}
+
+            agent.last_receipt = rec
+            try:
+                rid = archive("\n".join(grep), script="grep_cmd.py", task="q 在哪個檔案的第幾行")
+            finally:
+                agent.last_receipt = None
+            ollama.chat = fake = FakeLines("第 4 行", "第 49 行")
+            out = agent.summarize_tool_result("\n".join(grep), 3000, step={}, result_id=rid)
+            assert "（行 4＝a.cpp:49）" in out, out
+            assert len(fake.users) == 2 and "「第 4 行」是每一行最前面的存檔行號" in fake.users[1] and "a.cpp:49" in fake.users[1], fake.users[-1:]
+            assert "回答：q 在 a.cpp 第 49 行" in out and "程式核對" not in out, out
+            ollama.chat = fake = FakeLines("第 4 行", "第 4 行")
+            out = agent.summarize_tool_result("\n".join(grep), 3000, step={}, result_id=rid)
+            assert "（程式核對：回答寫的「第 4 行」是存檔原文的行號，那一行在檔案裡是 a.cpp:49）" in out, out
+            ollama.chat = fake = FakeLines("第 49 行", "第 49 行")
+            out = agent.summarize_tool_result("\n".join(grep), 3000, step={}, result_id=rid)
+            assert len(fake.users) == 1 and "程式核對" not in out, "寫的是檔案的行號：不用修"
+            j = json.load(open(os.path.join(tmp, "logs", "extract_jobs", agent.last_tool_summary["job"], "job.json"), encoding="utf-8"))
+            assert j["final"]["facts"][0]["at"] == "a.cpp:49" and j["synth"]["answer_lines"] == [], j["final"]
+
+        def t_sub_guidance():
+            # 待辦 4k ①（設計筆記 2.47）：子工作階段沒有 result_recall、也沒有使用者可以問——提煉結尾的下一步建議、沒有提煉時的說明、
+            # claude_code 模式的截斷說明只寫它能用的 result_grep、result_view；主對話照舊
+            from agent_core.turn import _content_for_context
+            data = {"answer": "a", "facts": [], "errors": [], "not_covered": "無", "suggested_questions": [], "related_records": []}
+            cases = {"answered": {"structured": True, "data": data},
+                     "need_more": {"structured": True, "data": dict(data, related_records=[{"id": 5, "reason": "早上的那一份"}])},
+                     "unread": {"structured": True, "data": data, "notes": ["原文第 10～20 行這次沒有讀"]},
+                     "gap": {"structured": True, "data": dict(data, not_covered="tb3 的電量", suggested_questions=[{"question": "tb3 呢"}])},
+                     "fallback": {"structured": True, "data": data, "fallback": True},
+                     "failed": {"structured": False, "data": None, "raw": "（不是 JSON）"}}
+            for name, out in cases.items():
+                sub, main = agent._followup_guidance(["7"], out, sub=True), agent._followup_guidance(["7"], out)
+                assert "result_recall" not in sub and "使用者" not in sub and "result_grep" in sub and "result_view" in sub, (name, sub)
+                assert "result_recall" in main, (name, main)
+            assert "#5" in agent._followup_guidance(["7"], cases["need_more"], sub=True), "還要一起看的存檔照樣寫出來"
+            text = "\n".join(f"line {i}" for i in range(1, 3001))
+            agent.last_result_id = archive(text, script="cat_cmd.py")
+            sub = _content_for_context(text, 9000, agent, use_summary=False, sub=True)
+            main = _content_for_context(text, 9000, agent, use_summary=False)
+            assert "result_recall" not in sub and "result_grep" in sub and "result_recall" in main, (sub, main)
+            agent.context_mode = "claude_code"
+            try:
+                sub, main = agent.raw_result_for_context(text, 9000, sub=True), agent.raw_result_for_context(text, 9000)
+            finally:
+                agent.context_mode = "harness"
+            assert "result_recall" not in sub and "result_view" in sub and "result_recall" in main, "claude_code 的截斷說明"
+
         for name, fn in [("切段：依結構切（不切在縮排的中間）、前情帶狀態列、章節與表頭、大綱", t_chunker),
                          ("核對：名字在縮排的上層也算、寫錯對象與編出來的車號擋下、一般的詞與問題裡的數字放行", t_grounding),
                          ("一次寫完（短的輸出）：一次呼叫、每條附行號、存檔（job.json、calls.jsonl）", t_direct),
@@ -331,7 +410,11 @@ def main():
                          ("狀態標記只認輸出最後的那幾行", t_trailing_markers),
                          ("工作目錄不能用：換回專案目錄並回 [ERROR]，下一次照常執行", t_bad_cwd),
                          ("名稱要整個對上（待辦 4j ①）：av2_test 不算 nav2_test 裡有、tb1 不算 tb12 裡有；分隔與開頭的斜線照舊對得上；名稱不被切成半截"
-                          "（WP_L2 的 L2 不當行號、數字開頭的連數字一起比）；回答的核對附相近的寫法", t_name_whole)]:
+                          "（WP_L2 的 L2 不當行號、數字開頭的連數字一起比）；回答的核對附相近的寫法", t_name_whole),
+                         ("檔案的行號（待辦 4k ②）：照收據把存檔的每一行對到檔案（一個檔案一節、只有一個檔案）；事實附「檔案:行號」；回答寫成存檔的"
+                          "行號交回修一次，還是錯就標明；寫的是檔案的行號不用修", t_file_lines),
+                         ("子工作階段的下一步建議（待辦 4k ①）：提煉結尾、沒有提煉時、claude_code 的截斷說明只寫 result_grep、result_view，"
+                          "不寫 result_recall、不叫它問使用者；主對話照舊", t_sub_guidance)]:
             check(name, fn)
     finally:
         os.chdir(cwd)

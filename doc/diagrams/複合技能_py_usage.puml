@@ -1,0 +1,64 @@
+@startuml
+' 複合技能 py_usage 的〈骨架〉與〈回退〉畫成流程（2026-11-21）；來源 skills_system/repo_analysis/py_usage.md。
+skinparam shadowing false
+skinparam defaultFontName "Microsoft JhengHei"
+skinparam ActivityFontSize 13
+skinparam NoteFontSize 12
+skinparam LegendFontSize 12
+skinparam ArrowColor #555555
+skinparam ActivityDiamondFontSize 12
+title py_usage：Python 的名稱用在哪裡（定義、呼叫、import；各檔案幾次、總共幾次）
+
+start
+:參數（模型填）
+・name：要找的名稱（必填）
+・path：範圍（沒寫＝整個工作目錄）
+・exclude：範圍裡不要的子目錄（可以不寫）; <<#FFE6CC>>
+:程式核對參數：種類對不對、必填的有沒有；沒寫的用預設值；
+路徑在工作目錄找不到時用 find_file 找一次
+（剛好一個就自己補，好幾個或沒有就要改參數）; <<#D5E8D4>>
+:① hits（search_text）
+在範圍裡的 .py 檔搜 name（整個字），找出提到它的檔案; <<#DAE8FC>>
+if (hits 的結果？) then (0 筆)
+  :【回退 other_language】
+  在範圍裡的 C++ 檔（.h、.hpp、.cpp、.cc）搜一次（只列檔名）; <<#FFF2CC>>
+  if (C++ 檔有這個名稱？) then (有)
+    :【回退 to_cpp】換成 cpp_symbol
+    （name→names、path、exclude 帶過去），
+    照 cpp_symbol 的骨架重做（見〈複合技能_cpp_symbol〉）; <<#FFF2CC>>
+    stop
+  else (沒有)
+    :【回退 outside_scope】
+    在整個工作目錄的 .py 檔搜一次; <<#FFF2CC>>
+    :報告：範圍裡沒有這個名稱；
+    範圍外有的話，列出在哪些檔案; <<#E1D5E7>>
+    stop
+  endif
+elseif (搜到的行太多、結果被截斷？) then (是)
+  :【回退 too_many_lines】
+  要改參數：縮小 path（附各子目錄的筆數）; <<#F8CECC>>
+  stop
+else (沒有截斷)
+  :② refs（code_ast_reader，hits 的每個檔案各跑一次）
+  用 AST 分出定義、呼叫、import 與所在的函式
+  （註解、字串裡提到的不算；import 不算呼叫）; <<#DAE8FC>>
+  if (檔案太多、超過上限？) then (是)
+    :【回退 too_many_files】
+    要改參數：縮小 path（附各子目錄的筆數）; <<#F8CECC>>
+    stop
+  else (沒有)
+  endif
+endif
+:報告（程式照收據整理）
+・定義：檔案:行號
+・呼叫：總共幾次、每個檔案幾次，每一處的檔案:行號與所在的函式
+・import；出處 #編號; <<#E1D5E7>>
+stop
+legend bottom
+  顏色：橘＝模型做（填參數、判斷節點）、綠＝程式核對、藍＝程式照〈骨架〉做、黃＝〈回退〉（程式照條件自動改做）、紅＝要改參數、紫＝程式寫的報告。
+  回退的條件在步驟跑完之後由程式照收據比對（照〈回退〉列的順序，取第一個符合、還沒用過的；重排最多 3 次）。
+  紅色「要改參數」：中階停下來，由程式直接問使用者，回答之後照新的參數接著做。
+  模型不寫步驟：參數由中階的合約填（程式核對），判斷節點只在寫好的幾條路裡選。
+  來源：skills_system/repo_analysis/py_usage.md 的 parameters、〈骨架〉與〈回退〉（改了技能要一起改這張圖）。
+endlegend
+@enduml

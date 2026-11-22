@@ -25,9 +25,9 @@
   "total": 14
  },
  "extract_selftest": {
-  "label": "待辦 4j ①（2026-11-20）",
-  "passed": 13,
-  "total": 13
+  "label": "待辦 4k ①② 的修正（子工作階段的下一步建議、檔案的行號）（2026-11-21）",
+  "passed": 15,
+  "total": 15
  },
  "integrity": {
   "label": "第 5 步（6958dac）（2026-11-20）",
@@ -45,9 +45,9 @@
   "total": 4
  },
  "orch_selftest": {
-  "label": "第 5 步（6958dac）（2026-11-20）",
-  "passed": 35,
-  "total": 35
+  "label": "待辦 4k ①② 的修正（子工作階段的下一步建議、檔案的行號）（2026-11-21）",
+  "passed": 36,
+  "total": 36
  },
  "repo_selftest": {
   "label": "原型之後的第一批（73b0756）（2026-11-21）",

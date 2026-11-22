@@ -58,9 +58,9 @@ class ContextModeMixin:
         return next((r for r in reversed(self.trajectory) if r.get("id") == result_id), None)
 
     # ---------------------------------------------------------------- claude_code：原文進上下文
-    def raw_result_for_context(self, result, tool_tokens):
+    def raw_result_for_context(self, result, tool_tokens, sub=False):
         """claude_code 模式下工具回傳怎麼進主對話：第一行註明存檔編號；不超過 RAW_RESULT_MAX_TOKENS 就是完整原文，
-        超過就保留頭尾（6:4），中間換成一行「省略多少、原文在哪、用什麼查」。不呼叫任何模型。
+        超過就保留頭尾（6:4），中間換成一行「省略多少、原文在哪、用什麼查」（sub：子工作階段，不寫它沒有的 result_recall）。不呼叫任何模型。
         大量回傳（> TOOL_RESULT_TOKEN_THRESHOLD）照樣記進檢索清單，只是描述由程式組（使用者的問題＋執行的指令），
         不是 harness 模式那種獨立 session 寫的語意描述。"""
         rid = self.last_result_id
@@ -98,7 +98,8 @@ class ContextModeMixin:
                       + (_r("sections_more", count=len(inner)) if len(inner) > 12 else "")) if inner else ""
         # 實測（評測 fleet_battery）：只寫「中間省略、原文在存檔」時，4B 模型看到頭尾沒有 tb6 就回答「資料裡沒有 tb6」，
         # 不會回存檔查。所以明講省略的行號範圍、看不到不代表不存在、以及問題要的東西不在頭尾時先查再答。
-        gap = "\n" + _r("gap", where=where, omitted=omitted, contents=contents, rid=rid, view_from=view_from) + "\n"
+        recall = "" if sub else _r("gap_recall", rid=rid)
+        gap = "\n" + _r("gap", where=where, omitted=omitted, contents=contents, rid=rid, view_from=view_from, recall=recall) + "\n"
         return f"{TOOL_TRUNCATED_TAG}\n{header}\n" + "\n".join(head) + gap + "\n".join(tail)
 
     # ---------------------------------------------------------------- claude_code：清除舊的工具回傳（可還原）

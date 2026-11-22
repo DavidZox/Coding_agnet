@@ -14,6 +14,7 @@
 - 子工作階段（第 5 步，agent_core/sub.py）：沒有複合技能的領域直接開；自己的對話（主對話看不到試錯）、只能用領域的工具、確認關卡停下來與接回
   （同意、不同意、取消）、步數用完、卡住、收尾的核對（出處是自己的工具結果、修一次）、報告、決策圖；回覆的協議（5-1 的評測之後）：
   沒有動作也沒有回答提醒一次（不算交回修）、收尾寫成 {"command": "null"}、寫到長度上限被截斷的不執行；
+  長輸出照舊提煉，結尾的下一步建議只寫它能用的 result_grep、result_view（待辦 4k ①）；
 - 凍結的四個領域（第 5 步 5-2）：「領域」一節、主對話的索引拿掉它們的工具（工具全部交給領域的那一節連說明都不列）、子工作階段的工具清單
   帶那一節的說明、〈做法〉從 AGENT.md 搬過去、擋與放行；數據分析在子工作階段裡執行（G4）：報告原樣附上、主對話照它核對回答；
 - 問使用者：Web（停下來、問題、回答不合法再問、回答之後接回同一個工作、取消；經過 HTTP 的 /api/send 與 /api/decision）、
@@ -724,6 +725,27 @@ def main():
                 assert not any("xxxxxxxxxx" in m["content"] for m in job["messages"]), "存進對話的是不含截斷參數的 JSON"
             with_test_domain(body)
 
+        def t_sub_followup():
+            # 待辦 4k ①（設計筆記 2.47）：子工作階段的長輸出照舊提煉，結尾的下一步建議只寫它能用的 result_grep、result_view
+            # （它沒有 result_recall：5c 照建議叫了 18 次，全部被擋），也不叫它問使用者
+            many = os.path.join(tmp, "many")
+            os.makedirs(many, exist_ok=True)
+            for k in range(150):
+                open(os.path.join(many, f"file_with_a_rather_long_name_{k:03d}.txt"), "w").close()
+
+            def body():
+                turn("many 裡有哪些檔案？", FakeChat(main=[dispatch("列出 many", ["有哪些檔案"], domain="test_ops"), say("好")],
+                                                   sub=[step("scripts/ls_cmd.py", "many")]))
+                job = sub_job(agent._domain_turn["dispatches"][-1]["job"])
+                got = [m["content"] for m in job["messages"] if m["role"] == "user" and "[tool result - 任務導向摘要]" in m["content"]]
+                assert job["steps"][0]["summarized"] and len(got) == 1, job["steps"]
+                assert "result_grep" in got[0] and "result_view" in got[0] and "result_recall" not in got[0], got[0]
+                assert not any(w in got[0] for w in ("使用者追問", "問使用者", "已顯示給使用者", "使用者目標")), "子工作階段沒有使用者可以問、使用者也沒看到輸出"
+            try:
+                with_test_domain(body)
+            finally:
+                shutil.rmtree(many, ignore_errors=True)
+
         def t_sub_topology():
             # 決策圖：子工作階段在清單裡（種類、步數），一個工作整理成每一步、收尾的回答與核對；跟中階一樣串起上一次、下一次
             from web_app import topology
@@ -1124,6 +1146,8 @@ def main():
                          ("子工作階段的上限與收尾：不是這個領域的工具擋下來、卡住、步數用完、出處不是自己的工具結果交回修一次再標出來", t_sub_limits),
                          ("子工作階段的回覆：沒有動作也沒有回答提醒一次（不算交回修）、收尾寫成 {\"command\": \"null\"}、寫到長度上限被截斷的不執行"
                           "（重問一次，還是被截斷就不執行）", t_sub_protocol),
+                         ("子工作階段的長輸出照舊提煉，結尾的下一步建議只寫它能用的 result_grep、result_view（待辦 4k ①：不寫 result_recall、"
+                          "不叫它問使用者）", t_sub_followup),
                          ("決策圖：子工作階段在清單裡、整理成每一步與收尾的回答、串起上一次", t_sub_topology),
                          ("凍結的四個領域（5-2）：「領域」一節、索引拿掉它們的工具與整節的說明、子工作階段的工具帶那一節的說明、〈做法〉搬過去、擋與放行",
                           t_frozen_domains),

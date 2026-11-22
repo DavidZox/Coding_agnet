@@ -105,6 +105,34 @@ def numbered(n, text, mark=" "):
     return f"{mark}{n:>5}→{text}"
 
 
+_NUMBERED = re.compile(r"^[ >]\s*(\d+)→")
+
+
+def file_lines(lines, receipt):
+    """工具輸出的每一行 → 那一行在檔案裡的位置：{輸出的行號（1 起算）: (路徑, 檔案的行號)}。view_file、search_text 每行前面的 `N→`
+    （numbered）是檔案的行號；提煉、result_view 再加一層存檔的行號，兩個都寫成 `N→`，模型會搞混（設計筆記 2.47：檔案的第 49 行寫成存檔裡的
+    第 149 行）。路徑照收據：收據只有一個檔案就是它；好幾個（search_text 一個檔案一節）就是上面最近一行寫到的那一個（不是 `N→` 的行，
+    長的路徑先比）。寫成收據的 cwd 底下的相對路徑（跟工具輸出的寫法一樣）。沒有收據、收據沒有檔案的回空的。
+    只認收據裡的絕對路徑：讀檔案的工具記的都是絕對路徑；result_grep 的 per_file 記的是存檔編號（"5"），它輸出的 `N→` 是那份存檔的行號，
+    不是檔案的（4k ② 的階段驗證：被當成「檔案 5 的第 58 行」，交回修反而把回答改壞）。"""
+    if not isinstance(receipt, dict):
+        return {}
+    cwd = str(receipt.get("cwd") or "").rstrip("/")
+    paths = {str(it["path"]) for it in receipt.get("items") or [] if isinstance(it, dict) and it.get("path")}
+    paths |= {str(p) for p in [receipt.get("path")] + list(receipt.get("per_file") or {}) if p}
+    paths = {p for p in paths if p.startswith("/")}
+    shown = sorted({p[len(cwd) + 1:] if cwd and p.startswith(cwd + "/") else p for p in paths}, key=len, reverse=True)
+    out, cur = {}, (shown[0] if len(shown) == 1 else None)
+    for i, line in enumerate(lines, 1):
+        m = _NUMBERED.match(line)
+        if m:
+            if cur:
+                out[i] = (cur, int(m.group(1)))
+        elif len(shown) > 1:
+            cur = next((p for p in shown if p in line), cur)
+    return out
+
+
 def describe(meta, fn):
     """'#16 semantic_map_cmd.py（2026-09-25 10:34，PASS）'"""
     m = FILE_RE.match(fn)

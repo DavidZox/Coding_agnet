@@ -7,7 +7,8 @@
    參數寫錯重下）只在這裡，存在 logs/sub_jobs/<編號>/job.json 的 messages；主對話只收到報告。
 2. **每一步跟主對話走同一條路**（agent._run_tool_once）：先載入規格再執行、存檔 #編號、收據、狀態標記的同步（docker_open 換目標容器，主對話
    之後也看得到）；太長的工具回傳照舊提煉（錨點換成原始問題、子目標與這一步的目的）；卡住偵測照主對話的規則（turn_guard.RepeatTracker，
-   卡住就收尾）。只能用這個領域的工具與共用的工具（DOMAIN.md），其他的回 [ERROR]（orchestrator.domain_gate 看 agent._sub_allowed）。
+   卡住就收尾）。只能用這個領域的工具與共用的工具（DOMAIN.md），其他的回 [ERROR]（orchestrator.domain_gate 看 agent._sub_allowed）；
+   提煉結尾的下一步建議、怎麼回存檔看也只寫它能用的（result_grep、result_view；設計筆記 2.47：以前叫它用 result_recall，全部被擋）。
    對話太長時，送給模型的那一份把舊的工具結果換成存檔編號（存著的對話不動）。
 3. **確認關卡**：會改狀態的工具照舊先問使用者——子工作階段停下來（need_user），高階轉問（domain_pending），resume 接回同一步；拒絕就把
    [DENIED] 交給模型接著做；cancel（使用者取消）照做到的收尾。
@@ -212,7 +213,8 @@ class Session:
         content = shown
         if not doc and not denied:
             content = _content_for_context(shown, self.agent.count_tokens(shown), self.agent, use_summary=TOOL_SUMMARY_DEFAULT,
-                                           step={"thought": step["thought"], "reply": step["reply"], "action": action}, anchor=self._anchor(job))
+                                           step={"thought": step["thought"], "reply": step["reply"], "action": action}, anchor=self._anchor(job),
+                                           sub=True)
         step["summarized"] = content != shown
         if rid:
             content = _s("result_id", rid=rid) + "\n" + content

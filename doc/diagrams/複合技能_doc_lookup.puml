@@ -1,0 +1,59 @@
+@startuml
+' 複合技能 doc_lookup 的〈骨架〉與〈回退〉畫成流程（2026-11-21）；來源 skills_system/repo_analysis/doc_lookup.md。
+skinparam shadowing false
+skinparam defaultFontName "Microsoft JhengHei"
+skinparam ActivityFontSize 13
+skinparam NoteFontSize 12
+skinparam LegendFontSize 12
+skinparam ArrowColor #555555
+skinparam ActivityDiamondFontSize 12
+title doc_lookup：照一份文件回答它寫了什麼（規定、狀態的轉移、數值與它們的編號）
+
+start
+:參數（模型填）
+・doc：哪一份文件（必填；給的是名稱或路徑不對時，程式自己找一次）
+・words：要在文件裡搜的名稱或字（必填，好幾個用「、」分開）; <<#FFE6CC>>
+:程式核對參數：種類對不對、必填的有沒有；沒寫的用預設值；
+路徑在工作目錄找不到時用 find_file 找一次
+（剛好一個就自己補，好幾個或沒有就要改參數）; <<#D5E8D4>>
+:① hits（search_text，只搜這一份文件）
+找問題提到的名稱，同一行含最多個名稱的排前面; <<#DAE8FC>>
+if (hits 的結果？) then (0 筆)
+  :【回退 no_hits】
+  文件裡沒有一行提到這些名稱：
+  要改參數，換成文件裡的寫法（狀態、指令或參數怎麼寫）; <<#F8CECC>>
+  stop
+else (有找到)
+endif
+repeat
+  :② read（判斷節點：唯一讓模型看內容做決定的一步）
+  程式照收據從文件讀出搜到的行（附行號）交給模型；
+  模型挑出回答問題的行，每一行標「答案」或「相關」，再選一條路; <<#FFE6CC>>
+  :程式核對：挑的片段要真的在原文那一行（行號與整行由程式填）、
+  要接著搜的字要在原文裡、搜過的字不能再搜；沒過交回修一次; <<#D5E8D4>>
+  switch (模型選的路？)
+  case (follow：提到別的編號、名稱)
+    :③ more（search_text）
+    在同一份文件搜模型填的名稱; <<#DAE8FC>>
+  case (wider：要看前後)
+    :③ around（view_file）
+    看模型指定的那一行前後; <<#DAE8FC>>
+  case (answered：回答了)
+    :（結束判斷）; <<#FFFFFF>>
+  case (not_found：都沒寫)
+    :（結束判斷）; <<#FFFFFF>>
+  endswitch
+repeat while (選的是 follow 或 wider，而且判斷還不到 4 次？) is (是：再判斷一次) not (否)
+:報告（程式寫）
+・判斷挑出的行：檔案:行號、整行原文、標籤、#編號
+・每一次判斷的經過（選了哪條路、理由、接著找了什麼）
+・判斷用完 4 次還要接著找＝熔斷，寫明追到哪裡; <<#E1D5E7>>
+stop
+legend bottom
+  顏色：橘＝模型做（填參數、判斷節點）、綠＝程式核對、藍＝程式照〈骨架〉做、黃＝〈回退〉（程式照條件自動改做）、紅＝要改參數、紫＝程式寫的報告。
+  回退的條件在步驟跑完之後由程式照收據比對（照〈回退〉列的順序，取第一個符合、還沒用過的；重排最多 3 次）。
+  紅色「要改參數」：中階停下來，由程式直接問使用者，回答之後照新的參數接著做。
+  模型不寫步驟：參數由中階的合約填（程式核對），判斷節點只在寫好的幾條路裡選。
+  來源：skills_system/repo_analysis/doc_lookup.md 的 parameters、〈骨架〉與〈回退〉（改了技能要一起改這張圖）。
+endlegend
+@enduml

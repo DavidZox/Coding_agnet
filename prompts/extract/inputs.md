@@ -19,6 +19,9 @@ worker 與整合的規則在 worker.md、synthesizer.md；最前面的「使用�
 <!-- @repair_answer_missing -->
 answer 裡的「{tokens}」在原文找不到（數值、名稱要照抄原文；原文沒有的不要寫，或改寫成原文的寫法）。
 
+<!-- @repair_answer_line -->
+answer 寫的「{written}」是每一行最前面的存檔行號，不是檔案的行號：那一行在檔案裡是 {at}。寫檔案的位置要用檔案的行號。
+
 <!-- @repair_fact_missing -->
 事實「{text}」（行 {lines}）的「{missing}」不在引用的那幾行。
 
