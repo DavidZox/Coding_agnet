@@ -27,7 +27,9 @@ package "prompts/（改字不用改程式；evals/integrity 檢查範本跟程�
       tool_use_index：檢索清單（兩種模式）、對話片段、最新一筆
       state_tail：動態區（工作目錄、容器、Workspace、數據、Objective）
       tool_results：工具結果的框架句、捨棄通知、只給成功／失敗
+        （子工作階段的 reduced_sub 只寫 result_grep、result_view）
       raw_results：claude_code 模式的省略說明、清除的佔位
+        （子工作階段不加 result_recall 那一句 gap_recall）
       skill_docs：載入規格之後「下一輪要做什麼」
       reminders：程式核對後的提醒（重複、沒動作卻說做了、
         依報告回答寫成因果、空白回覆、寫到長度上限被截斷）
@@ -38,7 +40,8 @@ package "prompts/（改字不用改程式；evals/integrity 檢查範本跟程�
         同一個項目交太多次…）、answers 沒有通過核對的說明
         （answers_fix、why_*；子工作階段收尾的核對也用 why_*）
       plan：交給下一層的文字（前面的領域查到的、這個問題的分工）
-      followup：提煉結果最後的下一步建議
+      followup：提煉結果最後的下一步建議（子工作階段的 sub_*：
+        回原文看用 result_grep／result_view，沒有問使用者）
       direct_commands、attachments：/analyze、附圖、
         手動載入技能時放進對話的訊息；數據報告的回答規則
     ]
@@ -49,7 +52,8 @@ package "prompts/（改字不用改程式；evals/integrity 檢查範本跟程�
     ]
     rectangle P_EXTRACT #FCE5CD [
       **extract/**：worker.md、synthesizer.md（規則）、
-      inputs.md（user 訊息的標籤、程式的說明、修一次）
+      inputs.md（user 訊息的標籤、程式的說明、修一次，
+        含回答把存檔的行號寫成檔案的行號）
       **harness/extract_anchor.md、anchor.md**：
       「使用者想知道什麼」與每份存檔的背景
     ]

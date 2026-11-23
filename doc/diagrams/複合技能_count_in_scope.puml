@@ -12,7 +12,8 @@ title count_in_scope：範圍裡的數量（一段文字出現在幾行、名稱
 start
 :參數（模型填）
 ・keyword：要數的一段文字（可以不寫）
-・files：檔名的寫法，例如 *.yaml（可以不寫）
+・files：檔名的寫法，例如 *.yaml（可以不寫；含 / 時比對整個路徑，
+  find_file 與 search_text 同一條規則）
 ・path：範圍（沒寫＝整個工作目錄）
 ・exclude：範圍裡不要的子目錄（可以不寫）; <<#FFE6CC>>
 :程式核對參數：種類對不對、必填的有沒有；沒寫的用預設值；

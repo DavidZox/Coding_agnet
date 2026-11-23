@@ -131,7 +131,8 @@ rectangle SCRIPT #DAE8FC [
   * parse_args：純函式（低階執行前、確認關卡都用它讀參數）
   * execute → 給模型的文字（第一行 [PASS]／[ERROR]）
   * _receipt_common：收據（status、error_kind、counts、items、
-    找不到路徑時的 near）；_path_common：路徑、相近的路徑、split_globs
+    找不到路徑時的 near）；_path_common：路徑、相近的路徑、split_globs、
+    --include 含 / 時比對整個路徑（path_glob、include_ok）
 ]
 
 rectangle SUB #FCE5CD [

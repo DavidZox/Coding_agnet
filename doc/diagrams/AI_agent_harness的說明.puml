@@ -82,7 +82,8 @@ rectangle NodeSub #FCE5CD [
     （只在 harness 模式）
   * 回原文提煉 result_recall：main session 主動選
     （兩者共用 extract.py：程式依結構切段 → 每段一個 worker（附行號）
-     → 整合（回答／事實附行號／未涵蓋／index_hint／related_records）；
+     → 整合（回答／事實附行號，對得到檔案的附 檔案:行號／未涵蓋／
+     index_hint／related_records）；
      每一步寫的名稱與數值由程式核對；全部存在 extract_jobs/）
   * 滾動壓縮 summarize_messages：舊對話 → 融合摘要
   * 視覺 sub-session：在 vision/（附圖 → 結構化提取），同樣做完即丟
