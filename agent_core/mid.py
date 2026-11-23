@@ -37,7 +37,6 @@ import collections
 import json
 import os
 import re
-import shlex
 import time
 
 from . import edg, judge, prompt_files, skill_spec
@@ -52,8 +51,7 @@ KINDS = ("位置", "數量", "內容")       # 問題要的是哪幾種（挑技
 STATUS_TEXT = {"done": "做完", "dead_end": "死路（照〈回退〉或判斷都沒有可以接著做的）",
                "circuit_break": f"熔斷（重排超過 {MID_REPLAN_MAX} 次，或判斷超過 {MID_JUDGE_MAX} 次）",
                "no_skill": "這個領域沒有適合的複合技能", "out_of_domain": "不屬於這個領域", "failed": "失敗", "need_user": "要問使用者",
-               "cancelled": "使用者取消", "repeated": "跟之前的某一次一樣（同一個技能、同樣的參數，再跑一次結果也一樣），停",
-               "need_params": "參數要改（複合工具不問使用者：要改什麼寫在說明）"}
+               "cancelled": "使用者取消", "repeated": "跟之前的某一次一樣（同一個技能、同樣的參數，再跑一次結果也一樣），停"}
 JUDGE_RESULT = {"done": "結束", "replanned": "照這條路加了節點，接著做", "no_new_nodes": "要接著找的都找過了（不收斂），停",
                 "circuit_break": f"判斷已經 {MID_JUDGE_MAX} 次，還要接著做：停（熔斷）", "params_rejected": "這條路要填的值沒有通過核對，停",
                 "no_lines": "這條路要有挑出的行，但挑的行都沒有通過核對", "no_input": "要看的節點沒有結果（0 筆），沒有判斷",
@@ -78,12 +76,6 @@ def _now():
     return time.strftime("%Y-%m-%d %H:%M:%S")
 
 
-def param_kinds():
-    """參數的種類怎麼寫給模型（合約、複合工具的規格共用；prompts/mid/inputs.md 的 type_*）。"""
-    return {"name": _i("type_name"), "text": _i("type_text"), "path": _i("type_path"), "glob": _i("type_glob"),
-            "names": _i("type_names"), "words": _i("type_words")}
-
-
 def _empty(v):
     return v is None or v == "" or v == []
 
@@ -102,8 +94,8 @@ def searched(job):
     return out
 
 
-def param_sig(values):
-    """參數（{名稱: 值}）比對用的寫法：同一個技能、這個寫法一樣＝同樣的參數（中階的再交、A′ 擋跟中階一樣的複合工具都用它）。"""
+def _param_sig(values):
+    """參數（{名稱: 值}）比對用的寫法：同一個技能、這個寫法一樣＝同樣的參數。"""
     return json.dumps({k: values[k] for k in sorted(values or {})}, ensure_ascii=False)
 
 
@@ -515,58 +507,6 @@ def check_answer(p, answer, cwd):
     return a, None
 
 
-def parse_tool_args(spec, remainder):
-    """複合工具的參數（子工作階段直接叫的複合技能，A′：config.NODE_RETRY）→ ({名稱: 值}, 錯誤)。寫法 `--<參數> <值>`（或 `--<參數>=<值>`）；
-    沒有寫 --名稱 的值給第一個還沒給的必填參數（名稱清單、字可以是好幾個）。值照種類核對（同 check_answer：名稱、目錄名稱、字的寫法）；
-    名稱清單與字可以用「、」或逗號分開，也可以重複寫同一個參數。路徑在不在工作目錄不在這裡查（Worker._complete 照 fetch 查）。
-    漏了必填的、沒有這個參數、一個值的參數給了好幾個都回錯誤（附那個參數的問法）。"""
-    try:
-        parts = shlex.split(remainder or "")
-    except ValueError:
-        return None, "參數的引號沒有成對"
-    params = {p["name"]: p for p in spec["parameters"]}
-    raw, loose, k = {}, [], 0
-    while k < len(parts):
-        tok = parts[k]
-        if tok.startswith("--") and len(tok) > 2:
-            name, eq, val = tok[2:].partition("=")
-            if name not in params:
-                return None, f"沒有 --{name} 這個參數（有的是：{'、'.join('--' + n for n in params)}）"
-            if not eq:
-                if k + 1 >= len(parts) or parts[k + 1].startswith("--"):
-                    return None, f"--{name} 後面要接值"
-                k += 1
-                val = parts[k]
-            raw.setdefault(name, []).append(val)
-        else:
-            loose.append(tok)
-        k += 1
-    if loose:
-        first = next((p for p in spec["parameters"] if p.get("required") and p["name"] not in raw), None)
-        if first is None or (len(loose) > 1 and first["type"] not in ("names", "words")):
-            return None, f"多了沒有參數名稱的值「{' '.join(loose)}」：每個值前面寫 --<參數>"
-        raw[first["name"]] = loose
-    out = {}
-    for name, vals in raw.items():
-        p = params[name]
-        if len(vals) > 1 and p["type"] not in ("names", "words"):
-            return None, f"--{name} 只能給一個值，收到 {len(vals)} 個"
-        a = "、".join(vals) if p["type"] in ("names", "words") else vals[0]
-        if p["type"] == "path":
-            a = _unquote(a)
-            a = (a[2:] if a.startswith("./") else a).rstrip("/") or a
-            value, err = (a, None) if a else (None, "沒有值")
-        else:
-            value, err = check_answer(p, a, "")
-        if err:
-            return None, f"--{name}：{err}"
-        out[name] = value
-    missing = [p for p in spec["parameters"] if p.get("required") and p["name"] not in out]
-    if missing:
-        return None, "；".join(f"缺 --{p['name']}（{p.get('ask') or p['desc']}）" for p in missing)
-    return out, None
-
-
 def _named(found, value, name):
     """找到的路徑的檔名就是查的名稱，而且原文前面的每一段（目錄）照順序都在路徑裡。"""
     if os.path.basename(found) != name:
@@ -634,8 +574,15 @@ class Worker:
         """items：高階交下來的要回答的項目（存進 job、列在報告開頭；挑技能與判斷先不看）。on_start(編號)：job 建好就呼叫
         （高階在執行中就把拓撲圖的連結推給畫面）。previous：同一個問題之前交給這個領域的經過（4-2：[{"n", "job", "skill", "params",
         "status", "note", "searched", "items"}]，高階從之前的工作取）；attempt：這是第幾次。"""
-        job = self._new_job(question, goal, items, previous, attempt)
-        jid = job["id"]
+        jid = self.store.new_id()
+        self.store.prune(MID_JOBS_KEEP)
+        job = {"id": jid, "status": "running", "created": _now(), "updated": _now(), "cwd": self.agent.current_cwd,
+               "domain": self.domain_name, "question": question, "goal": (goal or question).strip(), "items": list(items or []),
+               "attempt": attempt, "previous": list(previous or []), "selection": None, "skill": None,
+               "contract": None, "params": {}, "rejected": [], "auto_filled": [], "fetches": [], "graphs": [], "edg_job": None,
+               "fallbacks": [], "applied": [], "added": [], "replans": 0, "switched": [], "judgments": [], "need_user": None, "asked": [],
+               "result": None}
+        self.store.save(job)
         for p in job["previous"]:                      # 4-2 的 I.4：上一次的工作記下這一次（決策圖從上一次連到下一次；上一次可能是子工作階段）
             store = self.store if p.get("kind", "mid") == "mid" else JobStore(os.path.join(self.agent.script_dir, "logs", SUB_JOBS_DIRNAME))
             pj = store.load(p.get("job")) if p.get("job") else None
@@ -652,33 +599,6 @@ class Worker:
             return job
         self._contract(job, domain["skills"][job["skill"]])
         return self._proceed(job, domain)
-
-    def run_tool(self, question, goal, items, skill, values):
-        """複合工具（A′：子工作階段直接叫，config.NODE_RETRY）：技能與參數是子工作階段給、程式核對過的（parse_tool_args；不挑技能、
-        不寫合約）；之後照舊——補預設值、路徑找不到照 fetch 查、排圖、低階、回退（加節點、換技能）、判斷、報告。要問使用者的（必填的沒有、
-        路徑有好幾個或找不到、範圍太大）不問：結束成 need_params，說明寫要改什麼與候選，子工作階段改參數再叫一次（_wait）。"""
-        job = self._new_job(question, goal, items)
-        job.update(tool=True, skill=skill, selection={"via": "tool", "skill": skill},
-                   params={k: {"value": v, "source": "tool"} for k, v in values.items()})
-        self.store.save(job)
-        self._note(job["id"], f"🧭 複合工具 {skill}（{self.domain_name}）："
-                   + ("；".join(f"{k}＝{self._show(v)}" for k, v in values.items()) or "沒有參數"))
-        domain = self._domain()
-        if domain["problems"]:
-            return self._finish(job, "failed", note="領域的規格有問題：" + "；".join(domain["problems"]))
-        return self._proceed(job, domain)
-
-    def _new_job(self, question, goal, items, previous=None, attempt=1):
-        jid = self.store.new_id()
-        self.store.prune(MID_JOBS_KEEP)
-        job = {"id": jid, "status": "running", "created": _now(), "updated": _now(), "cwd": self.agent.current_cwd,
-               "domain": self.domain_name, "question": question, "goal": (goal or question).strip(), "items": list(items or []),
-               "attempt": attempt, "previous": list(previous or []), "selection": None, "skill": None,
-               "contract": None, "params": {}, "rejected": [], "auto_filled": [], "fetches": [], "graphs": [], "edg_job": None,
-               "fallbacks": [], "applied": [], "added": [], "replans": 0, "switched": [], "judgments": [], "need_user": None, "asked": [],
-               "result": None}
-        self.store.save(job)
-        return job
 
     def resume(self, jid, approve=None, answer=None):
         """接回要問人的工作：確認關卡用 approve（True／False），問參數用 answer（使用者回答的值）。"""
@@ -782,7 +702,8 @@ class Worker:
                    + (f"（{len(job['rejected'])} 個沒過核對）" if job["rejected"] else ""))
 
     def _contract_call(self, job, spec, only, rejected, note=""):
-        kinds = param_kinds()
+        kinds = {"name": _i("type_name"), "text": _i("type_text"), "path": _i("type_path"), "glob": _i("type_glob"),
+                 "names": _i("type_names"), "words": _i("type_words")}
         rows = []
         for p in spec["parameters"]:
             if only is not None and p["name"] not in only:
@@ -858,8 +779,8 @@ class Worker:
 
     def _same_as_before(self, job):
         """這次的技能與參數跟之前哪一次一模一樣：回傳那一次的紀錄，沒有回 None。"""
-        mine = param_sig({k: v["value"] for k, v in job["params"].items()})
-        return next((p for p in job.get("previous") or [] if p.get("skill") == job["skill"] and param_sig(p.get("params")) == mine), None)
+        mine = _param_sig({k: v["value"] for k, v in job["params"].items()})
+        return next((p for p in job.get("previous") or [] if p.get("skill") == job["skill"] and _param_sig(p.get("params")) == mine), None)
 
     def _recontract(self, job, spec, same):
         """參數跟之前某一次一模一樣：整份合約交回修一次（附那一次的結果與原因），照原本的核對重來（之前補的、查的不留）。"""
@@ -973,7 +894,7 @@ class Worker:
         spec = domain["skills"][job["skill"]]
         self._snapshot(job, ej)
         if ej["status"] == "need_user":
-            return self._wait(job, {"kind": "guard", "edg_job": ej["id"], "node": ej["need_user"]["node"], "question": ej["need_user"]["text"]}, ej)
+            return self._wait(job, {"kind": "guard", "edg_job": ej["id"], "node": ej["need_user"]["node"], "question": ej["need_user"]["text"]})
         if ej["status"] == "invalid":
             return self._finish(job, "failed", ej, note="排出的圖沒有通過檢查：" + "；".join(ej["problems"]))
         values = {k: v["value"] for k, v in job["params"].items()}
@@ -987,7 +908,7 @@ class Worker:
                 entry["result"] = "ask"
                 self._note(job["id"], f"🔁 第 2 級：{fb['id']}，問使用者 {fb['change']['ask']}")
                 return self._wait(job, {"kind": "param", "param": fb["change"]["ask"], "question": fb["say"], "fallback": fb["id"],
-                                        "candidates": self._subdirs(job, ej, fb["change"].get("from"))}, ej)
+                                        "candidates": self._subdirs(job, ej, fb["change"].get("from"))})
             if "switch" in fb["change"]:
                 target = domain["skills"][fb["change"]["switch"]]
                 missing = [a for a in (job["selection"] or {}).get("asks") or [] if a not in target["answers"]]
@@ -1273,12 +1194,7 @@ class Worker:
         return [f"{p}（{n} 筆）" for p, n in counts.most_common(CANDIDATES_MAX)]
 
     # ---------------------------------------------------------------- 結束
-    def _wait(self, job, need, ej=None):
-        """要問使用者：停下來（need_user），高階轉問。複合工具（run_tool）不問：結束成 need_params，報告寫到哪裡、說明寫要改的參數與候選。"""
-        if job.get("tool"):
-            cands = "；".join(need.get("candidates") or [])
-            return self._finish(job, "need_params", ej, note=(f"參數 {need['param']}：" if need.get("param") else "") + need["question"]
-                                + (f"（候選：{cands}）" if cands else ""))
+    def _wait(self, job, need):
         job.setdefault("asked", []).append(dict(need, time=_now(), version=len(job["graphs"])))
         job.update(status="need_user", need_user=need, updated=_now())
         self.store.save(job)
@@ -1302,13 +1218,10 @@ class Worker:
         return job
 
     def _report(self, job, ej, note):
-        if job.get("tool"):                     # 複合工具：子工作階段知道自己的問題與子目標，報告從技能與參數寫起
-            lines = [f"# 複合工具的結果：{STATUS_TEXT[job['status']]}"]
-        else:
-            lines = [f"# 中階的結果：{STATUS_TEXT[job['status']]}", f"- 問題：{job['question']}"]
-            if job.get("goal") and job["goal"] != job["question"]:
-                lines.append(f"- 子目標：{job['goal']}")
-            lines += [f"- 要回答的項目 {k}：{x}" for k, x in enumerate(job.get("items") or [], 1)]
+        lines = [f"# 中階的結果：{STATUS_TEXT[job['status']]}", f"- 問題：{job['question']}"]
+        if job.get("goal") and job["goal"] != job["question"]:
+            lines.append(f"- 子目標：{job['goal']}")
+        lines += [f"- 要回答的項目 {k}：{x}" for k, x in enumerate(job.get("items") or [], 1)]
         if job.get("previous"):
             lines.append(f"- 第 {job.get('attempt') or len(job['previous']) + 1} 次交給這個領域（之前：" + "；".join(
                 f"第 {p.get('n')} 次 {p.get('skill') or '—'}：{p.get('status_text') or STATUS_TEXT.get(p.get('status'), p.get('status') or '—')}"
@@ -1370,7 +1283,7 @@ class Worker:
     @staticmethod
     def _source(v):
         return {"question": f"原文「{v.get('quote', '')}」", "goal": f"子目標「{v.get('quote', '')}」", "default": "預設",
-                "fetch": "自己查到的", "user": "使用者回答", "switch": f"換技能時從 {v.get('from', '')} 帶過來", "tool": "子工作階段給的",
+                "fetch": "自己查到的", "user": "使用者回答", "switch": f"換技能時從 {v.get('from', '')} 帶過來",
                 "previous": f"沿用第 {v.get('from', '')} 次"}.get(v["source"], v["source"])
 
     # ---------------------------------------------------------------- 報告：每一種工具怎麼整理

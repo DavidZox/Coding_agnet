@@ -321,6 +321,25 @@ def main():
                                           lambda ref: ("id", [], [ev], []), "每個容器的狀態", ev)
             assert list(got) == [1] and "「av2_test」在出處的那幾段裡找不到" in got[1][0] and "nav2_test" in got[1][0], got
 
+        def t_list_ordinals():
+            # 待辦 4m ①：清單的序號不是寫出來的數字（以前只靠「10 以下的整數不核對」：第 10 項以後的序號原文裡剛好沒有就被擋，子工作階段
+            # 整份清單交回修、標成沒過）。只認照順序的序號（開頭、空白、冒號之後的 N. N) N、(N)，從 1 開始、下一個加 1，又從 1 開始是
+            # 另一張清單）；清單裡寫的數字、單獨一個 13.、句子裡的 1、2、3 照樣核對；小數不當成序號
+            from agent_core import answers
+            names = ["Alpha", "Beta", "Gamma", "Delta", "Epsilon", "Zeta", "Eta", "Theta", "Iota", "Kappa", "Lambda", "Mu"]
+            ev = "\n".join(f"class {n}Node(Node):" for n in names)
+            listed = "\n".join(f"{k}. {n}Node" for k, n in enumerate(names, 1))
+            assert extract.missing_tokens(listed, ev, ev) == [], "第 10～12 項的序號不核對"
+            assert extract.missing_tokens("類別：" + " ".join(f"{k}) {n}Node" for k, n in enumerate(names, 1)), ev, ev) == [], "冒號之後、同一行的也算"
+            assert extract.missing_tokens(listed + "\n檔案：\n" + listed, ev, ev) == [], "又從 1 開始是另一張清單"
+            assert extract.missing_tokens(listed.replace("12. MuNode", "12. MuNode 27 個"), ev, ev) == ["27"], "清單裡寫的數字照樣核對"
+            assert extract.missing_tokens("13. AlphaNode", ev, ev) == ["13"], "單獨一個序號（前面沒有 1～12）照樣核對"
+            assert extract.missing_tokens("編號 " + "、".join(map(str, range(1, 13))) + " 都有", ev, ev) == ["10", "11", "12"], "句子裡的編號照樣核對"
+            assert extract.missing_tokens("1. AlphaNode 等 1.5 秒", ev, ev) == ["1.5"], "小數不當成序號"
+            got = answers.answer_problems(["類別名稱"], [{"item": 1, "status": "answered", "text": listed, "refs": ["#1"]}],
+                                          lambda ref: ("id", [], [ev], []), "列出類別", ev)
+            assert got == {}, ("子工作階段收尾的核對：十幾項的清單照收據通過", got)
+
         def t_file_lines():
             # 待辦 4k ②（設計筆記 2.47）：view_file、search_text 每一行的 N→ 是檔案的行號，提煉前面又加一層存檔的行號，模型把存檔的行號
             # 寫成檔案的行號。程式照收據把每一行對到檔案：事實附「檔案:行號」、回答寫錯的交回修一次，還是錯就標明
@@ -411,6 +430,8 @@ def main():
                          ("工作目錄不能用：換回專案目錄並回 [ERROR]，下一次照常執行", t_bad_cwd),
                          ("名稱要整個對上（待辦 4j ①）：av2_test 不算 nav2_test 裡有、tb1 不算 tb12 裡有；分隔與開頭的斜線照舊對得上；名稱不被切成半截"
                           "（WP_L2 的 L2 不當行號、數字開頭的連數字一起比）；回答的核對附相近的寫法", t_name_whole),
+                         ("清單的序號（待辦 4m ①）：從 1 開始照順序的序號不核對（第 10 項以後也一樣、冒號之後與同一行的也算、又從 1 開始是另一張）；"
+                          "清單裡的數字、單獨一個序號、句子裡的編號、小數照樣核對；子工作階段收尾的核對照收據通過", t_list_ordinals),
                          ("檔案的行號（待辦 4k ②）：照收據把存檔的每一行對到檔案（一個檔案一節、只有一個檔案）；事實附「檔案:行號」；回答寫成存檔的"
                           "行號交回修一次，還是錯就標明；寫的是檔案的行號不用修", t_file_lines),
                          ("子工作階段的下一步建議（待辦 4k ①）：提煉結尾、沒有提煉時、claude_code 的截斷說明只寫 result_grep、result_view，"

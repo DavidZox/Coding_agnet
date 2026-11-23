@@ -2,8 +2,7 @@
 system prompt（system、practice、其他領域的一行 other_domain；兩階段協議的那幾行照抄 AGENT.md，orch_selftest 核對兩邊一樣）、第一則訊息（first 與它的各段；前面的領域查到的、
 這個問題的分工在 harness/plan.md）、每份工具結果前面的編號（result_id）、收尾的核對沒過時交回修（answers_fix、
 why_ref_unknown；其他原因的說法用 harness/domain.md 的 why_*）、不是這個領域的工具（not_my_tool）、回覆不是 JSON（retry）、
-沒有動作也沒有回答（empty_turn）、寫到長度上限被截斷（cut）、對話太長時清掉的舊結果（cleared）、提煉時的「使用者想知道什麼」（anchor）、
-能用複合工具時工具清單前面那一段（composite_tools；A′，config.NODE_RETRY，複合工具的規格與回傳在 sub/composite.md）；A′ 時第一則訊息的〈中階這一次做到的〉（handoff）。
+沒有動作也沒有回答（empty_turn）、寫到長度上限被截斷（cut）、對話太長時清掉的舊結果（cleared）、提煉時的「使用者想知道什麼」（anchor）。
 {名稱} 是程式填的值。
 
 <!-- @system -->
@@ -44,11 +43,6 @@ why_ref_unknown；其他原因的說法用 harness/domain.md 的 why_*）、不�
 ## 長期記憶（使用者要記住的事）
 {memory}
 
-<!-- @composite_tools -->
-複合工具（一次做完一種常見的查法：程式照寫好的步驟搜尋、看檔案、分析程式，照收據整理成報告——每一處附 檔案:行號 與 #編號，數量由程式算）。問題是它們做得到的，先用它們；報告寫沒做完、或問題不是這幾種，再用後面的工具一步一步查。用法跟其他工具一樣：先用名稱載入規格，再照規格執行。
-{tools}
-其他工具：
-
 <!-- @practice -->
 ## 這個領域現在的做法
 {practice}
@@ -76,22 +70,6 @@ why_ref_unknown；其他原因的說法用 harness/domain.md 的 why_*）、不�
 
 <!-- @previous_attempt -->
 - 第 {n} 次：做法 {skill}；參數 {params}；結果：{status}{note}；找過的字：{searched}；那一次的項目：{items}
-
-<!-- @handoff -->
-
-【中階這一次做到的】這個子目標剛才先交給中階（複合技能：{skill}；參數：{params}），結果：{status}{note}。
-{report}
-這次接著做：
-- 答案已經在上面查到的結果裡的，直接回答，refs 寫報告裡的 檔案:行號 或 #編號。
-- 中階常見的原因是字或範圍填錯（名稱填成套件名、搜的字跟程式裡的寫法不同、範圍太大或太小）：看查到的結果，用結果裡的字或範圍再叫複合工具，或換一個複合工具。
-- 複合工具做不到的，再用其他工具一步一步查。跟中階試過的一模一樣的技能與參數，系統會擋下來。
-
-<!-- @handoff_report -->
-中階的報告（裡面的出處 #編號，是你也能引用的工具結果）：
-{report}
-
-<!-- @handoff_no_report -->
-（中階沒有報告。）
 
 <!-- @result_id -->
 （這份工具結果的存檔是 #{rid}：回答時 refs 可以寫 #{rid}）

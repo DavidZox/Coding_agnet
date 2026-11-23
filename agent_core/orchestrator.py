@@ -31,22 +31,13 @@
 6. **帶著上一次的經過再交**（4-2，I）：同一個問題再交給同一個領域時（之前那幾次沒有做完，或這次的項目之前交過），程式把之前幾次的
    做法、參數、結果、原因、找過的字交給中階或子工作階段（previous），中階從挑技能、合約重新規劃（合約只從新的子目標抄，第 5 步 G9），
    一樣的做法由中階擋（repeated）。
-7. **A′：中階沒做完時帶著經過開子工作階段**（〈新架構討論紀錄〉第 5 節〈A′ 的做法〉；config.NODE_RETRY，預設關）：中階沒有報告，
-   或報告是死路、熔斷、跟之前一樣，或做完但最後一個判斷選了「看過的行都沒有寫這件事」（_retry_trigger）——程式接著開子工作階段，
-   帶著中階這一次做到的（handoff：技能、參數、結果、報告與報告的出處 #編號）。有報告的照樣交回主對話，子工作階段的報告接在後面。
-   這個子工作階段能直接叫領域的複合技能（複合工具，_sub）：名稱載入規格（composite_doc：說明、〈什麼時候用〉、參數與執行的寫法；
-   骨架、回退、判斷不給），`scripts/<名稱>_cmd.py --<參數> <值>` 執行（run_composite）：參數由程式核對（mid.parse_tool_args，取代挑技能
-   與合約兩次模型呼叫），跟中階試過的一模一樣的擋下來（_tried_same），交給中階照骨架做（mid.Worker.run_tool：排圖、低階、回退、判斷、
-   報告），報告存成 #編號 回給子工作階段（COMPOSITE_HEADS 開頭：程式整理好的，不再提煉）。要問使用者的（路徑找不到、範圍太大）不問，
-   回 [ERROR] 附要改的參數與候選。開關關的時候照舊（A）：中階沒有報告才開子工作階段，不能叫複合工具。
 """
 import os
 import re
-import shlex
 
 from . import answers, mid, prompt_files, sub
-from .config import (COMPOSITE_HEADS, DOMAIN_INDEX_NAME, DOMAIN_ITEM_TRIES, DOMAIN_ITEMS_MAX, DOMAIN_KNOWN_CHARS, DOMAIN_PLAN_MAX,
-                     DOMAIN_QUOTE_LINES, DOMAIN_RESULT_HEAD, MID_JOBS_DIRNAME, NODE_RETRY, SUB_JOBS_DIRNAME)
+from .config import (DOMAIN_INDEX_NAME, DOMAIN_ITEM_TRIES, DOMAIN_ITEMS_MAX, DOMAIN_KNOWN_CHARS, DOMAIN_PLAN_MAX, DOMAIN_QUOTE_LINES,
+                     DOMAIN_RESULT_HEAD, MID_JOBS_DIRNAME, SUB_JOBS_DIRNAME)
 
 _ENTRY = re.compile(r"^- \[([A-Za-z0-9_]+)\]\(([^)]+)\)")
 _INDEX_LINE = re.compile(r"^- \[([A-Za-z0-9_]+)\]\(tools/[^)]+\)")
@@ -57,11 +48,6 @@ REPORTED = ("done", "dead_end", "circuit_break", "repeated")    # 中階有報�
 def _d(key, /, **fields):
     """prompts/harness/domain.md 的一則：交給領域的結果、核對沒過的說明。"""
     return prompt_files.load("harness/domain.md", key, **fields)
-
-
-def _c(key, /, **fields):
-    """prompts/sub/composite.md 的一則：複合工具的規格、回傳的第一行與下一步（A′）。"""
-    return prompt_files.load("sub/composite.md", key, **fields)
 
 
 def _p(key, /, **fields):
@@ -213,10 +199,9 @@ class DomainMixin:
         return self._script_skill_map().get(self._normalize_script_name(name))
 
     def domain_gate(self, token):
-        """主模型直接叫領域的工具（技能名稱或腳本）回 [ERROR]（附下一步）；叫領域的複合技能的名稱（或 <名稱>_cmd.py）也一樣（複合技能由中階
-        執行，不是主對話的工具；第 5 步 5-4：以前落到「沒有這個技能（已經移除的名稱）」，沒有說要交給哪個領域）。子工作階段裡
-        （agent._sub_allowed）只能用那個領域的工具與共用的工具，能叫複合工具的（A′）再加那個領域的複合技能。可以用回 None
-        （不是任何技能的照舊交給後面的檢查）。"""
+        """主模型直接叫領域的工具（技能名稱或腳本）回 [ERROR]（附下一步）；叫領域的複合技能的名稱（或寫成腳本的 <名稱>_cmd.py）也一樣
+        （複合技能由中階執行，不是工具；第 5 步 5-4：以前落到「沒有這個技能（已經移除的名稱）」，沒有說要交給哪個領域）。子工作階段裡
+        （agent._sub_allowed）只能用那個領域的工具與共用的工具。可以用回 None（不是任何技能的照舊交給後面的檢查）。"""
         skill = self._tool_of(token)
         reg = self.domain_registry()
         name = os.path.basename(token)
@@ -224,7 +209,7 @@ class DomainMixin:
         composite = reg["skills"].get(name) if skill is None else None
         allowed = getattr(self, "_sub_allowed", None)
         if allowed is not None:
-            if (skill is None and composite is None) or (skill or name) in allowed["tools"]:
+            if (skill is None and composite is None) or skill in allowed["tools"]:
                 return None
             return "[ERROR] " + prompt_files.load("sub/session.md", "not_my_tool", tool=skill or name, domain=allowed["domain"],
                                                   tools="、".join(sorted(allowed["tools"])))
@@ -351,16 +336,16 @@ class DomainMixin:
         if reg["domains"][name]["skills"]:
             job = mid.Worker(self, name).start(question + ("\n\n" + context["known"] if context["known"] else ""), goal, items=items,
                                                on_start=self._domain_started, previous=entry["previous_info"], attempt=entry["n"])
-        else:                     # 沒有複合技能的領域（第 5 步）：直接開子工作階段
+        else:                                              # 沒有複合技能的領域：直接開子工作階段（第 5 步）
             job = self._sub_start(name, entry)
         return job, entry, before
 
-    def _sub_start(self, name, entry, previous=None, handoff=None):
-        """開這個領域的子工作階段（分工的一項，或中階沒做完時接著做；previous 不給就用這一次的上一次的經過；handoff：A′ 時中階這一次做到的）。"""
+    def _sub_start(self, name, entry, previous=None):
+        """開這個領域的子工作階段（分工的一項，或中階沒做完時接著做；previous 不給就用這一次的上一次的經過）。"""
         return self._sub(name).start(self.current_task or entry["goal"], entry["goal"], entry["items"],
                                      on_start=lambda jid: self._domain_started(jid, "sub"),
                                      previous=entry["previous_info"] if previous is None else previous, attempt=entry["n"],
-                                     known=entry["context"]["known"], division=entry["context"]["division"], handoff=handoff)
+                                     known=entry["context"]["known"], division=entry["context"]["division"])
 
     def _known_text(self):
         """這一回合前面的領域查到的（交給後面的領域，程式從報告取）：子工作階段一項一項的回答；中階的報告沒有一項一項的回答，取報告的
@@ -408,94 +393,19 @@ class DomainMixin:
                 "status_text": _status_text(x["kind"], x["status"]), "note": x["note"], "searched": x["searched"], "items": x["items"]}
 
     def _attempt_infos(self, x):
-        """交給領域的一次 → 上一次的經過（中階沒做完、接著開了子工作階段的，兩筆都給：中階停下來的原因與子工作階段做到的）。"""
+        """交給領域的一次 → 上一次的經過（中階沒做完、接著開了子工作階段的，兩筆都給：中階的參數與停下來的原因、子工作階段做到的）。"""
         m = x.get("mid")
-        head = [{"n": x["n"], "job": m["job"], "kind": "mid", "skill": m["skill"], "params": m.get("params") or {}, "status": m["status"],
+        head = [{"n": x["n"], "job": m["job"], "kind": "mid", "skill": m["skill"], "params": m["params"], "status": m["status"],
                  "status_text": _status_text("mid", m["status"]), "note": m["note"], "searched": [], "items": x["items"]}] if m else []
         return head + [self._attempt_info(x)]
 
     def _sub(self, name):
-        """這個領域的子工作階段：能用領域的工具加上共用的工具（A′ 時再加它的複合技能：複合工具）；其他領域的標題與說明的第一行
-        （查不到、不屬於的那一項選哪個領域查得到）。"""
+        """這個領域的子工作階段：能用領域的工具加上共用的工具；其他領域的標題與說明的第一行（查不到、不屬於的那一項選哪個領域查得到）。"""
         reg = self.domain_registry()
         d = reg["domains"][name]
         others = [(n, o["title"], (o["intro"].split("\n") or [""])[0]) for n, o in reg["domains"].items() if n != name]
-        composites = {k: d["catalog"].get(k) or s["meta"]["description"] for k, s in d["skills"].items()} if NODE_RETRY else {}
         return sub.Session(self, name, tools=d["tools"] + reg["shared"], title=d["title"], intro=d["intro"], practice=d.get("practice", ""),
-                           others=others, composites=composites)
-
-    # ---------------------------------------------------------------- 複合工具（A′：子工作階段直接叫的複合技能）
-    def _composite_spec(self, name):
-        reg = self.domain_registry()
-        domain = reg["skills"][name]
-        return domain, reg["domains"][domain]["skills"][name]
-
-    @staticmethod
-    def _composite_usage(spec):
-        kinds = mid.param_kinds()
-        return " ".join(_c("usage_required", name=p["name"], kind=kinds[p["type"]]) if p.get("required")
-                        else _c("usage_optional", name=p["name"], kind=kinds[p["type"]]) for p in spec["parameters"])
-
-    def composite_doc(self, name):
-        """複合工具的規格（給子工作階段的模型）：說明、〈什麼時候用〉、參數與執行的寫法。骨架、回退、判斷、策略不給：程式照它們做。"""
-        _, spec = self._composite_spec(name)
-        kinds, rows = mid.param_kinds(), []
-        for p in spec["parameters"]:
-            if p.get("required"):
-                rows.append(_c("param_required", name=p["name"], kind=kinds[p["type"]], desc=p["desc"]))
-            elif "default" in p:
-                rows.append(_c("param_default", name=p["name"], kind=kinds[p["type"]], desc=p["desc"], default=p["default"]))
-            else:
-                rows.append(_c("param_optional", name=p["name"], kind=kinds[p["type"]], desc=p["desc"]))
-        return _c("doc", name=name, title=spec["meta"]["title"], description=spec["meta"]["description"],
-                  when=spec["sections"].get("什麼時候用", "").strip(), params="\n".join(rows), usage=self._composite_usage(spec))
-
-    @staticmethod
-    def _tried_same(tried, name, spec, values):
-        """子工作階段要叫的複合工具跟中階試過的哪一次一模一樣（同一個技能、補上預設值之後同樣的參數，mid.param_sig）：回那一次的紀錄，
-        沒有回 None。tried：上一次的經過裡中階的那幾筆（sub.Session 從 previous 取，A′）。"""
-        base = {p["name"]: p["default"] for p in spec["parameters"] if "default" in p}
-        mine = mid.param_sig({**base, **values})
-        return next((t for t in tried if t.get("skill") == name and mid.param_sig({**base, **(t.get("params") or {})}) == mine), None)
-
-    def run_composite(self, name, remainder):
-        """子工作階段叫複合工具：參數由程式核對（mid.parse_tool_args），交給中階照骨架做（mid.Worker.run_tool），結果存成 #編號 回給
-        子工作階段。做完、死路、熔斷有報告：[PASS] 開頭；參數不對、要改參數、失敗：[ERROR] 開頭附下一步（都是 COMPOSITE_HEADS，不再提煉）。
-        中階的工作編號記在 last_composite_job（子工作階段記進那一步，決策圖連得到）；中階執行的工具結果（報告的「出處：#編號」）記在
-        last_composite_sources（子工作階段把它們當成自己的工具結果：回答引用那些 #編號、收據裡的 檔案:行號 都算）。
-        跟中階試過的一模一樣（同一個技能、補上預設值之後同樣的參數）回 [ERROR]，不執行（_tried_same）。"""
-        allowed = getattr(self, "_sub_allowed", None) or {}
-        domain, spec = self._composite_spec(name)
-        before = (self.current_cwd, self.container_cwd, self.target_container)
-        self.last_composite_job, self.last_composite_sources = None, []
-        values, err = mid.parse_tool_args(spec, remainder)
-        same = None if err else self._tried_same(allowed.get("tried") or [], name, spec, values)
-        if err:
-            out = COMPOSITE_HEADS[1] + _c("err_args", name=name, why=err, usage=self._composite_usage(spec))
-        elif same:
-            out = COMPOSITE_HEADS[1] + _c("err_same", name=name, n=same.get("n") or "—", params=sub.show_params(same["params"]),
-                                          status=same.get("status_text") or "—")
-        else:
-            job = mid.Worker(self, domain).run_tool(allowed.get("question") or self.current_task or "", allowed.get("goal") or "",
-                                                    allowed.get("items") or [], name, values)
-            self.last_composite_job = job["id"]
-            self.last_composite_sources = [str(r) for r in (job.get("result") or {}).get("sources") or []]
-            st, note = job["status"], (job.get("result") or {}).get("note") or ""
-            report = (job.get("result") or {}).get("report") or ""
-            if st in REPORTED:
-                out = COMPOSITE_HEADS[0] + _c("head", name=name, status=mid.STATUS_TEXT[st]) + "\n" + report
-            elif st == "need_params":
-                out = COMPOSITE_HEADS[1] + _c("err_params", name=name, why=note) + "\n" + report
-            else:
-                out = (COMPOSITE_HEADS[1] + _c("err_failed", name=name, status=mid.STATUS_TEXT.get(st, st), why=f"（{note}）" if note else "")
-                       + "\n" + report)
-        try:
-            args = shlex.split(remainder or "")
-        except ValueError:
-            args = [remainder]
-        self.last_receipt = None
-        self._record_trajectory(f"{name}_cmd.py", args, out, *before)
-        return out
+                           others=others)
 
     def _domain_started(self, jid, kind="mid"):
         """中階或子工作階段的工作建好了：決策圖的連結先推給畫面（執行中就能看，4b ①）。"""
@@ -547,8 +457,7 @@ class DomainMixin:
             return _d("ask_waiting", domain=name, question=self.domain_pending["question"],
                       candidates=_d("ask_candidates", candidates=cands) if cands else "", url=url)
         self.domain_pending = None
-        trigger = self._retry_trigger(job) if kind == "mid" and follow else None
-        if self._reported(entry) and not trigger:
+        if self._reported(entry):
             report = (job.get("result") or {}).get("report") or ""
             analysis = sub.analysis_reports(self, job) if kind == "sub" else []
             if analysis:                # G4：子工作階段裡執行的數據分析（原樣附在報告裡），主對話的回答照它核對（analysis_reply_check）
@@ -562,35 +471,11 @@ class DomainMixin:
         if not follow or kind == "sub":               # /clear 取消：照實記下，不再接著做（子工作階段結束了都有報告，不會到這裡）
             return _d("cancelled", domain=name, url=url)
         # 中階沒有做完、也沒有報告（沒有適合的做法、失敗、使用者取消）：接著開子工作階段，用這個領域的工具一步一步做（第 5 步 G3，
-        # 取代 4-1 的放行）。中階這一次也算進上一次的經過（停下來的原因交給子工作階段）。A′（trigger）：有報告但沒做完的也開；
-        # 子工作階段帶著中階這一次做到的（handoff），中階的報告照樣交回主對話（查到的不會丟），子工作階段的報告接在後面。
-        report = (job.get("result") or {}).get("report") or ""
-        entry["mid"] = {"job": job["id"], "status": st, "skill": job.get("skill"), "note": note, "calls": entry["calls"],
-                        "params": dict(entry["params"]), "trigger": trigger or ("no_report" if NODE_RETRY else None)}
-        handoff = None
-        if NODE_RETRY:
-            handoff = {"mid_job": job["id"], "trigger": entry["mid"]["trigger"], "skill": job.get("skill"), "params": dict(entry["params"]),
-                       "status_text": _status_text("mid", st), "note": note, "report": report if trigger else "",
-                       "sources": [str(r) for r in (job.get("result") or {}).get("sources") or []] if trigger else []}
-        if trigger:
-            self._domain_turn["reports"].append(report)
-            head = _d("retry", domain=name, status=_status_text("mid", st), reason=note or "—", url=url, report=report)
-        else:
-            head = _d("stepwise", domain=name, status=_status_text("mid", st), reason=note or "—", url=url)
-        follow_job = self._sub_start(name, entry, previous=entry["previous_info"] + [self._attempt_info(entry)], handoff=handoff)
-        return head + "\n" + self._domain_outcome(entry, follow_job)
-
-    @staticmethod
-    def _retry_trigger(job):
-        """A′（config.NODE_RETRY）：中階有報告、但程式判斷這個節點沒做完的原因——死路、熔斷、跟之前一樣（狀態），或做完但最後一個判斷
-        選了「看過的行都沒有寫這件事」（judge_not_found）。做完而且答到了、沒有報告（照舊接著開，不是這裡）、開關關：回 None。"""
-        if not NODE_RETRY:
-            return None
-        st = job.get("status")
-        if st in ("dead_end", "circuit_break", "repeated"):
-            return st
-        last = [x for x in job.get("judgments") or [] if isinstance(x, dict)][-1:]
-        return "judge_not_found" if st == "done" and last and last[0].get("branch") == "not_found" else None
+        # 取代 4-1 的放行）。中階這一次也算進上一次的經過（停下來的原因交給子工作階段）。
+        entry["mid"] = {"job": job["id"], "status": st, "skill": job.get("skill"), "params": dict(entry["params"]), "note": note,
+                        "calls": entry["calls"]}
+        follow_job = self._sub_start(name, entry, previous=entry["previous_info"] + [self._attempt_info(entry)])
+        return _d("stepwise", domain=name, status=_status_text("mid", st), reason=note or "—", url=url) + "\n" + self._domain_outcome(entry, follow_job)
 
     def _domain_history(self, entries=None):
         """這一回合交過的領域（高 4：能交的都交過了，寫做過的事）；entries＝只列這幾次。"""

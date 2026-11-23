@@ -71,6 +71,8 @@ _NUM = re.compile(r"(?<![A-Za-z_\d.])\d+(?:\.\d+)?")
 _ANY_NUM = re.compile(r"\d+(?:\.\d+)?")
 _IDENT = re.compile(r"[A-Za-z_/~][A-Za-z0-9_/.\-:~]*")
 _LINE_SPEC = re.compile(r"(\d+)(?:\s*[-~～–]\s*(\d+))?")
+# 清單的序號（N. N) N） N、 (N)）：開頭、空白、冒號、分號、逗號、句號之後（「1、2、3」那種寫在句子裡的編號，後面的接在「、」之後，不算）
+_ORDINAL = re.compile(r"(?:^|(?<=[\s：:；;，,。]))[(（]?(\d{1,3})[.)）、．](?!\d)")
 # 總數的寫法（共 7 台、總共有 12 個、合計 3 筆）：原文要有這個數字（不算名稱裡的，例如 amr_07 的 7）——實測 26b 列了 7 台卻寫「共有 6 台」
 _COUNT = re.compile(r"(?:總共|共計|合計|一共|共)\s*(?:有\s*)?(\d+)\s*(?:台|個|筆|項|則|次|條|件|輛|位|段|行|種)")
 # 回答裡寫的行號（第 149 行、（行 149）、line 149、L149、a.cpp:149；可以是一段）：核對是不是把存檔的行號寫成檔案的行號（Extraction._misplaced）
@@ -98,6 +100,19 @@ def _num_values(text):
     return out
 
 
+def _drop_ordinals(text):
+    """清單的序號換成空白：序號不是寫出來的數字，不核對（待辦 4m ①：以前只靠「10 以下的整數不核對」，第 10 項以後的序號原文裡剛好沒有
+    就被擋，整份清單交回修、標成沒過）。只認照順序的——從 1 開始、下一個是前一個加 1（又從 1 開始的是另一張清單）；單獨一個「13.」、
+    跳號之後的照樣核對。"""
+    out, last, nxt = [], 0, 1
+    for m in _ORDINAL.finditer(text):
+        v = int(m.group(1))
+        if v in (1, nxt):
+            out += [text[last:m.start()], " "]
+            last, nxt = m.end(), v + 1
+    return "".join(out) + text[last:]
+
+
 def missing_tokens(text, evidence, source, allowed="", counts=(), refs=()):
     """text 裡對不上的字（清單）：
     - 數字要在 evidence（引用的那幾行）裡，寫法不同但數值一樣也算（15.5＝15.50）；
@@ -105,12 +120,13 @@ def missing_tokens(text, evidence, source, allowed="", counts=(), refs=()):
       同樣寫法的（引用的行沒有＝寫錯對象；原文有 tb1～tb12、寫了 tb13＝編出來的）。名稱要整個對上（_has_name：av2_test 不算 nav2_test 裡有、
       tb1 不算 tb12 裡有；數字開頭的 9c19c17b-1 連前面的數字一起比；WP_L2 的 L2 不當成行號拿掉）。只有字母加數字、原文完全沒有這種寫法的（ROS2）
       是一般的詞，不核對；
-    - allowed（使用者的問題、執行的指令）裡本來就有的字不核對（「電量低於 20%」的 20）；10 以下的整數不核對（序號、自己數的幾個）。
+    - allowed（使用者的問題、執行的指令）裡本來就有的字不核對（「電量低於 20%」的 20）；10 以下的整數不核對（自己數的幾個）。
     - 總數（共 7 台、合計 3 筆）不管大小都核對，而且要是原文裡單獨出現的數字（原文沒有寫總數＝模型自己數的，數錯過）；counts 是程式
       自己數的數量（整合列了幾條核對過的事實），等於它也算有根據。
-    行號的寫法（行 40、第 40 行、#12 行 40、lines: 40）先拿掉，不算數字；refs（這一條引用的行號）裡的數字也不算（模型常把行號寫進句子）。
+    行號的寫法（行 40、第 40 行、#12 行 40、lines: 40）先拿掉，不算數字；refs（這一條引用的行號）裡的數字也不算（模型常把行號寫進句子）；
+    清單的序號不管大小都拿掉（_drop_ordinals：從 1 開始照順序的 1. 2. … 13.）。
     寧可漏掉也不誤擋（同 claims.py 的原則）。"""
-    t = _REF_TEXT.sub(" ", str(text or ""))
+    t = _drop_ordinals(_REF_TEXT.sub(" ", str(text or "")))
     ev_low, src_low, ok_low = (evidence or "").lower(), (source or "").lower(), (allowed or "").lower()
     ev_nums, ok_nums = _num_values(evidence), _num_values(allowed)
     bad = []

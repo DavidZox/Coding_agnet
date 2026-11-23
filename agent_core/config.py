@@ -230,9 +230,6 @@ REPLY_ARGS_CHARS = 2000
 DOMAIN_INDEX_NAME = "DOMAIN.md"
 # 交給領域的結果（報告、要問使用者、沒有適合的做法…）的開頭：程式整理好的，不再交給提煉（protocol.is_exempt_result）
 DOMAIN_RESULT_HEAD = "[PASS] 🗺️ "
-# 複合工具（子工作階段直接叫的複合技能，A′：NODE_RETRY；agent_core/orchestrator.py 的 run_composite）的回傳開頭：中階照收據整理的報告，
-# 跟交給領域的結果一樣不再提煉（protocol.is_exempt_result）；參數要改、沒有做完的是 [ERROR] 的那一個
-COMPOSITE_HEADS = ("[PASS] 🧰 ", "[ERROR] 🧰 ")
 # 交給領域時的欄位上限（schema 的長度與項目數；資源的上限，D7「各層之間都用有長度上限的 schema」）
 DOMAIN_GOAL_CHARS = 300
 DOMAIN_ITEM_CHARS = 120
@@ -255,11 +252,6 @@ SUB_JOBS_DIRNAME = "sub_jobs"
 SUB_JOBS_KEEP = int(os.environ.get("AGENT_SUB_JOBS_KEEP", "300"))
 SUB_STEPS_MAX = 20           # 一個子工作階段最多幾步（資源的上限，跟主對話一個回合的步數上限同一級）；用完了照做到的收尾
 SUB_MODEL = os.environ.get("AGENT_SUB_MODEL", "")   # 子工作階段用的模型（空＝主模型；D8 第一版都用主模型）
-# 📌 A′ 的比較（〈新架構討論紀錄〉第 5 節〈A′ 的做法〉）：AGENT_NODE_RETRY=1 時，中階沒做完——沒有報告；死路、熔斷、跟之前一樣；
-# 做完但最後一個判斷選了「看過的行都沒有寫這件事」——程式接著開子工作階段，帶著中階這一次做到的（技能、參數、結果、報告），
-# 它能直接叫這個領域的複合技能（複合工具：參數由程式核對，不挑技能、不寫合約；排圖、低階、回退、判斷、報告照中階），跟中階試過的
-# 一模一樣的擋下來。預設關（A）：中階沒有報告才開子工作階段，不能叫複合工具。比較完留下比較好的那一個。
-NODE_RETRY = os.environ.get("AGENT_NODE_RETRY", "").strip().lower() in ("1", "true", "yes", "on")
 
 # run_tool 載入技能規格文件時回傳字串的固定開頭。規格文件是「按需載入」機制的核心，
 # 內容（尤其是實際腳本路徑與參數格式）必須完整進入上下文，因此 _content_for_context
