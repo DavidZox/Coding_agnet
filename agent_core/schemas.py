@@ -4,7 +4,6 @@ from .config import (DOMAIN_ANSWER_CHARS, DOMAIN_GOAL_CHARS, DOMAIN_ITEM_CHARS, 
 
 DOMAIN_REPLY_CHARS = 600         # 領域 session 每一輪的 reply（一句這一步在做什麼，回報時一句總結）
 DOMAIN_SKILL_CHARS = 80          # 領域 session 選的技能名稱
-DOMAIN_PARAMS_MAX = 8            # 有骨架的技能一次最多幾個參數
 
 
 def _text(n):
@@ -56,18 +55,28 @@ def agent_reply_schema(tasks=False, items=0):
 
 
 def domain_session_schema(domains, items):
-    """領域 session 每一輪的回覆（agent_core/domain_session.py，F4）：state 是三種之一——domains（選領域）、skill（用一個技能）、report（回報）。
-    欄位都要寫（用不到的寫空的），程式照 state 取用與核對；欄位的順序就是生成的順序（先寫理由與狀態，最後一句 reply）。"""
-    param = {"type": "object", "properties": {"name": _text(60), "value": _text(DOMAIN_GOAL_CHARS), "quote": _text(DOMAIN_GOAL_CHARS)},
-             "required": ["name", "value", "quote"]}
+    """領域 session 每一輪的回覆（agent_core/domain_session.py，F4）：state 是三種之一——domains（選領域）、skill（用一個技能：只寫名稱，
+    參數在下一輪的表單填，domain_form_schema）、report（回報）。欄位都要寫（用不到的寫空的），程式照 state 取用與核對；欄位的順序就是
+    生成的順序（先寫理由與狀態，最後一句 reply）。"""
     props = {"thought": _text(REPLY_THOUGHT_CHARS),
              "state": {"type": "string", "enum": ["domains", "skill", "report"]},
              "domains": {"type": "array", "items": {"type": "string", "enum": list(domains)}, "maxItems": max(1, len(domains))},
              "skill": _text(DOMAIN_SKILL_CHARS),
-             "params": {"type": "array", "items": param, "maxItems": DOMAIN_PARAMS_MAX},
-             "args": _text(REPLY_ARGS_CHARS),
              "answers": {"type": "array", "items": _answer(max(1, items)), "maxItems": max(1, items)},
              "reply": _text(DOMAIN_REPLY_CHARS)}
+    return {"type": "object", "properties": props, "required": list(props)}
+
+
+def domain_form_schema(params=None):
+    """選了技能的下一輪：那個技能的參數表單（F3）。params＝有骨架的技能這一輪要填的參數名稱——每個參數一欄 {quote, value}，參數名稱就是
+    欄位（先抄原文再寫值；交回重填時只有沒過的那幾個）；None＝工具：只有 args。只有該填的欄位：有骨架的技能的參數寫成 args、工具的參數
+    寫成 params、參數那一筆的名稱跟叫 name 的參數撞在一起（第 3 步的紀錄，設計筆記 2.57 ①），都寫不出來。"""
+    props = {"thought": _text(REPLY_THOUGHT_CHARS)}
+    if params is None:
+        props["args"] = _text(REPLY_ARGS_CHARS)
+    else:
+        cell = {"type": "object", "properties": {"quote": _text(DOMAIN_GOAL_CHARS), "value": _text(DOMAIN_GOAL_CHARS)}, "required": ["quote", "value"]}
+        props["params"] = {"type": "object", "properties": {name: cell for name in params}, "required": list(params)}
     return {"type": "object", "properties": props, "required": list(props)}
 
 

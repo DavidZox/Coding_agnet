@@ -3,11 +3,13 @@
 一個迴圈，每一輪模型回一個 JSON，state 是三種之一，由程式核對、照它接著做（F4）：
 1. **domains**（選領域，可以多個）：要在 DOMAIN.md 的清單裡。程式載入這些領域的技能清單交給它——領域的〈做法〉、有骨架的技能（說明、
    什麼時候用、參數）、單步的工具（技能索引的那一行與〈語法〉的參數寫法）、共用的工具。第一輪一定是這個；重選最多 DOMAIN_RESELECT_MAX 次。
-2. **skill**（用一個技能）：
-   - 有骨架的技能（composite.py）：params 每個參數附一字不改的原文（F3），程式核對（composite.verify_param；原文＝問題、子目標、項目、
-     前面每一步交給它的結果），沒過的交回改、不算一步；過了交給 composite.Runner 跑骨架與回退。缺參數、路徑有好幾個也交回它決定（附候選）。
-   - 工具：args 照工具的〈語法〉寫，程式照技能名稱找腳本執行（agent._run_tool_once：跟主對話同一條路——確認關卡、存檔 #編號、收據、
-     狀態標記的同步）；只能用選的領域的工具與共用的工具（orchestrator.domain_gate 看 agent._sub_allowed）。
+2. **skill**（用一個技能）：只寫技能的名稱；程式接著給那個技能的參數表單，下一輪只填表單（_form_turn，schema 只有該填的欄位：
+   schemas.domain_form_schema；表單的那一輪不算在回的輪數裡）。
+   - 有骨架的技能（composite.py）：每個參數一欄（quote、value），原文要一字不改（F3），程式核對（composite.verify_param；原文＝問題、
+     子目標、項目、前面每一步交給它的結果；開頭多抄了程式的標題「【子目標】」這種的，拿掉標題再核對）。沒過的只把那幾個參數交回重填
+     一次，還是沒過就回到選技能，都不算一步；過了交給 composite.Runner 跑骨架與回退。缺參數、路徑有好幾個也交回它決定（附候選）。
+   - 工具：表單只有 args（照工具的〈語法〉寫），程式照技能名稱找腳本執行（agent._run_tool_once：跟主對話同一條路——確認關卡、
+     存檔 #編號、收據、狀態標記的同步）；只能用選的領域的工具與共用的工具（orchestrator.domain_gate 看 agent._sub_allowed）。
    - 結果太長就分段提煉（turn._content_for_context；錨點是子目標與項目，事實附 檔案:行號），短的照原文；每份結果附 #編號。
    - 跟之前某一步一模一樣的技能＋參數不執行（附那一步的結果）；最多 DOMAIN_STEPS_MAX 步。
 3. **report**（回報）：answers 照項目一項一筆（answered／not_found、回答、出處），程式核對（answers.answer_problems：出處是這個 session 的
@@ -29,7 +31,7 @@ from .config import (ANALYSIS_REPORT_HEAD, DOMAIN_JOBS_DIRNAME, DOMAIN_JOBS_KEEP
                      TOKEN_THRESHOLD, TOOL_SUMMARY_DEFAULT)
 from .jobstore import JobStore
 from .protocol import parse_answers, tool_result_message
-from .schemas import DOMAIN_REPLY_CHARS, domain_session_schema
+from .schemas import DOMAIN_REPLY_CHARS, domain_form_schema, domain_session_schema
 from .turn import _content_for_context
 
 STATES = ("domains", "skill", "report")
@@ -37,6 +39,9 @@ STATUS_TEXT = {"running": "執行中", "need_user": "等使用者回答", "done"
                "cancelled": "使用者取消", "failed": "失敗（模型沒有回覆）"}
 _KEEP_RESULTS = 3                           # 對話太長時，最新的這幾份結果不清
 _SYNTAX = re.compile(r"`EXECUTE:\s*scripts/[\w.-]+\s*([^`]*)`")
+# 程式給模型看的標題（「【子目標】」「【要回答的項目】（…）」「【第 2 步的結果】…（…）」）：表單的原文開頭抄了它、核對沒過時拿掉再核對
+# 一次（第 3 步 e4b 合約沒過的 191 個參數裡 110 個是這樣，值是對的；設計筆記 2.57 ①）
+_LABEL = re.compile(r"^【[^】]{1,20}】\s*(?:（[^）]{0,60}）)?\s*")
 
 
 def _s(key, /, **fields):
@@ -48,26 +53,47 @@ def _now():
     return time.strftime("%Y-%m-%d %H:%M:%S")
 
 
-def parse_reply(raw):
-    """模型回覆（JSON 字串）→ {"thought", "state", "domains", "skill", "params", "args", "answers", "reply", "cut"}；不是 JSON 物件回 None。
-    state 不是三種之一時是空字串；cut：寫到字串上限（被截斷）的欄位。"""
+def _json_object(raw):
     try:
         data = json.loads(raw) if raw else None
     except ValueError:
         return None
-    if not isinstance(data, dict):
+    return data if isinstance(data, dict) else None
+
+
+def parse_reply(raw):
+    """模型回覆（JSON 字串）→ {"thought", "state", "domains", "skill", "answers", "reply", "cut"}；不是 JSON 物件回 None。
+    state 不是三種之一時是空字串；cut：寫到字串上限（被截斷）的欄位。"""
+    data = _json_object(raw)
+    if data is None:
         return None
     state = str(data.get("state") or "").strip()
     domains = data.get("domains") if isinstance(data.get("domains"), list) else []
-    params = data.get("params") if isinstance(data.get("params"), list) else []
     out = {"thought": str(data.get("thought") or "").strip(), "state": state if state in STATES else "",
            "domains": list(dict.fromkeys(str(x).strip() for x in domains if str(x).strip())),
-           "skill": str(data.get("skill") or "").strip(),
-           "params": [{"name": str(p.get("name") or "").strip(), "value": str(p.get("value") or ""), "quote": str(p.get("quote") or "")}
-                      for p in params if isinstance(p, dict) and str(p.get("name") or "").strip()],
-           "args": str(data.get("args") or "").strip(), "answers": parse_answers(data.get("answers")),
+           "skill": str(data.get("skill") or "").strip(), "answers": parse_answers(data.get("answers")),
            "reply": str(data.get("reply") or "").strip()}
-    caps = (("thought", REPLY_THOUGHT_CHARS), ("args", REPLY_ARGS_CHARS), ("reply", DOMAIN_REPLY_CHARS))
+    caps = (("thought", REPLY_THOUGHT_CHARS), ("reply", DOMAIN_REPLY_CHARS))
+    out["cut"] = [k for k, n in caps if isinstance(data.get(k), str) and len(data[k]) >= n]
+    return out
+
+
+def parse_form(raw, params=None):
+    """表單那一輪的回覆 → {"thought", "params": {名稱: {"quote", "value"}}, "args", "cut"}；不是 JSON 物件回 None。
+    params＝有骨架的技能這一輪要填的參數名稱（沒寫的當成空的）；None＝工具，只取 args。"""
+    data = _json_object(raw)
+    if data is None:
+        return None
+    out = {"thought": str(data.get("thought") or "").strip(), "params": {}, "args": "", "cut": []}
+    caps = [("thought", REPLY_THOUGHT_CHARS)]
+    if params is None:
+        out["args"] = str(data.get("args") or "").strip()
+        caps.append(("args", REPLY_ARGS_CHARS))
+    else:
+        cells = data.get("params") if isinstance(data.get("params"), dict) else {}
+        for name in params:
+            cell = cells.get(name) if isinstance(cells.get(name), dict) else {}
+            out["params"][name] = {"quote": str(cell.get("quote") or ""), "value": str(cell.get("value") or "")}
     out["cut"] = [k for k, n in caps if isinstance(data.get(k), str) and len(data[k]) >= n]
     return out
 
@@ -106,7 +132,7 @@ class DomainSession:
         self.store.prune(DOMAIN_JOBS_KEEP)
         job = {"id": jid, "kind": "domain", "status": "running", "created": _now(), "updated": _now(), "cwd": self.agent.current_cwd,
                "question": question, "goal": (goal or question).strip(), "items": list(items or []), "attempt": attempt,
-               "previous": list(previous or []), "domains": [], "picks": [], "messages": [], "steps": [], "turns": 0,
+               "previous": list(previous or []), "domains": [], "picks": [], "messages": [], "steps": [], "turns": 0, "form": None, "forms": 0,
                "blocked": [], "sources": "", "need_user": None, "asked": [], "nudged": False, "answers": [], "problems": {}, "result": None}
         job["system"] = self._system()
         job["messages"].append({"role": "user", "content": self._first(job)})
@@ -143,11 +169,16 @@ class DomainSession:
     # ---------------------------------------------------------------- 迴圈
     def _loop(self, job):
         while True:
+            if job["form"]:                         # 選了技能：這一輪填它的參數表單
+                stop = self._form_turn(job)
+                if stop:
+                    return stop
+                continue
             if len(job["steps"]) >= DOMAIN_STEPS_MAX:
                 return self._finish(job, "stopped", note=f"技能用了 {DOMAIN_STEPS_MAX} 次（上限），照做到的收尾")
             if job["turns"] >= DOMAIN_TURNS_MAX:
                 return self._finish(job, "stopped", note=f"回了 {DOMAIN_TURNS_MAX} 輪還沒有回報（上限），照做到的收尾")
-            parsed, raw = self._ask(job)
+            parsed, raw = self._ask(job, domain_session_schema(list(self.reg["domains"]), len(job["items"])), parse_reply)
             if parsed is None:
                 return self._finish(job, "failed", note="領域 session 的模型沒有回覆（或回覆不是 JSON）")
             job["turns"] += 1
@@ -164,8 +195,7 @@ class DomainSession:
                 if done:
                     return done
                 continue
-            if self._skill(job, parsed):
-                return job                          # 停在確認關卡
+            self._skill(job, parsed)
 
     def _tell(self, job, text, short):
         """程式交給模型的一則（擋下、交回改的說明）。"""
@@ -203,40 +233,62 @@ class DomainSession:
 
     # ---------------------------------------------------------------- skill：用一個技能
     def _skill(self, job, parsed):
-        """執行一個技能；停在確認關卡回 True。"""
+        """選了一個技能：在清單裡就交給它那個技能的參數表單（下一輪填，_form_turn）；不在清單裡擋下。"""
         skills, tools = self._available(job)
         name = parsed["skill"]
-        if name in skills:
-            domain, spec = skills[name]
-            if parsed["args"].strip() and not parsed["params"]:
-                self._tell(job, _s("err_composite_args", skill=name, names="、".join(p["name"] for p in spec["parameters"])),
-                           f"{name} 有骨架，參數寫在 args")
-                return False
-            params, problems = self._contract(job, spec, parsed["params"])
-            if problems:
-                self._tell(job, _s("err_params", skill=name, problems="\n".join(problems)), f"{name} 的參數沒有通過核對")
-                return False
-            how = composite.param_sig({k: v["value"] for k, v in params.items()})
-            if self._same(job, name, how):
-                return False
-            self._composite(job, parsed, self.reg["domains"][domain], name, params, how)
-            return False
-        if name in tools:
-            if parsed["params"] and not parsed["args"]:
-                self._tell(job, _s("err_args", skill=name), f"{name} 是工具，參數寫在 params")
-                return False
-            args = self._own_args(name, parsed["args"])
-            if self._same(job, name, " ".join(args.split())):
-                return False
-            pending = {"skill": name, "args": args, "thought": parsed["thought"], "reply": parsed["reply"]}
-            guard = self.agent.guard_check({"action": self._action(name, args)})
+        if name not in skills and name not in tools:
+            self._tell(job, _s("err_skill", skill=name or "（空的）", names="、".join(list(skills) + tools)), f"技能清單裡沒有「{name}」")
+            return
+        spec = skills[name][1] if name in skills else None
+        job["form"] = {"skill": name, "composite": spec is not None, "round": 1, "only": None, "kept": {},
+                       "thought": parsed["thought"], "reply": parsed["reply"]}
+        text = (_s("form_composite", skill=name, params=self._param_rows(spec)) if spec is not None else
+                _s("form_tool", skill=name, syntax=self._syntax(name)))
+        job["messages"].append({"role": "user", "content": text})
+        job["updated"] = _now()
+        self.store.save(job)
+        self._note(job["id"], f"🧭 選技能：{name}（{parsed['thought'][:60]}）")
+
+    def _form_turn(self, job):
+        """填表單的那一輪：有骨架的技能照合約核對——沒過的只把那幾個參數交回重填一次，還是沒過就回到選技能（都不算一步）；工具拿掉照抄的
+        工具名稱。過了就執行（跟之前某一步一模一樣的不執行）。回 job＝停下來（確認關卡、模型沒有回覆），None＝接著做。"""
+        form = job["form"]
+        name = form["skill"]
+        skills, _ = self._available(job)
+        spec = skills[name][1] if form["composite"] else None
+        names = None if spec is None else [p["name"] for p in spec["parameters"] if form["only"] is None or p["name"] in form["only"]]
+        parsed, raw = self._ask(job, domain_form_schema(names), lambda text: parse_form(text, names), form=name)
+        job["form"] = None
+        if parsed is None:
+            return self._finish(job, "failed", note=f"領域 session 的模型沒有填 {name} 的參數表單（或回覆不是 JSON）")
+        job["forms"] += 1
+        job["messages"].append({"role": "assistant", "content": raw})
+        pending = {"skill": name, "thought": form["thought"], "reply": form["reply"]}
+        if spec is None:
+            pending["args"] = self._own_args(name, parsed["args"])
+            if self._same(job, name, " ".join(pending["args"].split())):
+                return None
+            guard = self.agent.guard_check({"action": self._action(name, pending["args"])})
             if guard:
                 self._wait(job, pending, guard)
-                return True
+                return job
             self._tool(job, pending)
-            return False
-        self._tell(job, _s("err_skill", skill=name or "（空的）", names="、".join(list(skills) + tools)), f"技能清單裡沒有「{name}」")
-        return False
+            return None
+        cells = dict(form["kept"], **parsed["params"])
+        params, problems, bad = self._contract(job, spec, cells)
+        if problems and form["round"] == 1:
+            job["form"] = dict(form, round=2, only=bad, kept={k: v for k, v in cells.items() if k not in bad})
+            self._tell(job, _s("form_fix", skill=name, problems="\n".join(problems), params=self._param_rows(spec, bad)),
+                       f"{name} 的參數沒有通過核對")
+            return None
+        if problems:
+            self._tell(job, _s("form_failed", skill=name, problems="\n".join(problems)), f"{name} 的參數重填之後還是沒有通過核對")
+            return None
+        how = composite.param_sig({k: v["value"] for k, v in params.items()})
+        if self._same(job, name, how):
+            return None
+        self._composite(job, pending, self.reg["domains"][skills[name][0]], name, params, how)
+        return None
 
     def _own_args(self, tool, args):
         """工具的參數：開頭照抄了工具名稱或腳本路徑的（「find_file x .」「scripts/ls_cmd.py .」）拿掉那一段，其他照原樣。"""
@@ -253,24 +305,36 @@ class DomainSession:
             self._tell(job, _s("err_same", n=prev["n"], skill=skill, how=prev["how"], head=prev["head"] or "—"), f"跟第 {prev['n']} 步一樣，沒有執行")
         return bool(prev)
 
-    def _contract(self, job, spec, given):
-        """有骨架的技能的參數 → ({名稱: {"value", "quote", "source"}}, [沒過的說明])。原文要在這個 session 給模型看過的字裡。"""
-        params, problems = {}, []
-        cells = {p["name"]: p for p in given}
-        known = {p["name"] for p in spec["parameters"]}
-        problems += [_s("reject_unknown", name=n, names="、".join(sorted(known))) for n in cells if n not in known]
+    def _contract(self, job, spec, cells):
+        """表單的每一欄（{參數: {"quote", "value"}}）→ ({名稱: {"value", "quote", "source"}}, [沒過的說明], [沒過的參數])。原文要在這個
+        session 給模型看過的字裡；沒過、而原文開頭是程式的標題（_LABEL）的，拿掉標題再核對一次。沒抄原文、值就是表單寫的預設值的當成沒提到
+        （表單列出每個參數，模型會把「沒有提到就用 .」照寫進 value；冒煙測試 e4b 兩次都因此被退）；沒抄原文、值是別的，交回時寫明沒抄原文。"""
+        params, problems, bad = {}, [], []
         for p in spec["parameters"]:
             cell = cells.get(p["name"])
-            if cell is None:
+            if not cell:
                 continue
-            value, why = composite.verify_param(p, cell["quote"], cell["value"], job["sources"])
+            quote, given = composite._unquote(cell["quote"]), composite._unquote(cell["value"])
+            if not quote and given:
+                if "default" not in p or (given.rstrip("/") or given) != (str(p["default"]).rstrip("/") or str(p["default"])):
+                    problems.append(_s("reject_no_quote", name=p["name"], value=given))
+                    bad.append(p["name"])
+                continue
+            value, why = composite.verify_param(p, quote, cell["value"], job["sources"])
+            bare = _LABEL.sub("", quote, count=1)
+            if why and bare != quote:
+                value2, why2 = composite.verify_param(p, bare, cell["value"], job["sources"])
+                if not why2:
+                    quote, value, why = bare, value2, None
             if why:
                 problems.append(why)
+                bad.append(p["name"])
             elif value is not None:
-                params[p["name"]] = {"value": value, "quote": composite._unquote(cell["quote"]), "source": "contract"}
-        return params, problems
+                params[p["name"]] = {"value": value, "quote": quote, "source": "contract"}
+        return params, problems, bad
 
     def _composite(self, job, parsed, domain, name, params, how):
+        """執行有骨架的技能（parsed：選技能那一輪的 thought、reply），每個節點的結果接進對話、記一步。"""
         res = composite.Runner(self.agent, fixer=self.fixer, note=lambda t: self._note(job["id"], t)).run(domain, name, params)
         lines = [_s("composite_status", status=composite.STATUS_TEXT[res["status"]], note=f"（{res['note']}）" if res["note"] else "")]
         for sw in res["switched"]:
@@ -471,11 +535,10 @@ class DomainSession:
         return "\n".join(lines)
 
     # ---------------------------------------------------------------- 模型
-    def _ask(self, job):
-        """模型一次 → (parsed, 原文)。不是 JSON、state 不是三種之一：附上那一則與提醒再問一次；寫到字串上限被截斷：不執行，接提醒再問一次。
-        兩次都不行回 (None, 原文)。每次呼叫記進 calls.jsonl（送出的最後一則與回覆）。"""
+    def _ask(self, job, schema, parse, form=None):
+        """模型一次 → (parsed, 原文)。form＝填哪個技能的表單（None＝每一輪的決定：state 要是三種之一）。不是 JSON（或 state 不對）：附上那一則
+        與提醒再問一次；寫到字串上限被截斷：不執行，接提醒再問一次。兩次都不行回 (None, 原文)。每次呼叫記進 calls.jsonl（送出的最後一則與回覆）。"""
         msgs = self._fit(job)
-        schema = domain_session_schema(list(self.reg["domains"]), len(job["items"]))
         model = DOMAIN_MODEL or self.agent.model
         raw = ""
         for attempt in range(2):
@@ -486,16 +549,18 @@ class DomainSession:
                 raw = (res["message"]["content"] or "").strip()
             except Exception as e:   # noqa: BLE001  模型呼叫失敗：當成沒有回覆
                 raw, err = "", f"{type(e).__name__}: {e}"
-            parsed = parse_reply(raw)
-            ok = parsed is not None and bool(parsed["state"])
+            parsed = parse(raw)
+            ok = parsed is not None and (form is not None or bool(parsed["state"]))
             cut = parsed["cut"] if ok else []
-            error = None if ok and not cut else err or ("寫到長度上限被截斷：" + "、".join(cut) if cut else "回覆不是 JSON、是空的，或 state 不是三種之一")
-            self.store.append(job["id"], "calls.jsonl", {"turn": job["turns"] + 1, "model": model, "user": msgs[-1]["content"],
-                                                         "response": raw, "error": error, "ms": round((time.time() - t0) * 1000)})
+            error = None if ok and not cut else err or ("寫到長度上限被截斷：" + "、".join(cut) if cut else
+                                                         "回覆不是表單的 JSON 或是空的" if form else "回覆不是 JSON、是空的，或 state 不是三種之一")
+            self.store.append(job["id"], "calls.jsonl", {"turn": job["turns"] + (0 if form else 1), "form": form, "model": model,
+                                                         "user": msgs[-1]["content"], "response": raw, "error": error,
+                                                         "ms": round((time.time() - t0) * 1000)})
             if ok and not cut:
                 return parsed, raw
             msgs = msgs + ([{"role": "user", "content": _s("cut", fields="、".join(cut))}] if cut else
-                           [{"role": "assistant", "content": raw}, {"role": "user", "content": _s("retry")}])
+                           [{"role": "assistant", "content": raw}, {"role": "user", "content": _s("retry_form" if form else "retry")}])
         return None, raw
 
     def _fit(self, job):
@@ -530,27 +595,34 @@ class DomainSession:
             prev = _s("previous", count=len(job["previous"]), attempts="\n".join(rows))
         return _s("first", goal=job["goal"], items=items, question=job["question"], previous=prev)
 
+    @staticmethod
+    def _param_rows(spec, only=None):
+        """有骨架的技能的參數，每個一行（名稱、種類、必填或沒提到時怎麼辦、意思）；only＝只列這幾個（交回重填時）。技能清單與表單共用。"""
+        kinds = {"name": _s("type_name"), "text": _s("type_text"), "path": _s("type_path"), "glob": _s("type_glob"),
+                 "names": _s("type_names"), "words": _s("type_words")}
+        rows = []
+        for p in spec["parameters"]:
+            if only is not None and p["name"] not in only:
+                continue
+            common = {"name": p["name"], "kind": kinds[p["type"]], "desc": p["desc"]}
+            if p.get("required"):
+                rows.append(_s("param_required", **common))
+            elif "default" in p:
+                rows.append(_s("param_default", default=p["default"], **common))
+            else:
+                rows.append(_s("param_optional", **common))
+        return "\n".join(rows) or "  —"
+
     def _skills_text(self, job):
         """選了領域之後交給模型的技能清單：每個領域的〈做法〉、有骨架的技能（說明、什麼時候用、參數）、工具（索引的那一行與〈語法〉）；
         最後是共用的工具（選的領域沒有列的）。"""
-        kinds = {"name": _s("type_name"), "text": _s("type_text"), "path": _s("type_path"), "glob": _s("type_glob"),
-                 "names": _s("type_names"), "words": _s("type_words")}
         blocks, listed = [], set()
         for name in job["domains"]:
             d = self.reg["domains"][name]
             entries = []
             for sk, spec in d["skills"].items():
-                rows = []
-                for p in spec["parameters"]:
-                    common = {"name": p["name"], "kind": kinds[p["type"]], "desc": p["desc"]}
-                    if p.get("required"):
-                        rows.append(_s("param_required", **common))
-                    elif "default" in p:
-                        rows.append(_s("param_default", default=p["default"], **common))
-                    else:
-                        rows.append(_s("param_optional", **common))
                 entries.append(_s("composite_entry", name=sk, description=spec["meta"]["description"],
-                                  when=" ".join(spec["sections"].get("什麼時候用", "").split()) or "—", params="\n".join(rows) or "  —"))
+                                  when=" ".join(spec["sections"].get("什麼時候用", "").split()) or "—", params=self._param_rows(spec)))
             tools = [t for t in d["tools"] if t not in listed]
             listed |= set(tools)
             blocks.append(_s("skills_domain", name=name, title=d["title"],

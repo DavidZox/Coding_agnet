@@ -39,7 +39,7 @@ def calls(agent, parsed, result):
     if not job:
         return [entry]
     entry.update(result_id=d.get("result_id"), job=job["id"], session_status=job["status"], domains=list(job["domains"]),
-                 picks=[p["domains"] for p in job["picks"]], steps=len(job["steps"]), turns=job["turns"])
+                 picks=[p["domains"] for p in job["picks"]], steps=len(job["steps"]), turns=job["turns"], forms=job["forms"])
     out = [entry]
     for st in job["steps"]:
         args = ([str(v["value"]) if not isinstance(v["value"], list) else "、".join(map(str, v["value"])) for v in st["params"].values()]
