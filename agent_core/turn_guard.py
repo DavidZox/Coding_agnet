@@ -54,7 +54,7 @@ def _g(key, /, **fields):
 
 
 class RepeatTracker:
-    """卡住偵測的計數（主對話的一個回合、子工作階段各用一個）：同樣的動作（command＋args）得到同樣的結果，第 REPEAT_HINT_AT 次起在結果後面附
+    """卡住偵測的計數（主對話的一個回合用一個）：同樣的動作（command＋args）得到同樣的結果，第 REPEAT_HINT_AT 次起在結果後面附
     提醒，第 REPEAT_STOP_AT 次算卡住；同一個錯誤（同樣的動作、同樣的 [ERROR] 開頭）不連續也算。評測的對照組：AGENT_TURN_GUARD_RULE=v4
     （第 3 次就停、不加強提醒）、AGENT_ABLATE=turn_guard（關掉）。"""
 
@@ -118,7 +118,7 @@ class TurnGuardMixin:
     def note_analysis_report(self, output):
         """數據分析的事實報告（ANALYSIS_REPORT_HEAD 開頭）：這一回合的回覆要依這份報告，analysis_reply_check 核對（最後那行回答的說明不算
         報告的字）；之後的回合（追問、討論這份報告）也核對寫到報告的那幾行：最近一份報告一直算數，直到下一份報告或 /clear。主對話自己執行的
-        （note_tool_result）與子工作階段裡執行、原樣附在報告裡交回的（第 5 步 G4，orchestrator._domain_outcome）都走這裡。"""
+        （note_tool_result）與領域 session 裡執行、原樣附在報告裡交回的（orchestrator._task_finish）都走這裡。"""
         self._analysis_report = "\n".join(ln for ln in output.splitlines() if not ln.startswith(ANALYSIS_ANSWER_NOTE))
         m = re.search(r"（job ([^\s：）]+)", output.splitlines()[0])
         self._analysis_job_id = m.group(1) if m else None
@@ -160,7 +160,7 @@ class TurnGuardMixin:
         if "turn_guard" in os.environ.get("AGENT_ABLATE", ""):
             return None
         report = ctx["report"]
-        # 依領域的報告回答時，回答寫在 answers（第 5 步 G4：數據分析在子工作階段裡執行）：每一項的回答文字一起核對（出處不算）
+        # 依交辦的報告回答時，回答寫在 answers（數據分析在領域 session 裡執行）：每一項的回答文字一起核對（出處不算）
         reply = "\n".join([parsed.get("reply") or ""] + [a.get("text") or "" for a in parsed.get("answers") or []])
         if not getattr(self, "_analysis_report", None):   # 不是這一回合的報告：只看寫到報告的那幾行
             reply = _about_report(reply, report)

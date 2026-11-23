@@ -12,7 +12,7 @@
 - 行號：result_view、result_grep、提煉結果、claude_code 模式的截斷說明都是原文的行號；result_view --outline；
   檔案的行號（待辦 4k ②）：照收據把存檔的每一行對到檔案（只認收據裡的絕對路徑，result_grep 的存檔編號不算），事實附「檔案:行號」，
   回答把存檔的行號寫成檔案的行號交回修一次、還是錯就標明；
-- 子工作階段的說法（待辦 4k ①）：提煉結尾的下一步建議、沒有提煉時的說明、claude_code 的截斷說明只寫 result_grep、result_view；
+- 領域 session 的說法：提煉結尾的下一步建議、沒有提煉時的說明、claude_code 的截斷說明只寫 result_grep、result_view；
 - 存檔：刪最舊的照編號（#1000 不會排在 #999 前面）、清單不列原始檔已經被清掉的；
 - dispatch：只認輸出最後的狀態標記；工作目錄不能用時換回專案目錄並回 [ERROR]。
 每一個情境都在臨時目錄複製一份專案，不碰正式的 logs/。"""
@@ -299,8 +299,8 @@ def main():
             agent.current_cwd = tmp
 
         def t_name_whole():
-            # 待辦 4j ①：名稱要整個對上（以前用子字串比：子工作階段寫錯的 av2_test 因為在 nav2_test 裡面就算對上，寫進了交班報告）；
-            # 底線、斜線、點、冒號是分隔，開頭是斜線的不要求前面；依報告回答與子工作階段收尾的核對用同一個函式，對不上的附相近的寫法
+            # 待辦 4j ①：名稱要整個對上（以前用子字串比：寫錯的 av2_test 因為在 nav2_test 裡面就算對上，寫進了交班報告）；
+            # 底線、斜線、點、冒號是分隔，開頭是斜線的不要求前面；依報告回答與領域 session 回報的核對用同一個函式，對不上的附相近的寫法
             from agent_core import answers
             ev = "[PASS] 容器（含已停止）：共 3 個\n- nav2_test  Exited (1)\n- rmf_sim  Up\n- /tb1/odom 10 Hz\n- WP_A::0::0 COMPLETED\n- pkg/mod.py:3"
             assert extract.missing_tokens("av2_test 已停止", ev, ev) == ["av2_test"], "少了開頭的字母：不算對上"
@@ -322,7 +322,7 @@ def main():
             assert list(got) == [1] and "「av2_test」在出處的那幾段裡找不到" in got[1][0] and "nav2_test" in got[1][0], got
 
         def t_list_ordinals():
-            # 待辦 4m ①：清單的序號不是寫出來的數字（以前只靠「10 以下的整數不核對」：第 10 項以後的序號原文裡剛好沒有就被擋，子工作階段
+            # 待辦 4m ①：清單的序號不是寫出來的數字（以前只靠「10 以下的整數不核對」：第 10 項以後的序號原文裡剛好沒有就被擋，
             # 整份清單交回修、標成沒過）。只認照順序的序號（開頭、空白、冒號之後的 N. N) N、(N)，從 1 開始、下一個加 1，又從 1 開始是
             # 另一張清單）；清單裡寫的數字、單獨一個 13.、句子裡的 1、2、3 照樣核對；小數不當成序號
             from agent_core import answers
@@ -338,7 +338,7 @@ def main():
             assert extract.missing_tokens("1. AlphaNode 等 1.5 秒", ev, ev) == ["1.5"], "小數不當成序號"
             got = answers.answer_problems(["類別名稱"], [{"item": 1, "status": "answered", "text": listed, "refs": ["#1"]}],
                                           lambda ref: ("id", [], [ev], []), "列出類別", ev)
-            assert got == {}, ("子工作階段收尾的核對：十幾項的清單照收據通過", got)
+            assert got == {}, ("領域 session 回報的核對：十幾項的清單照收據通過", got)
 
         def t_file_lines():
             # 待辦 4k ②（設計筆記 2.47）：view_file、search_text 每一行的 N→ 是檔案的行號，提煉前面又加一層存檔的行號，模型把存檔的行號
@@ -389,7 +389,7 @@ def main():
             assert j["final"]["facts"][0]["at"] == "a.cpp:49" and j["synth"]["answer_lines"] == [], j["final"]
 
         def t_sub_guidance():
-            # 待辦 4k ①（設計筆記 2.47）：子工作階段沒有 result_recall、也沒有使用者可以問——提煉結尾的下一步建議、沒有提煉時的說明、
+            # 領域 session 沒有 result_recall、也沒有使用者可以問——提煉結尾的下一步建議、沒有提煉時的說明、
             # claude_code 模式的截斷說明只寫它能用的 result_grep、result_view；主對話照舊
             from agent_core.turn import _content_for_context
             data = {"answer": "a", "facts": [], "errors": [], "not_covered": "無", "suggested_questions": [], "related_records": []}
@@ -431,10 +431,10 @@ def main():
                          ("名稱要整個對上（待辦 4j ①）：av2_test 不算 nav2_test 裡有、tb1 不算 tb12 裡有；分隔與開頭的斜線照舊對得上；名稱不被切成半截"
                           "（WP_L2 的 L2 不當行號、數字開頭的連數字一起比）；回答的核對附相近的寫法", t_name_whole),
                          ("清單的序號（待辦 4m ①）：從 1 開始照順序的序號不核對（第 10 項以後也一樣、冒號之後與同一行的也算、又從 1 開始是另一張）；"
-                          "清單裡的數字、單獨一個序號、句子裡的編號、小數照樣核對；子工作階段收尾的核對照收據通過", t_list_ordinals),
+                          "清單裡的數字、單獨一個序號、句子裡的編號、小數照樣核對；領域 session 回報的核對照收據通過", t_list_ordinals),
                          ("檔案的行號（待辦 4k ②）：照收據把存檔的每一行對到檔案（一個檔案一節、只有一個檔案）；事實附「檔案:行號」；回答寫成存檔的"
                           "行號交回修一次，還是錯就標明；寫的是檔案的行號不用修", t_file_lines),
-                         ("子工作階段的下一步建議（待辦 4k ①）：提煉結尾、沒有提煉時、claude_code 的截斷說明只寫 result_grep、result_view，"
+                         ("領域 session 的下一步建議：提煉結尾、沒有提煉時、claude_code 的截斷說明只寫 result_grep、result_view，"
                           "不寫 result_recall、不叫它問使用者；主對話照舊", t_sub_guidance)]:
             check(name, fn)
     finally:

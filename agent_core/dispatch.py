@@ -189,8 +189,7 @@ class DispatchMixin:
            不做技能名稱 -> 腳本檔名的猜測或對照；AI 讀完規格後，下一輪需改用
            規格書中標明的實際腳本路徑（例如 scripts/cd_cmd.py）才會真正執行。
         2. 否則將 command 視為實際腳本路徑，以 args 為參數執行對應的 CLI 腳本並回傳結果。
-        3. 「分工」{"domains": [{"domain", "goal", "items"}, …]}：交給高階（orchestrator.run_plan：核對每一項、照順序交給中階或子工作階段、
-           報告存成 #編號）。
+        3. 「交辦」{"task": {"goal", "items"}}：交給領域 session（orchestrator.run_task：核對、領域 session 選領域與技能做完、報告存成 #編號）。
            領域的工具（技能名稱或腳本）這一回合沒有放行就不執行、也不給規格，回 [ERROR]（domain_gate）。direct＝使用者直接指定的指令
            （/analyze：不經過主模型選擇，CLI 與 Web），照舊直接執行、不擋（第 5 步 5-2：analysis_run 登記在 data_analysis）。
 
@@ -205,8 +204,8 @@ class DispatchMixin:
             return None
 
         try:
-            if action.get("domains"):
-                return self.run_plan(action)
+            if action.get("task"):
+                return self.run_task(action)
             payload = action_text(action)
             parts = payload.split(maxsplit=1)
             raw_token = os.path.basename(parts[0])

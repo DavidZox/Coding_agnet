@@ -1,24 +1,23 @@
-"""新架構的低階執行器（EDG Executor；D10 第 2 步，照 D3、D4、D5 的低階、D7 的中→低與低→中；〈設計筆記〉2.29）。
+"""低階執行器（EDG Executor）：有骨架的技能（agent_core/composite.py）排好的圖（JSON）交給這裡，程式照圖一個一個執行工具節點。
 
-中階排好的決策圖（JSON）交給這裡，程式照圖一個一個執行工具節點：
 1. **檢查圖**（validate）：id、依賴、沒有循環、工具存在而且寫收據、參數是字串或「從前一個節點的收據帶入」、帶入的欄位是那個工具收據的
-   項目、判斷節點不被依賴（判斷之後的部分由中階接著排）。沒過就不執行（狀態 invalid，問題列在 problems）。
+   項目；節點只能是工具節點。沒過就不執行（狀態 invalid，問題列在 problems）。
 2. **執行前檢查參數**：用腳本自己的 parse_args（純函式，確認關卡也這樣讀參數），不花模型呼叫；會改變狀態的經過確認關卡
    （guard_check；要確認時停下來，need_user，resume 接回同一個節點）。
 3. **執行**：走主對話同一條路（dispatch.run_script）：存檔、#編號、收據、軌跡都一樣。帶入的參數一項一個實例（最多 EDG_EACH_MAX 個）；
    同一個工具＋同樣的參數在同一張圖裡只跑一次。
 4. **守門**：照收據判斷——狀態是節點的 expect（預設 pass；「0 筆也算答案」寫 ["pass", "empty"]）、要完整（complete）時 truncated 不能為真。
-   成功但不合預期是 unexpected（中 1：結果沒有用），交回中階換做法。
-5. **第 1 級**：參數錯（args）與逾時（timeout）每個實例修一次——交給修正的模型（只給工具規格、錯誤、子目標；D5），程式核對新的參數
+   成功但不合預期是 unexpected（結果沒有用），交回上一層照〈回退〉換做法。
+5. **第 1 級**：參數錯（args）與逾時（timeout）每個實例修一次——交給修正的模型（只給工具規格、錯誤、子目標），程式核對新的參數
    不一樣、過得了 parse_args、逾時只用規格 narrow 列出的縮小方式、參數錯的修正不能把範圍（narrow 標 inside 的路徑）換成上層，
    才重跑一次；修完還是錯就往上報。環境（env）、腳本的錯（parse）不修。找不到路徑而相近的路徑（收據的 near）有好幾個時也不修：
    要哪一個是上一層的決定（第 1 級曾經挑第一個、跑到別的專案的同名目錄），候選附在原因裡往上報。
-6. **往上交**（低 → 中）：每個節點的狀態、每次嘗試的收據摘要與 #編號、修正的紀錄；停下來的原因（stops）、等中階判斷的節點（judgments）。
-7. **重排**（replan，中階的第 2 級用）：照新的圖接著跑同一個工作——定義沒變、依賴也沒重跑的節點保留狀態（不重跑）；新的、改了的重新跑；
-   圖上拿掉的與重跑的節點，原本的狀態記在 replans（收據檔都還在）。同一個工具＋同樣的參數之前跑過的，直接用之前的收據（D5 中 4）。
+6. **往上交**：每個節點的狀態、每次嘗試的收據摘要與 #編號、修正的紀錄；停下來的原因（stops）。
+7. **重排**（replan，〈回退〉的加節點用）：照新的圖接著跑同一個工作——定義沒變、依賴也沒重跑的節點保留狀態（不重跑）；新的、改了的重新跑；
+   圖上拿掉的與重跑的節點，原本的狀態記在 replans（收據檔都還在）。同一個工具＋同樣的參數之前跑過的，直接用之前的收據。
 
 每一次執行存在 logs/edg_jobs/<編號>/：job.json（圖、每個節點與實例的狀態、嘗試、修正）、receipts/（每次嘗試的收據全文；重排之後重跑的檔名加上第幾版）、
-events.jsonl（進度）、calls.jsonl（修正的模型呼叫）。確認關卡的決定記在實例的 decisions。Web 的拓撲圖（web_app/topology.py）用 job.json。
+events.jsonl（進度）、calls.jsonl（修正的模型呼叫）。確認關卡的決定記在實例的 decisions。
 """
 import importlib
 import json
@@ -35,7 +34,7 @@ from .schemas import EDG_FIX_SCHEMA
 STATUSES = ("pass", "empty")              # expect 可以寫的收據狀態
 FIXABLE = ("args", "timeout")             # 第 1 級修的錯誤種類（env、parse 往上報）
 BAD = ("failed", "unexpected", "blocked", "denied")
-NODE_FINAL = BAD + ("done", "judgment")
+NODE_FINAL = BAD + ("done",)
 INSTANCE_FINAL = ("done", "unexpected", "failed", "denied")
 ERROR_TEXT_MAX = 3000                     # 交給修正的錯誤原文最多幾個字
 _ID = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
@@ -115,7 +114,7 @@ def _added(old, new):
 
 def widened(script, rules, old_args, new_args, cwd):
     """參數錯的修正把範圍換成原本路徑的上層（範圍放大）→ 原因；沒有回 None。範圍＝規格 narrow 標 inside 的鍵（逾時只能往裡面縮的那幾個）：
-    第 1 級只改字面參數，範圍要放大是中階的決定（例：關鍵字含空白被拆開時，把路徑換成整個工作目錄）。原本的參數解析不了時不核對。"""
+    第 1 級只改字面參數，範圍要放大是上一層的決定（例：關鍵字含空白被拆開時，把路徑換成整個工作目錄）。原本的參數解析不了時不核對。"""
     keys = [k for k, r in (rules or {}).items() if r.get("rule") == "inside"]
     po, _ = parse(script, old_args)
     pn, _ = parse(script, new_args)
@@ -129,7 +128,7 @@ def widened(script, rules, old_args, new_args, cwd):
         for n in (real(p) for p in _paths(pn.get(k)) or ["."]):
             wider = [o for o in olds if o != n and os.path.commonpath([o, n]) == n]
             if wider:
-                return f"修正把{(rules[k].get('arg') or k)}換成原本路徑的上層（{n} 包含 {wider[0]}），範圍放大要交回中階決定"
+                return f"修正把{(rules[k].get('arg') or k)}換成原本路徑的上層（{n} 包含 {wider[0]}），範圍放大要交回上一層決定"
     return None
 
 
@@ -172,8 +171,8 @@ def _topo(by_id):
 
 
 def _definition(n):
-    """節點的定義（重排時比對有沒有改）：工具、參數、依賴、預期、要完整、判斷節點的目標。"""
-    return json.dumps({k: n.get(k) for k in ("kind", "tool", "args", "depends_on", "expect", "complete", "goal")}, ensure_ascii=False, sort_keys=True)
+    """節點的定義（重排時比對有沒有改）：工具、參數、依賴、預期、要完整。"""
+    return json.dumps({k: n.get(k) for k in ("tool", "args", "depends_on", "expect", "complete")}, ensure_ascii=False, sort_keys=True)
 
 
 def _binding(a):
@@ -208,17 +207,8 @@ def validate(tools_dir, graph):
         for d in deps:
             if d not in by_id or d == nid:
                 problems.append(f"{nid}：depends_on 的 {d} 不存在")
-            elif by_id[d].get("kind", "tool") == "judgment":
-                problems.append(f"{nid}：不能依賴判斷節點 {d}（判斷之後的部分由中階看了結果再排）")
-        kind = n.get("kind", "tool")
-        if kind == "judgment":
-            if not str(n.get("goal") or "").strip():
-                problems.append(f"{nid}：判斷節點要寫 goal（要判斷什麼）")
-            if not deps:
-                problems.append(f"{nid}：判斷節點要有 depends_on（要看哪些節點的收據）")
-            continue
-        if kind != "tool":
-            problems.append(f"{nid}：kind 只能是 tool 或 judgment")
+        if n.get("kind", "tool") != "tool":
+            problems.append(f"{nid}：只能是工具節點（kind 是 tool）")
             continue
         tool = n.get("tool")
         spec = load_spec(tools_dir, tool) if isinstance(tool, str) and _TOOL.match(tool) else None
@@ -333,7 +323,7 @@ class Executor:
         self.store.prune(EDG_JOBS_KEEP)
         job = {"id": jid, "status": "invalid" if problems else "running", "created": _now(), "updated": _now(),
                "cwd": self.agent.current_cwd, "graph": graph, "problems": problems, "order": order,
-               "nodes": {nid: {"state": "pending"} for nid in order}, "stops": [], "judgments": [], "need_user": None}
+               "nodes": {nid: {"state": "pending"} for nid in order}, "stops": [], "need_user": None}
         if problems:
             self.store.save(job)
             self._note(jid, "🔗 決策圖沒有通過檢查，沒有執行：" + "；".join(problems))
@@ -360,7 +350,7 @@ class Executor:
         return self._run(job, specs)
 
     def replan(self, jid, graph):
-        """中階重排：同一個工作換成新的圖接著跑。定義（工具、參數、依賴、預期…）沒變、依賴的節點也都保留的節點不重跑；
+        """重排（〈回退〉的加節點）：同一個工作換成新的圖接著跑。定義（工具、參數、依賴、預期…）沒變、依賴的節點也都保留的節點不重跑；
         其他的重新跑。拿掉的、重跑的節點原本的狀態記在 job["replans"]。新的圖沒通過檢查就不執行（狀態 invalid）。"""
         job = self.store.load(jid)
         if not job:
@@ -385,7 +375,7 @@ class Executor:
         job.setdefault("replans", []).append({"time": _now(), "kept": kept, "rerun": [n for n in order if n not in kept and n in old],
                                               "added": [n for n in order if n not in old], "dropped": [n for n in old if n not in new],
                                               "replaced": replaced})
-        job.update(graph=graph, order=order, nodes=nodes, problems=[], stops=[], judgments=[], need_user=None)
+        job.update(graph=graph, order=order, nodes=nodes, problems=[], stops=[], need_user=None)
         self._note(jid, f"🔗 重排：保留 {len(kept)} 個節點，要跑 {len(order) - len(kept)} 個")
         self._rebuild_cache(job)
         return self._run(job, specs)
@@ -421,9 +411,6 @@ class Executor:
                     st.update(state="blocked", reason=f"依賴的節點沒有成功：{'、'.join(bad)}")
                     self._note(job["id"], f"🔗 {nid}：跳過（{st['reason']}）")
                     continue
-                if n.get("kind") == "judgment":
-                    st["state"] = "judgment"
-                    continue
                 self._run_node(job, n, st, specs[n["tool"]], nodes)
                 job["updated"] = _now()
                 self.store.save(job)
@@ -439,17 +426,10 @@ class Executor:
     def _finish(self, job, nodes):
         job["stops"] = [{"node": nid, "state": st["state"], "reason": st.get("reason", "")}
                         for nid, st in job["nodes"].items() if st["state"] in BAD]
-        job["judgments"] = [{"node": nid, "goal": nodes[nid]["goal"],
-                             "inputs": [{"node": d, "results": self._result_ids(job["nodes"][d])} for d in nodes[nid]["depends_on"]]}
-                            for nid, st in job["nodes"].items() if st["state"] == "judgment"]
-        job["status"] = "stopped" if job["stops"] else "judgment" if job["judgments"] else "done"
+        job["status"] = "stopped" if job["stops"] else "done"
         job["updated"] = _now()
         self.store.save(job)
         self._note(job["id"], f"🔗 決策圖執行完：{job['status']}" + "".join(f"；{s['node']} {s['state']}（{s['reason']}）" for s in job["stops"]))
-
-    @staticmethod
-    def _result_ids(st):
-        return [inst["attempts"][-1].get("result_id") for inst in st.get("instances", []) if inst.get("attempts")]
 
     # ---------------------------------------------------------------- 節點
     def _run_node(self, job, n, st, spec, nodes):
@@ -646,7 +626,7 @@ class Executor:
         return json.dumps([tool, list(args)], ensure_ascii=False)
 
     def _save_receipt(self, job, nid, i, k, receipt):
-        """receipts/<節點>_<實例>_<嘗試>.json；重排之後重跑的加上第幾版（_v2…），不蓋掉之前那一版的收據（拓撲圖照版本看、中階讀的是這一版的）。"""
+        """receipts/<節點>_<實例>_<嘗試>.json；重排之後重跑的加上第幾版（_v2…），不蓋掉之前那一版的收據（上一層讀的是這一版的）。"""
         v = len(job.get("replans") or [])
         rel = f"receipts/{nid}_{i + 1}_{k + 1}" + (f"_v{v + 1}" if v else "") + ".json"
         self.store.write(job["id"], rel, json.dumps(receipt, ensure_ascii=False))

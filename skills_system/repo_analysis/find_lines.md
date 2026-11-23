@@ -19,7 +19,7 @@ parameters: [{"name": "keyword", "type": "text", "required": true, "desc": "要�
 {"nodes": [
   {"id": "hits", "tool": "search_text",
    "args": ["{keyword}", "{path}", {"if": "files", "args": ["--include", "{files}"]}, {"if": "exclude", "args": ["--exclude-dir", "{exclude}"]}, "-C", "2"],
-   "expect": ["pass", "empty"], "report": "提到這段文字的行", "lines": true, "why": "列出範圍裡提到這段文字的每一行與前後兩行"}
+   "expect": ["pass", "empty"], "report": "提到這段文字的行", "why": "列出範圍裡提到這段文字的每一行與前後兩行"}
 ]}
 ```
 
@@ -31,6 +31,6 @@ parameters: [{"name": "keyword", "type": "text", "required": true, "desc": "要�
 
 # 策略與 SOP
 1. 範圍照原文：目錄或檔案、檔案名稱的寫法、不含的子目錄都要用上，不要搜整個目錄再自己挑。
-2. 提到的行與前後兩行由程式照收據從檔案讀（檔案、行號與內容以檔案為準），每個檔案的筆數由程式從收據算；行太多、報告列不下時先拿掉前後行，
-   還是列不下的寫明還有幾行、在哪個 #編號。
+2. 提到的行與前後兩行是搜尋的輸出（每個檔案幾筆、總共幾筆由腳本算）；輸出太長時由提煉整理成跟子目標有關的重點（每條附 檔案:行號），
+   原文在 #編號。
 3. 一行有好幾次也只算一筆（數的是行）；0 筆就是範圍裡沒有一行提到，照實回答。

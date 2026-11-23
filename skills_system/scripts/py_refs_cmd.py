@@ -1,6 +1,6 @@
 """py_refs：Python 的一個名稱在一個範圍（目錄或檔案，可以好幾個）裡的每一處——用 AST 分成定義、呼叫、import、指定、其他用到，每一處附
 檔案、行號與所在的函式；各檔案幾處、總共幾處由程式算。複合技能 py_usage 由程式做的部分（search_text 找出提到名稱的 .py，每個檔案
-code_ast_reader --refs）做成一次執行的工具（repo_analysis 的工具，子工作階段用；2026-11-21 方向的實驗做的，設計筆記 2.45）。
+code_ast_reader --refs）做成一次執行的工具（repo_analysis 的工具，領域 session 用）。
 
 - 範圍：預設略過 _path_common.DEFAULT_EXCLUDES 的目錄（指定的路徑本身在裡面的照算），--exclude-dir 多略過；只看 Python 檔（.py、.pyw、
   .pyi、第一行是 python 的 #!；--include 改成只看這種檔名，含 / 時比對整個路徑）。先照字面挑出有這個名稱（整個字）的檔案，再用 code_ast_reader 的 _RefVisitor 分

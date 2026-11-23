@@ -1,5 +1,5 @@
 @startuml
-' 複合技能 count_in_scope 的〈骨架〉與〈回退〉畫成流程（2026-11-21）；來源 skills_system/repo_analysis/count_in_scope.md。
+' 複合技能 count_in_scope 的〈骨架〉與〈回退〉畫成流程（2026-11-23）；來源 skills_system/repo_analysis/count_in_scope.md。
 skinparam shadowing false
 skinparam defaultFontName "Microsoft JhengHei"
 skinparam ActivityFontSize 13
@@ -10,48 +10,51 @@ skinparam ActivityDiamondFontSize 12
 title count_in_scope：範圍裡的數量（一段文字出現在幾行、名稱符合的檔案有幾個）
 
 start
-:參數（模型填）
+:參數（領域 session 填，每個參數附一字不改的原文）
 ・keyword：要數的一段文字（可以不寫）
 ・files：檔名的寫法，例如 *.yaml（可以不寫；含 / 時比對整個路徑，
   find_file 與 search_text 同一條規則）
 ・path：範圍（沒寫＝整個工作目錄）
 ・exclude：範圍裡不要的子目錄（可以不寫）; <<#FFE6CC>>
-:程式核對參數：種類對不對、必填的有沒有；沒寫的用預設值；
-路徑在工作目錄找不到時用 find_file 找一次
-（剛好一個就自己補，好幾個或沒有就要改參數）; <<#D5E8D4>>
-if (keyword、files 都沒寫？) then (是)
-  :要改參數：要找什麼？
-  keyword、files 至少要有一個; <<#F8CECC>>
-  stop
+:合約（程式核對）：原文要一字不改地在問題、子目標、
+項目或前面的結果裡，值照種類對得上原文；
+沒過交回領域 session 改（不算一步）; <<#D5E8D4>>
+:補齊（composite.py）：沒寫的用預設值；
+路徑在工作目錄找不到時照 fetch 用 find_file 找一次
+（剛好一個就自己補；好幾個或沒有 → need，附候選）; <<#DAE8FC>>
+if (keyword、files 都沒寫？（排不出節點）) then (是)
+  :need：「參數 files、keyword 至少要寫一個」; <<#F8CECC>>
 else (至少有一個)
-endif
-if (有 files？) then (有)
-  :① files（find_file，只找檔案）
-  數範圍裡名稱符合 files 的檔案; <<#DAE8FC>>
-else (沒有)
-endif
-if (有 keyword？) then (有)
-  :② hits（search_text，只列檔名與筆數）
-  數範圍裡每個檔案有幾行提到 keyword
-  （有 files 就只看那種檔；exclude 的子目錄不看）; <<#DAE8FC>>
-  if (搜尋逾時、沒有搜完？) then (是)
-    :【回退 search_timed_out】
-    數字不是全部：要改參數，縮小 path
-    （附目前找到的各子目錄筆數）; <<#F8CECC>>
-    stop
-  else (搜完了)
+  if (有 files？) then (有)
+    :① files（find_file，只找檔案，要完整）
+    數範圍裡名稱符合 files 的檔案
+    小標題「名稱符合的檔案」; <<#DAE8FC>>
+  else (沒有：這個節點不排)
   endif
-else (沒有)
+  if (有 keyword？) then (有)
+    :② hits（search_text，只列檔名與筆數）
+    數範圍裡每個檔案有幾行提到 keyword
+    （有 files 就只看那種檔；exclude 的子目錄不看）
+    小標題「每個檔案的筆數」; <<#DAE8FC>>
+    if (搜尋逾時、沒有搜完？) then (是)
+      :【回退 search_timed_out】need：縮小 path
+      （數字不是全部；附目前找到的各子目錄筆數）; <<#F8CECC>>
+    else (搜完了)
+    endif
+  else (沒有：這個節點不排)
+  endif
 endif
-:報告（程式從收據算，模型不數）
-・名稱符合的檔案：幾個、哪些
-・每個檔案的筆數與總數；出處 #編號; <<#E1D5E7>>
+:結果交回領域 session（domain_session.py 整理）
+・技能的狀態、自己補的參數、need（說明與候選）
+・每個節點的結果：小標題、工具與參數、狀態、#編號
+  ——檔案的個數、每個檔案的筆數與總數都是腳本算好的（模型不數）
+・短的給原文，太長的分段提煉（錨點是子目標與項目）; <<#E1D5E7>>
 stop
 legend bottom
-  顏色：橘＝模型做（填參數、判斷節點）、綠＝程式核對、藍＝程式照〈骨架〉做、黃＝〈回退〉（程式照條件自動改做）、紅＝要改參數、紫＝程式寫的報告。
-  回退的條件在步驟跑完之後由程式照收據比對（照〈回退〉列的順序，取第一個符合、還沒用過的；重排最多 3 次）。
-  紅色「要改參數」：中階停下來，由程式直接問使用者，回答之後照新的參數接著做。
-  模型不寫步驟：參數由中階的合約填（程式核對），判斷節點只在寫好的幾條路裡選。
+  顏色：橘＝模型（領域 session 填參數）、綠＝程式核對、藍＝程式照〈骨架〉做（composite.py 排圖、edg.py 執行）、黃＝〈回退〉（程式照收據的條件自動改做）、紅＝need（交回領域 session 決定）、紫＝交回領域 session 的結果。
+  回退的條件在節點跑完之後由程式照收據比對（照〈回退〉列的順序，取第一個符合、還沒用過的）；加節點重排與換技能合計最多 3 次，再要就熔斷。
+  紅色 need：不問使用者，交回領域 session 決定——照候選改參數再用一次、換一個技能，或回報。
+  骨架只有工具節點：結果怎麼讀交給提煉，下一步（再用技能、再選領域、回報）由領域 session 決定。
   來源：skills_system/repo_analysis/count_in_scope.md 的 parameters、〈骨架〉與〈回退〉（改了技能要一起改這張圖）。
 endlegend
 @enduml

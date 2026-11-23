@@ -1,7 +1,7 @@
-"""低階執行器（agent_core/edg.py，新架構 D10 第 2 步）的離線自我測試：用寫好的圖、假的修正模型，不用真模型（幾秒）。
+"""低階執行器（agent_core/edg.py：有骨架的技能的圖由它執行）的離線自我測試：用寫好的圖、假的修正模型，不用真模型（幾秒）。
 
 檢查圖、照收據守門（expect、complete）、從收據帶入參數（一項一個實例、去重、上限）、第 1 級（執行前的參數檢查、修一次、程式核對修正、
-逾時只照規格的 narrow 縮小、env 不修）、依賴沒成功就跳過、判斷節點交回中階、確認關卡停下來與接回、存檔（job.json、收據、軌跡、#編號）、
+逾時只照規格的 narrow 縮小、env 不修）、依賴沒成功就跳過、只收工具節點、確認關卡停下來與接回、存檔（job.json、收據、軌跡、#編號）、
 修正的模型呼叫（prompt 只給規格、錯誤、子目標）。
 
     python3 evals/edg/selftest.py
@@ -78,10 +78,9 @@ def main():
         def problems(graph):
             return edg.validate(agent.tools_dir, graph)[0]
         ok = {"goal": "g", "nodes": [{"id": "a", "tool": "search_text", "args": ["x", "src"]},
-                                     {"id": "b", "tool": "view_file", "args": [{"from": "a", "field": "path"}], "depends_on": ["a"]},
-                                     {"id": "c", "kind": "judgment", "goal": "看結果", "depends_on": ["b"]}]}
+                                     {"id": "b", "tool": "view_file", "args": [{"from": "a", "field": "path"}], "depends_on": ["a"]}]}
         p, specs, order = edg.validate(agent.tools_dir, ok)
-        assert p == [] and order == ["a", "b", "c"] and specs["view_file"]["script"] == "cat_cmd.py", (p, order)
+        assert p == [] and order == ["a", "b"] and specs["view_file"]["script"] == "cat_cmd.py", (p, order)
         cases = [
             ({"nodes": ok["nodes"]}, "缺少 goal"),
             ({"goal": "g", "nodes": [{"id": "a", "tool": "nope_tool"}]}, "沒有 'nope_tool'"),
@@ -92,8 +91,7 @@ def main():
                                      {"id": "b", "tool": "view_file", "args": [{"from": "a", "field": "lines"}], "depends_on": ["a"]}]},
              "收據項目沒有 lines"),
             ({"goal": "g", "nodes": [{"id": "a", "tool": "search_text", "args": ["x"]},
-                                     {"id": "j", "kind": "judgment", "goal": "看", "depends_on": ["a"]},
-                                     {"id": "b", "tool": "list_dir", "depends_on": ["j"]}]}, "不能依賴判斷節點"),
+                                     {"id": "j", "kind": "judgment", "goal": "看", "depends_on": ["a"]}]}, "只能是工具節點"),
             ({"goal": "g", "nodes": [{"id": "a", "tool": "list_dir", "depends_on": ["b"]},
                                      {"id": "b", "tool": "list_dir", "depends_on": ["a"]}]}, "循環"),
             ({"goal": "g", "nodes": [{"id": "a", "tool": "list_dir", "expect": ["ok"]}]}, "expect 只能是"),
@@ -111,9 +109,8 @@ def main():
         before = len(agent.trajectory)
         job = run({"goal": "找 handle_cmd 定義在哪", "nodes": [
             {"id": "find", "tool": "find_file", "args": ["node_", "src", "--type", "f"], "why": "找節點的程式"},
-            {"id": "defs", "tool": "code_ast_reader", "args": [{"from": "find", "field": "path"}], "depends_on": ["find"]},
-            {"id": "pick", "kind": "judgment", "goal": "哪一個檔案定義了 handle_cmd", "depends_on": ["defs"]}]})
-        assert job["status"] == "judgment", (job["status"], job["stops"])
+            {"id": "defs", "tool": "code_ast_reader", "args": [{"from": "find", "field": "path"}], "depends_on": ["find"]}]})
+        assert job["status"] == "done", (job["status"], job["stops"])
         assert node(job, "find")["state"] == "done" and node(job, "defs")["state"] == "done"
         insts = node(job, "defs")["instances"]
         assert sorted(os.path.basename(i["args"][0]) for i in insts) == ["node_a.py", "node_b.py"], insts
@@ -121,15 +118,13 @@ def main():
         runs = agent.trajectory[before:]
         assert [r["script"] for r in runs] == ["find_file_cmd.py", "code_ast_reader_cmd.py", "code_ast_reader_cmd.py"], runs
         assert all(r.get("receipt") and r.get("result_file") for r in runs), "每一次都走主對話同一條路：存檔、收據、軌跡"
-        ids = [i["attempts"][-1]["result_id"] for i in insts]
-        assert job["judgments"] == [{"node": "pick", "goal": "哪一個檔案定義了 handle_cmd", "inputs": [{"node": "defs", "results": ids}]}]
         d = os.path.join(agent.script_dir, "logs", "edg_jobs", job["id"])
         saved = json.load(open(os.path.join(d, "job.json"), encoding="utf-8"))
-        assert saved["status"] == "judgment" and saved["graph"]["nodes"][0]["why"] == "找節點的程式"
+        assert saved["status"] == "done" and saved["graph"]["nodes"][0]["why"] == "找節點的程式"
         receipt = json.load(open(os.path.join(d, insts[0]["attempts"][0]["receipt_file"]), encoding="utf-8"))
         assert receipt["tool"] == "code_ast_reader" and receipt["status"] == "pass"
         events = open(os.path.join(d, "events.jsonl"), encoding="utf-8").read()
-        assert "開始執行決策圖" in events and "執行完：judgment" in events
+        assert "開始執行決策圖" in events and "執行完：done" in events
         assert agent.current_cwd == work, "跑完工作目錄換回主對話的"
 
     def t_expect_and_complete():
@@ -428,8 +423,8 @@ def main():
         saved = json.load(open(os.path.join(agent.script_dir, "logs", "edg_jobs", job["id"], "job.json"), encoding="utf-8"))
         assert saved["status"] == "invalid" and len(saved["replans"]) == 2, "沒通過檢查的圖不執行、不算一次重排"
 
-    tests = [("檢查圖：id、依賴、循環、工具要寫收據、帶入的來源與欄位、判斷節點不被依賴、expect", t_validate),
-             ("照圖執行、從收據帶入參數（一項一個實例）、判斷節點交回中階；走主對話同一條路（存檔、收據、軌跡）、job 存檔", t_chain_binding),
+    tests = [("檢查圖：id、依賴、循環、工具要寫收據、帶入的來源與欄位、只收工具節點、expect", t_validate),
+             ("照圖執行、從收據帶入參數（一項一個實例）；走主對話同一條路（存檔、收據、軌跡）、job 存檔", t_chain_binding),
              ("守門照收據：expect（0 筆算不算答案）、complete（不完整算不合預期）", t_expect_and_complete),
              ("第 1 級：執行前的參數檢查擋下來 → 修一次 → 執行；修正只拿到規格、錯誤、子目標", t_fix_precheck),
              ("第 1 級：程式核對修正（沒改、過不了檢查、多了 shell 的引號、修不好、沒回覆、範圍放大都不重跑）；修完還是錯就往上報，只修一次", t_fix_rejected),

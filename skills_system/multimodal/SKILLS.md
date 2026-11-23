@@ -4,7 +4,7 @@
 不包含：錄製的數據（data_analysis）、正在跑的系統（robotics_infra）。
 
 ## 複合技能
-（還沒有：交給這個領域的問題，在子工作階段裡用下面的工具一步一步做）
+（還沒有：領域 session 直接用下面的工具）
 
 ## 工具
 - [stt_engine](../tools/stt_engine.md)

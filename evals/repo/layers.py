@@ -1,10 +1,10 @@
 """真實專案評測沒過的每一題，照「第一個出錯的地方」分層（步驟 0 的方法）。
 
-沒過的每一項在每一層有沒有出現：工具的原文 → 事實（提煉的結果）→ 下一層的回答（子工作階段的回答、中階的報告）→ 主對話最後的回覆。
+沒過的每一項在每一層有沒有出現：工具的原文 → 事實（提煉的結果）→ 下一層的回答（領域 session 的回報）→ 主對話最後的回覆。
 每一項推第一個沒出現的層，一題取最前面的那一項：找（原文裡沒有）、看（原文有，事實與下一層的回答都沒有）、
 回答・下一層（事實有，下一層的回答沒有）、回答・主對話（下一層的回答有，最後的回覆沒有）、評測或算（最後的回覆裡每一組寫法都在，核對還是沒過）。
-比對用寬鬆的（每一組寫法都出現過，不管距離與同一行）。分工（交下去的子目標掉了條件、只交了一部分）程式看不出來，所以每一題也列出交給領域的
-子目標與項目。推出來的類別只是起點，要逐題打開紀錄確認（設計筆記 2.44、2.45）。
+比對用寬鬆的（每一組寫法都出現過，不管距離與同一行）。交辦（交下去的子目標掉了條件、只交了一部分）程式看不出來，所以每一題也列出交辦的
+子目標與項目。推出來的類別只是起點，要逐題打開紀錄確認。
 
     python3 evals/repo/layers.py <結果目錄>…     # 每一題一段，最後是每個模型、每一組的彙總
 """
@@ -37,8 +37,8 @@ def _jobs(logdir, kind):
 
 
 def layer_texts(logdir):
-    """一題的紀錄目錄（結果目錄的 logs/<題目>）→ 原文、事實、下一層的回答三段文字。交給領域的結果（`_domain_` 的 #編號）不算：
-    它是下面幾層的合成（中階、子工作階段的報告），各層從自己的 job 取。"""
+    """一題的紀錄目錄（結果目錄的 logs/<題目>）→ 原文、事實、下一層的回答三段文字。交辦的結果（`_domain_` 的 #編號）不算：
+    它是領域 session 的報告（下面幾層的合成），各層從自己的 job 取。"""
     raw, facts, answers = [], [], []
     for path in sorted(glob.glob(os.path.join(logdir, "tool_results", "*.md"))):
         if not path.endswith("index.md") and "_domain_" not in os.path.basename(path):
@@ -47,10 +47,8 @@ def layer_texts(logdir):
         fin = job.get("final") or {}
         facts.append(str(fin.get("answer") or ""))
         facts += [str(x.get("text") if isinstance(x, dict) else x) for x in fin.get("facts") or []]
-    for job in _jobs(logdir, "sub"):
+    for job in _jobs(logdir, "domain"):
         answers += [f"{a.get('item')}. {a.get('text')}" for a in job.get("answers") or []]
-    for job in _jobs(logdir, "mid"):
-        answers.append(str((job.get("result") or {}).get("report") or ""))
     return "\n".join(raw), "\n".join(facts), "\n".join(answers)
 
 
@@ -73,7 +71,7 @@ def guess(raw, facts, answers, reply, item):
 
 def trace(result_dir, by_id=None):
     """一個結果目錄 → 沒過的每一題：模型、組、沒過的每一項推的層、這一題推的層（沒過的項目裡最前面的；沒有沒過的項目＝其他，例如寫了不該寫的）、
-    交給領域的子目標與項目。"""
+    交辦的子目標與項目。"""
     by_id = by_id or {q["id"]: q for q in questions.load()["questions"]}
     out = []
     with open(os.path.join(result_dir, "runs.jsonl"), encoding="utf-8") as f:
@@ -104,7 +102,7 @@ def main(dirs):
             for x in t["items"]:
                 print(f"   - {x['label'][:70]}：{x['guess']}")
             for c in t["dispatch"]:
-                print(f"   分工：{c['domain']}｜{str(c['goal'])[:100]}｜{c['items']}")
+                print(f"   交辦：{c['domain']}｜{str(c['goal'])[:100]}｜{c['items']}")
         rows += traced
     print("\n| 模型 | 組 | 幾次 | 沒過的題次 | " + " | ".join(ORDER) + " |")
     print("|---|---|---|---|" + "---|" * len(ORDER))

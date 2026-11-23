@@ -22,7 +22,7 @@ class ConversationMixin:
             del self._user_said[:-200]
 
     def reset_conversation(self):
-        if self.domain_pending:     # /clear 時中階或子工作階段還在等使用者回答：取消（紀錄寫明使用者取消），不再接著做
+        if self.domain_pending:     # /clear 時領域 session 還在等使用者確認：取消（紀錄寫明使用者取消），不再接著做
             self.cancel_domain(follow=False)
         self.begin_turn()
         self._analysis_ctx = None   # /clear：之後的回答不再對照上一份數據分析的報告（turn_guard.analysis_reply_check）
@@ -132,7 +132,7 @@ class ConversationMixin:
             model=self.model,
             messages=snapshot,
             # 回覆協議：{thought, reply, action}；有領域時 action 多一種「交給領域」；這一回合有領域的報告時多 answers（依報告回答，4-2）
-            format=agent_reply_schema(self.domain_names(), len(self.domain_items())),
+            format=agent_reply_schema(bool(self.domain_names()), len(self.domain_items())),
             options={'temperature': 0.2, 'num_ctx': NUM_CTX},
             think=think_arg(self.model, getattr(self, "main_think", False))   # 預設關（見上）；使用者可以在畫面上打開
         )

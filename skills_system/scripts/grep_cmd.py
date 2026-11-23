@@ -11,7 +11,7 @@
 --include 含 / 時比對整個路徑（同 find_file 的名稱關鍵字，_path_common.path_glob；待辦 4l ②）：grep 的 --include 只比對檔名，
 這種寫法不交給 grep，搜完由 Collector 照 _path_common.include_ok 篩。
 收據（_receipt_common，欄位見規格的 receipt）：每個檔案的筆數（全部）、命中的行（路徑、行號；最多 RECEIPT_LINES 行）。
---rank（新架構 3b）：好幾個字（a|b|c）時，命中太多、列不完的情況先列「同一行含最多個不同的字」的行（長文件照檔案順序會截掉後面的答案）；
+--rank：好幾個字（a|b|c）時，命中太多、列不完的情況先列「同一行含最多個不同的字」的行（長文件照檔案順序會截掉後面的答案）；
 檔案照它最多的那一行排，檔案裡照行號；收據的每一行多記 words（含幾個不同的字）。
 """
 import os

@@ -179,79 +179,56 @@ EXTRACT_JOBS_DIRNAME = "extract_jobs"
 EXTRACT_JOBS_KEEP = int(os.environ.get("AGENT_EXTRACT_JOBS_KEEP", "500"))   # 提煉的存檔只留最近幾次（每次幾十 KB：prompt 含那一段的原文）
 RECALL_MAX_RECORDS = 3   # result_recall 一次最多讀幾份存檔（幾份的段落交給 worker，同一個整合看全部）
 
-# 🔗 新架構的低階執行器（agent_core/edg.py，D10 第 2 步）：照決策圖執行工具節點、執行前用腳本的 parse_args 檢查參數、照收據守門、
+# 🔗 低階執行器（agent_core/edg.py）：有骨架的技能的圖照順序執行工具節點、執行前用腳本的 parse_args 檢查參數、照收據守門、
 # 第 1 級修正（每個節點修一次）。每一次執行存在 logs/edg_jobs/<編號>/（圖、每個節點的嘗試與收據、修正的模型呼叫）。
 EDG_JOBS_DIRNAME = "edg_jobs"
 EDG_JOBS_KEEP = int(os.environ.get("AGENT_EDG_JOBS_KEEP", "300"))
-# 參數從前一個節點的收據帶入、一項一個實例時，一個節點最多跑幾個實例：多的不跑，節點標「沒跑完」並寫明共幾個，交回中階決定
+# 參數從前一個節點的收據帶入、一項一個實例時，一個節點最多跑幾個實例：多的不跑，節點標「沒跑完」並寫明共幾個
 # （資源的上限，不是判斷的門檻：收據的項目最多 1000 筆，全部展開會跑一千次腳本）。
 EDG_EACH_MAX = int(os.environ.get("AGENT_EDG_EACH_MAX", "50"))
-# 第 1 級修正用的模型（D8：每一層可以分開設定，第一版跟主對話同一個）；空字串＝主對話的模型。
+# 第 1 級修正用的模型；空字串＝主對話的模型。
 EDG_MODEL = os.environ.get("AGENT_EDG_MODEL", "").strip()
 EDG_FIX_PREDICT = 600   # 修正的輸出（理由＋參數）的 num_predict 上限
-
-# 🧭 新架構的中階（agent_core/mid.py，D10 第 3 步）：挑複合技能、合約（抽參數並核對原文、自己查、問使用者）、照骨架排圖、交給低階、
-# 第 2 級（照〈回退〉換做法重排）。每一次存在 logs/mid_jobs/<編號>/（每一版的圖、回退、報告、模型呼叫）。
-MID_JOBS_DIRNAME = "mid_jobs"
-MID_JOBS_KEEP = int(os.environ.get("AGENT_MID_JOBS_KEEP", "300"))
-# 第 2 級最多重排幾次（架構圖的例子是 3 次），再要重排就熔斷、把做到哪裡往上報。是預算，不是調來讓某一題過的門檻；
-# 收斂與否另外看「重排出來的節點是不是全都跑過」（〈新架構討論紀錄〉D5 中 4）。
+# 有骨架的技能（agent_core/composite.py）：〈回退〉的加節點重排與換技能合計最多幾次，再要就熔斷（預算，不是調來讓某一題過的門檻；
+# 收斂與否另外看「加的節點是不是全都跑過」）。
 MID_REPLAN_MAX = 3
-# 挑技能與合約用的模型（D8：每一層可以分開設定，第一版跟主對話同一個）；空字串＝主對話的模型。
-MID_MODEL = os.environ.get("AGENT_MID_MODEL", "").strip()
-MID_SELECT_PREDICT = 600     # 挑技能的輸出（理解＋名稱＋理由）的 num_predict 上限
-MID_CONTRACT_PREDICT = 900   # 合約的輸出（每個參數的原文與值）的 num_predict 上限
-MID_REPORT_LINES = 120       # 報告裡每一節最多列幾行（其他的看 #編號的原文）
-# 判斷節點（第 3 步 3b，agent_core/judge.py 與 mid.Worker._judgment）：模型看原文挑行、從技能列的分支選一條；程式核對。
-# 每個工作最多判斷幾次（另外算，不佔第 2 級的 MID_REPLAN_MAX）、交給判斷的原文最多幾個字、原文的一行最多幾個字、一次最多挑幾行：
-# 都是資源的上限（模型的上下文、輸出的長度），不是調來讓某一題過的門檻（〈新架構討論紀錄〉第 4 節〈第 3 步 3b〉）。
-MID_JUDGE_MAX = 4
-MID_JUDGE_CHARS = 16000
-MID_JUDGE_LINE_CHARS = 400
-MID_JUDGE_LINES = 12
-# 判斷用的模型（D8：可以另外設定）；空字串＝中階的模型（MID_MODEL，再空就是主對話的模型）。
-MID_JUDGE_MODEL = os.environ.get("AGENT_MID_JUDGE_MODEL", "").strip()
-MID_JUDGE_PREDICT = 2000     # 判斷的輸出（理解＋挑的行＋分支與參數＋理由）的 num_predict 上限
 
-# 🧷 主對話與子工作階段回覆的字串上限（schemas.agent_reply_schema；資源的上限，跟其他 schema 的字串一樣：小模型偶爾在字串裡一直重複同一段，
-# 沒有上限時一次寫兩萬多個 token、寫到 JSON 解析不了，第 5 步 5-1 的評測）。Ollama（llama.cpp 的文法）只照 2000 字以內的 maxLength 截斷，
+# 🧷 主對話與領域 session 回覆的字串上限（schemas；資源的上限，跟其他 schema 的字串一樣：小模型偶爾在字串裡一直重複同一段，
+# 沒有上限時一次寫兩萬多個 token、寫到 JSON 解析不了）。Ollama（llama.cpp 的文法）只照 2000 字以內的 maxLength 截斷，
 # 超過 2000 的上限不會套用（實測 1999 照截、2001 不截；schema 的其他部分照樣強制），所以上限都在 2000 以內（SCHEMA_MAX_CHARS）。
-# 2026-11-19 全部評測紀錄裡最長的：thought 1444、command 35、args 971 字。reply 是給使用者的回答，可能比 2000 字長（列出很多行、整理報告），
-# 不設上限（評測紀錄裡沒有在 reply 裡一直重複的）。寫到上限＝輸出被截斷：重問一次，還是寫到上限就不執行那個動作
-# （conversation.ask_ai、sub.Session._ask、protocol.drop_cut）。
+# 主對話的 reply 是給使用者的回答，可能比 2000 字長，不設上限。寫到上限＝輸出被截斷：重問一次，還是寫到上限就不執行那個動作
+# （conversation.ask_ai、domain_session.DomainSession._ask、protocol.drop_cut）。
 SCHEMA_MAX_CHARS = 2000
 REPLY_THOUGHT_CHARS = 2000
 REPLY_COMMAND_CHARS = 200
 REPLY_ARGS_CHARS = 2000
 
-# 🗺️ 新架構的高階（agent_core/orchestrator.py，D10 第 4 步）：主對話就是高階（D1）。skills_system/DOMAIN.md 列領域（每個領域一行，
-# 連到它的 SKILLS.md）與〈共用的工具〉；主模型在回覆的 action 填「分工」{"domains": [{"domain", "goal", "items"}, …]}（第 5 步 5-3：
-# 要用的領域一次選出來，每個領域各自的子目標），程式核對之後照順序交給中階或子工作階段。
+# 🗺️ 交辦（agent_core/orchestrator.py、domain_session.py；docs/框架討論紀錄.md）：skills_system/DOMAIN.md 列領域（每個領域一行，
+# 連到它的 SKILLS.md）與〈共用的工具〉；主模型在回覆的 action 填「交辦」{"task": {"goal", "items"}}，由領域 session 選領域、一次用一個技能做完。
 DOMAIN_INDEX_NAME = "DOMAIN.md"
-# 交給領域的結果（報告、要問使用者、沒有適合的做法…）的開頭：程式整理好的，不再交給提煉（protocol.is_exempt_result）
+# 交辦的結果（報告、要確認的事）的開頭：程式整理好的，不再交給提煉（protocol.is_exempt_result）
 DOMAIN_RESULT_HEAD = "[PASS] 🗺️ "
-# 交給領域時的欄位上限（schema 的長度與項目數；資源的上限，D7「各層之間都用有長度上限的 schema」）
+# 交辦時的欄位上限（schema 的長度與項目數；資源的上限）
 DOMAIN_GOAL_CHARS = 300
 DOMAIN_ITEM_CHARS = 120
 DOMAIN_ITEMS_MAX = 6
-# 一次分工最多幾個領域（領域有 5 個；一個問題要查的系統通常 1～3 個：檔案、正在跑的系統、調度系統）
-DOMAIN_PLAN_MAX = 4
-# 交給後面的領域「前面的領域查到的」：中階的報告沒有一項一項的回答，取報告的前面這麼多字（全文在 #編號，子工作階段可以用 result_view 看）
-DOMAIN_KNOWN_CHARS = 1500
-# 依報告回答（4-2，G4）：每一項的回答與出處的上限（回覆的 schema；回答要放得下報告列的每個檔案：20 行左右的完整路徑與次數）；
-# 使用者看到的回答由程式照項目排，每一項最多附幾行出處的原文（I.5）
+# 依報告回答：每一項的回答與出處的上限（回覆的 schema；回答要放得下報告列的每個檔案：20 行左右的完整路徑與次數）；
+# 使用者看到的回答由程式照項目排，每一項最多附幾行出處的原文
 DOMAIN_ANSWER_CHARS = 1500
 DOMAIN_REFS_MAX = 6
 DOMAIN_QUOTE_LINES = 3
-# 同一個項目在一個問題裡最多交給領域幾次（G5：資源的上限；跟這一回合交過的一模一樣的另外擋，4-1 的 J1）
+# 同一個項目在一個問題裡最多交辦幾次（資源的上限；跟這一回合交辦過的一模一樣的另外擋）
 DOMAIN_ITEM_TRIES = 3
-
-# 🧩 子工作階段（agent_core/sub.py，第 5 步）：沒有複合技能的領域、或中階沒有做完也沒有報告時（沒有適合的做法、失敗、使用者取消），
-# 用領域的工具一步一步做；自己的對話存在 logs/sub_jobs/<編號>/，主對話只收到程式整理的報告
-SUB_JOBS_DIRNAME = "sub_jobs"
-SUB_JOBS_KEEP = int(os.environ.get("AGENT_SUB_JOBS_KEEP", "300"))
-SUB_STEPS_MAX = 20           # 一個子工作階段最多幾步（資源的上限，跟主對話一個回合的步數上限同一級）；用完了照做到的收尾
-SUB_MODEL = os.environ.get("AGENT_SUB_MODEL", "")   # 子工作階段用的模型（空＝主模型；D8 第一版都用主模型）
+# 領域 session（agent_core/domain_session.py）：自己的對話存在 logs/domain_jobs/<編號>/，主 session 只收到程式整理的報告。
+# 都是資源的上限（F4：狀態與上限由程式管），不是調來讓某一題過的門檻：
+# 一次交辦最多用幾個技能、選了領域之後最多再選幾次、最多回幾輪（含被擋下、交回改的）；技能清單裡每個工具最多列幾種語法。
+DOMAIN_JOBS_DIRNAME = "domain_jobs"
+DOMAIN_JOBS_KEEP = int(os.environ.get("AGENT_DOMAIN_JOBS_KEEP", "300"))
+DOMAIN_STEPS_MAX = 10
+DOMAIN_RESELECT_MAX = 2
+DOMAIN_TURNS_MAX = 24
+DOMAIN_SYNTAX_LINES = 3
+DOMAIN_MODEL = os.environ.get("AGENT_DOMAIN_MODEL", "").strip()   # 領域 session 用的模型（空＝主對話的模型）
 
 # run_tool 載入技能規格文件時回傳字串的固定開頭。規格文件是「按需載入」機制的核心，
 # 內容（尤其是實際腳本路徑與參數格式）必須完整進入上下文，因此 _content_for_context

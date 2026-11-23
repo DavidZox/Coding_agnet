@@ -60,7 +60,7 @@ class ContextModeMixin:
     # ---------------------------------------------------------------- claude_code：原文進上下文
     def raw_result_for_context(self, result, tool_tokens, sub=False):
         """claude_code 模式下工具回傳怎麼進主對話：第一行註明存檔編號；不超過 RAW_RESULT_MAX_TOKENS 就是完整原文，
-        超過就保留頭尾（6:4），中間換成一行「省略多少、原文在哪、用什麼查」（sub：子工作階段，不寫它沒有的 result_recall）。不呼叫任何模型。
+        超過就保留頭尾（6:4），中間換成一行「省略多少、原文在哪、用什麼查」（sub：領域 session，不寫它沒有的 result_recall）。不呼叫任何模型。
         大量回傳（> TOOL_RESULT_TOKEN_THRESHOLD）照樣記進檢索清單，只是描述由程式組（使用者的問題＋執行的指令），
         不是 harness 模式那種獨立 session 寫的語意描述。"""
         rid = self.last_result_id

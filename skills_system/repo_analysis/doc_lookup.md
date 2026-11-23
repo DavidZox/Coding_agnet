@@ -1,7 +1,7 @@
 ---
 type: Skill
 title: 文件裡寫的規定
-description: 照指定的一份文件（規格書、手冊、說明）回答它寫了什麼：在文件裡搜問題提到的名稱，看原文挑出回答問題的那幾行（附檔案、行號）；文件提到別的編號或名稱時在同一份文件接著找
+description: 照指定的一份文件（規格書、手冊、說明）回答它寫了什麼：先找到那份文件，在裡面搜問題提到的名稱（同一行含最多個名稱的先列，附檔案、行號）
 version: 1.0.0
 answers: ["內容", "位置"]
 topology: {"depends_on": [], "sub_skills": ["search_text", "view_file"]}
@@ -15,20 +15,7 @@ parameters: [{"name": "doc", "type": "path", "required": true, "desc": "要讀�
 # 骨架
 ```json
 {"nodes": [
-  {"id": "hits", "tool": "search_text", "args": ["{words}", "{doc}", "--rank"], "expect": ["pass", "empty"],
-   "why": "在文件裡找問題提到的名稱（同一行含最多個名稱的先列）"},
-  {"id": "read", "kind": "judgment", "depends_on": ["hits"],
-   "goal": "從文件裡搜到的行挑出回答問題的那幾行（規定、狀態的轉移、數值與它們的編號）",
-   "labels": ["答案", "相關"],
-   "branches": [
-     {"id": "answered", "say": "挑出來的行回答了問題", "need_lines": true},
-     {"id": "follow", "say": "這些行提到別的編號或名稱，要在同一份文件接著找才回答得了", "params": [{"name": "names", "type": "words"}],
-      "add": [{"id": "more", "tool": "search_text", "args": ["{names}", "{doc}", "--rank"], "expect": ["pass", "empty"],
-               "why": "在同一份文件找判斷要接著找的名稱"}]},
-     {"id": "wider", "say": "要看某一行前後更多內容才看得懂（例如表格的標題、條文的上下文）",
-      "params": [{"name": "file", "type": "path"}, {"name": "line", "type": "line"}],
-      "add": [{"id": "around", "tool": "view_file", "args": ["{file}", "--around", "{line}", "-C", "15"], "why": "看判斷指定的那一行前後"}]},
-     {"id": "not_found", "say": "看過的行都沒有寫這件事"}]}
+  {"id": "hits", "tool": "search_text", "args": ["{words}", "{doc}", "--rank"], "expect": ["pass", "empty"], "why": "在文件裡找問題提到的名稱（同一行含最多個名稱的先列）"}
 ]}
 ```
 
@@ -41,4 +28,5 @@ parameters: [{"name": "doc", "type": "path", "required": true, "desc": "要讀�
 # 策略與 SOP
 1. 先找到那一份文件（原文寫的檔名；只寫「X 規格書」時找檔名就是 X 的文件，名稱只是含 X 的測試規格、報告不算）。
 2. 在文件裡搜問題提到的名稱：同一行含最多個名稱的最可能是答案（例如狀態轉移表裡同時有狀態與指令的那一行）。
-3. 回答照原文：挑出的行附檔案與行號，文件的編號照原文寫；文件沒寫的就說沒寫，不要用常識補。
+3. 文件提到別的編號或名稱時，照那個名稱在同一份文件再用一次；要看表格的標題、條文的上下文時用 view_file 看那一行前後。
+4. 回答照原文：附檔案與行號，文件的編號照原文寫；文件沒寫的就說沒寫，不要用常識補。

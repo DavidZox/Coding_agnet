@@ -1,5 +1,5 @@
-"""第一版領域的技能的收據（新架構 D4，skills_system/scripts/_receipt_common.py）：search_text、find_file、list_dir、view_file、
-code_ast_reader、result_list、result_grep、result_view，與 code_defs、py_refs（2026-11-21 加的，子工作階段用）。
+"""第一版領域的技能的收據（skills_system/scripts/_receipt_common.py）：search_text、find_file、list_dir、view_file、
+code_ast_reader、result_list、result_grep、result_view，與 code_defs、py_refs（領域 session 用）。
 
 每一種出口都記收據（pass、empty、error 與錯誤的種類）；數量跟給模型的文字一致；收據比文字完整（文字只列前幾筆，收據記全部）；
 給模型的文字有沒有寫收據都一模一樣；規格的 parameters、receipt 欄位跟腳本寫的一致，而且載入給模型時拿掉。
@@ -266,7 +266,7 @@ def t_code_ast_reader_refs():
     _error("code_ast_reader", "args", "m.py", "--refs", "a.b", d=d)
 
 
-# ---------------------------------------------------------------- code_defs、py_refs（2026-11-21 加的，子工作階段用）
+# ---------------------------------------------------------------- code_defs、py_refs（領域 session 用）
 def t_code_defs():
     """code_defs：數量跟標頭一致；每一個定義一筆（路徑、行號、結束的行、種類、名稱、qualname；行號從 def 那一行算，裝飾器另記），
     每份檔案的行數與數量（per_file）；文字只列前幾個時收據照樣全部記；沒有符合的檔案＝empty；路徑、選項錯＝args"""

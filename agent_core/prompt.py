@@ -2,7 +2,7 @@
 
 排列依「多久變一次」決定（Ollama 只重用跟上一次請求相同的開頭，從第一個不同的 token 開始全部重算）：
 - system prompt（get_system_prompt）只放不常變的：AGENT.md、目前上下文模式的規則、長期記憶、滾動摘要、
-  使用者原話、領域（新架構的高階，orchestrator.py）、技能索引（領域的工具不列）、工具使用檢索清單。清單一千多 tokens、只在跑完獨立 session 時多一筆，留在這裡最划算。
+  使用者原話、交辦（orchestrator.py）、技能索引（領域的工具不列）、工具使用檢索清單。清單一千多 tokens、只在跑完獨立 session 時多一筆，留在這裡最划算。
 - 動態區（build_state_tail）放小而常變的：Current Agent State、Objective、檢索清單最新一筆。
   每次呼叫只接在送出快照的最後一則訊息後面（ask_ai），不寫進 self.messages——切目錄不再讓整段歷史重算，
   而且它們離生成點最近，小模型最看得到。"""

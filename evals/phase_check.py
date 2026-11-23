@@ -1,15 +1,15 @@
 """每個階段結束時的持續驗證：跑一組固定的檢查，跟 evals/baselines/ 的基準逐項比，列出退步、變慢、禁止動作。
 
-    python3 evals/phase_check.py                  # 離線（約 2 分鐘）：技能、主對話、提煉、維運、數據分析、真實專案評測、低階執行器、中階的自我測試，評測的完整性
+    python3 evals/phase_check.py                  # 離線（約 2 分鐘）：技能、主對話、提煉、維運、數據分析、真實專案評測、低階執行器、交辦與領域 session 的自我測試，評測的完整性
                                                   #   （凍結的工具的自我測試也跑：harness 改壞它們還是擋得到）
     python3 evals/phase_check.py --model          # 再加上 harness 的真模型評測（約 100 分鐘）：提煉（26b、e4b）、主對話（e4b 11 個情境 ×3）、
-                                                  #   低階執行器的第 1 級修正（26b、e4b，11 題 ×3）、中階（26b、e4b，30 題 ×3）、
-                                                  #   真實專案（主對話接上新架構；26b、e4b，30 題 ×3）、
+                                                  #   低階執行器的第 1 級修正（26b、e4b，11 題 ×3）、
+                                                  #   真實專案（交辦與領域 session；26b、e4b，30 題 ×3）、
                                                   #   維運的檔案與調查（26b 23 個：檔案 12、保留組的檔案 4、調查與報告 7）
     python3 evals/phase_check.py --tools          # 凍結的工具（選用，2026-11 起不再開發）：技能接沙盒、容器技能、數據技能實機、數據分析回歸
     python3 evals/phase_check.py --tools --model  # 再加上維運的其他情境（26b 54 個：容器、ROS 2、調度交握、複合任務與它們的保留組）
     python3 evals/phase_check.py --only ops,extract --model     # 只跑某幾項（名稱見 summary.md 的第一欄括號）
-    python3 evals/phase_check.py --compare <結果目錄> [...]      # 不跑，只拿已經跑好的結果跟基準比（維運、主對話、提煉、第 1 級修正、中階、真實專案、數據分析回歸）
+    python3 evals/phase_check.py --compare <結果目錄> [...]      # 不跑，只拿已經跑好的結果跟基準比（維運、主對話、提煉、第 1 級修正、真實專案、數據分析回歸）
     python3 evals/phase_check.py --save-baseline <結果目錄> [...]  # 階段 commit 之後，用這幾次的結果更新基準（同一種的多個目錄合成一份）
     python3 evals/phase_check.py --save-baseline <phase_check 目錄> --only skills,chat_selftest,ops   # 只更新這幾項（其他的基準不動）
 
@@ -37,9 +37,8 @@ OFFLINE = [("skills", "技能自我測試", ["evals/skills/selftest.py"]),
            ("analysis_selftest", "數據分析自我測試", ["evals/analysis/selftest.py"]),
            ("repo_selftest", "真實專案評測的自我測試（核對、答案跟快照一致）", ["evals/repo/selftest.py"]),
            ("edg_selftest", "低階執行器的自我測試（照圖執行、守門、第 1 級）", ["evals/edg/selftest.py"]),
-           ("mid_selftest", "中階的自我測試（挑技能、合約、排圖、第 2 級、判斷、換技能、報告、上一次的經過、Web 的拓撲圖）", ["evals/mid/selftest.py"]),
-           ("orch_selftest", "高階的自我測試（領域、擋領域的工具、交給領域、問使用者的接回、第 3 級、依報告回答的核對與照項目排、帶著上一次的經過再交、"
-                             "子工作階段）", ["evals/orch/selftest.py"]),
+           ("domain_selftest", "交辦與領域 session 的自我測試（交辦一節、擋領域的工具、選領域與技能清單、有骨架的技能與回退、狀態與上限、"
+                               "確認關卡、提煉、依報告回答的核對）", ["evals/domain/selftest.py"]),
            ("integrity", "評測的完整性（模型會讀的文字沒有評測世界的名稱）", ["evals/integrity/selftest.py"])]
 TEST_CONTAINER = "cah_analysis_test"
 LIVE_DATA = ["/workspace/experiment_logs/gen/s1/gen_s1_005", "/workspace/experiment_logs/exp_5090_overheat"]
@@ -47,8 +46,7 @@ CHAT_SCENARIOS = ("fleet_battery,fleet_followup,followup_in_context,cross_sessio
                   "current_state_rerun,memory_stale_state,error_recovery,guard_dispatch,containers_basic")
 EXTRACT_MODELS = ("gemma4:26b", "gemma4:e4b")
 EDG_MODELS = ("gemma4:26b", "gemma4:e4b")   # 低階執行器的第 1 級修正（evals/edg/run.py；全部的題目各跑 3 次）
-MID_MODELS = ("gemma4:26b", "gemma4:e4b")   # 中階（evals/mid/run.py；真實專案評測的 30 題各跑 3 次）
-REPO_MODELS, REPO_RUNS = ("gemma4:26b", "gemma4:e4b"), 3   # 真實專案評測（evals/repo/run.py：主對話接上新架構，30 題；每個模型跑 3 次）
+REPO_MODELS, REPO_RUNS = ("gemma4:26b", "gemma4:e4b"), 3   # 真實專案評測（evals/repo/run.py：30 題；每個模型跑 3 次）
 OPS_MODEL, CHAT_MODEL = "gemma4:26b", "gemma4:e4b"
 # 維運情境分兩部分（2026-11 起 harness 是重點、其他工具凍結）：harness＝檔案（含保留組的檔案）與調查、整理報告（2026-11-18 起由主對話自己做），每個階段都跑；
 # 凍結的工具＝容器、ROS 2、調度交握、複合任務與它們的保留組，--tools 才跑
@@ -196,11 +194,6 @@ def suite_model(only, tools=False):
             rc, out = run([PY, "evals/edg/run.py", "--model", model, "--set", "all", "--runs", "3", "--tag", "phase"], timeout=3600)
             res.append(edg_result(report_dir(out), model) if report_dir(out) else
                        {"key": f"edg:{model}", "title": f"第 1 級修正（{model}）", "kind": "edg", "error": out[-600:]})
-    if want("mid"):
-        for model in MID_MODELS:
-            rc, out = run([PY, "evals/mid/run.py", "--model", model, "--set", "all", "--runs", "3", "--tag", "phase"], timeout=5400)
-            res.append(mid_result(report_dir(out), model) if report_dir(out) else
-                       {"key": f"mid:{model}", "title": f"中階（{model}）", "kind": "mid", "error": out[-600:]})
     if want("repo"):
         for model in REPO_MODELS:
             dirs, outs = [], []
@@ -303,21 +296,6 @@ def edg_result(d, model=None):
     return {"key": f"edg:{model}", "title": f"第 1 級修正（{model}）", "kind": "edg", "model": model, "dirs": [d], "per": per, "sets": sets}
 
 
-def mid_result(d, model=None):
-    """中階的評測：每一題每一層（挑技能、合約、最後的報告）[過了幾次, 跑了幾次]（該用的技能是 none 的題目沒有報告）、主要／保留組的合計。"""
-    per, sets = {}, {}
-    for r in _jsonl(os.path.join(d, "runs.jsonl")):
-        model = model or r.get("model")
-        s = r["score"]
-        got = {"skill": s["skill"], "params": s["params"]} | ({"final": s["final"]["passed"]} if s.get("final") is not None else {})
-        for layer, ok in got.items():
-            for bucket in (per.setdefault(r["id"], {}), sets.setdefault(r["set"], {})):
-                v = bucket.setdefault(layer, [0, 0])
-                v[0] += int(bool(ok))
-                v[1] += 1
-    return {"key": f"mid:{model}", "title": f"中階（{model}）", "kind": "mid", "model": model, "dirs": [d], "per": per, "sets": sets}
-
-
 def repo_result(dirs, model=None):
     """真實專案評測（好幾次一起）：每一題 [過了幾次, 跑了幾次]、主要／保留組的合計、每一次的主要組通過數（runs，照目錄的順序）。"""
     per, sets, runs = {}, {}, []
@@ -374,8 +352,6 @@ def classify(d):
         return "extract"
     if "_edg_" in base:
         return "edg"
-    if "_mid_" in base:
-        return "mid"
     if "_repo_" in base:
         return "repo"
     if base.startswith("analysis_"):
@@ -415,8 +391,6 @@ def from_dirs(dirs):
         res.append(extract_result(d))
     for d in groups.get("edg", []):
         res.append(edg_result(d))
-    for d in groups.get("mid", []):
-        res.append(mid_result(d))
     by_model = {}
     for d in groups.get("repo", []):                 # 同一個模型的幾次合成一份
         first = (_jsonl(os.path.join(d, "runs.jsonl")) or [{}])[0]
@@ -464,8 +438,6 @@ def compare(r):
         return compare_extract(r)
     if kind == "edg":
         return compare_edg(r)
-    if kind == "mid":
-        return compare_mid(r)
     if kind == "repo":
         return compare_repo(r)
     if kind == "analysis":
@@ -560,26 +532,6 @@ def compare_edg(r):
     return fmt(r["sets"]), (fmt(base.get("sets", {})) or "（沒有基準）"), ("⚠️" if notes else "✅"), notes
 
 
-MID_LAYERS = (("skill", "挑技能"), ("params", "合約"), ("final", "報告"))
-
-
-def compare_mid(r):
-    """每一題每一層的通過率不能比基準低；基準裡沒有的題目列出來。"""
-    base = ((load_baseline("mid") or {}).get("models") or {}).get(r["model"], {})
-    bper, notes = base.get("per", {}), []
-    for case, layers in sorted(r["per"].items()):
-        b = bper.get(case)
-        if not b:
-            notes.append(f"{case}：基準裡沒有")
-            continue
-        for layer, label in MID_LAYERS:
-            if layer in layers and layer in b and layers[layer][0] / layers[layer][1] < b[layer][0] / b[layer][1]:
-                notes.append(f"{case} {label}：{layers[layer][0]}/{layers[layer][1]}（基準 {b[layer][0]}/{b[layer][1]}）")
-
-    def fmt(sets):
-        return "；".join(f"{'主要' if s == 'main' else '保留'} " + "、".join(f"{label} {v[layer][0]}/{v[layer][1]}" for layer, label in MID_LAYERS
-                                                                         if layer in v) for s, v in sorted(sets.items(), key=lambda kv: kv[0] != "main"))
-    return fmt(r["sets"]), (fmt(base.get("sets", {})) or "（沒有基準）"), ("⚠️" if notes else "✅"), notes
 
 
 def compare_repo(r):
@@ -665,11 +617,6 @@ def save_baseline(results, label):
             old["models"][r["model"]] = {"per": r["per"], "sets": r["sets"], "runs": r["runs"],
                                          "label": f"{label}（{stamp}，{'、'.join(os.path.basename(d) for d in r['dirs'])}）"}
             write("repo", old)
-        elif r["kind"] == "mid":
-            old = load_baseline("mid") or {"models": {}}
-            old["models"][r["model"]] = {"per": r["per"], "sets": r["sets"],
-                                         "label": f"{label}（{stamp}，{os.path.basename(r['dirs'][0])}）"}
-            write("mid", old)
         elif r["kind"] == "analysis":
             old = load_baseline("analysis") or {"sets": {}}
             name = r["key"].split(":", 1)[1]

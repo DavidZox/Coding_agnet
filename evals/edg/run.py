@@ -1,4 +1,4 @@
-"""第 1 級修正的真模型評測（新架構 D10 第 2 步；題目在 evals/edg/cases.py）：一個工具節點故意錯一個參數，低階執行器
+"""第 1 級修正的真模型評測（題目在 evals/edg/cases.py）：一個工具節點故意錯一個參數，低階執行器
 （agent_core/edg.py）照收據判斷、交給修正的模型（prompts/edg/）修一次、程式核對後重跑；看修得好的有沒有修好、修不好的有沒有往上交。
 
     python3 evals/edg/run.py --model gemma4:26b               # 主要的題目

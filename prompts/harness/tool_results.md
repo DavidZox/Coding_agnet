@@ -1,5 +1,5 @@
 主對話收到工具結果時程式包上的字：每一則工具結果的框架句（agent_core/protocol.py 的 tool_result_message，前面的【系統回傳】是程式認的
-標記，留在程式裡）、使用者沒把結果加入時的通知、harness 模式沒有提煉時只給成功／失敗的那一則（agent_core/turn.py；子工作階段的
+標記，留在程式裡）、使用者沒把結果加入時的通知、harness 模式沒有提煉時只給成功／失敗的那一則（agent_core/turn.py；領域 session 的
 reduced_sub 只寫它能用的 result_grep、result_view）。{名稱} 是程式填的值。
 
 <!-- @frame -->

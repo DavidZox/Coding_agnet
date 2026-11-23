@@ -1,0 +1,170 @@
+@startuml
+' 從使用者的問題到答案（2026-11-23 的單一迴圈，docs/框架討論紀錄.md）：主 session 交辦 → 領域 session 每一輪回一個狀態
+' （選領域／用一個技能／回報）→ 報告交回主 session，照項目回答。
+' 來源：agent_core/orchestrator.py、domain_session.py、composite.py、edg.py 的模組說明；有骨架的技能各自的流程見〈複合技能_*〉。
+skinparam shadowing false
+skinparam defaultFontName "Microsoft JhengHei"
+skinparam ActivityFontSize 13
+skinparam ActivityDiamondFontSize 12
+skinparam NoteFontSize 12
+skinparam ArrowColor #555555
+
+title 從使用者的問題到答案（單一迴圈，2026-11-23）：主 session 把子目標與要回答的項目「交辦」給領域 session，\n領域 session 每一輪回一個狀態（選領域／用一個技能／回報），報告交回主 session 照項目回答\n藍＝程式做、橘＝模型做、綠＝程式核對、黃＝〈回退〉（程式照收據改做）、紅＝問使用者、紫＝存檔
+
+|使用者|
+|主 session（主模型）|
+|主 session 的程式（orchestrator.py）|
+|領域 session（模型）|
+|領域 session 的程式（domain_session.py）|
+|執行（composite.py → edg.py → 腳本）|
+|提煉（extract.py，獨立 session）|
+
+|使用者|
+start
+:問一個問題（自然語言）;
+
+|主 session（主模型）|
+:讀 system prompt（AGENT.md、記憶、
+「交辦」一節（每個領域一行）、
+技能索引（拿掉領域的工具）、工具使用檢索清單）
+與對話，回 JSON {thought, reply, action}; <<#FFE6CC>>
+if (action？) then (交辦)
+else (共用的工具（列目錄、找檔案、\n回顧存檔）或主 session 的工具)
+  :照舊執行（確認關卡、存檔 #編號、
+  太長的提煉），結果交回主模型
+  （見〈狀態轉移〉）; <<#DAE8FC>>
+  detach
+endif
+
+repeat
+  :交辦 {"task": {"goal", "items"}}
+  子目標（整件事）＋要回答的項目（1～6 項），
+  不指定領域、不寫步驟; <<#FFE6CC>>
+
+  |主 session 的程式（orchestrator.py）|
+  :核對交辦：子目標不是空的、項目 1～6、
+  跟這一回合交辦過的不一樣、同一個項目最多 3 次
+  （沒過 → [ERROR] 附下一步，交回主模型）; <<#D5E8D4>>
+  :開領域 session：子目標、項目、使用者的原始問題、
+  同一個問題之前交辦的經過（每一步的技能與結果）; <<#DAE8FC>>
+
+  |領域 session（模型）|
+  :state＝domains：選領域（可以好幾個）; <<#FFE6CC>>
+  note left
+    每一輪只回一個 JSON（固定格式）：
+    thought、state、domains、skill、
+    params、args、answers、reply；
+    state 是 domains／skill／report 之一，
+    程式照它核對、接著做（第一輪一定是 domains）；
+    不是 JSON、寫到上限被截斷的重問一次
+  end note
+
+  |領域 session 的程式（domain_session.py）|
+  :核對：在 DOMAIN.md 的清單裡 →
+  載入這些領域的技能清單：〈做法〉、
+  有骨架的技能（說明、什麼時候用、參數）、
+  工具（索引那一行與 args 的寫法）、共用的工具; <<#D5E8D4>>
+
+  |領域 session（模型）|
+  repeat
+    :state＝skill：從技能清單選一個技能
+    ・有骨架的技能：params 每個參數一筆
+      （name、value、一字不改的原文 quote）
+    ・工具：args 照它的寫法; <<#FFE6CC>>
+
+    |領域 session 的程式（domain_session.py）|
+    :核對：技能在選的領域的清單裡、
+    跟之前某一步不是一模一樣（一樣的附那一步的結果）；
+    沒過的交回改，不算一步; <<#D5E8D4>>
+    if (哪一種？) then (工具)
+      if (會改狀態（確認關卡）？) then (要確認)
+        :停下來（need_user）; <<#F8CECC>>
+        |主 session 的程式（orchestrator.py）|
+        :程式直接問使用者（不經過主模型）：
+        CLI 是／否（0＝取消）、Web 是／否／取消; <<#F8CECC>>
+        |使用者|
+        :回答;
+        |主 session 的程式（orchestrator.py）|
+        :接回同一步：同意＝執行；
+        不同意＝[DENIED] 交給領域 session；
+        取消＝照做到的收尾; <<#DAE8FC>>
+        |領域 session 的程式（domain_session.py）|
+      else (不用)
+      endif
+      |執行（composite.py → edg.py → 腳本）|
+      :照工具的寫法執行（跟主 session 同一條路）：
+      腳本 → 存檔 #編號＋收據、狀態標記的同步
+      （只能用選的領域的工具與共用的工具）; <<#DAE8FC>>
+    else (有骨架的技能)
+      |領域 session 的程式（domain_session.py）|
+      :合約：每個參數的原文一字不改地在問題、
+      子目標、項目或前面的結果裡，值照種類
+      對得上原文（沒過交回改，不算一步）; <<#D5E8D4>>
+      |執行（composite.py → edg.py → 腳本）|
+      :composite.py 補齊參數：沒寫的用預設值；
+      路徑找不到時照 fetch 找一次（剛好一個就自己補）
+      →〈骨架〉代入參數排成圖（只有工具節點）; <<#DAE8FC>>
+      :edg.py 照圖一個一個執行工具節點：
+      parse_args 檢查參數 → 腳本 →
+      存檔 #編號＋收據 → 照收據守門 →
+      第 1 級修正（參數錯、逾時，各修一次）; <<#DAE8FC>>
+      :〈回退〉照收據比對條件：add 加節點重排、
+      switch 換技能、ask 不問使用者 → need
+      （重排與換技能合計最多 3 次）; <<#FFF2CC>>
+      :技能的結果：狀態、回退的經過、自己補的參數、
+      need（缺參數、路徑有好幾個、要縮小範圍：
+      說明與候選）、每個節點的結果 #編號; <<#DAE8FC>>
+    endif
+
+    |提煉（extract.py，獨立 session）|
+    if (結果太長？（harness 模式：超過 500 tokens）) then (是)
+      :分段提煉（錨點＝子目標與項目）：
+      程式照結構切段 → 每段一個 worker（附行號）
+      → 整合；程式核對寫的數字、名稱與行號，
+      照收據附 檔案:行號; <<#FFE6CC>>
+    else (否：原文)
+    endif
+
+    |領域 session 的程式（domain_session.py）|
+    :這一步的結果交給領域 session（每份附 #編號）; <<#DAE8FC>>
+
+    |領域 session（模型）|
+    :看了結果，決定下一步; <<#FFE6CC>>
+  repeat while (下一個 state？) is (skill：再用一個技能\n／domains：再選領域（程式重新載入技能清單，最多再選 2 次）) not (report（或用到上限：10 個技能、24 輪）)
+
+  :state＝report：answers 照項目一項一筆
+  （answered／not_found、回答、出處：#編號
+  或結果列的 檔案:行號）; <<#FFE6CC>>
+
+  |領域 session 的程式（domain_session.py）|
+  :核對 answers（answers.py）：每一項都有、出處是
+  這個 session 的結果、回答的數字與名稱在出處裡、
+  查不到的寫原因（沒過的交回修一次）; <<#D5E8D4>>
+  :報告 report.md：每一項的回答、出處那一行的原文、
+  做了哪些步驟（數據分析的報告原樣附上）; <<#DAE8FC>>
+  :logs/domain_jobs/<編號>/：job.json（每一步的領域、
+  技能、參數與原文、核對、結果的 #編號）、
+  calls.jsonl、events.jsonl、report.md; <<#E1D5E7>>
+
+  |主 session 的程式（orchestrator.py）|
+  :報告存成 #編號交回主模型（程式整理好的，不再提煉）
+  ＋這一回合要回答的項目; <<#DAE8FC>>
+
+  |主 session（主模型）|
+repeat while (報告答到每一項了？) is (還缺：只帶沒答到的項目再交辦\n（程式附上一次的經過）) not (答到了，或查不到)
+
+:照報告一項一項回答：answers
+（answered／not_found、回答、出處）; <<#FFE6CC>>
+
+|主 session 的程式（orchestrator.py）|
+:核對 answers：每一項都有、出處在報告或這一回合的
+工具結果裡、數字與名稱在出處那幾段裡、
+查不到的寫原因（沒過的只把那幾項交回修一次）; <<#D5E8D4>>
+:照項目排好：每一項的回答與出處、
+出處那一行的原文（最多 3 行）；
+修過還是沒過的標「沒有通過核對」; <<#DAE8FC>>
+
+|使用者|
+:看到每一項的答案與出處;
+stop
+@enduml

@@ -168,7 +168,7 @@ def handle_slash_command(message, events):
     if lower == "/model" or lower.startswith(("/model ", "/think")):
         return _handle_model_command(text, events)
     if lower == "/clear":
-        agent.reset_conversation()    # 中階還在等使用者回答的話一起取消（agent.cancel_domain）
+        agent.reset_conversation()    # 領域 session 還在等使用者確認的話一起取消（agent.cancel_domain）
         clear_pending()
         events.append({"channel": "system", "text": "🧹 記憶已清空。"})
         return True

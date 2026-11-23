@@ -1,6 +1,6 @@
-"""依報告回答的核對（4-2，agent_core/orchestrator.py）與子工作階段收尾的核對（第 5 步，agent_core/sub.py）共用的部分：
+"""依報告回答的核對（agent_core/orchestrator.py）與領域 session 回報的核對（agent_core/domain_session.py）共用的部分：
 出處的寫法（檔案:行號、#編號）、照收據從檔案讀那幾行、answers 每一項的核對（answer_problems）、相近的寫法、顯示用的出處。
-兩邊只差「出處要在哪裡」：主對話的出處在這一回合的報告與自己執行過的工具結果，子工作階段的出處在它自己執行過的工具結果（cited 由呼叫的一方給）。"""
+兩邊只差「出處要在哪裡」：主對話的出處在這一回合的報告與自己執行過的工具結果，領域 session 的出處在它自己執行過的工具結果（cited 由呼叫的一方給）。"""
 import difflib
 import json
 import os
@@ -136,14 +136,14 @@ def answer_problems(items, answers, cited, allowed, source, unknown=None):
     """answers 每一項的核對（G4 的步驟 7）→ {項目編號: [沒過的原因]}；全部過了是空的。
     items：要回答的項目；answers：parse 過的每一項 {item, status, text, refs}；cited(ref) → (種類, 對到的行, 那幾段的文字, 行號)，
     種類是 line／id／unknown（不在該在的地方）／form（寫法看不懂）；allowed：本來就有的字（問題、項目、子目標），不核對；
-    source：全部的原文（名稱的寫法看它）；unknown(ref)：出處不在該在的地方時的說法（子工作階段換成自己的，預設是 why_ref_unknown）。"""
+    source：全部的原文（名稱的寫法看它）；unknown(ref)：出處不在該在的地方時的說法（領域 session 換成自己的，預設是 why_ref_unknown）。"""
     got = {a["item"]: a for a in answers or [] if 1 <= a["item"] <= len(items)}
     out = {}
     for k, _item in enumerate(items, 1):
         a, bad_why = got.get(k), []
         if a is None:
             bad_why.append(why("why_missing"))
-        elif a["status"] in ("not_found", "out_of_domain"):      # 不屬於這個領域（子工作階段，5-3）跟查不到一樣要寫理由
+        elif a["status"] == "not_found":                         # 查不到要寫理由
             if not a["text"]:
                 bad_why.append(why("why_no_reason"))
         else:

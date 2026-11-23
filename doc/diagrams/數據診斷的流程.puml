@@ -11,8 +11,9 @@ title 數據分析（事實報告）：問題 → 資料預備＋量全部 Topic
 
 partition "收到問題" {
 start
-:主對話的 AI 呼叫 analysis_run（偽技能，在本程式內執行，不用使用者確認）
-／Web 的分析模式、/analyze <問題>；CLI：/analyze <問題>
+:主對話的 AI 交辦 → 領域 session 選 data_analysis、用 analysis_run
+（偽技能，在本程式內執行，不用使用者確認）
+／Web 的分析模式、/analyze <問題>；CLI：/analyze <問題>（使用者直接指定，不經過模型）
 參數：~--data（實驗資料夾、bag、切片、實驗名稱、latest；省略＝目前的數據）、
 ~--topic（使用者特別問到的 Topic：它的事實完整列在報告最前面）
 問題省略＝這段錄製期間發生了哪些狀態變化; <<#DDEBF7>>
@@ -58,7 +59,8 @@ partition "③ 報告（程式）" {
 :report.md（Frontmatter Markdown）：重點＋各 Topic 的結果＋時間線＋同時發生的變化＋
 前後沒有任何 Topic 事件的 Log＋沒有量的 Topic＋資料來源；
 回到主對話的版本：指定的 Topic、重點（每則下面列那一刻的 Log 與事件）、有變化的 Topic、
-重點沒有引用的時間線…；存成 #編號（之後可以 result_recall）; <<#DDEBF7>>
+重點沒有引用的時間線…；存成 #編號（之後可以 result_recall）；
+交辦時原樣附在領域 session 的報告裡交回主對話; <<#DDEBF7>>
 note right
   全部產物：job.json（事實、重點、報告的資料）、events.jsonl（進度）、
   topic_facts.json、log_digest.md、topic_metadata.md、report.md。
@@ -68,10 +70,11 @@ end note
 
 partition "④ 主對話：依報告回答、討論（模型）" {
 :主對話的 AI 依報告回答使用者的問題；要細看某個 Topic、某段時間、某則 Log，
-自己用數據技能（mcap_feature_measure、mcap_analyzer、rosout_parser、mcap_slicer）；
+再交辦（領域 session 用數據技能：mcap_feature_measure、mcap_analyzer、rosout_parser、mcap_slicer）；
 問「為什麼」時照事實說明發生了什麼與先後順序，並說明原因要對照源碼; <<#FCE5CD>>
 :程式核對回答：寫了報告裡沒有的因果動詞（導致、造成、觸發…），或寫的變化、值、
-「回到初始」跟報告的事實對不上 → 提醒一次。執行報告的那一回合核對整個回答；
+「回到初始」跟報告的事實對不上 → 提醒一次。執行報告的那一回合核對整個回答
+（依交辦的報告回答時，answers 每一項的回答也一起核對）；
 之後的回合（追問、討論）核對寫到報告的那幾行（報告裡的編號、Topic、+秒），
 直到下一份報告或 /clear; <<#E2EFDA>>
 stop
@@ -82,7 +85,7 @@ legend bottom
   ・程式（不呼叫模型）：Log 去重、量全部 Topic 的全部 Key、事實的整理（編號、類別、事件、到最後的值、時間線、時間上的對照、同時發生）、
     重要的時間點與重點、報告組合
   ・程式核對：主對話依報告的回答不寫因果、不寫錯事實（agent_core/claims.py）
-  ・模型：主對話理解使用者的問題、依報告回答與討論、用數據技能細看
+  ・模型：主對話理解使用者的問題、交辦、依報告回答與討論；領域 session 選 analysis_run、用數據技能細看
   原因要對照源碼另外分析（第九輪以前的做法在 doc/archive/root_cause_reference/）；
   第十一、十二輪由 Orchestrator → Workers → Synthesizer 寫說明與重點，2026-10-23 改成全部由程式做（設計筆記 2.15〈九〉）
 endlegend

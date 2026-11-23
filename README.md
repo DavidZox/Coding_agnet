@@ -2,26 +2,21 @@
 
 以本地 Ollama 模型（預設 `gemma4:e4b`）為核心的 agent harness，有 CLI 與 Web 兩種介面；決策模型只用本地模型（離線的工廠環境）。
 
-- **新架構**：高－中－低三層（領域路由、技能合約與 SOP、照收據執行的決策圖）與三級回退；
-  構想在 `docs/`，討論與決定在〈[新架構討論紀錄](docs/新架構討論紀錄.md)〉。做好的：評測（`evals/repo/`）、第一版領域技能的收據、
-  低階執行器（`agent_core/edg.py`：照圖執行、照收據守門、第 1 級修正、重排）、中階（`agent_core/mid.py`：挑複合技能、合約、
-  照骨架排圖、第 2 級的回退與換技能、判斷節點——模型看原文挑行、選路，程式核對，`agent_core/judge.py`；領域 `skills_system/repo_analysis/` 的
-  `py_usage`、`count_in_scope`、`find_lines`、`doc_lookup`、`cpp_symbol`、`config_trace`）、高階（`agent_core/orchestrator.py`：主對話就是高階，
-  照 `skills_system/DOMAIN.md` 分工——要用的領域一次選出來、每個領域各自的子目標，照順序做、後面的領域收到前面查到的（第 5 步 5-3）——依報告回答：每一項的回答與出處由程式核對、
-  照項目排好給使用者（附出處那一行的原文）；再交給領域時帶著上一次的經過（中階從挑技能、合約重新規劃，一樣的做法由程式擋）；中階要問使用者時由程式轉問、接回；
-  領域的工具與複合技能不給主對話直接用；列目錄、找檔案是共用的工具）、子工作階段（`agent_core/sub.py`：中階沒有適合的做法、
-  失敗或使用者取消時，程式接著開一個自己的對話，用這個領域的工具一步一步做，只做自己的子目標、不屬於這個領域的一項一項說出來，會改狀態的先問使用者，
-  做完由程式核對回答、整理成報告交回主對話；查不到、不屬於的每一項都寫明哪個領域查得到（schema 的欄位，第 5 步 5-4），程式列給主對話再分工）、
-  凍結的工具登記成四個領域（`robotics_infra` 容器與 ROS 2、`rmf_dispatch` 調度系統、`data_analysis` 錄製的數據、`multimodal` 音檔與影像檔；
-  還沒有複合技能，交給它們的問題直接開子工作階段，現在的做法寫在各領域 `SKILLS.md` 的〈做法〉；主對話不直接用它們，
-  `/analyze` 是使用者直接指定的，照舊直接執行）、
-  Web 的決策圖（`/topology`，唯讀：中階、子工作階段與低階執行過的工作，每一版的圖、每一步、回退、問使用者與判斷；交給領域時對話裡附連結）。下面寫的是現在的程式。
-- **harness 本身**（新架構沿用的基礎；目標是找檔案、文件與程式分析做到穩定）：一次一個動作的主對話迴圈、會改變狀態的動作先問使用者
+- **框架**（2026-11-23 起；討論與決定在〈[框架討論紀錄](docs/框架討論紀錄.md)〉）：主 session 把要用技能的事「交辦」給**領域 session**
+  （`agent_core/domain_session.py`）——它先選領域（`skills_system/DOMAIN.md`，可以多個），再從那些領域的技能清單一次用一個技能：
+  有骨架的技能（`agent_core/composite.py`；`skills_system/repo_analysis/` 的 `py_usage`、`count_in_scope`、`find_lines`、`doc_lookup`、
+  `cpp_symbol`、`config_trace`：參數附原文由程式核對，程式照骨架執行（低階執行器 `agent_core/edg.py`：照收據守門、第 1 級修正）、照收據套用回退），
+  或單步的工具（跟主對話同一條路：確認關卡、存檔 `#編號`、收據）。太長的結果分段提煉；看了結果再決定下一步（再用一個技能、再選領域或回報），
+  每一步的狀態由程式管、全部存檔（`logs/domain_jobs/`）。回報的每一項附出處、由程式核對，報告交回主 session，主 session 照項目回答
+  （程式核對、附出處那一行的原文）。凍結的工具登記成四個領域（`robotics_infra` 容器與 ROS 2、`rmf_dispatch` 調度系統、`data_analysis`
+  錄製的數據、`multimodal` 音檔與影像檔；現在的做法寫在各領域 `SKILLS.md` 的〈做法〉；`/analyze` 是使用者直接指定的，照舊直接執行）。
+  2026-11-18～23 的三階層（高階分工、中階、子工作階段）試過的與教訓在〈[設計筆記](doc/設計筆記與已知限制.md)〉2.55。
+- **harness 本身**（框架沿用的基礎；目標是找檔案、文件與程式分析做到穩定）：一次一個動作的主對話迴圈、會改變狀態的動作先問使用者
   （確認關卡）、**多段處理長內容**（太長的工具輸出由程式切段、每段一個 worker 提煉、每條事實附行號由程式核對）、**存檔與回顧**（每次的
-  原文存成 `#編號`，之後用 `result_recall` 等回到原文）。多步驟的任務由主對話分給領域，在中階或子工作階段裡做；主對話自己留著的工具（共用的工具、change_dir、file_ops、csv_query、host_runcmd）照舊一次一個動作。
+  原文存成 `#編號`，之後用 `result_recall` 等回到原文）。要用領域的技能的事交辦給領域 session；主對話自己留著的工具（共用的工具、change_dir、file_ops、csv_query、host_runcmd）照舊一次一個動作。
 - **凍結的工具**（照現在的樣子保留、能用，不再開發；〈[架構說明 §14](doc/架構說明.md#14-凍結的工具2026-11-17-起不再開發)〉）：
   ROS 2／MCAP 的數據解析（`analysis_run`：程式整理的事實報告）、機器人維運（Docker 容器、容器內的 ROS 2、fih_rmf_system 的調度系統）、
-  視覺（Web 附圖、`image_inspect`、框選小工具）與語音轉文字。登記成新架構的領域，在子工作階段裡用（第 5 步 5-2）。
+  視覺（Web 附圖、`image_inspect`、框選小工具）與語音轉文字。登記成領域，交辦給領域 session 用。
 
 核心想法是**模型不寫程式、只挑技能**：可用的能力是一份技能索引，加上按需載入的規格與既有腳本；會改變實體狀態的動作（派工單、
 建容器、容器內非唯讀的指令…）執行前一律由程式請使用者確認。
@@ -41,9 +36,8 @@ python3 -m vision.sniper    # 獨立的「截圖 → 框選 → 視覺推論」�
 
 Web 左欄是對話，右欄是系統與工具回傳（另一個分頁是「📊 數據分析」面板）：每次工具回傳有兩張卡，一張是完整原文（附 `#編號`），一張是
 「AI 實際收到的內容」。輸入框打 `/` 會跳出指令與技能選單，旁邊有附圖（📷）與 📊 分析模式按鈕；標題列顯示目前的
-目標容器、ROS 2 Workspace 與目前分析的數據，🧠 設定主對話的模型。標題列的「🔗 決策圖」打開 `/topology`（唯讀）：新架構的中階、子工作階段與低階執行過的
-工作（正式的 `logs/` 與評測結果），流程（挑技能 → 合約 → 補參數 → 每一版的圖 → 結果）與決策圖；點節點或邊看每一次嘗試、收據、修正，
-回退與問使用者畫成虛線。
+目標容器、ROS 2 Workspace 與目前分析的數據，🧠 設定主對話的模型。交辦之後領域 session 碰到會改狀態的工具時，左欄出現要確認的卡片，
+下方按是／否或取消。
 
 | 常用指令 | 作用 |
 |---|---|
@@ -120,7 +114,7 @@ Web 左欄是對話，右欄是系統與工具回傳（另一個分頁是「📊
 | 分類 | 技能 |
 |---|---|
 | ROS 2 數據解析（凍結；領域 `data_analysis`） | `analysis_run`（程式整理的事實報告）、`mcap_recorder`、`rosout_parser`、`mcap_analyzer`、`mcap_feature_measure`、`mcap_slicer` |
-| 檔案系統 | `list_dir`、`search_text`、`find_file`、`change_dir`、`view_file`、`code_ast_reader`、`code_defs`、`py_refs`、`host_runcmd`、`file_ops`、`csv_query`（`code_defs`、`py_refs` 是領域 `repo_analysis` 的工具，子工作階段用） |
+| 檔案系統 | `list_dir`、`search_text`、`find_file`、`change_dir`、`view_file`、`code_ast_reader`、`code_defs`、`py_refs`、`host_runcmd`、`file_ops`、`csv_query`（`search_text`、`view_file`、`code_ast_reader`、`code_defs`、`py_refs` 是領域 `repo_analysis` 的工具，領域 session 用） |
 | 容器（凍結；領域 `robotics_infra`） | `docker_containers`、`docker_images`、`docker_est`、`docker_open`、`docker_runcmd`、`docker_ctl`、`ROS2_workspace_env` |
 | ROS 2（容器內，凍結；領域 `robotics_infra`） | `ROS2_domain_id`、`ROS2_topic_list`、`ROS2_topic_echo`、`ROS2_node_list`、`ROS2_node_info`、`ROS2_param`、`ROS2_topic_pub` |
 | 調度系統（凍結；領域 `rmf_dispatch`） | `workpackage_send`、`workpackage_status`、`workpackage_cancel`、`overpending_cancel`、`semantic_map`、`rmf_handshake` |
@@ -140,10 +134,9 @@ Web 左欄是對話，右欄是系統與工具回傳（另一個分頁是「📊
 | 數據解析 | `evals/analysis/selftest.py`、`evals/datagen/check_facts.py` | `evals/analysis/regression.py`（這台的實錄與隨機情境產生器 `evals/datagen/` 的錄製；不呼叫模型，要容器）、`evals/analysis/tools_live.py` |
 | 多步驟維運 | `evals/ops/selftest.py`（維運技能） | `evals/ops/run.py`（Docker-in-Docker 沙盒裡真的執行） |
 | 提煉 | `evals/chat/extract_selftest.py` | `evals/extract/run.py`（已知答案的長輸出） |
-| 真實專案（新架構的評測） | `evals/repo/selftest.py`（核對、答案跟固定版本的快照一致） | `evals/repo/run.py`（amr_base 三個套件的 30 題，答案由程式算） |
-| 低階執行器（新架構） | `evals/edg/selftest.py`（寫好的圖、假的修正模型） | `evals/edg/run.py`（第 1 級修正：故意錯一個參數，看修好或往上交） |
-| 中階（新架構） | `evals/mid/selftest.py`（假的模型、真的工具與低階執行器） | `evals/mid/run.py`（真實專案的 30 題：挑技能、合約、判斷、最後的報告分開量） |
-| 高階與子工作階段（新架構） | `evals/orch/selftest.py`（假的主模型與中階的模型、真的中階、低階與工具） | —（真模型看 `evals/repo/run.py`） |
+| 真實專案 | `evals/repo/selftest.py`（核對、答案跟固定版本的快照一致） | `evals/repo/run.py`（amr_base 三個套件的 30 題，答案由程式算） |
+| 低階執行器 | `evals/edg/selftest.py`（寫好的圖、假的修正模型） | `evals/edg/run.py`（第 1 級修正：故意錯一個參數，看修好或往上交） |
+| 交辦與領域 session | `evals/domain/selftest.py`（假的主模型與領域 session 的模型、真的有骨架的技能、低階與工具） | —（真模型看 `evals/repo/run.py`） |
 | 評測的完整性 | `evals/integrity/selftest.py`（模型會讀的文字沒有評測世界的名稱） | — |
 | 每個階段結束 | `evals/phase_check.py`（離線） | `evals/phase_check.py --model`（harness 的真模型評測，跟 `evals/baselines/` 逐項比；凍結的工具加 `--tools`） |
 
@@ -155,8 +148,8 @@ Web 左欄是對話，右欄是系統與工具回傳（另一個分頁是「📊
 Coding_agnet/            （資料夾名稱沿用；原本的 coding agent 已移到 ~/Coding_agent_harness）
 ├── Agent_Runner.py      CLI 入口（實作在 agent_core/cli.py）
 ├── web_console.py       Web 入口（實作在 web_app/）
-├── agent_core/          核心：SkillAgent（由各 mixin 組成）、回覆協議、常數；analysis_job.py＝數據解析、extract.py＝工具回傳的提煉、edg.py＝新架構的低階執行器、mid.py＝中階、judge.py＝中階的判斷節點（原文與核對）、orchestrator.py＝高階（交給領域）、sub.py＝子工作階段、answers.py＝依報告回答的核對
-├── web_app/             Web 介面（純標準庫）：回合流程、slash 指令、HTTP、static/index.html；analysis.py＝📊 面板的後端；topology.py 與 static/topology.html＝決策圖
+├── agent_core/          核心：SkillAgent（由各 mixin 組成）、回覆協議、常數；analysis_job.py＝數據解析、extract.py＝工具回傳的提煉、orchestrator.py＝主 session 這一側的交辦、domain_session.py＝領域 session、composite.py＝有骨架的技能、edg.py＝低階執行器、answers.py＝依報告回答的核對
+├── web_app/             Web 介面（純標準庫）：回合流程、slash 指令、HTTP、static/index.html；analysis.py＝📊 面板的後端
 ├── prompts/             給模型的文字，全部在這裡（可以直接改，不用改程式；README.md＝每個檔案給誰、範本的寫法）
 │   ├── AGENT.md         主對話的 system prompt
 │   ├── Memory.md        長期記憶（modify_memory 寫入，每輪常駐）
@@ -164,25 +157,26 @@ Coding_agnet/            （資料夾名稱沿用；原本的 coding agent 已�
 │   ├── harness/         程式組進主對話的字：system prompt 各節、檢索清單、動態區、工具結果的包裝、提醒、下一步建議…
 │   ├── summary/         滾動摘要
 │   ├── extract/         工具回傳的提煉：worker、整合、user 訊息的標籤
-│   ├── edg/、mid/、sub/ 新架構：低階執行器的第 1 級修正、中階的挑技能、合約與判斷、子工作階段
+│   ├── domain/          領域 session：system prompt、技能清單、每一步的結果、擋下與交回改的說明、合約的核對
+│   ├── edg/             低階執行器的第 1 級修正
 │   └── vision/          附圖的影像提取
-├── skills_system/       技能：SKILLS.md（索引）、tools/（規格）、scripts/（腳本與共用模組）、DOMAIN.md（新架構的領域清單）、repo_analysis/（領域：索引與複合技能）、robotics_infra/、rmf_dispatch/、data_analysis/、multimodal/（凍結的工具登記成的領域：索引與〈做法〉）
+├── skills_system/       技能：SKILLS.md（索引）、tools/（規格）、scripts/（腳本與共用模組）、DOMAIN.md（領域清單）、repo_analysis/（領域：索引與有骨架的技能）、robotics_infra/、rmf_dispatch/、data_analysis/、multimodal/（凍結的工具登記成的領域：索引與〈做法〉）
 ├── vision/              視覺模態：擷取、推論、提取、Web 的框選（web/）、sniper.py（獨立的框選小工具）
-├── evals/               評測：chat/、skills/、analysis/、datagen/、ops/、extract/、repo/、edg/、mid/、orch/、integrity/、phase_check.py、baselines/；
+├── evals/               評測：chat/、skills/、analysis/、datagen/、ops/、extract/、repo/、edg/、domain/、integrity/、phase_check.py、baselines/；
 │                        results/（.gitignore）
 ├── doc/                 文件（現在的程式）；diagrams/（圖的 .puml）、images/（產生的 PNG）、archive/（第一～九輪的根因版本，只供閱讀）
-├── docs/                新架構：使用者的構想（三份 HTML）與〈新架構討論紀錄.md〉
+├── docs/                〈框架討論紀錄.md〉：單一迴圈的框架的討論與決定
 ├── test_data/           實機錄製、正確答案、回歸工具（只在本機，.gitignore）
 └── logs/                執行時產生：工具回傳存檔、檢索清單、軌跡、摘要、extract_jobs/、analysis_jobs/、
-                         edg_jobs/、mid_jobs/、sub_jobs/（.gitignore）
+                         domain_jobs/、edg_jobs/（.gitignore）
 ```
 
 ## 文件
 
-- 〈[架構說明](doc/架構說明.md)〉：每個模組負責什麼、一回合怎麼跑、狀態存在哪裡、要改某件事該看哪裡；數據解析在 §13、凍結的工具在 §14、新架構的低階、中階、高階與子工作階段在 §15～§18
+- 〈[架構說明](doc/架構說明.md)〉：每個模組負責什麼、一回合怎麼跑、狀態存在哪裡、要改某件事該看哪裡；數據解析在 §13、凍結的工具在 §14、低階執行器在 §15、有骨架的技能在 §16、交辦與領域 session 在 §17
 - 〈[設計筆記與已知限制](doc/設計筆記與已知限制.md)〉：各機制的理由與實測數據、完整技能清單、已知限制、未來方向
 - 〈[技能撰寫規範](doc/技能撰寫規範.md)〉：新增或修改技能腳本的規則與怎麼測
-- 〈[待辦清單](doc/待辦清單.md)〉：已記錄、還沒做的——新架構（目前的重點）、凍結的工具的下一步
+- 〈[待辦清單](doc/待辦清單.md)〉：已記錄、還沒做的——框架的步驟（目前的重點）、凍結的工具的下一步
 - 〈[長期願景](doc/長期願景.md)〉：AGV/AMR 車隊調度場景的構想、心跳機制與定時任務要注意的事
 - 〈[評測](evals/README.md)〉、〈[隨機情境的錄製產生器](evals/datagen/README.md)〉
 - 圖的來源在 `doc/diagrams/`，怎麼重新產生見〈[文件導覽](doc/README.md)〉

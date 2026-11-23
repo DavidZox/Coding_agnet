@@ -98,7 +98,6 @@ def eval_names():
     add("設定名稱", re.findall(r"^\s*-?\s*([a-z]+_[a-z0-9_]+):", world_text, re.M))
     add("真實專案的答案", repo_answer_names())
     add("低階執行器評測的參數", edg_case_names())
-    add("中階評測的參數", mid_case_names())
     return names
 
 
@@ -129,21 +128,6 @@ def edg_case_names():
             if len(a) >= 5 and re.fullmatch(r"[/A-Za-z_][\w./-]*", a) and re.search(r"[_./-]|[a-z][A-Z]", a):
                 out.add(a)
     return out
-
-
-def mid_case_names():
-    """中階的評測（evals/mid/cases.py）標的參數裡的名稱與路徑（規則同 repo_answer_names）：複合技能、prompts/mid/ 不能用到。
-    只有套件名稱的路徑（fih_rmf_system 這種）不算：那是題目裡的名稱，凍結的調度工具本來就照真的系統描述它（同 repo_answer_names 只收答案）。"""
-    import importlib.util                 # 低階評測也有一個 cases 模組：照路徑載入，不要拿到 import 快取裡的那一個
-    spec = importlib.util.spec_from_file_location("mid_cases", os.path.join(PROJECT, "evals", "mid", "cases.py"))
-    cases = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(cases)
-    vals = []
-    for lab in cases.LABELS.values():
-        for key, want in (lab.get("params") or {}).items():
-            got = [want] if isinstance(want, str) else want.get("any", []) + [want.get("endswith", "")] + want.get("words", [])
-            vals += [v for v in got if key != "path" or "/" in v]
-    return {v for v in vals if len(v) >= 5 and re.fullmatch(r"[/A-Za-z_][\w./-]*", v) and re.search(r"[_./-]|[a-z][A-Z]", v)}
 
 
 def _pattern(names):

@@ -39,8 +39,8 @@ def _content_for_context(result, tool_tokens, agent=None, use_summary=True, step
       已經是提煉結果的、程式整理好的報告（數據分析）——直接原文。
     - use_summary=False（/summarize off）、沒有 agent、或摘要 session 失敗：退回只給成功／失敗判定——零延遲，
       但模型拿不到內容，只能換更精確的參數重查。
-    step、anchor：子工作階段（agent_core/sub.py）的這一步與「想知道什麼」（不在主對話裡，提煉不能從主對話找）；sub：子工作階段——
-    怎麼回存檔看只寫它能用的工具（共用的 result_grep、result_view；它沒有 result_recall，設計筆記 2.47）。
+    step、anchor：領域 session（agent_core/domain_session.py）的這一步與「想知道什麼」（不在主對話裡，提煉不能從主對話找）；sub：領域 session——
+    怎麼回存檔看只寫它能用的工具（共用的 result_grep、result_view；它沒有 result_recall）。
     """
     if is_exempt_result(result, tool_tokens):
         return result

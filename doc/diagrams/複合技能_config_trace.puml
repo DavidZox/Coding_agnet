@@ -1,5 +1,5 @@
 @startuml
-' 複合技能 config_trace 的〈骨架〉與〈回退〉畫成流程（2026-11-21）；來源 skills_system/repo_analysis/config_trace.md。
+' 複合技能 config_trace 的〈骨架〉與〈回退〉畫成流程（2026-11-23）；來源 skills_system/repo_analysis/config_trace.md。
 skinparam shadowing false
 skinparam defaultFontName "Microsoft JhengHei"
 skinparam ActivityFontSize 13
@@ -7,57 +7,47 @@ skinparam NoteFontSize 12
 skinparam LegendFontSize 12
 skinparam ArrowColor #555555
 skinparam ActivityDiamondFontSize 12
-title config_trace：沿著 launch、設定檔、程式追一個名稱（誰設定、值多少、remap、誰發布與訂閱、程式哪裡讀）
+title config_trace：沿著 launch、設定檔、程式追一個名稱（誰設定、值多少、remap、誰發布與訂閱、程式哪裡讀；用一次查一站）
 
 start
-:參數（模型填）
+:參數（領域 session 填，每個參數附一字不改的原文）
 ・names：要追的名稱（參數、topic、節點、launch 檔或套件；必填，好幾個用「、」分開）
-・path：範圍（沒寫＝整個工作目錄）
+・path：範圍：要追的套件或目錄（沒寫＝整個工作目錄）
 ・exclude：範圍裡不要的子目錄（可以不寫）; <<#FFE6CC>>
-:程式核對參數：種類對不對、必填的有沒有；沒寫的用預設值；
-路徑在工作目錄找不到時用 find_file 找一次
-（剛好一個就自己補，好幾個或沒有就要改參數）; <<#D5E8D4>>
-:① hits（search_text，只看 .py、.yaml、.yml、.xml、.launch、.cpp、.hpp、.h，附前後 2 行）
-在範圍裡搜 names，同一行含最多個名稱的排前面; <<#DAE8FC>>
+:合約（程式核對）：原文要一字不改地在問題、子目標、
+項目或前面的結果裡，值照種類對得上原文；
+沒過交回領域 session 改（不算一步）; <<#D5E8D4>>
+:補齊（composite.py）：沒寫的用預設值；必填的沒寫 → need；
+路徑在工作目錄找不到時照 fetch 用 find_file 找一次
+（剛好一個就自己補；好幾個或沒有 → need，附候選）; <<#DAE8FC>>
+:① hits（search_text --rank，只看 .py、.yaml、.yml、.xml、.launch、
+.cpp、.hpp、.h，附前後 2 行）
+在範圍裡搜 names（用 | 接成同義詞一起搜），
+同一行含最多個名稱的排前面; <<#DAE8FC>>
 if (hits 的結果？) then (0 筆)
-  :【回退 outside_scope】
-  在整個工作目錄的同幾種檔搜一次（只列檔名）; <<#FFF2CC>>
-  :報告：範圍裡沒有這些名稱；
-  範圍外有的話，列出在哪些檔案; <<#E1D5E7>>
-  stop
+  :【回退 outside_scope】加節點 wider（search_text）：
+  在整個工作目錄的同幾種檔搜一次（只列檔名）→ 重排
+  （小標題「範圍外提到這些名稱的檔案」）; <<#FFF2CC>>
 else (有找到)
 endif
-repeat
-  :② read（判斷節點：唯一讓模型看內容做決定的一步）
-  程式照收據從檔案讀出搜到的行（附行號）交給模型；
-  模型挑出回答問題的行，每一行標「設定的值」「讀取的程式」「預設值」
-  「發布」「訂閱」「remap」「啟動」或「相關」，再選一條路; <<#FFE6CC>>
-  :程式核對：挑的片段要真的在原文那一行（行號與整行由程式填）、
-  要接著搜的字要在原文裡、搜過的字不能再搜；沒過交回修一次; <<#D5E8D4>>
-  switch (模型選的路？)
-  case (follow：還有一站沒接上)
-    :③ next（search_text）
-    搜模型填的下一站
-    （這些行提到的 topic、參數、節點或檔案）; <<#DAE8FC>>
-  case (wider：要看整段設定)
-    :③ around（view_file）
-    看模型指定的那一行前後 20 行; <<#DAE8FC>>
-  case (answered：每一站都接上了)
-    :（結束判斷）; <<#FFFFFF>>
-  case (not_found：都沒寫)
-    :（結束判斷）; <<#FFFFFF>>
-  endswitch
-repeat while (選的是 follow 或 wider，而且判斷還不到 4 次？) is (是：再判斷一次) not (否)
-:報告（程式寫）
-・判斷挑出的行：檔案:行號、整行原文、標籤、#編號
-・每一次判斷的經過（選了哪條路、理由、接著找了什麼）
-・判斷用完 4 次還要接著找＝熔斷，寫明追到哪裡; <<#E1D5E7>>
+:結果交回領域 session（domain_session.py 整理）
+・技能的狀態、回退的經過（say：範圍裡沒有，範圍外有的話在哪些檔案）、
+  自己補的參數、need（說明與候選）
+・每個節點的結果（#編號）：搜到的行、行號與前後 2 行
+・短的給原文，太長的分段提煉（錨點是子目標與項目，事實附 檔案:行號）; <<#E1D5E7>>
+note right
+  **下一站由領域 session 決定**（骨架裡沒有讀與選路的節點）：
+  ・照結果裡的下一個名稱（remap 成的 topic、讀它的程式、
+    載入的設定檔）再用一次 config_trace
+  ・要看 launch 裡一個節點的整段設定 → 用 view_file 看那一行前後
+  ・每一站都接上了 → 回報（每一站附 檔案:行號；沒找到的那一站照實說）
+end note
 stop
 legend bottom
-  顏色：橘＝模型做（填參數、判斷節點）、綠＝程式核對、藍＝程式照〈骨架〉做、黃＝〈回退〉（程式照條件自動改做）、紅＝要改參數、紫＝程式寫的報告。
-  回退的條件在步驟跑完之後由程式照收據比對（照〈回退〉列的順序，取第一個符合、還沒用過的；重排最多 3 次）。
-  紅色「要改參數」：中階停下來，由程式直接問使用者，回答之後照新的參數接著做。
-  模型不寫步驟：參數由中階的合約填（程式核對），判斷節點只在寫好的幾條路裡選。
+  顏色：橘＝模型（領域 session 填參數）、綠＝程式核對、藍＝程式照〈骨架〉做（composite.py 排圖、edg.py 執行）、黃＝〈回退〉（程式照收據的條件自動改做）、紅＝need（交回領域 session 決定）、紫＝交回領域 session 的結果。
+  回退的條件在節點跑完之後由程式照收據比對（照〈回退〉列的順序，取第一個符合、還沒用過的）；加節點重排與換技能合計最多 3 次，再要就熔斷。
+  紅色 need：不問使用者，交回領域 session 決定——照候選改參數再用一次、換一個技能，或回報。
+  骨架只有工具節點：結果怎麼讀交給提煉，下一步（再用技能、再選領域、回報）由領域 session 決定。
   來源：skills_system/repo_analysis/config_trace.md 的 parameters、〈骨架〉與〈回退〉（改了技能要一起改這張圖）。
 endlegend
 @enduml

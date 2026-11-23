@@ -19,8 +19,13 @@
   "passed": 8,
   "total": 8
  },
+ "domain_selftest": {
+  "label": "單一迴圈：交辦與領域 session（框架討論紀錄 F1～F6）；參數寫錯欄位、回覆的欄位順序（2026-11-23）",
+  "passed": 15,
+  "total": 15
+ },
  "edg_selftest": {
-  "label": "原型之後的第一批（73b0756）（2026-11-21）",
+  "label": "單一迴圈：交辦與領域 session（框架討論紀錄 F1～F6）（2026-11-23）",
   "passed": 14,
   "total": 14
  },
@@ -34,20 +39,10 @@
   "passed": 8,
   "total": 8
  },
- "mid_selftest": {
-  "label": "A″ 的程式拿掉、回到 A（設計筆記 2.53）（2026-11-23）",
-  "passed": 29,
-  "total": 29
- },
  "ops_selftest": {
   "label": "第 5 步（6958dac）（2026-11-20）",
   "passed": 4,
   "total": 4
- },
- "orch_selftest": {
-  "label": "A″ 的程式拿掉、回到 A（設計筆記 2.53）（2026-11-23）",
-  "passed": 37,
-  "total": 37
  },
  "repo_selftest": {
   "label": "原型之後的第一批（73b0756）（2026-11-21）",

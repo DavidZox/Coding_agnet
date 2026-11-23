@@ -218,7 +218,7 @@ class GuardMixin:
         if not GUARDED_SKILLS:
             return None
         action = (parsed or {}).get("action") if isinstance(parsed, dict) else None
-        if not action or action.get("domains"):    # 分工（交給領域）：中階與低階、子工作階段自己過確認關卡（need_user）
+        if not action or action.get("task"):    # 交辦：領域 session 自己過確認關卡（need_user）
             return None
         payload = action_text(action)
         parts = payload.split(maxsplit=1)

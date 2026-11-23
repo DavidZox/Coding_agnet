@@ -1,4 +1,4 @@
-"""技能規格（skills_system/tools/<名稱>.md）裡給程式看的欄位（新架構 D6、D4、D5；寫法見 doc/技能撰寫規範.md）。
+"""技能規格（skills_system/tools/<名稱>.md）裡給程式看的欄位（寫法見 doc/技能撰寫規範.md）。
 
 frontmatter 的這幾個欄位是給程式看的，值寫成一行 JSON（JSON 也是 YAML，不用 PyYAML 就讀得到）：
 - parameters：每個參數怎麼取得——fetch（用哪個技能查，例如 `find_file <檔名>`）或 ask（要使用者決定什麼）；必填的參數一定有其中一個；
@@ -7,7 +7,7 @@ frontmatter 的這幾個欄位是給程式看的，值寫成一行 JSON（JSON �
   added：清單多加幾項），低階執行器（agent_core/edg.py）核對修正只動了這些。沒寫的工具逾時就往上報。
 載入規格給模型看時拿掉這幾行（for_model），模型讀到的跟以前一樣。
 
-複合技能（skills_system/<領域>/<名稱>.md，新架構第 3 步的中階讀；寫法見 doc/技能撰寫規範.md）另外有：
+有骨架的技能（skills_system/<領域>/<名稱>.md，agent_core/composite.py 讀；寫法見 doc/技能撰寫規範.md）另外有：
 - frontmatter 的 topology（一行 JSON：depends_on、sub_skills）、parameters 與 answers（答得了問題要的哪幾種：位置、數量、內容）；
 - 正文的〈骨架〉（決策圖的樣板）與〈回退〉（第 2 級的做法）：各是一個 ```json 區塊，給程式看；
 交給模型時這兩節也拿掉（for_model），模型只讀〈什麼時候用〉與〈策略與 SOP〉。

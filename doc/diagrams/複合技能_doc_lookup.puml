@@ -1,5 +1,5 @@
 @startuml
-' 複合技能 doc_lookup 的〈骨架〉與〈回退〉畫成流程（2026-11-21）；來源 skills_system/repo_analysis/doc_lookup.md。
+' 複合技能 doc_lookup 的〈骨架〉與〈回退〉畫成流程（2026-11-23）；來源 skills_system/repo_analysis/doc_lookup.md。
 skinparam shadowing false
 skinparam defaultFontName "Microsoft JhengHei"
 skinparam ActivityFontSize 13
@@ -10,50 +10,39 @@ skinparam ActivityDiamondFontSize 12
 title doc_lookup：照一份文件回答它寫了什麼（規定、狀態的轉移、數值與它們的編號）
 
 start
-:參數（模型填）
-・doc：哪一份文件（必填；給的是名稱或路徑不對時，程式自己找一次）
-・words：要在文件裡搜的名稱或字（必填，好幾個用「、」分開）; <<#FFE6CC>>
-:程式核對參數：種類對不對、必填的有沒有；沒寫的用預設值；
-路徑在工作目錄找不到時用 find_file 找一次
-（剛好一個就自己補，好幾個或沒有就要改參數）; <<#D5E8D4>>
-:① hits（search_text，只搜這一份文件）
-找問題提到的名稱，同一行含最多個名稱的排前面; <<#DAE8FC>>
+:參數（領域 session 填，每個參數附一字不改的原文）
+・doc：哪一份文件（必填；原文寫的檔名或路徑，「X 規格書」寫 X）
+・words：要在文件裡搜的名稱或短詞（必填，好幾個用「、」分開）; <<#FFE6CC>>
+:合約（程式核對）：原文要一字不改地在問題、子目標、
+項目或前面的結果裡，值照種類對得上原文；
+沒過交回領域 session 改（不算一步）; <<#D5E8D4>>
+:補齊（composite.py）：必填的沒寫 → need；
+doc 在工作目錄找不到時照 fetch 用 find_file 找「<名稱>.md」一次
+（剛好一個就自己補；好幾個或沒有 → need，附候選）; <<#DAE8FC>>
+:① hits（search_text --rank，只搜這一份文件）
+words 用 | 接成同義詞一起搜，
+同一行含最多個名稱的排前面; <<#DAE8FC>>
 if (hits 的結果？) then (0 筆)
-  :【回退 no_hits】
-  文件裡沒有一行提到這些名稱：
-  要改參數，換成文件裡的寫法（狀態、指令或參數怎麼寫）; <<#F8CECC>>
-  stop
+  :【回退 no_hits】need：文件裡沒有一行提到這些名稱，
+  words 換成文件裡的寫法（狀態、指令或參數怎麼寫）; <<#F8CECC>>
 else (有找到)
 endif
-repeat
-  :② read（判斷節點：唯一讓模型看內容做決定的一步）
-  程式照收據從文件讀出搜到的行（附行號）交給模型；
-  模型挑出回答問題的行，每一行標「答案」或「相關」，再選一條路; <<#FFE6CC>>
-  :程式核對：挑的片段要真的在原文那一行（行號與整行由程式填）、
-  要接著搜的字要在原文裡、搜過的字不能再搜；沒過交回修一次; <<#D5E8D4>>
-  switch (模型選的路？)
-  case (follow：提到別的編號、名稱)
-    :③ more（search_text）
-    在同一份文件搜模型填的名稱; <<#DAE8FC>>
-  case (wider：要看前後)
-    :③ around（view_file）
-    看模型指定的那一行前後; <<#DAE8FC>>
-  case (answered：回答了)
-    :（結束判斷）; <<#FFFFFF>>
-  case (not_found：都沒寫)
-    :（結束判斷）; <<#FFFFFF>>
-  endswitch
-repeat while (選的是 follow 或 wider，而且判斷還不到 4 次？) is (是：再判斷一次) not (否)
-:報告（程式寫）
-・判斷挑出的行：檔案:行號、整行原文、標籤、#編號
-・每一次判斷的經過（選了哪條路、理由、接著找了什麼）
-・判斷用完 4 次還要接著找＝熔斷，寫明追到哪裡; <<#E1D5E7>>
+:結果交回領域 session（domain_session.py 整理）
+・技能的狀態、自己補的參數、need（說明與候選）
+・hits 的結果（#編號）：搜到的行與行號，同一行含最多個名稱的在前
+・短的給原文，太長的分段提煉（錨點是子目標與項目，事實附 檔案:行號）; <<#E1D5E7>>
+note right
+  **下一步由領域 session 決定**（骨架裡沒有讀與選路的節點）：
+  ・要看表格的標題、條文的上下文 → 用 view_file 看那一行前後
+  ・文件提到別的編號或名稱 → 用那個名稱在同一份文件再用一次 doc_lookup
+  ・查到能回答 → 回報（附 檔案:行號；文件沒寫的照實說沒寫）
+end note
 stop
 legend bottom
-  顏色：橘＝模型做（填參數、判斷節點）、綠＝程式核對、藍＝程式照〈骨架〉做、黃＝〈回退〉（程式照條件自動改做）、紅＝要改參數、紫＝程式寫的報告。
-  回退的條件在步驟跑完之後由程式照收據比對（照〈回退〉列的順序，取第一個符合、還沒用過的；重排最多 3 次）。
-  紅色「要改參數」：中階停下來，由程式直接問使用者，回答之後照新的參數接著做。
-  模型不寫步驟：參數由中階的合約填（程式核對），判斷節點只在寫好的幾條路裡選。
+  顏色：橘＝模型（領域 session 填參數）、綠＝程式核對、藍＝程式照〈骨架〉做（composite.py 排圖、edg.py 執行）、黃＝〈回退〉（程式照收據的條件自動改做）、紅＝need（交回領域 session 決定）、紫＝交回領域 session 的結果。
+  回退的條件在節點跑完之後由程式照收據比對（照〈回退〉列的順序，取第一個符合、還沒用過的）；加節點重排與換技能合計最多 3 次，再要就熔斷。
+  紅色 need：不問使用者，交回領域 session 決定——照候選改參數再用一次、換一個技能，或回報。
+  骨架只有工具節點：結果怎麼讀交給提煉，下一步（再用技能、再選領域、回報）由領域 session 決定。
   來源：skills_system/repo_analysis/doc_lookup.md 的 parameters、〈骨架〉與〈回退〉（改了技能要一起改這張圖）。
 endlegend
 @enduml

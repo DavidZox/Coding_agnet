@@ -1,4 +1,4 @@
-"""真實專案評測（新架構的評測，討論紀錄 D11）：五種題目各 5 題，另外各 1 題當保留組；答案由程式從固定版本的快照算
+"""真實專案評測：五種題目各 5 題，另外各 1 題當保留組；答案由程式從固定版本的快照算
 （evals/repo/questions.py → answers.json）。
 
     python3 evals/repo/run.py --model gemma4:26b                # 主要的 25 題

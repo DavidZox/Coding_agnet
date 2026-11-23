@@ -1,59 +1,61 @@
-"""評測的 worker（evals/chat/worker.py、evals/ops/worker.py）共用：主模型「交給領域」的那一步怎麼收尾、怎麼記。
+"""評測的 worker（evals/chat/worker.py、evals/ops/worker.py）共用：主模型「交辦」的那一步怎麼收尾、怎麼記。
 
-- 中階要問使用者（參數）時：評測裡沒有人回答，取消（記下問了什麼）；取消之後的結果才是這一步的結果（跟使用者按取消一樣：中階取消之後
-  接著開子工作階段一步一步做）。確認關卡（子工作階段或中階的低階碰到會改狀態的工具）照情境的 guard 回答（approve 同意、deny 不同意），
-  跟主對話的確認關卡一樣算進 guards。
-- 記成 tool_calls：分工的每個領域一筆（skill＝領域名稱，附子目標、項目、中階或子工作階段的狀態與做法、工作編號、那個領域的結果 #編號），
-  領域裡用到的工具各一筆（via＝領域；中階的參數照每一版的圖，從收據帶入的不列；子工作階段的是每一步執行的）——情境的「用了哪個工具」照樣
-  看得到領域裡用的工具。分工沒過核對（[ERROR]）時每個領域一筆、狀態 ERROR。
-- 依報告回答（4-2）：這一步的 answers 與核對的結果記進那一步（record_answers）；最後的回答換成程式照項目排好的那一份（finalize：
+- 確認關卡（領域 session 碰到會改狀態的工具）照情境的 guard 回答（approve 同意、deny 不同意），跟主對話的確認關卡一樣算進 guards。
+- 記成 tool_calls：交辦一筆（skill＝domain_session，附子目標、項目、選過的領域、領域 session 的狀態、工作編號、交辦的結果 #編號），
+  領域 session 的每一步各一筆（via＝domain_session；工具附參數，有骨架的技能附參數的值），有骨架的技能再把骨架裡執行的工具各記一筆
+  （via＝那個技能）——情境的「用了哪個工具」照樣看得到。交辦沒過核對（[ERROR]）時只有交辦那一筆、狀態 ERROR。
+- 依報告回答：這一步的 answers 與核對的結果記進那一步（record_answers）；最後的回答換成程式照項目排好的那一份（finalize：
   使用者看到的就是它，評測照它計分）。"""
+import os
+import shlex
+
+from agent_core.config import DOMAIN_JOBS_DIRNAME
+from agent_core.jobstore import JobStore
 
 
 def settle(agent, parsed, result, turn, guard="approve"):
-    """中階或子工作階段還在等使用者回答：確認關卡照情境的 guard 回答（算進 guards），問參數就取消（評測沒有人回答）。回傳最後的結果。"""
+    """領域 session 停在確認關卡：照情境的 guard 回答（算進 guards）。回傳最後的結果。"""
     while agent.domain_pending:
         p = agent.domain_pending
         turn.setdefault("domain_asks", []).append(p["question"])
-        if p["kind"] == "guard":
-            if isinstance(turn.get("guards"), list):         # 主對話的評測記每一次的關卡；維運記次數
-                turn["guards"].append(dict(p.get("guard") or {}, via=p["domain"]))
-            else:
-                turn["guards"] = turn.get("guards", 0) + 1
-            result = agent.answer_domain("是" if guard == "approve" else "否")
+        if isinstance(turn.get("guards"), list):         # 主對話的評測記每一次的關卡；維運記次數
+            turn["guards"].append({"question": p["question"], "via": "domain_session"})
         else:
-            result = agent.cancel_domain()
+            turn["guards"] = turn.get("guards", 0) + 1
+        result = agent.answer_domain("是" if guard == "approve" else "否")
         result = result if result is not None else ""
     return result
 
 
 def calls(agent, parsed, result):
-    """分工的這一步 → tool_calls 的紀錄（核對沒過的 [ERROR]：每個領域一筆、沒有執行）。分工照順序做完，這一次的紀錄是這一回合交給領域的
-    最後幾筆（每個領域一筆）。"""
-    entries = parsed["action"]["domains"]
+    """交辦的這一步 → tool_calls 的紀錄。"""
+    task = parsed["action"]["task"]
     status = "ERROR" if result.lstrip().startswith(("[ERROR]", "[DENIED]")) else "PASS"
-    dispatches = agent._domain_turn["dispatches"]
-    run = dispatches[-len(entries):] if status == "PASS" and len(dispatches) >= len(entries) else []
-    out = []
-    for k, e in enumerate(entries):
-        entry = {"script": None, "skill": e["domain"], "domain": e["domain"], "goal": e.get("goal", ""), "items": e.get("items") or [],
-                 "args": [e.get("goal", "")] + list(e.get("items") or []), "status": status, "result_id": None}
-        d = run[k] if run and run[k]["domain"] == e["domain"] else None
-        if d is None:
-            out.append(entry)
-            continue
-        entry["result_id"] = d.get("result_id")
-        mid_part = d.get("mid") or (d if d.get("kind") == "mid" else None)       # 中階（中階沒做完接著開子工作階段時兩個都有）
-        if mid_part:
-            entry.update(mid_status=mid_part["status"], mid_skill=mid_part["skill"], mid_job=mid_part["job"])
-        if d.get("kind") == "sub":
-            entry.update(sub_status=d["status"], sub_job=d["job"], sub_steps=len(d.get("calls") or []))
-        via = [{"script": None, "skill": c["tool"], "via": e["domain"], "args": c["args"], "status": "PASS"}
-               for c in (mid_part or {}).get("calls") or []]
-        via += [{"script": c.get("script"), "skill": c["tool"], "via": e["domain"], "args": c["args"], "status": c["status"],
-                 "head": c.get("head", "")} for c in (d.get("calls") or [] if d.get("kind") == "sub" else [])]
-        out += [entry] + via
+    entry = {"script": None, "skill": "domain_session", "domain": "domain_session", "goal": task.get("goal", ""),
+             "items": task.get("items") or [], "args": [task.get("goal", "")] + list(task.get("items") or []), "status": status, "result_id": None}
+    tasks = agent._domain_turn["tasks"]
+    d = tasks[-1] if status == "PASS" and tasks and tasks[-1]["key"] == [task.get("goal", ""), task.get("items") or []] else None
+    job = JobStore(os.path.join(agent.script_dir, "logs", DOMAIN_JOBS_DIRNAME)).load(d["job"]) if d and d.get("job") else None
+    if not job:
+        return [entry]
+    entry.update(result_id=d.get("result_id"), job=job["id"], session_status=job["status"], domains=list(job["domains"]),
+                 picks=[p["domains"] for p in job["picks"]], steps=len(job["steps"]), turns=job["turns"])
+    out = [entry]
+    for st in job["steps"]:
+        args = ([str(v["value"]) if not isinstance(v["value"], list) else "、".join(map(str, v["value"])) for v in st["params"].values()]
+                if st["kind"] == "composite" else _split(st["args"]))
+        out.append({"script": None, "skill": st["skill"], "via": "domain_session", "kind": st["kind"], "args": args, "status": st["status"],
+                    "head": st["head"], "result_ids": st["result_ids"], "summarized": st.get("summarized", False)})
+        for o in (st.get("composite") or {}).get("outputs") or []:
+            out.append({"script": None, "skill": o["tool"], "via": st["skill"], "args": o["args"], "status": o["state"], "result_id": o["result_id"]})
     return out
+
+
+def _split(args):
+    try:
+        return shlex.split(args)
+    except ValueError:
+        return [args] if args else []
 
 
 def record_answers(agent, parsed, turn):

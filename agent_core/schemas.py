@@ -1,6 +1,10 @@
-"""給 Ollama format= 的 JSON schema：主對話回覆、滾動摘要、工具摘要、數據分析。"""
-from .config import (DOMAIN_ANSWER_CHARS, DOMAIN_GOAL_CHARS, DOMAIN_ITEM_CHARS, DOMAIN_ITEMS_MAX, DOMAIN_PLAN_MAX, DOMAIN_REFS_MAX,
+"""給 Ollama format= 的 JSON schema：主對話回覆、領域 session 的回覆、滾動摘要、工具摘要、提煉、第 1 級修正。"""
+from .config import (DOMAIN_ANSWER_CHARS, DOMAIN_GOAL_CHARS, DOMAIN_ITEM_CHARS, DOMAIN_ITEMS_MAX, DOMAIN_REFS_MAX,
                      REPLY_ARGS_CHARS, REPLY_COMMAND_CHARS, REPLY_THOUGHT_CHARS, SCHEMA_MAX_CHARS)
+
+DOMAIN_REPLY_CHARS = 600         # 領域 session 每一輪的 reply（一句這一步在做什麼，回報時一句總結）
+DOMAIN_SKILL_CHARS = 80          # 領域 session 選的技能名稱
+DOMAIN_PARAMS_MAX = 8            # 有骨架的技能一次最多幾個參數
 
 
 def _text(n):
@@ -15,47 +19,55 @@ def _text(n):
 # reply 裡不論寫了什麼（包括解釋、舉例時抄出來的 `EXECUTE: ...` 字串）都不會被執行——這是「實體隔離」：
 # 給人看的文字與給系統執行的指令分開存放，不再用文字比對從回覆裡找指令。以 Ollama 的 format= schema 強制
 # 結構（與摘要同一機制），小模型不需要自律「解釋時不要輸出指令」。
-# action 為 null、{"command": 技能名稱｜規格標明的腳本路徑, "args": 參數字串}，或（有領域時）「分工」
-# {"domains": [{"domain": DOMAIN.md 列的領域, "goal": 這個領域的子目標, "items": [要回答的項目]}, …]}（新架構的高階，agent_core/orchestrator.py；
-# 第 5 步 5-3：要用的領域一次選出來，同一個領域只出現一次）。
+# action 為 null、{"command": 技能名稱｜規格標明的腳本路徑, "args": 參數字串}，或（有領域時）「交辦」{"task": {"goal": 子目標,
+# "items": [要回答的項目]}}（agent_core/orchestrator.py：交給領域 session，不指定領域）。
 # args 是字串而不是物件，因為所有技能腳本都吃位置參數、規格文件的寫法也是位置參數，這樣既有的 tools/*.md 一份都不用改：
 # 規格裡的 `EXECUTE: <路徑> <參數>` 範例就對應 command=<路徑>、args=<參數>。
-# items：這一回合交給領域、有報告的項目數（4-2，G4）。有的時候多一個 answers：每一項一筆 {item: 編號, status: answered／not_found,
+# items：這一回合交辦、有報告的項目數。有的時候多一個 answers：每一項一筆 {item: 編號, status: answered／not_found,
 # text: 回答或查不到的原因, refs: 報告裡的出處}，程式核對之後照項目排給使用者；還要做別的動作時填 []。
-# 欄位順序就是生成順序（Ollama 照 schema 的順序輸出）：action 一律放最後，回覆寫完 action 就結束，跟 AGENT.md 與子工作階段的範例一樣。
-# answers 排在 action 後面時，模型照範例寫完 action 要收尾的 `"}}` 不合法，結尾的符號就寫進了 args（第 5 步 5-3 的評測：`"args": "WP_P1}}"`）。
-# others：子工作階段（主對話是 None）。收尾多一種 status out_of_domain（這一項不屬於這個領域，text 寫理由；第 5 步 5-3），查不到、不屬於的
-# 那一項多一個 domain：哪個領域查得到（others 的其中一個，都不是寫 NO_ROUTE；第 5 步 5-4）。每一項是兩種形狀之一：答到的沒有 domain，
-# 查不到、不屬於的一定有（文法保證：原因寫成程式看得懂的欄位，不靠主模型讀報告的文字）；domain 排在 text 後面：先寫原因再選領域。
-# thought、command、args 也有上限（REPLY_*_CHARS，第 5 步 5-1）：寫到上限＝被截斷，protocol.parse_agent_reply 記在 cut。reply 不設上限
+# 欄位順序就是生成順序（Ollama 照 schema 的順序輸出）：action 一律放最後，回覆寫完 action 就結束，跟 AGENT.md 的範例一樣
+# （answers 排在 action 後面時，模型照範例寫完 action 要收尾的 `"}}` 不合法，結尾的符號就寫進了 args）。
+# thought、command、args 也有上限（REPLY_*_CHARS）：寫到上限＝被截斷，protocol.parse_agent_reply 記在 cut。reply 不設上限
 # （給使用者的回答可能比 2000 字長，Ollama 又不套用超過 2000 的上限；config 的說明）。
-NO_ROUTE = "none"
 
 
-def agent_reply_schema(domains=(), items=0, others=None):
+def _answer(items):
+    p = {"item": {"type": "integer", "enum": list(range(1, items + 1))}, "status": {"type": "string", "enum": ["answered", "not_found"]},
+         "text": _text(DOMAIN_ANSWER_CHARS), "refs": {"type": "array", "items": _text(DOMAIN_ITEM_CHARS), "maxItems": DOMAIN_REFS_MAX}}
+    return {"type": "object", "properties": p, "required": list(p)}
+
+
+def agent_reply_schema(tasks=False, items=0):
     actions = [
         {"type": "null"},
         {"type": "object", "properties": {"command": _text(REPLY_COMMAND_CHARS), "args": _text(REPLY_ARGS_CHARS)}, "required": ["command", "args"]},
     ]
-    if domains:
-        entry = {"type": "object", "properties": {
-            "domain": {"type": "string", "enum": list(domains)}, "goal": _text(DOMAIN_GOAL_CHARS),
+    if tasks:
+        task = {"type": "object", "properties": {
+            "goal": _text(DOMAIN_GOAL_CHARS),
             "items": {"type": "array", "items": _text(DOMAIN_ITEM_CHARS), "minItems": 1, "maxItems": DOMAIN_ITEMS_MAX}},
-            "required": ["domain", "goal", "items"]}
-        actions.append({"type": "object", "properties": {
-            "domains": {"type": "array", "items": entry, "minItems": 1, "maxItems": DOMAIN_PLAN_MAX}}, "required": ["domains"]})
+            "required": ["goal", "items"]}
+        actions.append({"type": "object", "properties": {"task": task}, "required": ["task"]})
     props = {"thought": _text(REPLY_THOUGHT_CHARS), "reply": {"type": "string"}}
     if items:
-        def answer(statuses, route=None):
-            p = {"item": {"type": "integer", "enum": list(range(1, items + 1))}, "status": {"type": "string", "enum": statuses},
-                 "text": _text(DOMAIN_ANSWER_CHARS), "refs": {"type": "array", "items": _text(DOMAIN_ITEM_CHARS), "maxItems": DOMAIN_REFS_MAX}}
-            if route is not None:
-                p["domain"] = {"type": "string", "enum": route}
-            return {"type": "object", "properties": p, "required": list(p)}
-        one = (answer(["answered", "not_found"]) if others is None else
-               {"anyOf": [answer(["answered"]), answer(["not_found", "out_of_domain"], list(others) + [NO_ROUTE])]})
-        props["answers"] = {"type": "array", "maxItems": items, "items": one}
+        props["answers"] = {"type": "array", "maxItems": items, "items": _answer(items)}
     props["action"] = {"anyOf": actions}
+    return {"type": "object", "properties": props, "required": list(props)}
+
+
+def domain_session_schema(domains, items):
+    """領域 session 每一輪的回覆（agent_core/domain_session.py，F4）：state 是三種之一——domains（選領域）、skill（用一個技能）、report（回報）。
+    欄位都要寫（用不到的寫空的），程式照 state 取用與核對；欄位的順序就是生成的順序（先寫理由與狀態，最後一句 reply）。"""
+    param = {"type": "object", "properties": {"name": _text(60), "value": _text(DOMAIN_GOAL_CHARS), "quote": _text(DOMAIN_GOAL_CHARS)},
+             "required": ["name", "value", "quote"]}
+    props = {"thought": _text(REPLY_THOUGHT_CHARS),
+             "state": {"type": "string", "enum": ["domains", "skill", "report"]},
+             "domains": {"type": "array", "items": {"type": "string", "enum": list(domains)}, "maxItems": max(1, len(domains))},
+             "skill": _text(DOMAIN_SKILL_CHARS),
+             "params": {"type": "array", "items": param, "maxItems": DOMAIN_PARAMS_MAX},
+             "args": _text(REPLY_ARGS_CHARS),
+             "answers": {"type": "array", "items": _answer(max(1, items)), "maxItems": max(1, items)},
+             "reply": _text(DOMAIN_REPLY_CHARS)}
     return {"type": "object", "properties": props, "required": list(props)}
 
 
@@ -141,57 +153,3 @@ EDG_FIX_SCHEMA = {
     },
     "required": ["reason", "fixable", "args"],
 }
-
-
-# 新架構的中階（agent_core/mid.py）：挑技能與合約的 schema 跟著領域的技能、技能的參數變，所以用函式產生。
-# 挑技能：先寫理解（要找什麼、範圍、要回答哪幾項），再寫問題要的是哪幾種（位置、數量、內容：程式核對選的技能答得了每一種），
-# 再從列出的名稱裡選一個（none＝這個領域沒有技能做得到、out_of_domain＝不屬於這個領域），最後寫理由。
-def mid_select_schema(names, kinds):
-    return {"type": "object",
-            "properties": {"understanding": _text(400),
-                           "asks": {"type": "array", "items": {"type": "string", "enum": list(kinds)}, "minItems": 1, "maxItems": len(kinds)},
-                           "skill": {"type": "string", "enum": list(names) + ["none", "out_of_domain"]}, "reason": _text(300)},
-            "required": ["understanding", "asks", "skill", "reason"]}
-
-
-# 合約：每個參數一格，先抄原文（quote）再寫值（value）；沒提到的兩個都留空。only＝只重寫這幾個參數（核對沒過、交回修一次時）。
-def mid_contract_schema(params, only=None):
-    props = {"understanding": _text(300)}
-    for p in params:
-        if only is None or p["name"] in only:
-            props[p["name"]] = {"type": "object", "properties": {"quote": _text(200), "value": _text(200)}, "required": ["quote", "value"]}
-    return {"type": "object", "properties": props, "required": list(props)}
-
-
-# 判斷節點（agent_core/judge.py、mid.Worker._judgment）：先寫理解，再挑行（來源是原文的 #編號、檔案是原文裡的檔案、行號、片段一字不改、
-# 標籤照技能列的；片段對到好幾行時用行號選），再從技能列的分支選一條、填那條路要的參數（每條路的參數合在一起，沒有要填的留空），最後寫理由。
-# fix＝交回修一次：只重寫沒過的（挑的行重抄；分支的參數沒過時可以重選分支）。
-def _judge_param(p, files):
-    if p["type"] == "words":
-        return {"type": "array", "items": _text(80), "maxItems": 8}
-    if p["type"] == "path":
-        return {"type": "string", "enum": list(files) + [""]}
-    return {"type": "integer"}
-
-
-def mid_judge_schema(sources, files, labels, branches, max_lines, fix_lines=False, fix_branch=False):
-    line = {"type": "object", "properties": {"source": {"type": "string", "enum": list(sources)}, "file": {"type": "string", "enum": list(files)},
-                                             "line": {"type": "integer"}, "quote": _text(300), "label": {"type": "string", "enum": list(labels)}},
-            "required": ["source", "file", "line", "quote", "label"]}
-    params = {}
-    for b in branches:
-        for p in b.get("params") or []:
-            params.setdefault(p["name"], _judge_param(p, files))
-    props = {}
-    if not (fix_lines or fix_branch):
-        props["understanding"] = _text(400)
-    if fix_lines or not fix_branch:
-        props["lines"] = {"type": "array", "items": line, "maxItems": max_lines}
-    if fix_branch or not fix_lines:
-        props["branch"] = {"type": "string", "enum": [b["id"] for b in branches]}
-        if params:
-            props["params"] = {"type": "object", "properties": params, "required": list(params)}
-    if not (fix_lines or fix_branch):
-        props["reason"] = _text(300)
-    return {"type": "object", "properties": props, "required": list(props)}
-

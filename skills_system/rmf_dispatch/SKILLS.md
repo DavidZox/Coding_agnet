@@ -9,7 +9,7 @@
   - 使用者明確要你替機器人回 handshake yes／no（「對 amr_07、amr_12 各回一次 yes」）：直接 `rmf_handshake yes <機器人> [<機器人> …]`（或 `no`；走 manual_trigger，系統會請使用者確認，不用先問），回報輸出裡 distribute 有沒有 confirm；要求「用 ROS topic 回」時用 `ROS2_topic_pub` 發 `/<機器人>/handshake_states`（`fih_rmf_msgs/msg/HandshakeState`，`is_authored: yes`）。`fin` 是補發完成訊號（task_exec_fin），不是回 yes。
 
 ## 複合技能
-（還沒有：交給這個領域的問題，在子工作階段裡用下面的工具一步一步做）
+（還沒有：領域 session 直接用下面的工具）
 
 ## 工具
 - [workpackage_send](../tools/workpackage_send.md)

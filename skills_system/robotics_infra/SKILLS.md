@@ -10,7 +10,7 @@
   - ROS 2 的 topic／node 列表是空的或只有系統的 topic：`ROS2_domain_id` 看 shell 跟正在跑的節點各在哪個 domain；自訂訊息讀不到、Workspace 路徑不知道：`ROS2_workspace_env --discover`（不要先問使用者）。
 
 ## 複合技能
-（還沒有：交給這個領域的問題，在子工作階段裡用下面的工具一步一步做）
+（還沒有：領域 session 直接用下面的工具）
 
 ## 工具
 - [docker_containers](../tools/docker_containers.md)

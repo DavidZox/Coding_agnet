@@ -115,8 +115,8 @@ class ToolSummaryMixin:
         """接在提煉結果後面、給 main session 的下一步建議——獨立 session 看過完整原文與檢索清單後的判斷，依序：還需要之前的存檔 → 把
         「這一份＋那幾份」一起 recall（同一個整合才比得了）；有沒讀到的段落或缺口 → 自然地問使用者或用更具體的問題 recall；已經回答 → 直接回答。
         提煉沒有成功（回覆不是 JSON）時照實說，不說成「已經回答」。directive=False（claude_code 模式）：只陳述事實，下一步由模型自己決定。
-        sub=True（子工作階段，agent_core/sub.py）：照它能用的工具寫（共用的 result_grep、result_view 回原文看；它沒有 result_recall），
-        也沒有使用者可以問（設計筆記 2.47：5c 的子工作階段照建議叫 result_recall，全部被擋）。"""
+        sub=True（領域 session，agent_core/domain_session.py）：照它能用的工具寫（共用的 result_grep、result_view 回原文看；它沒有
+        result_recall），也沒有使用者可以問。"""
         ids = [str(i) for i in (ids if isinstance(ids, (list, tuple)) else [ids]) if i]
         if not ids:
             return _f("no_ids")
@@ -183,8 +183,8 @@ class ToolSummaryMixin:
         由程式核對；以前超過 16000 字只讀頭尾，中間的內容主對話永遠看不到。
         result_id 預設取最近一次 run_tool 的存檔編號：回答回填到 index.md，index_hint 記進 tools_use_index.md（result_* 這類看舊存檔的
         衍生輸出不記）——這份永久累加、跨 session 存活，讓再久以前的工具回傳也有機會被日後的 main session 從檢索清單裡認出來。
-        結尾的下一步建議見 _followup_guidance。anchor：子工作階段給的「使用者的目標」（原始問題、子目標、要回答的項目；agent_core/sub.py）；
-        sub：子工作階段（下一步建議照它能用的工具寫）。每一行對得到檔案時（收據），事實附「檔案:行號」（_file_lines）。"""
+        結尾的下一步建議見 _followup_guidance。anchor：領域 session 給的「使用者的目標」（交辦的子目標與要回答的項目；agent_core/domain_session.py）；
+        sub：領域 session（下一步建議照它能用的工具寫）。每一行對得到檔案時（收據），事實附「檔案:行號」（_file_lines）。"""
         anchor = anchor or self._build_task_anchor_text()
         result_id = self.last_result_id if result_id is None else result_id
         step = step if step is not None else (self._last_assistant_step() or {})
@@ -223,7 +223,7 @@ class ToolSummaryMixin:
         status = "失敗（[ERROR]）" if result.lstrip().startswith("[ERROR]") else "成功"
         how = (f"分 {out['chunks']} 段由獨立 session 各讀一段再整合" if out.get("mode") == "merge" else "由獨立 session 讀完整原文")
         job = f"；提煉過程存在 logs/extract_jobs/{out['job']}/" if out.get("job") else ""
-        shown = "" if sub else "，完整內容已顯示給使用者"           # 子工作階段的工具輸出使用者沒有看到
+        shown = "" if sub else "，完整內容已顯示給使用者"           # 領域 session 的工具輸出使用者沒有看到
         note = (f"（原始輸出約 {tool_tokens} tokens，超過門檻 {TOOL_RESULT_TOKEN_THRESHOLD}；以上依{'這一層的子目標' if sub else '使用者目標'}"
                 f"與這一步的目的{how}提煉{job}{shown}。{self._followup_guidance(ids, out, sub=sub)}）")
         return f"{TOOL_SUMMARY_TAG}\n執行結果：{status}\n{body}\n{note}"

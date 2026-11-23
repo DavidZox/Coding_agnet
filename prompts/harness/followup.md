@@ -1,6 +1,6 @@
 提煉結果（summarize_tool_result、result_recall）最後給主對話的下一步建議（agent_core/tool_summary.py 的 _followup_guidance）：
 獨立 session 看過完整原文與檢索清單之後的判斷，依序挑一則接在「完整原始輸出已存成…」（base）或「不要再對…重複」（recalled_base）後面。
-claude_code 模式（cc_*）只陳述原文在哪、哪裡沒涵蓋，下一步由模型自己決定。子工作階段（sub_*）照它能用的工具寫：回原文看用共用的
+claude_code 模式（cc_*）只陳述原文在哪、哪裡沒涵蓋，下一步由模型自己決定。領域 session（sub_*）照它能用的工具寫：回原文看用共用的
 result_grep、result_view（它沒有 result_recall），也沒有使用者可以問。{名稱} 是程式填的值。
 
 <!-- @no_ids -->
