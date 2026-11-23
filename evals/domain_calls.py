@@ -5,7 +5,8 @@
   跟主對話的確認關卡一樣算進 guards。
 - 記成 tool_calls：分工的每個領域一筆（skill＝領域名稱，附子目標、項目、中階或子工作階段的狀態與做法、工作編號、那個領域的結果 #編號），
   領域裡用到的工具各一筆（via＝領域；中階的參數照每一版的圖，從收據帶入的不列；子工作階段的是每一步執行的）——情境的「用了哪個工具」照樣
-  看得到領域裡用的工具。分工沒過核對（[ERROR]）時每個領域一筆、狀態 ERROR。
+  看得到領域裡用的工具。分工沒過核對（[ERROR]）時每個領域一筆、狀態 ERROR。A″（中階自動再做一次）的那一筆另記 retry（為什麼）與再做的那一次的
+  狀態、做法、工作編號（retry_*；第一次在 mid_*），兩次用到的工具都列。
 - 依報告回答（4-2）：這一步的 answers 與核對的結果記進那一步（record_answers）；最後的回答換成程式照項目排好的那一份（finalize：
   使用者看到的就是它，評測照它計分）。"""
 
@@ -48,8 +49,10 @@ def calls(agent, parsed, result):
             entry.update(mid_status=mid_part["status"], mid_skill=mid_part["skill"], mid_job=mid_part["job"])
         if d.get("kind") == "sub":
             entry.update(sub_status=d["status"], sub_job=d["job"], sub_steps=len(d.get("calls") or []))
+        if d.get("retry"):                                                       # A″：再做的那一次（第一次在 mid_*）
+            entry.update(retry=d["retry"], retry_status=d["status"], retry_skill=d["skill"], retry_job=d["job"])
         via = [{"script": None, "skill": c["tool"], "via": e["domain"], "args": c["args"], "status": "PASS"}
-               for c in (mid_part or {}).get("calls") or []]
+               for c in ((mid_part or {}).get("calls") or []) + (d.get("calls") or [] if d.get("retry") else [])]
         via += [{"script": c.get("script"), "skill": c["tool"], "via": e["domain"], "args": c["args"], "status": c["status"],
                  "head": c.get("head", "")} for c in (d.get("calls") or [] if d.get("kind") == "sub" else [])]
         out += [entry] + via

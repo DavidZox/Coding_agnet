@@ -31,13 +31,17 @@
 6. **帶著上一次的經過再交**（4-2，I）：同一個問題再交給同一個領域時（之前那幾次沒有做完，或這次的項目之前交過），程式把之前幾次的
    做法、參數、結果、原因、找過的字交給中階或子工作階段（previous），中階從挑技能、合約重新規劃（合約只從新的子目標抄，第 5 步 G9），
    一樣的做法由中階擋（repeated）。
+7. **A″：中階跑過、有結果、但沒做完時自動再做一次**（〈新架構討論紀錄〉第 5 節〈A″ 要定的問題〉；config.MID_RETRY，預設關）：死路、
+   跟之前一樣，或做完但最後一個判斷選了「看過的行都沒有寫這件事」（_retry_trigger）——第一次的報告照樣交回（查到的不會丟），程式接著
+   讓中階再做一次（_mid_retry）：帶著第一次的經過與〈上一次查到的〉（mid.Worker.found），從清單重新挑技能、寫合約（值也可以從那裡抄，
+   程式核對）。再做的那一次的報告接在後面；它沒有報告就照第一份回答（不再開子工作階段）。同一次交給領域最多一次。開關關的時候照舊（A）。
 """
 import os
 import re
 
 from . import answers, mid, prompt_files, sub
 from .config import (DOMAIN_INDEX_NAME, DOMAIN_ITEM_TRIES, DOMAIN_ITEMS_MAX, DOMAIN_KNOWN_CHARS, DOMAIN_PLAN_MAX, DOMAIN_QUOTE_LINES,
-                     DOMAIN_RESULT_HEAD, MID_JOBS_DIRNAME, SUB_JOBS_DIRNAME)
+                     DOMAIN_RESULT_HEAD, MID_JOBS_DIRNAME, MID_RETRY, SUB_JOBS_DIRNAME)
 
 _ENTRY = re.compile(r"^- \[([A-Za-z0-9_]+)\]\(([^)]+)\)")
 _INDEX_LINE = re.compile(r"^- \[([A-Za-z0-9_]+)\]\(tools/[^)]+\)")
@@ -329,7 +333,7 @@ class DomainMixin:
         entry = {"key": [name, goal, items], "domain": name, "goal": goal, "items": items, "kind": None, "job": None, "status": None,
                  "skill": None, "calls": [], "n": len(mine) + 1, "previous": [x["job"] for x in previous],
                  "previous_info": [i for x in previous for i in self._attempt_infos(x)], "params": {}, "note": "", "searched": [],
-                 "result_id": None, "mid": None, "answers": [], "context": context}
+                 "result_id": None, "mid": None, "retry": None, "answers": [], "context": context}
         turn["dispatches"].append(entry)
         before = (self.current_cwd, self.container_cwd, self.target_container)
         question = self.current_task or goal
@@ -393,10 +397,12 @@ class DomainMixin:
                 "status_text": _status_text(x["kind"], x["status"]), "note": x["note"], "searched": x["searched"], "items": x["items"]}
 
     def _attempt_infos(self, x):
-        """交給領域的一次 → 上一次的經過（中階沒做完、接著開了子工作階段的，兩筆都給：中階的參數與停下來的原因、子工作階段做到的）。"""
+        """交給領域的一次 → 上一次的經過（中階沒做完、接著開了子工作階段的，兩筆都給：中階的參數與停下來的原因、子工作階段做到的；
+        A″ 自動再做過的也是兩筆：第一次與再做的那一次）。"""
         m = x.get("mid")
         head = [{"n": x["n"], "job": m["job"], "kind": "mid", "skill": m["skill"], "params": m["params"], "status": m["status"],
-                 "status_text": _status_text("mid", m["status"]), "note": m["note"], "searched": [], "items": x["items"]}] if m else []
+                 "status_text": _status_text("mid", m["status"]), "note": m["note"], "searched": m.get("searched") or [],
+                 "items": x["items"]}] if m else []
         return head + [self._attempt_info(x)]
 
     def _sub(self, name):
@@ -427,10 +433,11 @@ class DomainMixin:
         return text
 
     def _reported(self, x):
-        """這一次交給領域有沒有報告（照報告回答）：子工作階段結束了都有（每一項都不屬於這個領域的除外）；中階是做完、死路、熔斷、跟之前一樣。"""
+        """這一次交給領域有沒有報告（照報告回答）：子工作階段結束了都有（每一項都不屬於這個領域的除外）；中階是做完、死路、熔斷、跟之前一樣。
+        A″ 自動再做過的：第一次有報告，再做的那一次結束了就算有（沒有報告也照第一份回答）。"""
         if x.get("kind") == "sub":
             return x["status"] not in (None, "running", "need_user", "out_of_domain")
-        return x["status"] in REPORTED
+        return x["status"] in REPORTED or (bool(x.get("retry")) and x["status"] not in (None, "running", "need_user"))
 
     def _domain_outcome(self, entry, job, follow=True):
         name, st = entry["domain"], job["status"]
@@ -457,13 +464,18 @@ class DomainMixin:
             return _d("ask_waiting", domain=name, question=self.domain_pending["question"],
                       candidates=_d("ask_candidates", candidates=cands) if cands else "", url=url)
         self.domain_pending = None
+        trigger = self._retry_trigger(job) if kind == "mid" and follow and not entry.get("retry") else None
+        if trigger:
+            return self._mid_retry(entry, job, trigger, url)
+        if kind == "mid" and entry.get("retry") and st not in REPORTED:   # A″ 再做的那一次沒有報告：照第一份回答，不排除、不開子工作階段
+            return _d("retry_none", domain=name, status=_status_text(kind, st), reason=note or "—", url=url)
         if self._reported(entry):
             report = (job.get("result") or {}).get("report") or ""
             analysis = sub.analysis_reports(self, job) if kind == "sub" else []
             if analysis:                # G4：子工作階段裡執行的數據分析（原樣附在報告裡），主對話的回答照它核對（analysis_reply_check）
                 self.note_analysis_report(analysis[-1][1])
             self._domain_turn["reports"].append(report)
-            entry["report"] = report
+            entry["report"] = entry["report"] + "\n\n" + report if entry.get("retry") and entry.get("report") else report
             return _d("report", domain=name, status=_status_text(kind, st), skill=entry["skill"] or "—", url=url, report=report)
         if st == "out_of_domain":                     # 中階挑技能時、或子工作階段每一項都說不屬於這個領域（5-3）
             self._domain_turn["excluded"][name] = note or "—"
@@ -476,6 +488,34 @@ class DomainMixin:
                         "calls": entry["calls"]}
         follow_job = self._sub_start(name, entry, previous=entry["previous_info"] + [self._attempt_info(entry)])
         return _d("stepwise", domain=name, status=_status_text("mid", st), reason=note or "—", url=url) + "\n" + self._domain_outcome(entry, follow_job)
+
+    @staticmethod
+    def _retry_trigger(job):
+        """A″（config.MID_RETRY）：中階跑過、有結果、但沒做完的原因——死路、跟之前一樣（狀態），或做完但最後一個判斷選了「看過的行都沒有
+        寫這件事」（judge_not_found）。開關關、做完而且答到了、沒有報告（照舊接著開子工作階段）、熔斷：回 None。"""
+        if not MID_RETRY:
+            return None
+        st = job.get("status")
+        if st in ("dead_end", "repeated"):
+            return st
+        last = [x for x in job.get("judgments") or [] if isinstance(x, dict)][-1:]
+        return "judge_not_found" if st == "done" and last and last[0].get("branch") == "not_found" else None
+
+    def _mid_retry(self, entry, job, trigger, url):
+        """A″：第一次的報告照樣交回（加進這一回合的報告，主對話照它回答與核對），程式接著讓中階再做一次——帶著第一次的經過（previous）與
+        〈上一次查到的〉（mid.Worker.found），從清單重新挑技能、寫合約；同一次交給領域最多一次（entry["retry"]）。再做的那一次的結果接在後面
+        （_domain_outcome；要問使用者時照舊停下來，回答之後接回）。"""
+        name, st = entry["domain"], job["status"]
+        report = (job.get("result") or {}).get("report") or ""
+        self._domain_turn["reports"].append(report)
+        entry.update(report=report, retry=trigger, mid={"job": job["id"], "status": st, "skill": job.get("skill"), "params": dict(entry["params"]),
+                                                       "note": entry["note"], "calls": entry["calls"], "searched": entry["searched"]})
+        worker = mid.Worker(self, name)
+        again = worker.start(job["question"], entry["goal"], items=entry["items"], on_start=self._domain_started,
+                             previous=entry["previous_info"] + [self._attempt_info(entry)], attempt=entry["n"],
+                             retry={"of": job["id"], "trigger": trigger, "found": worker.found(job)})
+        head = _d("report", domain=name, status=_status_text("mid", st), skill=entry["skill"] or "—", url=url, report=report)
+        return head + "\n\n" + _d("retry", domain=name, why=mid.RETRY_WHY[trigger]) + "\n" + self._domain_outcome(entry, again)
 
     def _domain_history(self, entries=None):
         """這一回合交過的領域（高 4：能交的都交過了，寫做過的事）；entries＝只列這幾次。"""

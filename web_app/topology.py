@@ -318,13 +318,15 @@ def _mid_view(base, ref, d, job):
 
 
 def _chain(ref, job):
-    """同一個問題的幾次交給領域（4-2 的 I.4）：這是第幾次、上一次與下一次的工作（中階或子工作階段，在同一層的 mid_jobs/、sub_jobs/）。"""
+    """同一個問題的幾次交給領域（4-2 的 I.4）：這是第幾次、上一次與下一次的工作（中階或子工作階段，在同一層的 mid_jobs/、sub_jobs/）；
+    A″ 程式自動再做的那一次標 retry（同一次交給領域，第幾次一樣）。"""
     head = ref.split("/")[:-2]                 # 評測：題目的目錄；正式的 logs/：空的
     to = lambda x: "/".join(head + [SUB_JOBS_DIRNAME if x.get("kind") == "sub" else MID_JOBS_DIRNAME, x["job"]])   # noqa: E731
-    return {"attempt": job.get("attempt") or 1,
+    return {"attempt": job.get("attempt") or 1, "retry": bool(job.get("retry")),
             "previous": [{"ref": to(p), "n": p.get("n"), "status": p.get("status_text") or p.get("status"), "skill": p.get("skill"),
                           "note": p.get("note")} for p in job.get("previous") or [] if _SEG.match(str(p.get("job") or ""))],
-            "next": [{"ref": to(x), "n": x.get("n")} for x in job.get("next") or [] if _SEG.match(str(x.get("job") or ""))]}
+            "next": [{"ref": to(x), "n": x.get("n"), "retry": bool(x.get("retry"))} for x in job.get("next") or []
+                     if _SEG.match(str(x.get("job") or ""))]}
 
 
 def _sub_view(ref, d, job):

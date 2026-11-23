@@ -329,8 +329,9 @@ function chainHtml(ch) {
   if (!ch || (!(ch.previous || []).length && !(ch.next || []).length)) return '';
   const prev = (ch.previous || []).map((p) => `<a href="#" class="chain" data-ref="${esc(p.ref)}" title="${esc(p.note || '')}">← 第 ${esc(p.n)} 次`
     + `（${esc(p.skill || '—')}：${esc(jobStatusText(p.status))}）</a>`);
-  const next = (ch.next || []).map((x) => `<a href="#" class="chain" data-ref="${esc(x.ref)}">第 ${esc(x.n)} 次 →</a>`);
-  return `<div class="head-row">這是第 ${esc(ch.attempt)} 次交給這個領域 ${prev.join(' ')} ${next.join(' ')}</div>`;
+  const next = (ch.next || []).map((x) => `<a href="#" class="chain" data-ref="${esc(x.ref)}">${x.retry ? '程式自動再做的那一次' : `第 ${esc(x.n)} 次`} →</a>`);
+  const again = ch.retry ? '（程式自動再做的那一次：上一次沒做完，帶著查到的再挑技能、寫合約）' : '';
+  return `<div class="head-row">這是第 ${esc(ch.attempt)} 次交給這個領域${again} ${prev.join(' ')} ${next.join(' ')}</div>`;
 }
 
 // ---------------------------------------------------------------- 流程列

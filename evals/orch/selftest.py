@@ -366,7 +366,7 @@ def main():
             v2 = topology.job_view("logs", f"mid_jobs/{second['job']}", root=tmp)
             v1 = topology.job_view("logs", f"mid_jobs/{first['mid']['job']}", root=tmp)
             assert v2["chain"]["attempt"] == 2 and [x["ref"] for x in v2["chain"]["previous"]] == [f"mid_jobs/{first['mid']['job']}", f"sub_jobs/{first['job']}"], v2["chain"]
-            assert v1["chain"]["next"] == [{"ref": f"sub_jobs/{first['job']}", "n": 1}, {"ref": f"mid_jobs/{second['job']}", "n": 2}], v1["chain"]
+            assert v1["chain"]["next"] == [{"ref": f"sub_jobs/{first['job']}", "n": 1, "retry": False}, {"ref": f"mid_jobs/{second['job']}", "n": 2, "retry": False}], v1["chain"]
 
         def t_repeated():
             # 第 2 次挑一樣的技能、合約也一樣：先交回合約修一次（附原因），還是一樣就停（repeated），照報告回答
@@ -383,6 +383,64 @@ def main():
             text = tools_of(events)[1]
             assert "repo_analysis 的報告（跟之前的某一次一樣" in text and "跟第 1 次一樣（做法 py_usage" in text, text[:400]
             assert agent.domain_gate("search_text"), "有報告（跟之前一樣也算）：照舊擋"
+
+        def t_mid_retry():
+            # A″（開關 AGENT_MID_RETRY，預設關）：中階跑過、有結果、但沒做完（判斷說看過的行都沒寫）→ 第一次的報告照樣交回，程式接著讓中階
+            # 再做一次（帶著上一次的經過與查到的；合約的值可以從查到的抄）；兩份報告都交回、照兩份核對；不開子工作階段；最多一次
+            from agent_core import orchestrator
+            from evals import domain_calls
+            q = "guide 文件裡，啟動前要做什麼？"
+            go = dispatch("照 guide 文件找啟動前要做什麼", ["啟動前要做什麼"])
+            con_doc = {"understanding": "u", "doc": {"quote": "guide", "value": "guide"}, "words": {"quote": "啟動", "value": "啟動"}}
+            con_lines = {"understanding": "u", "keyword": {"quote": "啟動前", "value": "啟動前"}, "files": {"quote": "", "value": ""},
+                         "path": {"quote": "docs/guide.md", "value": "docs/guide.md"}, "exclude": {"quote": "", "value": ""}}
+            nothing = {"understanding": "u", "reason": "r", "lines": [], "branch": "not_found", "params": {}}
+            found = answer("找到了。", [(1, "answered", "啟動前先檢查電源", ["docs/guide.md:5"])])
+            missing = answer("文件沒有寫。", [(1, "not_found", "文件裡沒有寫啟動前要做什麼", [])])
+            # 開關關（A）：只有第一次
+            fake = FakeChat(main=[go, missing], select=[select("doc_lookup", asks=("內容",))], contract=[con_doc], judge=[nothing])
+            events, _ = turn(q, fake)
+            (e,) = agent._domain_turn["dispatches"]
+            assert e["retry"] is None and e["skill"] == "doc_lookup" and fake.count("select") == 1, e
+            assert "自動再做" not in tools_of(events)[0]
+            orchestrator.MID_RETRY = True
+            try:
+                fake = FakeChat(main=[go, found], select=[select("doc_lookup", asks=("內容",)), select("find_lines", asks=("位置", "內容"))],
+                                contract=[con_doc, con_lines], judge=[nothing])
+                events, _ = turn(q, fake)
+                (e,) = agent._domain_turn["dispatches"]
+                assert e["retry"] == "judge_not_found" and e["mid"]["skill"] == "doc_lookup" and (e["skill"], e["status"]) == ("find_lines", "done"), e
+                job1, job2 = mid_job(e["mid"]["job"]), mid_job(e["job"])
+                assert job2["retry"]["of"] == job1["id"] and job2["retry"]["trigger"] == "judge_not_found" and job2["previous"][-1]["skill"] == "doc_lookup"
+                assert job2["params"]["path"]["source"] == "found" and job2["params"]["keyword"]["source"] == "question", job2["params"]
+                text = tools_of(events)[0]
+                assert "repo_analysis 的報告（做完；做法 doc_lookup）" in text and "上面這一次沒有做完（做完，但判斷說看過的行都沒有寫這件事）" in text, text[:800]
+                assert "repo_analysis 的報告（做完；做法 find_lines）" in text and "docs/guide.md:5" in text, text[-600:]
+                assert len(agent._domain_turn["reports"]) == 2 and fake.count("sub") == 0, "兩份報告都交回；不開子工作階段"
+                assert "沒有通過核對" not in chats(events)[-1], "照再做的那一份報告寫的出處通過核對"
+                assert [p["n"] for p in agent._attempt_infos(e)] == [1, 1] and agent._attempt_infos(e)[0]["searched"] == ["啟動"], "之後再交：兩筆都給"
+                rec = domain_calls.calls(agent, {"action": go["action"]}, "ok")
+                assert (rec[0]["mid_skill"], rec[0]["retry"], rec[0]["retry_skill"], rec[0]["retry_job"]) == ("doc_lookup", "judge_not_found", "find_lines", e["job"]), rec[0]
+                assert [c["skill"] for c in rec[1:]].count("search_text") == 2, "兩次用到的工具都記"
+                from web_app import topology
+                v1 = topology.job_view("logs", f"mid_jobs/{job1['id']}", root=tmp)
+                v2 = topology.job_view("logs", f"mid_jobs/{job2['id']}", root=tmp)
+                assert v1["chain"]["next"] == [{"ref": f"mid_jobs/{job2['id']}", "n": 1, "retry": True}] and v2["chain"]["retry"], (v1["chain"], v2["chain"])
+                # 再做的那一次沒有報告（挑了「沒有適合的」）：照第一份回答，不排除、不開子工作階段
+                fake = FakeChat(main=[go, missing], select=[select("doc_lookup", asks=("內容",)), select("none", "沒有別的做法")],
+                                contract=[con_doc], judge=[nothing])
+                events, _ = turn(q, fake)
+                (e,) = agent._domain_turn["dispatches"]
+                assert e["retry"] == "judge_not_found" and e["status"] == "no_skill" and agent._reported(e) and agent.domain_items() == ["啟動前要做什麼"], e
+                assert "再做的那一次沒有報告（這個領域沒有適合的複合技能：沒有別的做法" in tools_of(events)[0] and fake.count("sub") == 0
+                assert "repo_analysis" not in agent._domain_turn["excluded"]
+                # 沒有觸發（做完、沒有判斷的技能）：照舊一次
+                fake = FakeChat(main=[dispatch("在 pkg 裡找 alpha", ["alpha 定義在哪"]), cite], select=[SEL_PY], contract=[con_py()])
+                turn("pkg 裡的 alpha 定義在哪？", fake)
+                (e,) = agent._domain_turn["dispatches"]
+                assert e["retry"] is None and fake.count("select") == 1 and e["status"] == "done", e
+            finally:
+                orchestrator.MID_RETRY = False
 
         def t_item_tries():
             # 同一個項目最多交 3 次（G5）：第 4 次程式擋下來（不執行中階）
@@ -1159,6 +1217,8 @@ def main():
                          ("帶著上一次的經過再交：中階停下來的原因與子工作階段做到的都交給中階、第幾次、幾次串起來（中階與子工作階段之間也連）",
                           t_redispatch_previous),
                          ("一樣的技能與參數：合約交回修一次，還是一樣就停（跟之前一樣），照報告回答、照舊擋", t_repeated),
+                         ("A″（開關）：中階跑過、有結果、但沒做完 → 第一次的報告照樣交回，中階帶著查到的再做一次（合約可以抄查到的），"
+                          "兩份報告照著回答與核對、評測記兩次；再做的沒有報告照第一份回答；不開子工作階段；沒觸發與開關關照舊", t_mid_retry),
                          ("同一個項目最多交 3 次：第 4 次程式擋下來", t_item_tries),
                          ("核對：沒有的領域、子目標是空的、項目數、一樣的再交一次", t_validation),
                          ("沒有適合的做法：接著開子工作階段一步一步做（主對話看不到試錯、照舊擋）；報告附每一項的回答、出處的原文與每一步；評測照 via 記",

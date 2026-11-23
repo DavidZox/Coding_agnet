@@ -898,6 +898,51 @@ def main():
         assert job["status"] == "repeated" and job["params"]["name"]["source"] == "previous", (job["status"], job["params"])
         assert [x["role"] for x in model.calls] == ["select", "contract", "contract"], [x["role"] for x in model.calls]
 
+    def t_retry_found():
+        # A″：第一次跑過、有結果、但沒做完（判斷接著找的字都找過了 → 死路）→〈上一次查到的〉由程式從收據與判斷整理；再做的那一次挑技能、
+        # 合約看得到這一節，合約的值可以從有出處的行抄（記成 found 與出處），問題、子目標與這一節都沒有的照樣擋
+        first = doc_model(judge_reply([jline("ALP-S02 | RUNNING | cmd_halt", label="相關")], branch="follow", params={"names": ["RUNNING"]}))
+        job1 = run(DOC_Q, first)
+        assert job1["status"] == "dead_end" and job1["judgments"][-1]["result"] == "params_rejected", (job1["status"], job1["judgments"])
+        rows = mid.Worker(agent, model=FakeModel(), fixer=lambda req, log: None).found(job1)
+        text = "\n".join(r["text"] for r in rows)
+        rid = job1["graphs"][-1]["nodes"]["hits"]["results"][0]
+        assert rows[0] == {"ref": "", "text": "判斷挑出的行："} and {"ref": "docs/spec_alpha.md:6", "text": f"- docs/spec_alpha.md:6（相關，#{rid}）：{S02}"} in rows, rows
+        assert "判斷最後選了「這些行提到別的編號或名稱，要在同一份文件接著找才回答得了」：names＝RUNNING；這條路要填的值沒有通過核對，停" \
+               "（RUNNING 之前找過了，再找一次結果一樣）" in text, text
+        assert f"search_text 的結果（#{rid}）：" in text and {"ref": f"#{rid}", "text": "  - 搜尋「RUNNING|cmd_halt」，範圍：docs/spec_alpha.md"} in rows
+        assert {"ref": f"#{rid}", "text": "      - docs/spec_alpha.md：3 筆"} in rows, rows
+        assert "理由" not in text, "不放模型寫的理由"
+        prev = [{"n": 1, "job": job1["id"], "kind": "mid", "skill": "doc_lookup", "params": {k: v["value"] for k, v in job1["params"].items()},
+                 "status": "dead_end", "status_text": mid.STATUS_TEXT["dead_end"], "note": job1["result"]["note"], "searched": mid.searched(job1),
+                 "items": []}]
+        retry = {"of": job1["id"], "trigger": "dead_end", "found": rows}
+        con = {"understanding": "u", "keyword": cell("ALP-F07", "ALP-F07"), "files": cell(), "path": cell("docs/spec_alpha.md", "docs/spec_alpha.md"),
+               "exclude": cell()}
+        model = FakeModel(select=[{"understanding": "u", "asks": ["位置", "內容"], "skill": "find_lines", "reason": "找提到 ALP-F07 的行"}], contract=[con])
+        job2 = mid.Worker(agent, model=model, fixer=lambda req, log: None).start(DOC_Q, previous=prev, attempt=1, retry=retry)
+        assert job2["status"] == "done" and job2["retry"]["of"] == job1["id"], (job2["status"], job2["result"]["note"])
+        assert job2["params"]["keyword"] == {"value": "ALP-F07", "quote": "ALP-F07", "source": "found", "from": "docs/spec_alpha.md:6"}, job2["params"]
+        assert job2["params"]["path"]["source"] == "found" and job2["params"]["path"]["value"] == "docs/spec_alpha.md", job2["params"]["path"]
+        sel, con_call = model.calls[0], model.calls[1]
+        for c in (sel, con_call):
+            assert "【上一次查到的】" in c["user"] and f"- docs/spec_alpha.md:6（相關，#{rid}）：" in c["user"] and "【上一次的經過】" in c["user"], c["user"][-500:]
+        assert "這次的參數只從這一段抄" not in con_call["user"] and "【使用者的問題】" in con_call["user"], "子目標沒有換：問題照舊是原文"
+        report = job2["result"]["report"]
+        assert "- 第 1 次交給這個領域，程式自動再做的那一次（第一次死路" in report and "keyword＝ALP-F07（上一次查到的「ALP-F07」（docs/spec_alpha.md:6））" in report, report[:900]
+        assert "docs/spec_alpha.md:10" in report, "照新的參數做：找到 ALP-F07 的那一行"
+        assert saved(job1)["next"] == [{"job": job2["id"], "n": 1, "kind": "mid", "retry": True}], "決策圖從第一次連到再做的那一次（標 retry）"
+        # 合約的原文：問題、子目標加上有出處的行（說明的行不算）；三處都沒有的照樣擋
+        source = mid.Worker._quote_source(job2)
+        assert "ALP-F07" in source and "之前找過了" not in source and "判斷挑出的行：" not in source, source[-300:]
+        kw = {"name": "keyword", "type": "text"}
+        assert mid.verify_param(kw, "ALP-F99", "ALP-F99", source)[0] is None and mid.verify_param(kw, "ALP-F07", "ALP-F07", source)[0] == "ALP-F07"
+        w = mid.Worker(agent, model=FakeModel(), fixer=lambda req, log: None)
+        why = w._verify(job2, kw, cell("ALP-F99", "ALP-F99"))[1]
+        assert "不在問題、子目標或【上一次查到的】有出處的行裡" in why, ("交回修的說明寫明這一次也可以從上一次查到的抄", why)
+        # 平常（不是再做的那一次）沒有這一節
+        assert all("【上一次查到的】" not in c["user"] for c in first.calls), "第一次：沒有〈上一次查到的〉"
+
     def t_judgment_follow_wider():
         # 接著找：第 1 次挑一行、要找 ALP-F07 → 第 2 版加 more_2、read_2（跑過的不重跑）→ 第 2 次看得到之前挑的行與找過的字
         model = doc_model(judge_reply([jline("ALP-S02", label="相關")], branch="follow", params={"names": ["ALP-F07"]}),
@@ -1058,6 +1103,8 @@ def main():
               t_previous),
              ("再交時合約照新的子目標（第 5 步 G9）：參數只從子目標抄、抄了原始問題的交回並寫明、子目標沒提到的沿用上一次的值；"
               "沒有新的參數就跟之前一樣（repeated）", t_redispatch_goal),
+             ("A″ 程式自動再做的那一次：〈上一次查到的〉由程式從收據與判斷整理（挑出的行、被擋下的路、工具的結果，不放理由）；"
+              "挑技能、合約看得到，值可以從有出處的行抄（記成 found 與出處），都沒有的照樣擋", t_retry_found),
              ("判斷之後接著做：接著找（加節點、後面接同一個判斷、跑過的不重跑、看得到之前挑的行與找過的字）、看前後（view_file --around）",
               t_judgment_follow_wider),
              ("判斷沒過核對：片段交回重抄；參數沒過可以重選路；找過的字當成沒過；修了還是不對就停；沒有挑出行、沒寫、模型沒有回覆", t_judgment_fix),

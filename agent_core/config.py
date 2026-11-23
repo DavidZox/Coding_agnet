@@ -212,6 +212,12 @@ MID_JUDGE_LINES = 12
 # 判斷用的模型（D8：可以另外設定）；空字串＝中階的模型（MID_MODEL，再空就是主對話的模型）。
 MID_JUDGE_MODEL = os.environ.get("AGENT_MID_JUDGE_MODEL", "").strip()
 MID_JUDGE_PREDICT = 2000     # 判斷的輸出（理解＋挑的行＋分支與參數＋理由）的 num_predict 上限
+# 📌 A″ 的比較（〈新架構討論紀錄〉第 5 節〈A″ 要定的問題〉，使用者 2026-11-23 照建議定案）：AGENT_MID_RETRY=1 時，中階跑過、有結果、
+# 但沒做完——死路、跟之前一樣、做完但最後一個判斷選了「看過的行都沒有寫這件事」——程式讓中階自動再做一次（同一次交給領域最多一次）：
+# 從清單重新挑技能、寫合約，帶著〈上一次查到的〉（程式從第一次的收據與判斷整理，最多 MID_FOUND_CHARS 字：資源的上限），合約的值也可以
+# 從那裡抄（程式核對）；兩次的報告都交回主對話。預設關（A）：比較完留下比較好的那一個。
+MID_RETRY = os.environ.get("AGENT_MID_RETRY", "").strip().lower() in ("1", "true", "yes", "on")
+MID_FOUND_CHARS = 4000
 
 # 🧷 主對話與子工作階段回覆的字串上限（schemas.agent_reply_schema；資源的上限，跟其他 schema 的字串一樣：小模型偶爾在字串裡一直重複同一段，
 # 沒有上限時一次寫兩萬多個 token、寫到 JSON 解析不了，第 5 步 5-1 的評測）。Ollama（llama.cpp 的文法）只照 2000 字以內的 maxLength 截斷，
