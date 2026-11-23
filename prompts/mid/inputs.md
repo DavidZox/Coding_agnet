@@ -10,7 +10,6 @@ labels＝可以標的種類；branches＝每條路一則（judge_branch*）；id
 where＝片段對到的那幾行；line＝行號；label＝挑的時候標的種類；text＝那一行的內容（程式從原文取）；words＝這個工作找過的字；branch＝選的路。
 上一次的經過（previous*，4-2：同一個問題再交給這個領域時，程式從之前幾次的紀錄取）：count＝之前交了幾次；attempts＝每一次一則；n＝第幾次；
 skill＝那一次的複合技能；params＝那一次的參數；status＝結果；note＝停下來的原因；searched＝那一次找過的字；items＝那一次要回答的項目。
-上一次查到的（found*，A″：第一次沒做完、程式讓中階自動再做的那一次）：rows＝每一行（程式從收據與判斷整理）；say＝判斷最後選的路；result＝那條路的結果；words＝之前找過的字；tool＝工具；ref＝出處（#編號）；file、start、end、total＝看的檔案、那一段與檔案的行數；count＝沒有列的行數；refs＝那幾行的出處。
 
 <!-- @question -->
 【使用者的問題】
@@ -87,36 +86,11 @@ skill＝那一次的複合技能；params＝那一次的參數；status＝結果
 <!-- @previous_attempt -->
 - 第 {n} 次：做法 {skill}；參數 {params}；結果：{status}{note}；找過的字：{searched}；那一次的項目：{items}
 
-<!-- @found -->
-【上一次查到的】上一次交給這個領域時查到的（程式從收據與判斷整理；檔案、行號與內容由程式從原文取）。上一次沒有答到問題：這次可以換一個複合技能，或照這些結果改參數（例如範圍改成找到的檔案、搜尋的字換成這些行裡的寫法）。合約的 quote 也可以從這一節有出處的行（判斷挑出的行、工具的結果）一字不改地抄。
-{rows}
-
-<!-- @found_picked -->
-判斷挑出的行：
-
-<!-- @found_stopped -->
-判斷最後選了「{say}」：{params}；{result}{again}
-
-<!-- @found_again -->
-（{words} 之前找過了，再找一次結果一樣）
-
-<!-- @found_tool -->
-{tool} 的結果（{ref}）：
-
-<!-- @found_view -->
-- 看了 {file} 的第 {start}～{end} 行（檔案共 {total} 行）
-
-<!-- @found_more -->
-（還有 {count} 行沒有列：見 {refs}）
-
 <!-- @reject_same -->
 這次的參數跟第 {n} 次一模一樣（做法 {skill}；{params}），那一次的結果是「{status}」：照一樣的參數再跑一次結果也一樣。請照那一次停下來的原因改參數（每個參數重寫）；問題裡真的沒有別的寫法，就照原樣寫。
 
 <!-- @reject_quote -->
 - {name}：抄的原文「{quote}」不在問題或子目標裡（要一字不改地抄）
-
-<!-- @reject_quote_found -->
-- {name}：抄的原文「{quote}」不在問題、子目標或【上一次查到的】有出處的行裡（要一字不改地抄）
 
 <!-- @reject_quote_goal -->
 - {name}：抄的原文「{quote}」在原始問題裡、不在這一次的子目標裡（這次再交，參數只從子目標抄；子目標沒提到就留空，程式會沿用上一次的值）

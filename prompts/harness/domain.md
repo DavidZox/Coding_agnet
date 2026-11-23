@@ -2,17 +2,11 @@
 查得到的項目 routes、分工做完時依報告回答的說明 answer_hint、要問使用者、中階沒做完時接著一步一步做、不屬於這個領域、/clear 取消），
 擋領域的工具與複合技能（tool_blocked、skill_blocked）、核對沒過的說明（[ERROR] 後面的部分），依報告回答時
 answers 沒有通過核對的說明（answers_fix、why_*；why_* 也用在使用者看到的「沒有通過核對」與子工作階段收尾的核對）。開頭的 [PASS] 🗺️／[ERROR]
-由程式加。交給下一層的文字（前面的領域查到的、這個問題的分工）在 harness/plan.md。A″（程式讓中階自動再做一次）的接在第一份報告後面（retry、retry_none）。{名稱} 是程式填的值。
+由程式加。交給下一層的文字（前面的領域查到的、這個問題的分工）在 harness/plan.md。{名稱} 是程式填的值。
 
 <!-- @report -->
 {domain} 的報告（{status}；做法 {skill}）。決策圖：{url}
 {report}
-
-<!-- @retry -->
-{domain} 上面這一次沒有做完（{why}），系統帶著查到的，讓中階自動再做了一次；兩份報告都可以照著回答：
-
-<!-- @retry_none -->
-{domain} 再做的那一次沒有報告（{status}：{reason}；決策圖：{url}），照上面那一份報告回答。
 
 <!-- @routes -->
 子工作階段查不到、不屬於它、寫了哪個領域查得到的項目（系統從它們的回答取）：

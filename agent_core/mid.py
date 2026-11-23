@@ -28,10 +28,6 @@
 8. **上一次的經過**（4-2，〈新架構討論紀錄〉第 4 節〈第 4 步〉I）：同一個問題再交給這個領域時，高階把之前幾次的紀錄（技能、參數、結果、
    停下來的原因、找過的字、那一次的項目）交下來（previous）：挑技能與合約看得到這一節，判斷看得到之前找過的字；照一樣的技能與一樣的參數
    再跑一次結果也一樣，程式先把合約交回修一次（附原因），還是一樣就停（repeated，寫明跟第幾次一樣）。幾次之間用 previous、attempt 串起來。
-9. **A″：程式自動再做的那一次**（〈新架構討論紀錄〉第 5 節〈A″ 要定的問題〉；config.MID_RETRY，預設關）：高階判斷第一次跑過、有結果、
-   但沒做完時（agent_core/orchestrator.py 的 _retry_trigger）再開一個工作（retry），帶著〈上一次查到的〉（found：判斷挑出的行、判斷最後
-   想接著做而被程式擋下的、每個工具節點的結果——程式從收據與判斷整理，不放模型寫的字）。挑技能與合約看得到這一節；合約的原文是問題、
-   子目標加上這一節（_quote_source：從這裡抄的值也在收據裡，記成 found 與出處）；跟之前一模一樣的擋、沿用、補參數照舊。
 
 每一次存在 logs/mid_jobs/<編號>/：job.json（選的技能、參數與原文、每一版的圖與節點的狀態、回退、換技能 switched、判斷 judgments、
 問使用者的問題與回答 asked、結果）、report.md、events.jsonl、calls.jsonl（挑技能、合約與判斷的模型呼叫）。低階的執行（每個節點的嘗試、
@@ -45,8 +41,8 @@ import time
 
 from . import edg, judge, prompt_files, skill_spec
 from .config import (EDG_JOBS_DIRNAME, MID_CONTRACT_PREDICT, MID_JOBS_DIRNAME, MID_JOBS_KEEP, MID_JUDGE_LINES, MID_JUDGE_MAX,
-                     MID_FOUND_CHARS, MID_JUDGE_MODEL, MID_JUDGE_PREDICT, MID_MODEL, MID_REPLAN_MAX, MID_REPORT_LINES, MID_SELECT_PREDICT,
-                     NUM_CTX, SUB_JOBS_DIRNAME)
+                     MID_JUDGE_MODEL, MID_JUDGE_PREDICT, MID_MODEL, MID_REPLAN_MAX, MID_REPORT_LINES, MID_SELECT_PREDICT, NUM_CTX,
+                     SUB_JOBS_DIRNAME)
 from .jobstore import JobStore
 from .schemas import mid_contract_schema, mid_judge_schema, mid_select_schema
 
@@ -60,8 +56,6 @@ JUDGE_RESULT = {"done": "結束", "replanned": "照這條路加了節點，接�
                 "circuit_break": f"判斷已經 {MID_JUDGE_MAX} 次，還要接著做：停（熔斷）", "params_rejected": "這條路要填的值沒有通過核對，停",
                 "no_lines": "這條路要有挑出的行，但挑的行都沒有通過核對", "no_input": "要看的節點沒有結果（0 筆），沒有判斷",
                 "failed": "判斷的模型沒有回覆、回覆不是 JSON，或選了清單外的路"}
-RETRY_WHY = {"dead_end": STATUS_TEXT["dead_end"], "repeated": STATUS_TEXT["repeated"],   # A″：第一次為什麼算沒做完（高階的 _retry_trigger）
-             "judge_not_found": "做完，但判斷說看過的行都沒有寫這件事"}
 SWITCH_TYPES = {("name", "names"), ("name", "words"), ("names", "words"), ("words", "names")}   # 換技能時參數的種類可以這樣換（其他要一樣）
 CANDIDATES_MAX = 10
 _PARAM = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
@@ -576,16 +570,15 @@ class Worker:
         self._files = {}                        # 報告列提到的行時讀的檔案（judge.rows 的快取）
 
     # ---------------------------------------------------------------- 進入點
-    def start(self, question, goal=None, items=None, on_start=None, previous=None, attempt=1, retry=None):
+    def start(self, question, goal=None, items=None, on_start=None, previous=None, attempt=1):
         """items：高階交下來的要回答的項目（存進 job、列在報告開頭；挑技能與判斷先不看）。on_start(編號)：job 建好就呼叫
         （高階在執行中就把拓撲圖的連結推給畫面）。previous：同一個問題之前交給這個領域的經過（4-2：[{"n", "job", "skill", "params",
-        "status", "note", "searched", "items"}]，高階從之前的工作取）；attempt：這是第幾次。retry：A″ 程式自動再做的那一次
-        （{"of": 第一次的工作, "trigger": 為什麼算沒做完, "found": 上一次查到的（found()）}；平常是 None）。"""
+        "status", "note", "searched", "items"}]，高階從之前的工作取）；attempt：這是第幾次。"""
         jid = self.store.new_id()
         self.store.prune(MID_JOBS_KEEP)
         job = {"id": jid, "status": "running", "created": _now(), "updated": _now(), "cwd": self.agent.current_cwd,
                "domain": self.domain_name, "question": question, "goal": (goal or question).strip(), "items": list(items or []),
-               "attempt": attempt, "previous": list(previous or []), "retry": retry, "selection": None, "skill": None,
+               "attempt": attempt, "previous": list(previous or []), "selection": None, "skill": None,
                "contract": None, "params": {}, "rejected": [], "auto_filled": [], "fetches": [], "graphs": [], "edg_job": None,
                "fallbacks": [], "applied": [], "added": [], "replans": 0, "switched": [], "judgments": [], "need_user": None, "asked": [],
                "result": None}
@@ -594,7 +587,7 @@ class Worker:
             store = self.store if p.get("kind", "mid") == "mid" else JobStore(os.path.join(self.agent.script_dir, "logs", SUB_JOBS_DIRNAME))
             pj = store.load(p.get("job")) if p.get("job") else None
             if pj:
-                pj.setdefault("next", []).append(dict({"job": jid, "n": attempt, "kind": "mid"}, **({"retry": True} if retry else {})))
+                pj.setdefault("next", []).append({"job": jid, "n": attempt, "kind": "mid"})
                 store.save(pj)
         if on_start:
             on_start(jid)
@@ -654,7 +647,6 @@ class Worker:
         parts = ([_i("goal", goal=job["goal"]), _i("select_question", question=job["question"])] if job["goal"] != job["question"]
                  else [_i("question", question=job["question"])])
         parts += [_i("domain", domain=domain["title"], intro=domain["intro"]), _i("skills", skills=entries)] + self._previous_part(job)
-        parts += self._found_part(job)
         out = self.model("select", prompt_files.load("mid/select.md"), "\n\n".join(parts), mid_select_schema(names, KINDS),
                          MID_SELECT_PREDICT, self._log(job["id"]))
         if not out:
@@ -691,7 +683,7 @@ class Worker:
                 bad[p["name"]] = why
                 job["rejected"].append({"param": p["name"], "round": 1, "quote": cell.get("quote"), "value": cell.get("value"), "why": why})
             elif value is not None:
-                job["params"][p["name"]] = self._quoted(job, value, cell, p["type"])
+                job["params"][p["name"]] = self._quoted(job, value, cell)
         for p in params:                        # 漏了的必填參數也交回修一次（原文的核對照舊：問題裡真的沒有，模型就只能留空）
             if p.get("required") and p["name"] not in job["params"] and p["name"] not in bad and not self._carried(job, p):
                 bad[p["name"]] = _i("reject_missing", name=p["name"])
@@ -704,7 +696,7 @@ class Worker:
                 if why:
                     job["rejected"].append({"param": p["name"], "round": 2, "quote": cell.get("quote"), "value": cell.get("value"), "why": why})
                 elif value is not None:
-                    job["params"][p["name"]] = self._quoted(job, value, cell, p["type"])
+                    job["params"][p["name"]] = self._quoted(job, value, cell)
         self._carry_over(job, spec)
         self._note(job["id"], "🧭 合約：" + ("；".join(f"{k}＝{v['value']}" for k, v in job["params"].items()) or "原文沒有提到參數")
                    + (f"（{len(job['rejected'])} 個沒過核對）" if job["rejected"] else ""))
@@ -722,13 +714,13 @@ class Worker:
                 rows.append(_i("param_default", name=p["name"], kind=kinds[p["type"]], desc=p["desc"], default=p["default"]))
             else:
                 rows.append(_i("param_optional", name=p["name"], kind=kinds[p["type"]], desc=p["desc"]))
-        if job.get("previous") and not job.get("retry"):   # 再交（第 5 步 G9）：參數只從這一次的子目標抄，原始問題只當背景
+        if job.get("previous"):                 # 再交（第 5 步 G9）：參數只從這一次的子目標抄，原始問題只當背景
             parts = [_i("redispatch_goal", n=job.get("attempt") or len(job["previous"]) + 1, goal=job["goal"]),
                      _i("redispatch_question", question=job["question"])]
         else:
             parts = [_i("question", question=job["question"])] + ([_i("goal", goal=job["goal"])] if job["goal"] != job["question"] else [])
         parts += [_i("skill", name=spec["name"], title=spec["meta"]["title"], description=spec["meta"]["description"]),
-                  _i("params", params="\n".join(rows))] + self._previous_part(job) + self._found_part(job)
+                  _i("params", params="\n".join(rows))] + self._previous_part(job)
         if rejected:
             parts.append(_i("rejected", rejected=rejected))
         if note:                                       # 參數跟之前某一次一模一樣（_recontract）：整份重寫的原因
@@ -753,89 +745,22 @@ class Worker:
         return "；".join(f"{k}＝{Worker._show(v)}" for k, v in (values or {}).items()) or "—"
 
     @staticmethod
-    def _found_part(job):
-        """A″ 那一次的挑技能與合約多一節〈上一次查到的〉（retry 的 found；平常沒有這一節）。"""
-        return [_i("found", rows="\n".join(r["text"] for r in job["retry"]["found"]))] if job.get("retry") else []
-
-    def found(self, job):
-        """這個工作查到的（A″：交給程式自動再做的那一次，〈上一次查到的〉）→ [{"ref": 出處, "text": 一行}]。程式從收據與判斷整理，不放模型
-        寫的字（判斷的理由沒有核對過）：判斷挑出的行（檔案、行號與內容由程式從原文取）、判斷最後想接著做而被程式擋下的路、最後一版圖的
-        每個工具節點的結果（search_text 的範圍與每個檔案的筆數、find_file 找到的檔案、code_ast_reader 的定義與呼叫、view_file 看的那一段；
-        各附 #編號）。有出處的行才算合約的原文（_quote_source）；被擋下的路只是說明（填的值可能沒有通過核對）。跟之前一樣（repeated）的工作
-        自己沒有跑，用它一樣的那一次。最多 MID_FOUND_CHARS 字，放不下的寫明還有幾行。"""
-        src = job
-        if not job.get("graphs") and (job.get("same_as") or {}).get("job"):
-            src = self.store.load(job["same_as"]["job"]) or job
-        rows, seen = [], set()
-        for j in src.get("judgments") or []:
-            for x in j.get("lines") or []:
-                if (x["path"], x["line"]) not in seen:
-                    seen.add((x["path"], x["line"]))
-                    rows.append({"ref": f"{x['file']}:{x['line']}", "text": f"- {x['file']}:{x['line']}（{x['label']}，{x['source']}）：{x['text']}"})
-        if rows:
-            rows.insert(0, {"ref": "", "text": _i("found_picked")})
-        last = [j for j in src.get("judgments") or [] if j.get("round")][-1:]
-        domain = self._domain()
-        if last and last[0].get("result") in ("params_rejected", "no_new_nodes") and last[0].get("params") and src.get("skill") in domain["skills"]:
-            j, before = last[0], {w.lower() for w in self._searched(src, domain)}
-            again = [w for v in j["params"].values() if isinstance(v, list) for w in v if str(w).lower() in before]
-            rows.append({"ref": "", "text": _i("found_stopped", say=j.get("say") or j.get("branch") or "—", result=JUDGE_RESULT.get(j["result"], ""),
-                                               params="；".join(f"{k}＝{self._show(v)}" for k, v in j["params"].items()),
-                                               again=_i("found_again", words="、".join(again)) if again else "")})
-        ej = self._executor().store.load(src["edg_job"]) if src.get("edg_job") else None
-        values = {k: v["value"] for k, v in (src.get("params") or {}).items()}
-        for g in (src.get("graphs") or [])[-1:]:
-            for n in g["graph"]["nodes"]:
-                if not ej or n.get("tool") not in ("search_text", "find_file", "code_ast_reader", "view_file") or n["id"] not in ej["nodes"]:
-                    continue
-                ref = "、".join(f"#{r}" for r in (g["nodes"].get(n["id"]) or {}).get("results") or []) or n["id"]
-                if n["tool"] == "view_file":
-                    body = [_i("found_view", file=self._rel(src, it["path"]), start=it.get("from"), end=it.get("to"),
-                               total=(r.get("counts") or {}).get("total_lines", "?"))
-                            for _, _, r in self._instances(ej, n["id"]) if r and r.get("status") == "pass" for it in (r.get("items") or [])[:1]]
-                else:
-                    body = REPORTERS[n["tool"]](self, src, ej, dict(n, lines=False), values)
-                if body:
-                    rows += [{"ref": "", "text": _i("found_tool", tool=n["tool"], ref=ref)}] + [{"ref": ref, "text": "  " + b} for b in body]
-        out, used = [], 0
-        for k, r in enumerate(rows):
-            if used + len(r["text"]) > MID_FOUND_CHARS:
-                refs = "、".join(dict.fromkeys(x["ref"] for x in rows[k:] if x["ref"]))
-                out.append({"ref": "", "text": _i("found_more", count=len(rows) - k, refs=refs or "—")})
-                break
-            out.append(r)
-            used += len(r["text"]) + 1
-        return out
-
-    @staticmethod
     def _quote_source(job):
         """合約的原文：第一次是問題與子目標；再交（附了上一次的經過）時只有這一次的子目標（第 5 步 G9：4-2 時 26b 再交 31 次裡 22 次換了子目標，
-        合約卻照原始問題抄一樣的參數，再交沒有換做法）。A″ 程式自動再做的那一次（retry，子目標沒有換）：問題、子目標，加上〈上一次查到的〉
-        （程式從收據整理的，從這裡抄的值也在收據裡）。"""
-        if job.get("retry"):
-            return "\n".join([job["question"], job["goal"]] + [r["text"] for r in job["retry"]["found"] if r["ref"]])
+        合約卻照原始問題抄一樣的參數，再交沒有換做法）。"""
         return job["goal"] if job.get("previous") else job["question"] + "\n" + job["goal"]
 
     def _verify(self, job, p, cell):
         """verify_param 照 _quote_source 的原文核對；再交時抄了原始問題（不是子目標）的，交回的說明寫明這次只從子目標抄。"""
         value, why = verify_param(p, cell.get("quote"), cell.get("value"), self._quote_source(job))
         q = _unquote(cell.get("quote"))
-        if why and job.get("previous") and not job.get("retry") and q and _in_source(q, job["question"], p["type"]):
+        if why and job.get("previous") and q and _in_source(q, job["question"], p["type"]):
             why = _i("reject_quote_goal", name=p["name"], quote=q)
-        elif why and job.get("retry") and why == _i("reject_quote", name=p["name"], quote=q or str(cell.get("quote"))):   # A″：原文多了上一次查到的
-            why = _i("reject_quote_found", name=p["name"], quote=q or str(cell.get("quote")))
         return value, why
 
     @staticmethod
-    def _quoted(job, value, cell, t):
-        """過了核對的值 → 參數的紀錄（值、抄的原文、從哪裡抄）。A″ 那一次抄的不在問題與子目標裡、在〈上一次查到的〉裡：記成 found，
-        附那一行的出處（#編號或 檔案:行號；跨好幾行的不附）。"""
-        q = _unquote(cell.get("quote"))
-        out = {"value": value, "quote": q, "source": "goal" if job.get("previous") and not job.get("retry") else "question"}
-        if job.get("retry") and not _in_source(q, job["question"] + "\n" + job["goal"], t):
-            row = next((r for r in job["retry"]["found"] if r["ref"] and _in_source(q, r["text"], t)), None)
-            out.update({"source": "found"}, **({"from": row["ref"]} if row else {}))
-        return out
+    def _quoted(job, value, cell):
+        return {"value": value, "quote": _unquote(cell.get("quote")), "source": "goal" if job.get("previous") else "question"}
 
     @staticmethod
     def _carried(job, p):
@@ -869,7 +794,7 @@ class Worker:
             if why:
                 job["rejected"].append({"param": p["name"], "round": 3, "quote": cell.get("quote"), "value": cell.get("value"), "why": why})
             elif value is not None:
-                job["params"][p["name"]] = self._quoted(job, value, cell, p["type"])
+                job["params"][p["name"]] = self._quoted(job, value, cell)
         self._carry_over(job, spec)
         job["same_as"] = {"n": same.get("n"), "job": same.get("job"), "fixed": True}
         self._note(job["id"], f"🧭 參數跟第 {same.get('n')} 次一樣，合約重寫一次：" + ("；".join(f"{k}＝{v['value']}" for k, v in job["params"].items())
@@ -1298,9 +1223,7 @@ class Worker:
             lines.append(f"- 子目標：{job['goal']}")
         lines += [f"- 要回答的項目 {k}：{x}" for k, x in enumerate(job.get("items") or [], 1)]
         if job.get("previous"):
-            retry = (f"，程式自動再做的那一次（第一次{RETRY_WHY.get(job['retry']['trigger'], job['retry']['trigger'])}；"
-                     f"帶著上一次查到的再挑技能、寫合約）") if job.get("retry") else ""
-            lines.append(f"- 第 {job.get('attempt') or len(job['previous']) + 1} 次交給這個領域{retry}（之前：" + "；".join(
+            lines.append(f"- 第 {job.get('attempt') or len(job['previous']) + 1} 次交給這個領域（之前：" + "；".join(
                 f"第 {p.get('n')} 次 {p.get('skill') or '—'}：{p.get('status_text') or STATUS_TEXT.get(p.get('status'), p.get('status') or '—')}"
                 for p in job["previous"]) + "）")
         if job["skill"]:
@@ -1361,8 +1284,7 @@ class Worker:
     def _source(v):
         return {"question": f"原文「{v.get('quote', '')}」", "goal": f"子目標「{v.get('quote', '')}」", "default": "預設",
                 "fetch": "自己查到的", "user": "使用者回答", "switch": f"換技能時從 {v.get('from', '')} 帶過來",
-                "previous": f"沿用第 {v.get('from', '')} 次",
-                "found": f"上一次查到的「{v.get('quote', '')}」" + (f"（{v['from']}）" if v.get("from") else "")}.get(v["source"], v["source"])
+                "previous": f"沿用第 {v.get('from', '')} 次"}.get(v["source"], v["source"])
 
     # ---------------------------------------------------------------- 報告：每一種工具怎麼整理
     def _instances(self, ej, nid):

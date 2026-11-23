@@ -35,9 +35,9 @@
   "total": 8
  },
  "mid_selftest": {
-  "label": "A″ 寫好（開關 AGENT_MID_RETRY 預設關，設計筆記 2.53）（2026-11-23）",
-  "passed": 30,
-  "total": 30
+  "label": "A″ 的程式拿掉、回到 A（設計筆記 2.53）（2026-11-23）",
+  "passed": 29,
+  "total": 29
  },
  "ops_selftest": {
   "label": "第 5 步（6958dac）（2026-11-20）",
@@ -45,9 +45,9 @@
   "total": 4
  },
  "orch_selftest": {
-  "label": "A″ 寫好（開關 AGENT_MID_RETRY 預設關，設計筆記 2.53）（2026-11-23）",
-  "passed": 38,
-  "total": 38
+  "label": "A″ 的程式拿掉、回到 A（設計筆記 2.53）（2026-11-23）",
+  "passed": 37,
+  "total": 37
  },
  "repo_selftest": {
   "label": "原型之後的第一批（73b0756）（2026-11-21）",
