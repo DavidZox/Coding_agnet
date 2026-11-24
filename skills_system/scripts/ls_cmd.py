@@ -2,7 +2,8 @@
 
 數值交給腳本算、不交給模型數：標頭給「共 N 項（檔案／目錄各幾個）」，永遠附一行「最新修改」；--filter 只列名稱含關鍵字的
 項目並在標頭給數量；--newest N 依修改時間新→舊只列前 N 項。舊版的 ls 旗標（-la、-h）照樣接受但忽略。
-輸出分「## 目錄（N 項）」「## 檔案（N 項）」兩節，每行：權限、大小（bytes）、修改時間、名稱（目錄加 /；連結加 @ 並寫指向哪裡）。
+輸出分「## 目錄（N 項）」「## 檔案（N 項）」兩節，每行：權限、大小（位元組，寫成 `<數字> B`）、修改時間、名稱（目錄加 /；連結加 @ 並寫指向哪裡）；
+「最新修改」的下一行寫明每行的欄位（COLUMNS：沒有單位的大小被當成行數過——單一迴圈的比較裡 e4b 把規格書的位元組數答成行數，設計筆記 2.64）。
 最多列 200 行（/usr/bin 有 1,481 個檔案），截掉時說怎麼縮小。逾時 5 秒（掛載裝置無回應時）。
 """
 import os
@@ -104,8 +105,11 @@ def newest_line(entries):
     return pc.newest_line([(_short_name(e), e["mtime"]) for e in files])
 
 
+COLUMNS = "（每行：權限、大小（位元組，B）、修改時間、名稱；大小不是行數）"
+
+
 def _row(e):
-    return f"{e['mode']} {e['size']:>10} {pc.fmt_time(e['mtime'])} {_display_name(e)}"
+    return f"{e['mode']} {e['size']:>10} B {pc.fmt_time(e['mtime'])} {_display_name(e)}"
 
 
 def _receipt(abs_path, entries, shown, keyword, newest, unreadable):
@@ -169,7 +173,7 @@ def render(path, entries, keyword=None, newest=None, unreadable=0, abs_path=None
         if cut:
             head += f"；只列前 {MAX_ROWS} 行（目錄在前，依名稱排序）"
             tail.append("（要看其他的：--filter 關鍵字 只列名稱含關鍵字的、--newest N 只列最新修改的 N 項，或改列子目錄）")
-    return "\n".join([head] + ([nl] if nl else []) + lines + tail)
+    return "\n".join([head] + ([nl] if nl else []) + [COLUMNS] + lines + tail)
 
 
 def _timeout_handler(signum, frame):

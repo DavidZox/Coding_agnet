@@ -34,10 +34,13 @@ text 寫回答，not_found 寫原因（照報告寫的說明）；refs 寫報告
 {n}. {goal}：{status}
 
 <!-- @tool_blocked -->
-{tool} 是 {domain} 領域的工具，不直接用。下一步：在 action 填「交辦」{"task": {"goal": …, "items": […]}}，由領域 session 選領域與技能做完，再把報告交給你。
+{tool} 是「{domain}」領域的工具，不直接用。下一步：在 action 填「交辦」{"task": {"goal": …, "items": […]}}，由領域 session 選領域與技能做完，再把報告交給你。
 
 <!-- @skill_blocked -->
-{skill} 是 {domain} 領域有骨架的技能，由領域 session 選用，不能直接用。下一步：在 action 填「交辦」{"task": {"goal": …, "items": […]}}，再把報告交給你。
+{skill} 是「{domain}」領域有骨架的技能，由領域 session 選用，不能直接用。下一步：在 action 填「交辦」{"task": {"goal": …, "items": […]}}，再把報告交給你。
+
+<!-- @domain_named -->
+{name} 是領域的名稱，不是技能，不能直接用：你不用指定領域，交辦之後由領域 session 選領域與技能。下一步：在 action 填「交辦」{"task": {"goal": …, "items": [{"quote": …, "item": …}]}}（goal 照使用者的原話寫要找什麼、做什麼），領域 session 做完會把報告交給你。
 
 <!-- @err_no_domain -->
 沒有可以交辦的領域（DOMAIN.md 沒有列，或領域的規格有問題）。下一步：用 Available Skills 裡的技能，或照實回答使用者。

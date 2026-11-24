@@ -87,7 +87,7 @@ class _Locked:
 
 # ================================================================ list_dir（ls_cmd.py）
 def t_list_dir_sections():
-    """list_dir：目錄與檔案分兩節、數量、最新修改、連結寫指向哪裡"""
+    """list_dir：目錄與檔案分兩節、數量、最新修改、每行的欄位（大小寫明單位：位元組，不是行數）、連結寫指向哪裡"""
     d = _tmp()
     _w(d, "a.txt", "x")
     _w(d, "b.py", "y")
@@ -97,6 +97,10 @@ def t_list_dir_sections():
     assert first_line(out).startswith("[PASS] 目錄列表 (.)：共 5 項（2 個檔案、3 個目錄，其中 1 個是連結）"), out
     assert "\n最新修改：" in out and "## 目錄（3 項）" in out and "## 檔案（2 項）" in out, out
     assert "lnk@ → sub/" in out and "sub/" in out, out
+    lines = out.split("\n")
+    assert lines[2] == "（每行：權限、大小（位元組，B）、修改時間、名稱；大小不是行數）", ("最新修改的下一行寫明每行的欄位", lines[:4])
+    row = next(ln for ln in lines if ln.endswith(" a.txt"))
+    assert " 1 B " in row, ("大小寫成 <數字> B", row)
 
 
 def t_list_dir_cap():

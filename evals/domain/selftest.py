@@ -202,8 +202,10 @@ def main():
             system = call["messages"][0]["content"]
             assert "## Tasks（交辦" in system, "system prompt 要有交辦一節"
             reg = agent.domain_registry()
-            for d in reg["domains"].values():
-                assert d["title"] in system, d["title"]
+            tasks = system.split("## Tasks（交辦")[1]
+            for name, d in reg["domains"].items():
+                assert composite.domain_label(d) in tasks and composite.domain_label(d) != d["title"], ("交辦一節列領域做什麼", d["title"])
+                assert name not in system, f"主 session 看到的字不寫領域的名稱（它不指定領域）：{name}"
             avail = system.split("## Available Skills")[1].split("## Tasks")[0]
             for t in HIDDEN:
                 assert f"[{t}]" not in avail, f"{t} 是領域的工具，主 session 的索引不列"
@@ -252,6 +254,11 @@ def main():
             assert "交辦" in (agent.domain_gate("scripts/grep_cmd.py") or ""), "腳本也擋"
             assert "有骨架的技能" in (agent.domain_gate("py_usage") or ""), "有骨架的技能的名稱也擋"
             assert agent.domain_gate("list_dir") is None, "共用的工具照用"
+            named = agent.domain_gate("repo_analysis") or ""
+            assert "是領域的名稱，不是技能" in named and "交辦" in named, named
+            assert "repo_analysis" not in agent.domain_gate("search_text") and "repo_analysis" not in agent.domain_gate("py_usage"), \
+                "擋下的說明寫領域做什麼、不寫識別名稱"
+            assert agent.domain_gate("pkg") is None, "只認領域的名稱"
             agent._sub_allowed = {"domain": "repo_analysis", "tools": {"search_text", "list_dir"}}
             try:
                 assert agent.domain_gate("search_text") is None, "領域 session 裡選的領域的工具可以用"
@@ -294,6 +301,18 @@ def main():
             assert tools_of(events)[0].startswith(DOMAIN_RESULT_HEAD), ("之前一則訊息裡的原話也可以", tools_of(events)[0][:200])
 
         # ------------------------------------------------------------ 領域 session：工具
+        def t_domain_named():
+            fake = FakeChat(main=[{"thought": "找檔案", "reply": "用 repo_analysis 找。", "action": {"command": "repo_analysis", "args": ""}},
+                                  task("找 pkg 裡的 alpha 定義在哪", ["定義在哪"]), say("好")])
+            turn("pkg 裡的 alpha 定義在哪？", fake)
+            mains = [c for c in fake.calls if c["role"] == "main"]
+            told = mains[1]["messages"][-1]["content"]
+            assert "repo_analysis 是領域的名稱，不是技能" in told and "交辦" in told, told[:400]
+            assert "已經移除" not in told and "沒有這個功能" not in told, ("不要說成移除的技能（e4b 會因此放棄）", told[:400])
+            report = mains[2]["messages"][-1]["content"]
+            head = [ln for ln in report.split("\n") if ln.startswith("- 領域：")]
+            assert head and "repo_analysis" not in head[0] and "找檔案" in head[0], ("報告給主 session：領域寫它做什麼", report[:400])
+
         def t_tool_flow():
             q = "pkg 裡的 alpha 定義在哪個檔案的第幾行？"
             fake = FakeChat(
@@ -582,6 +601,7 @@ def main():
 
         for name, fn in [("主 session：交辦一節、索引、回覆的 schema 與解析", t_prompt_schema),
                          ("回覆的欄位順序（主 session 的 action 最後；領域 session 照說明的順序）", t_reply_order), ("擋領域的工具與有骨架的技能", t_gate),
+                         ("主 session 把領域的名稱當技能：說明要交辦；看到的字不寫識別名稱", t_domain_named),
                          ("交辦的核對", t_task_checks), ("交辦的每一項附使用者的原話（核對、帶到領域 session、追問時用之前的訊息）", t_quote),
                          ("領域 session 用工具：選領域、技能清單、結果、回報、主 session 照項目回答", t_tool_flow),
                          ("評測的紀錄（domain_calls）", t_tool_records),

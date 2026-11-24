@@ -106,7 +106,7 @@ class DomainMixin:
         reg = self.domain_registry()
         if not reg["domains"]:
             return ""
-        rows = [prompt_files.load("harness/system_prompt.md", "task_domain", title=d["title"], intro=(d["intro"].split("\n") or [""])[0])
+        rows = [prompt_files.load("harness/system_prompt.md", "task_domain", title=composite.domain_label(d), intro=(d["intro"].split("\n") or [""])[0])
                 for d in reg["domains"].values()]
         return prompt_files.load("harness/system_prompt.md", "tasks", domains="\n".join(rows), max=DOMAIN_ITEMS_MAX, tries=DOMAIN_ITEM_TRIES)
 
@@ -166,7 +166,8 @@ class DomainMixin:
         return self._script_skill_map().get(self._normalize_script_name(name))
 
     def domain_gate(self, token):
-        """主模型直接叫領域的工具（技能名稱或腳本）回 [ERROR]（附下一步）；叫有骨架的技能的名稱（或寫成腳本的 <名稱>_cmd.py）也一樣。
+        """主模型直接叫領域的工具（技能名稱或腳本）回 [ERROR]（附下一步）；叫有骨架的技能的名稱（或寫成腳本的 <名稱>_cmd.py）也一樣；
+        寫的是領域的名稱，說明要交辦（domain_named）。說明裡的領域寫它做什麼、不寫識別名稱（composite.domain_label）。
         領域 session 裡（agent._sub_allowed）只能用它選的領域的工具與共用的工具。可以用回 None（不是任何技能的照舊交給後面的檢查）。"""
         skill = self._tool_of(token)
         reg = self.domain_registry()
@@ -178,11 +179,13 @@ class DomainMixin:
             if (skill is None and composite_of is None) or skill in allowed["tools"]:
                 return None
             return "[ERROR] " + prompt_files.load("domain/session.md", "not_my_tool", tool=skill or name, tools="、".join(sorted(allowed["tools"])))
+        if skill is None and name in reg["domains"]:      # 主 session 把領域的名稱當技能叫（e4b；設計筆記 2.64）：寫明要交辦
+            return "[ERROR] " + _d("domain_named", name=name)
         if composite_of:
-            return "[ERROR] " + _d("skill_blocked", skill=name, domain=composite_of)
+            return "[ERROR] " + _d("skill_blocked", skill=name, domain=composite.domain_label(reg["domains"][composite_of]))
         if skill not in reg["hidden"]:
             return None
-        return "[ERROR] " + _d("tool_blocked", tool=skill, domain=reg["hidden"][skill])
+        return "[ERROR] " + _d("tool_blocked", tool=skill, domain=composite.domain_label(reg["domains"][reg["hidden"][skill]]))
 
     # ---------------------------------------------------------------- 交辦
     def run_task(self, action):

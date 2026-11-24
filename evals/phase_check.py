@@ -37,7 +37,7 @@ OFFLINE = [("skills", "技能自我測試", ["evals/skills/selftest.py"]),
            ("analysis_selftest", "數據分析自我測試", ["evals/analysis/selftest.py"]),
            ("repo_selftest", "真實專案評測的自我測試（核對、答案跟快照一致）", ["evals/repo/selftest.py"]),
            ("edg_selftest", "低階執行器的自我測試（照圖執行、守門、第 1 級）", ["evals/edg/selftest.py"]),
-           ("domain_selftest", "交辦與領域 session 的自我測試（交辦一節、交辦的原話、擋領域的工具、選領域與技能清單、參數表單（路徑只留原文的名稱）、有骨架的技能與回退、"
+           ("domain_selftest", "交辦與領域 session 的自我測試（交辦一節（不寫領域的名稱）、交辦的原話、擋領域的工具與領域的名稱、選領域與技能清單、參數表單（路徑只留原文的名稱）、有骨架的技能與回退、"
                                "程式算的彙整、狀態與上限、確認關卡、提煉、依報告回答的核對與完整性）", ["evals/domain/selftest.py"]),
            ("integrity", "評測的完整性（模型會讀的文字沒有評測世界的名稱）", ["evals/integrity/selftest.py"])]
 TEST_CONTAINER = "cah_analysis_test"

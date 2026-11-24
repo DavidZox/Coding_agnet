@@ -20,9 +20,9 @@
   "total": 8
  },
  "domain_selftest": {
-  "label": "交辦與領域 session：路徑的一段混了說明的字時只留原文的名稱（2026-11-24）",
-  "passed": 20,
-  "total": 20
+  "label": "交辦與領域 session：主 session 把領域的名稱當技能時說明要交辦、看到的字不寫識別名稱（2026-11-24）",
+  "passed": 21,
+  "total": 21
  },
  "edg_selftest": {
   "label": "單一迴圈：交辦與領域 session（框架討論紀錄 F1～F6）（2026-11-23）",

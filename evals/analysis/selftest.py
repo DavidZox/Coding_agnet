@@ -410,7 +410,7 @@ def main():
             agent.analysis_data = ""
             # 第 5 步 5-2：analysis_run 登記在 data_analysis，主模型直接叫會被擋（交給領域）；/analyze 是使用者直接指定的，照舊直接執行（direct）
             blocked = agent.run_tool({"action": {"command": "scripts/analysis_run_cmd.py", "args": f'--data {DATA} "安全閘"'}})
-            assert blocked.startswith("[ERROR] analysis_run 是 data_analysis 領域的工具") and not calls, blocked
+            assert blocked.startswith("[ERROR] analysis_run 是「錄製的數據」領域的工具") and "data_analysis" not in blocked and not calls, blocked
             out = agent.run_tool({"action": {"command": "scripts/analysis_run_cmd.py", "args": f'--data {DATA} "安全閘"'}}, direct=True)
             assert out.startswith(ANALYSIS_REPORT_HEAD) and agent.last_result_id, (out[:100], agent.last_result_id)
             assert agent.trajectory[-1]["script"] == "analysis_run_cmd.py"

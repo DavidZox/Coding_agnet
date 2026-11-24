@@ -77,6 +77,13 @@ def words_of(value):
 # =====================================================================================================================
 # 領域與技能的規格
 # =====================================================================================================================
+def domain_label(d):
+    """給主 session 看的領域說法：標題拿掉開頭的識別名稱（「<名稱>：容器與 ROS 2」→「容器與 ROS 2」）。主 session 不指定領域、用不到名稱，
+    看得到名稱時 e4b 會把它當技能叫（設計筆記 2.64）。"""
+    head, sep, rest = d["title"].partition("：")
+    return rest.strip() if sep and head.strip() == d["name"] and rest.strip() else d["title"]
+
+
 def load_domain(base_path, tools_dir, name):
     """skills_system/<領域>/SKILLS.md 與它列的有骨架的技能 → {"name", "title", "intro", "skills": {名稱: 規格}, "catalog": {名稱: 那一行的說明},
     "tools", "practice", "problems"}。intro 是開頭的說明（含「不包含」）；practice 是〈做法〉一節；tools 是〈工具〉列的單步工具。"""

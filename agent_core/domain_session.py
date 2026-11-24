@@ -547,7 +547,8 @@ class DomainSession:
         lines += [f"- 要回答的項目 {k}：{x}" + (f"（使用者的原話：「{q}」）" if q else "") for k, (x, q) in enumerate(zip(job["items"], job["quotes"]), 1)]
         if job["previous"]:
             lines.append(f"- 第 {job['attempt']} 次交辦（之前：" + "；".join(f"第 {p.get('n')} 次 {p.get('status_text') or '—'}" for p in job["previous"]) + "）")
-        lines.append(f"- 領域：{'、'.join(job['domains']) or '（沒有選）'}；用了 {len(job['steps'])} 個技能")
+        labels = [composite.domain_label(self.reg["domains"][d]) if d in self.reg["domains"] else d for d in job["domains"]]
+        lines.append(f"- 領域：{'、'.join(labels) or '（沒有選）'}；用了 {len(job['steps'])} 個技能")    # 報告給主 session：不寫識別名稱
         if note:
             lines.append(f"- 說明：{note}")
         if reply:
