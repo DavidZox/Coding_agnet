@@ -145,6 +145,13 @@ TOOL_SUMMARY_SCHEMA = {
     "required": ["answer", "facts", "errors", "not_covered", "suggested_questions", "index_hint", "related_records"],
 }
 
+# 分段提煉的整合：交出去的事實與錯誤由程式列（worker 核對過的全部，extract.listed_items），整合不挑、不寫事實，只寫回答與其他欄位
+TOOL_SUMMARY_MERGE_SCHEMA = {
+    "type": "object",
+    "properties": {k: v for k, v in TOOL_SUMMARY_SCHEMA["properties"].items() if k not in ("facts", "errors")},
+    "required": [k for k in TOOL_SUMMARY_SCHEMA["required"] if k not in ("facts", "errors")],
+}
+
 # 提煉的 worker：只讀一段原文，摘出跟問題有關的事實（附行號）
 _LINED = {"type": "object", "properties": {"text": {"type": "string"}, "lines": {"type": "string"}}, "required": ["text", "lines"]}
 EXTRACT_WORKER_SCHEMA = {

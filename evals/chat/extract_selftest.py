@@ -7,7 +7,7 @@
 - 核對：事實寫的數字與名稱要在引用的行（前後 2 行＋縮排的上層）裡——寫錯對象、編出來的名稱擋下，一般的詞、使用者問題裡的數字放行；
   名稱要整個對上（av2_test 不算 nav2_test 裡有；待辦 4j ①）；
 - 一次寫完（短的輸出）與分段（worker → 整合）：每條事實附行號、對不上的拿掉、回答找不到的字請整合修一次、還是不行就標明；
-  整合失敗由程式排出各段的事實；每一次的切段、模型呼叫、結果都存在 logs/extract_jobs/<編號>/；
+  分段時交出去的事實由程式列（worker 核對過的全部，整合不挑、不寫事實）；整合失敗時回答留空、事實一樣由程式列；每一次的切段、模型呼叫、結果都存在 logs/extract_jobs/<編號>/；
 - result_recall：好幾份一起讀、編號錯／檔案被清掉的說明、提煉失敗照實回報；
 - 行號：result_view、result_grep、提煉結果、claude_code 模式的截斷說明都是原文的行號；result_view --outline；
   檔案的行號（待辦 4k ②）：照收據把存檔的每一行對到檔案（只認收據裡的絕對路徑，result_grep 的存檔編號不算），事實附「檔案:行號」，
@@ -41,15 +41,17 @@ def fleet_yaml():
 
 class FakeExtract:
     """假的提煉模型：worker 依原文找「battery_percent」的行回事實（名字從往上找）；整合把 worker 的事實照抄、回答寫第一條。
-    mode 可以讓它故意出錯：bad_worker（事實寫錯車號）、bad_answer（回答寫原文沒有的數字）、synth_fail（整合回非 JSON）、raise（丟例外）。"""
+    mode 可以讓它故意出錯：bad_worker（事實寫錯車號）、bad_answer（回答寫原文沒有的數字）、synth_fail（整合回非 JSON）、raise（丟例外）、
+    synth_partial（分段的整合只寫第一條事實：交出去的還是要全部）。props 記每次呼叫的 schema 欄位。"""
 
     def __init__(self, mode=""):
-        self.mode, self.calls = mode, []
+        self.mode, self.calls, self.props = mode, [], []
 
     def __call__(self, model=None, messages=None, format=None, **kw):
         props = set((format or {}).get("properties", {})) if isinstance(format, dict) else set()
         user = messages[-1]["content"] if messages else ""
         self.calls.append(("worker" if "relevant" in props else "synth" if "index_hint" in props else "other", user))
+        self.props.append(props)
         if self.mode == "raise":
             raise ConnectionError("ollama 沒有回應")
         if "relevant" in props:
@@ -69,6 +71,8 @@ class FakeExtract:
                 return {"message": {"content": "（不是 JSON）"}, "prompt_eval_count": 10, "eval_count": 5}
             facts = [{"text": m.group(1), "lines": m.group(2), "record": ""}
                      for m in re.finditer(r"^- (tb\d+ 電量 [\d.]+%)（行 ([\d、\-]+)）", user, re.M)]
+            if self.mode == "synth_partial" and "【各段提煉的事實" in user:
+                facts = facts[:1]
             if not facts:   # 一次寫完：自己從原文找
                 for m in re.finditer(r"^\s*(\d+)→\s*battery_percent: ([\d.]+)", user, re.M):
                     if float(m.group(2)) < 40:
@@ -197,6 +201,29 @@ def main():
             assert j["mode"] == "merge" and j["workers"] and j["final"]["facts"], j.keys()
             calls = [json.loads(x) for x in open(os.path.join(tmp, "logs", "extract_jobs", j["id"], "calls.jsonl"), encoding="utf-8")]
             assert [c["role"] for c in calls].count("worker") == kinds.count("worker") and calls[-1]["role"] == "synth", "每次呼叫都存檔"
+
+        def t_merge_lists_all():
+            text = fleet_yaml()
+            rid = archive(text)
+            ollama.chat = fake = FakeExtract("synth_partial")
+            out = agent.summarize_tool_result(text, 3000, step={}, result_id=rid)
+            synth = [p for (k, _), p in zip(fake.calls, fake.props) if k == "synth"]
+            assert synth and all("facts" not in p and "errors" not in p and "answer" in p for p in synth), "分段的整合的 schema 沒有事實"
+            low = [(name, bat) for name, bat, _ in ROBOTS if bat < 40]
+            assert len(low) > 1 and all(f"{name} 電量 {bat}%" in out for name, bat in low), "整合只寫了一條：交出去的還是 worker 核對過的全部"
+            j = json.load(open(os.path.join(tmp, "logs", "extract_jobs", agent.last_tool_summary["job"], "job.json"), encoding="utf-8"))
+            n = len({" ".join(it["text"].split()) for w in j["workers"] if w["ok"] for it in w["facts"]})
+            assert len(j["final"]["facts"]) == j["listed"]["facts"] == n, (len(j["final"]["facts"]), j["listed"], n)
+            assert all(f["at"] is not None for f in j["final"]["facts"]), "列出的事實附檔案的位置（對不到時是空字串）"
+            a = {"ok": True, "facts": [{"text": "tb1 電量 23.5%", "src": 0, "nums": [5]}, {"text": "tb2 電量 31%", "src": 0, "nums": [9]}],
+                 "errors": [{"text": "tb3 連線逾時", "src": 0, "nums": [12]}]}
+            b = {"ok": True, "facts": [{"text": " tb1  電量 23.5% ", "src": 0, "nums": [5]}, {"text": "tb4 電量 12%", "src": 0, "nums": [40]}],
+                 "errors": []}
+            facts, errors = extract.listed_items([a, {"ok": False, "error": "逾時"}, b])
+            assert [f["text"] for f in facts] == ["tb1 電量 23.5%", "tb2 電量 31%", "tb4 電量 12%"], "照段落的順序、同樣的句子只列一次、失敗的段落沒有"
+            assert [e["text"] for e in errors] == ["tb3 連線逾時"], errors
+            facts[0]["at"] = "x"
+            assert "at" not in a["facts"][0], "列出的是複本，不改 worker 的結果"
 
         def t_long_selects():
             text = "\n".join([fleet_yaml()] + [f"## 日誌 {k}\n" + "\n".join(f"- 第 {k}-{i} 行正常" for i in range(300)) for k in range(12)])
@@ -420,6 +447,7 @@ def main():
                          ("核對：名字在縮排的上層也算、寫錯對象與編出來的車號擋下、一般的詞與問題裡的數字放行", t_grounding),
                          ("一次寫完（短的輸出）：一次呼叫、每條附行號、存檔（job.json、calls.jsonl）", t_direct),
                          ("分段：每段一個 worker → 整合（附引用的原文）、進度、每次呼叫都存檔", t_merge),
+                         ("分段的事實由程式列：worker 核對過的全部照段落的順序、同樣的句子只列一次；整合的 schema 沒有事實，只寫了一條也一樣全部交出去", t_merge_lists_all),
                          ("段數太多：依問題挑段落讀，沒讀的行號寫進未涵蓋", t_long_selects),
                          ("對不上原文的事實拿掉並記錄；回答寫了原文沒有的數字：請整合修一次，還是不行就標明", t_grounding_drops_and_repair),
                          ("整合失敗由程式排出各段的事實；模型沒有回應照實回報、不說成已經回答", t_fallbacks),

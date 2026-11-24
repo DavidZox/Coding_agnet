@@ -54,10 +54,12 @@ rectangle NodeAgent #D1E5F0 [
     被壓掉的對話存檔）
   * 附圖：主對話只收到 [vision result] 文字（附存檔編號），
     存成 #編號〔附圖分析〕；壓縮時當系統內容、不算使用者原話
-  * 交辦（orchestrator.py）：程式核對（子目標、項目 1～6、
-    不跟這一回合交辦過的一樣、同一個項目最多 3 次）之後交給
+  * 交辦（orchestrator.py）：程式核對（子目標、項目 1～6、每一項的
+    原話是使用者說過的話、不跟這一回合交辦過的一樣、同一個項目
+    最多 3 次）之後交給
     領域 session（domain_session.py）；報告存成 #編號交回主 session
-    （不再提煉），照報告一項一項回答、程式核對出處、照項目排給
+    （不再提煉），照報告一項一項回答、程式核對出處（報告的編號
+    與數字不能漏）、照項目排給
     使用者；沒答到的可以只帶那幾項再交辦（附上一次的經過）；
     領域 session 停在確認關卡時程式直接問使用者、接回同一步
     （不經過主 session）；領域的工具與有骨架的技能不給主 session
@@ -71,7 +73,7 @@ rectangle NodeLLM #FFE6CC [
   每輪固定回 JSON {thought, reply, action}
   （有交辦的報告時多 answers；action 一律最後）
   action 只能是：技能名稱、規格標明的腳本路徑、
-  result_recall，或「交辦」{task: {goal, items}}；
+  result_recall，或「交辦」{task: {goal, items: [{quote, item}]}}；
   reply 裡的文字不會被執行
 ]
 
@@ -115,7 +117,8 @@ rectangle NodeSkills #D5E8D4 [
 rectangle NodeDomain #E2F0D9 [
   **領域 session（交辦之後：agent_core/domain_session.py）**
   ----
-  * 自己的對話：子目標、要回答的項目、原始問題、上一次的經過；
+  * 自己的對話：子目標、要回答的項目（每一項附使用者的原話，
+    意思以原話為準）、原始問題、上一次的經過；
     每一輪回一個 JSON，state 是三種之一（程式核對）：
     domains 選領域（可以好幾個；程式載入這些領域的技能清單）→
     skill 用一個技能（只寫名稱；下一輪填程式給的參數表單）→
@@ -185,7 +188,7 @@ NodeSkills -down-> NodeWorld : docker exec／HTTP／檔案操作
 NodeWorld -up-> NodeSkills : 原始輸出
 NodeSkills -[#009933,bold]up-> NodeAgent : [PASS]／[ERROR] 完整輸出\n+ [CWD_CHANGED]／[TARGET_CONTAINER]\n＋收據（另一個檔，給程式讀）
 NodeAgent -left-> NodeStore : 存檔原文、附圖分析、檢索描述、\n軌跡、摘要歸檔、耗時
-NodeAgent -[#548235,bold]right-> NodeDomain : **交辦 {goal, items}（程式核對過）**\n／使用者的回答（確認關卡）
+NodeAgent -[#548235,bold]right-> NodeDomain : **交辦 {goal, items（附使用者的原話）}（程式核對過）**\n／使用者的回答（確認關卡）
 NodeDomain -[#548235]left-> NodeAgent : 報告 #編號（每一項的回答與出處、\n做了哪些步驟）／要確認的事
 NodeDomain -[#548235]down-> NodeSkills : 有骨架的技能：照骨架執行腳本（讀收據）\n／工具：一次一個
 NodeSub -[hidden]down-> NodeDomain

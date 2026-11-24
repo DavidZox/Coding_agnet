@@ -25,7 +25,7 @@ harness 送給模型的字都在這裡：改字不用改程式，存檔之後下
 | `harness/direct_commands.md` | `/analyze` 替使用者與 AI 放進主對話的訊息；數據分析報告最後的回答規則 | `cli.py`、`web_app/` |
 | `harness/attachments.md` | Web：只附圖或只載入技能沒打字時的訊息、影像分析接在訊息後面的說明 | `web_app/flows.py`、`state.py` |
 | `summary/rolling.md` | 滾動摘要 session | `compression._summary_prompts` |
-| `extract/worker.md`、`synthesizer.md` | 工具回傳的提煉：分段的 worker、整合（規則） | `extract.py` |
+| `extract/worker.md`、`synthesizer.md`、`merger.md` | 工具回傳的提煉：分段的 worker、一次讀完原文的整合（規則）、分段的整合（事實由程式列，它只寫回答、未涵蓋、之後可能想知道的、檢索清單的描述、還需要的舊存檔） | `extract.py` |
 | `extract/inputs.md` | 提煉的 user 訊息裡程式組的標籤、程式的說明、修一次的說明 | `extract.py` |
 | `edg/fix.md` | 低階執行器（有骨架的技能的圖由它執行）：第 1 級修正（一個工具節點參數錯或逾時，只改字面參數；修不好就說修不好）的規則 | `edg.ModelFixer` |
 | `edg/inputs.md` | 第 1 級修正的 user 訊息裡程式組的標籤（子目標、規格、參數、錯誤、逾時的縮小方式） | `edg.fix_message` |

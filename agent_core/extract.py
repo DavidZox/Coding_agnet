@@ -7,10 +7,11 @@
    程式核對（missing_tokens）：每條寫的數字與名稱要在它引用的那幾行裡（前後 EVIDENCE_SPAN 行，加上縮排的上層——YAML、巢狀的輸出名稱常在
    上幾行）；對不上的不交給整合，記在存檔裡。段數超過 EXTRACT_MAX_CHUNKS 時依問題裡的名稱、數字出現在哪幾段挑著讀，沒讀的行號範圍由程式
    寫進「未涵蓋」——不會假裝讀過。
-3. 整合（synthesizer）：拿各段核對過的事實＋那幾行的原文（程式附上）＋原文的開頭與大綱，寫成交給主對話的重點：回答、相關事實（附行號）、
-   錯誤、未涵蓋、之後可能想知道的、檢索清單的描述、還需要的舊存檔。程式再核對一次：寫了原文沒有的名稱或數值、把存檔的行號寫成檔案的
-   行號 → 帶著問題請它修一次；還是對不上的事實拿掉，回答裡找不到的字與寫錯的行號由呼叫端標明。整合失敗（回覆不是 JSON）時改由程式把
-   各段的事實排成清單，不丟掉 worker 的結果。
+3. 整合（merger）：拿各段核對過的事實＋那幾行的原文（程式附上）＋原文的開頭與大綱，寫回答、未涵蓋、之後可能想知道的、檢索清單的描述、
+   還需要的舊存檔。交出去的相關事實與錯誤由程式列——每個 worker 核對過的照段落的順序全部列出、同樣的句子只列一次（listed_items）；
+   整合不挑、也不寫事實（以前由它在篇幅內挑，核對過的事實交出去的不到一半，答案要的幾條也被刪過；設計筆記 2.62）。程式再核對回答：寫了
+   原文沒有的名稱或數值、把存檔的行號寫成檔案的行號 → 帶著問題請它修一次；還是對不上的由呼叫端標明。整合失敗（回覆不是 JSON）時回答
+   留空，事實一樣由程式列。一次寫完（direct）的整合（synthesizer）自己讀原文寫事實，程式核對、對不上的拿掉。
    檔案的行號：view_file、search_text 這類工具的每一行本身就有 `N→`（檔案的行號），前面再加一層存檔的行號（設計筆記 2.47：模型把存檔的
    第 149 行寫成檔案的第 149 行，其實是第 49 行）。呼叫端照收據把每一行對到檔案（來源的 origins，_results_common.file_lines）：交給整合的
    事實、交給主對話的事實都附「檔案:行號」，回答的行號由程式核對。
@@ -41,7 +42,7 @@ from .config import (
 )
 from . import prompt_files
 from .jobstore import JobStore
-from .schemas import EXTRACT_WORKER_SCHEMA, TOOL_SUMMARY_SCHEMA
+from .schemas import EXTRACT_WORKER_SCHEMA, TOOL_SUMMARY_MERGE_SCHEMA, TOOL_SUMMARY_SCHEMA
 
 LINE_MAX_CHARS = 2000          # 交給模型的一行最多幾個字（更長的截斷並註明；只有一行的那一段放寬到整段的篇幅）
 EVIDENCE_SPAN = 2              # 核對時引用的行前後各多看幾行（模型的行號常差一兩行）
@@ -254,6 +255,23 @@ def parse_json(text):
     return data if isinstance(data, dict) else None
 
 
+def listed_items(results):
+    """分段提煉交出去的事實與錯誤：每個 worker 核對過的照段落的順序全部列出，同樣的句子（不看空白）只列一次；失敗的段落沒有。
+    整合不挑、不寫事實——以前由整合在篇幅內挑，worker 核對過的事實交出去的不到一半（設計筆記 2.62）。回傳 (facts, errors)，每條是 worker
+    核對過的 item 的複本（text、src、nums…）。"""
+    seen, out = set(), {"facts": [], "errors": []}
+    for r in results:
+        if not r.get("ok"):
+            continue
+        for key in ("facts", "errors"):
+            for it in r.get(key) or []:
+                k = " ".join(str(it.get("text") or "").split())
+                if k and k not in seen:
+                    seen.add(k)
+                    out[key].append(dict(it))
+    return out["facts"], out["errors"]
+
+
 def cited_items(value):
     """facts／errors → [{"text", "lines", "record"}]：模型可能給字串（舊的格式）或缺欄位的物件。"""
     out = []
@@ -445,8 +463,8 @@ class Extraction:
     def _catalog_block(self):
         return _x("catalog", catalog=self.catalog) + "\n\n" if self.catalog else ""
 
-    def _synth_system(self):
-        return read_prompt("synthesizer.md", max_chars=self.max_chars, hint_target=TOOL_USE_INDEX_HINT_TARGET)
+    def _synth_system(self, merge=False):
+        return read_prompt("merger.md" if merge else "synthesizer.md", max_chars=self.max_chars, hint_target=TOOL_USE_INDEX_HINT_TARGET)
 
     # ---------------------------------------------------------------- 一次寫完（原文放得進一段）
     def _direct(self):
@@ -548,15 +566,17 @@ class Extraction:
         failed = [c for c, r in zip(selected, results) if not r["ok"]]
         if failed:
             notes.append(_x("note_failed", lines=self._ranges(failed)))
-        self.note(f"{PROGRESS_MARK} 整合中：{sum(len(r.get('facts', [])) for r in results)} 條事實（{sum(1 for r in results if r.get('relevant'))} 段有相關內容）")
-        data, raw, err = self._call("synth", self._synth_system(), self._merge_input(selected, results, notes), TOOL_SUMMARY_SCHEMA,
-                                    EXTRACT_SYNTH_PREDICT)
+        listed = listed_items(results)
+        self.job["listed"] = {"facts": len(listed[0]), "errors": len(listed[1])}
+        self.note(f"{PROGRESS_MARK} 整合中：{len(listed[0])} 條事實（{sum(1 for r in results if r.get('relevant'))} 段有相關內容）")
+        data, raw, err = self._call("synth", self._synth_system(merge=True), self._merge_input(selected, results, notes),
+                                    TOOL_SUMMARY_MERGE_SCHEMA, EXTRACT_SYNTH_PREDICT)
         if data is None:
             self.job["synth"] = {"error": err}
             if not any(r["ok"] for r in results):   # 每一段與整合都失敗（多半是模型沒有回應）：照實回報
                 return self._failed(raw, err or next((r["error"] for r in results if r.get("error")), None))
-            return self._fallback(results, notes, raw or err or "")
-        return self._finish(data, raw, notes)
+            return self._fallback(listed, notes, raw or err or "")
+        return self._finish(data, raw, notes, listed=listed)
 
     def _merge_input(self, selected, results, notes):
         parts = [self.purpose, ""]
@@ -603,31 +623,37 @@ class Extraction:
             parts.append(_x("merge_notes", notes="\n".join(f"- {n}" for n in notes)))
         return "\n".join(parts)
 
-    def _fallback(self, results, notes, raw):
-        """整合失敗：各段核對過的事實由程式排成清單（不丟掉 worker 的結果），回答留空、由呼叫端說明。"""
-        facts = [dict(it, at=self._at(it["src"], it["nums"])) for r in results if r["ok"] for it in r["facts"]]
-        errors = [dict(it, at=self._at(it["src"], it["nums"])) for r in results if r["ok"] for it in r["errors"]]
+    def _fallback(self, listed, notes, raw):
+        """整合失敗：事實照樣由程式列（listed_items，不丟掉 worker 的結果），回答留空、由呼叫端說明。"""
+        facts = [dict(it, at=self._at(it["src"], it["nums"])) for it in listed[0]]
+        errors = [dict(it, at=self._at(it["src"], it["nums"])) for it in listed[1]]
         data = {"answer": "", "facts": facts, "errors": errors, "not_covered": "；".join(notes) or "無", "suggested_questions": [],
                 "index_hint": "", "related_records": []}
         self.job["final"] = {k: v for k, v in data.items()}
-        return {"data": data, "structured": True, "raw": raw, "mode": "merge", "chunks": len(self.chunks), "read": len(results),
+        return {"data": data, "structured": True, "raw": raw, "mode": "merge", "chunks": len(self.chunks), "read": len(self.job.get("workers") or []),
                 "notes": notes, "answer_missing": [], "answer_lines": [], "dropped": 0, "fallback": True}
 
     # ---------------------------------------------------------------- 整合結果的核對（與一次修正）
-    def _check(self, data):
-        facts, dropped = self._ground_all(cited_items(data.get("facts")))
-        errors, dropped_e = self._ground_all(cited_items(data.get("errors")))
+    def _check(self, data, listed=None):
+        """整合的結果 → (事實, 錯誤, 拿掉的, 回答, 回答裡在原文找不到的字, 寫錯的行號)。listed：分段提煉時程式列的 (事實, 錯誤)，
+        整合沒有寫事實，只核對回答；一次寫完時核對整合寫的事實。"""
+        if listed is None:
+            facts, dropped = self._ground_all(cited_items(data.get("facts")))
+            errors, dropped_e = self._ground_all(cited_items(data.get("errors")))
+            dropped = dropped + dropped_e
+        else:
+            facts, errors, dropped = [dict(it) for it in listed[0]], [dict(it) for it in listed[1]], []
         answer = " ".join(str(data.get("answer") or "").split())
         missing = missing_tokens(answer, self.all_text, self.all_text, self.allowed, counts={len(facts)})
-        return facts, errors, dropped + dropped_e, answer, missing, self._misplaced(answer, facts + errors)
+        return facts, errors, dropped, answer, missing, self._misplaced(answer, facts + errors)
 
-    def _finish(self, data, raw, notes):
-        facts, errors, dropped, answer, missing, wrong = self._check(data)
+    def _finish(self, data, raw, notes, listed=None):
+        facts, errors, dropped, answer, missing, wrong = self._check(data, listed)
         repaired = False
         if missing or wrong or (dropped and len(dropped) * 2 >= len(cited_items(data.get("facts"))) + len(cited_items(data.get("errors")))):
-            fixed, raw2 = self._repair(data, dropped, missing, wrong)
+            fixed, raw2 = self._repair(data, dropped, missing, wrong, merge=listed is not None)
             if fixed is not None:
-                f2, e2, d2, a2, m2, w2 = self._check(fixed)
+                f2, e2, d2, a2, m2, w2 = self._check(fixed, listed)
                 if len(m2) + len(d2) + len(w2) <= len(missing) + len(dropped) + len(wrong):
                     data, raw, facts, errors, dropped, answer, missing, wrong, repaired = fixed, raw2, f2, e2, d2, a2, m2, w2, True
         for it in facts + errors:
@@ -647,8 +673,9 @@ class Extraction:
                 "read": len(self.job.get("workers") or [1]), "notes": notes, "answer_missing": missing, "answer_lines": wrong,
                 "dropped": len(dropped), "fallback": False}
 
-    def _repair(self, data, dropped, missing, wrong=()):
-        """帶著程式核對的問題請整合者修一次：只改對不上的地方（照原文改，或拿掉找不到根據的內容；行號寫成存檔的，給檔案的行號）。"""
+    def _repair(self, data, dropped, missing, wrong=(), merge=False):
+        """帶著程式核對的問題請整合者修一次：只改對不上的地方（照原文改，或拿掉找不到根據的內容；行號寫成存檔的，給檔案的行號）。
+        merge：分段提煉的整合（只有回答等欄位，用它的 system prompt 與 schema）。"""
         problems = []
         if missing:
             problems.append(_x("repair_answer_missing", tokens='」「'.join(missing)))
@@ -665,5 +692,6 @@ class Extraction:
         user = (_x("repair_user", purpose=self.purpose, result=json.dumps(data, ensure_ascii=False), problems="\n".join(f"- {p}" for p in problems))
                 + ("\n\n" + _x("repair_evidence", lines="\n".join(dict.fromkeys(ev))) if ev else "")
                 + "\n\n" + _x("repair_tail"))
-        fixed, raw, _ = self._call("repair", self._synth_system(), user, TOOL_SUMMARY_SCHEMA, EXTRACT_SYNTH_PREDICT)
+        fixed, raw, _ = self._call("repair", self._synth_system(merge), user, TOOL_SUMMARY_MERGE_SCHEMA if merge else TOOL_SUMMARY_SCHEMA,
+                                   EXTRACT_SYNTH_PREDICT)
         return fixed, raw
