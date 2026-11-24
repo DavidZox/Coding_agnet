@@ -5,7 +5,8 @@
    〈骨架〉（工具節點：程式做的步驟）與〈回退〉（照收據的條件改圖）。骨架裡沒有判斷節點：讀交給提煉，下一步交給領域 session（F2）。
 2. **合約**（verify_param，F3）：每個參數的原文要一字不改地在給的原文裡（領域 session 給的：問題、子目標、項目、前面每一步的結果），
    值照種類對得上原文（名稱、名稱清單、搜尋的字要原樣在原文裡；路徑的每一段是原文的名稱——一段混了說明的字或萬用字元時只留那個名稱，_name_only；
-   文字與檔案名稱的寫法每一段在原文裡）。
+   文字與檔案名稱的寫法每一段在原文裡）。搜尋的字（text、words：骨架交給 search_text，不分大小寫）核對也不分大小寫。領域 session 照 quote 核對
+   沒過時，拿值本身當原文再核對一次（own_quote）；空的與預設值當成沒提到（unmentioned）；工作目錄底下的絕對路徑先換成相對的（relative）。
 3. **補齊**（Runner.run 的第一步）：沒提到的用預設值；路徑在工作目錄找不到時照 fetch 查一次（剛好一個就自己補，記在 auto_filled）。
    必填的沒有、路徑有好幾個或找不到：不問使用者，回 need（說明與候選），交回領域 session 決定（寫完整的路徑、換參數、換技能或回報）。
 4. **排圖、執行**：〈骨架〉代入參數就是一張圖（`{"if": 參數, "args": [...]}` 的參數有值才放，名稱清單一項一組；節點寫 if 的，參數沒有值就
@@ -29,6 +30,7 @@ from . import edg, prompt_files, skill_spec
 from .config import COMPOSITE_TOTALS_LINES, EDG_JOBS_DIRNAME, MID_REPLAN_MAX
 
 TYPES = ("name", "text", "path", "glob", "names", "words")
+_NOCASE = ("text", "words")       # 搜尋的字：骨架交給 search_text（不分大小寫），原文的核對也不分；骨架對它們加 --case 的載入時擋下
 KINDS = ("位置", "數量", "內容")       # 複合技能規格的 answers：它答得了問題要的哪幾種（載入時核對寫法）
 STATUS_TEXT = {"done": "跑完", "stopped": "有節點沒有成功", "need": "要你決定（見下面的說明）",
                "circuit_break": f"熔斷（重排與換技能超過 {MID_REPLAN_MAX} 次）", "failed": "失敗"}
@@ -157,6 +159,9 @@ def _arg_problems(nid, n, types, always):
     for a in n.get("args", []) if isinstance(n.get("args"), list) else []:
         if isinstance(a, dict) and "if" in a and a["if"] not in types:
             p.append(f"{nid}：if 的參數 {a['if']} 沒有宣告")
+    strings = [a for a, _ in _arg_strings(n.get("args", []))]
+    if "--case" in strings and any(types.get(ref) in _NOCASE for a in strings for ref in _PARAM.findall(a)):
+        p.append(f"{nid}：搜尋的字（{'、'.join(_NOCASE)}）照原文核對時不分大小寫，搜尋也要不分：不要加 --case")
     return p
 
 
@@ -331,8 +336,11 @@ def _unquote(s):
 
 
 def _in_source(q, source, t):
-    """抄的原文在原文裡：整段一字不改；名稱清單與搜尋的字的名稱常在原文不同的地方，可以是用「、」分開的幾段，每一段一字不改。"""
+    """抄的原文在原文裡：整段一字不改（搜尋的字不分大小寫，_NOCASE）；名稱清單與搜尋的字的名稱常在原文不同的地方，可以是用「、」分開的幾段，
+    每一段一字不改。"""
     src = _norm(source)
+    if t in _NOCASE:
+        q, src = q.lower(), src.lower()
     if q in src:
         return True
     parts = [x.strip() for x in re.split(r"[、；;]", q) if x.strip()]
@@ -361,6 +369,34 @@ def _name_only(seg, q):
     return names[0] if len(names) == 1 and dropped else None
 
 
+def relative(p, value, cwd):
+    """路徑寫成工作目錄（或底下）的絕對路徑 → 相對的寫法（工作目錄本身是「.」）；其他照原樣。狀態列寫著工作目錄的絕對路徑，模型會照抄
+    （設計筆記 2.69）。"""
+    if p["type"] != "path" or not cwd or not value.startswith("/"):
+        return value
+    base, v = cwd.rstrip("/"), value.rstrip("/")
+    return "." if v == base else v[len(base) + 1:] if v.startswith(base + "/") else value
+
+
+def unmentioned(p, value):
+    """值是空的、或就是規格的預設值：當成沒提到（系統用預設值），抄的 quote 不看——表單寫「沒提到的參數…系統用預設值」，模型常把預設值照寫進
+    value、quote 隨便抄一句（設計筆記 2.69）。"""
+    if not value:
+        return True
+    d = str(p["default"]) if "default" in p else None
+    return d is not None and (value.rstrip("/") or value) == (d.rstrip("/") or d)
+
+
+def own_quote(p, value):
+    """值本身當抄的原文（照 quote 核對沒過時再核對一次）：名稱清單與搜尋的字每一個用「、」分開（_in_source 每一段分開找）。值就在原文裡，
+    跟模型自己把 quote 抄成值的那一段一樣，不多放任何東西（設計筆記 2.69）。"""
+    if p["type"] == "words":
+        return "、".join(words_of(value))
+    if p["type"] == "names":
+        return "、".join(x for x in (_unquote(y) for y in _SPLIT.split(value)) if x)
+    return value
+
+
 def verify_param(p, quote, value, source):
     """(值, 交回修的那一則)：值是 None 表示沒提到或沒過（沒過時第二個是給模型的說明）。名稱清單與搜尋的字的值是 list。"""
     q, v, name = _unquote(quote), _unquote(value), p["name"]
@@ -379,14 +415,14 @@ def verify_param(p, quote, value, source):
         segs, bad = [], []
         for x in plain_path(v).split("/"):
             kept = x if x in ("", "~") or (_DIRNAME.match(x) and x in q) else _name_only(x, q)
-            segs.append(kept or x)
-            if not kept:
+            segs.append(x if kept is None else kept)
+            if kept is None:          # 開頭的空段（絕對路徑）照收
                 bad.append(x)
         named = [x for x in segs if x not in ("", "~")]
         return ("/".join(segs), None) if named and not bad else (None, _i("reject_path", name=name, value=v, quote=q, missing="、".join(bad) or v))
     if t == "words":
         items = words_of(v)
-        miss = [x for x in items if x not in q or not WORD.match(x) or x.startswith("-")]
+        miss = [x for x in items if x.lower() not in q.lower() or not WORD.match(x) or x.startswith("-")]
         return (items, None) if items and not miss else (None, _i("reject_words", name=name, missing="、".join(miss) or v, quote=q))
     items = [_unquote(x) for x in _SPLIT.split(v) if _unquote(x)]
     miss = [x for x in items if x not in q or not _DIRNAME.match(x)]

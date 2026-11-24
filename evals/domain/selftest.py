@@ -13,7 +13,9 @@
   工具的 args 整個是 JSON、或照抄了〈語法〉的佔位符的交回重填一次、還是一樣就回到選技能（不算一步；有中括號的搜尋字不誤擋）；
 - 有骨架的技能：合約（原文要在給它看過的字裡）沒過的只把那幾個參數交回重填一次、還是沒過就回到選技能，都不算一步；原文開頭抄了程式的
   標題（「【子目標】」）的拿掉再核對；照骨架執行、每個節點的結果附 #編號；一模一樣的不執行；路徑的一段混了說明的字或結尾的萬用字元時
-  只留原文裡的那個名稱（結果裡寫明；好幾個名稱、翻譯、接在一起的照舊交回）；
+  只留原文裡的那個名稱（結果裡寫明；好幾個名稱、翻譯、接在一起的照舊交回）；值對得上原文的不擋：quote 抄了別段或沒抄、值本身就在原文裡，
+  搜尋的字不分大小寫，預設值與空的當成沒提到，工作目錄與底下的絕對路徑換成「.」與相對路徑（編的檔名、翻成英文的字、搜尋的文字寫成好幾個、
+  原文沒有的值照舊交回；骨架對搜尋的字加 --case 的載入時擋下）；
   回退換技能（.py 沒有、C++ 檔有 → cpp_symbol）；路徑有好幾個交回它決定（附候選）；0 筆照實交回（跑完、結果是 0 筆）；
   程式照收據算的彙整（AST 的定義、呼叫與 import 每個檔案幾處、總共幾處；名稱符合的檔案扣掉不含的子目錄）存成 #編號、接在技能的狀態後面，
   回報的總數照它寫、出處寫它的 #編號就過核對；
@@ -160,7 +162,7 @@ def main():
     try:
         import ollama
         ollama.list = lambda: {"models": []}
-        from agent_core import answers, composite, domain_session
+        from agent_core import answers, composite, domain_session, skill_spec
         from agent_core.config import DOMAIN_RESULT_HEAD
         from agent_core.jobstore import JobStore
         from agent_core.config import REPLY_ARGS_CHARS
@@ -434,6 +436,52 @@ def main():
             assert whys[:2] == ["cpp_symbol 的參數沒有通過核對", "cpp_symbol 的參數重填之後還是沒有通過核對"], whys
             assert job["turns"] == 4 and job["forms"] == 3, (job["turns"], job["forms"])
 
+        def t_grounded():
+            goal = "找 pkg 裡的 alpha 定義在哪"
+            fake = FakeChat(main=[task(goal, ["定義在哪"]), say("好")],
+                            session=[ds("domains", domains=["repo_analysis"]), ds("skill", skill="py_usage"),
+                                     fill(params=[("name", "alpha", "沒有出現過的一段"), ("path", os.path.join(tmp, "pkg"), ""),
+                                                  ("exclude", "", "隨便一句")])])
+            turn("pkg 裡的 alpha 定義在哪？", fake)
+            job = last_job()
+            assert job["forms"] == 1 and not [b for b in job["blocked"] if "核對" in b["why"]], ("第一次就過", job["blocked"])
+            st = job["steps"][0]
+            assert st["params"]["name"] == {"value": "alpha", "quote": "alpha", "source": "contract"}, ("值本身在原文裡", st["params"])
+            assert st["params"]["path"]["value"] == "pkg" and "given" not in st["params"]["path"], ("工作目錄底下的絕對路徑", st["params"])
+            assert "exclude" not in st["params"] and "技能的狀態：跑完" in fake.session_msgs(3)[-1]["content"], ("空的當成沒提到", st["params"])
+            sess = domain_session.DomainSession(agent, agent.domain_registry())
+            specs = agent.domain_registry()["domains"]["repo_analysis"]["skills"]
+            job = {"cwd": "/w/src", "sources": "照 amr_07 的 cam_driver 規格書：QoS 設定在哪？頻率多少？WP_0815、cam_driver 在哪一行？\n"
+                                             "【第 1 步的結果】find_file\namr_07/config/cam.yaml"}
+
+            def form(skill, cells):
+                return sess._contract(job, specs[skill], {k: {"quote": q, "value": v} for k, (v, q) in cells.items()})
+
+            params, problems, _ = form("find_lines", {"keyword": ("qos", "qos"), "path": (".", "amr_07 的設定檔"), "exclude": ("", "隨便一句")})
+            assert not problems and set(params) == {"keyword"} and params["keyword"]["value"] == "qos", ("大小寫、預設值配一句 quote、空的", params, problems)
+            params, problems, _ = form("find_lines", {"keyword": ("QoS", ""), "path": ("/w/src/", "")})
+            assert not problems and set(params) == {"keyword"}, ("沒抄 quote、值在原文裡；工作目錄本身＝預設值", params, problems)
+            params, problems, _ = form("find_lines", {"keyword": ("QoS", "別段"), "path": ("/w/src/amr_07/config/", "")})
+            assert not problems and params["path"]["value"] == "amr_07/config" and "given" not in params["path"], ("絕對路徑換成相對的", params, problems)
+            params, problems, _ = form("doc_lookup", {"doc": ("amr_07/cam_driver", "amr_07 的 cam_driver 規格書"), "words": ("wp_0815, CAM_DRIVER", "沒有的一段")})
+            assert not problems and params["words"]["value"] == ["wp_0815", "CAM_DRIVER"], ("搜尋的字每一個在原文裡（不分大小寫）", params, problems)
+            for skill, cells, why in (("doc_lookup", {"doc": ("amr_07/cam_driver_spec.md", "amr_07 的 cam_driver 規格書"), "words": ("WP_0815", "WP_0815")}, "編的檔名"),
+                                      ("find_lines", {"keyword": ("frequency", "頻率多少")}, "翻成英文的字"),
+                                      ("find_lines", {"keyword": ("QoS、cam_driver", "QoS")}, "搜尋的文字寫成好幾個"),
+                                      ("find_lines", {"keyword": ("map", "")}, "原文沒有的值"),
+                                      ("find_lines", {"keyword": ("QoS", "QoS"), "path": ("/etc/amr_07", "amr_07")}, "工作目錄外的絕對路徑照每一段核對")):
+                params, problems, bad = form(skill, cells)
+                assert problems and len(bad) == 1, (why, params, problems)
+            assert "值「map」沒有抄原文" in form("find_lines", {"keyword": ("map", "")})[1][0], "沒抄 quote 的說明照舊"
+            assert composite.verify_param({"name": "path", "type": "path"}, "/opt/amr_07", "/opt/amr_07", "/opt/amr_07") == ("/opt/amr_07", None), \
+                "絕對路徑開頭的空段照收"
+            text = open(os.path.join(tmp, "skills_system", "repo_analysis", "find_lines.md"), encoding="utf-8").read()
+            assert text.count('"-C", "2"],') == 1, "骨架的寫法變了：改這個測試"
+            spec = dict(skill_spec.composite(text.replace('"-C", "2"],', '"-C", "2", "--case"],')), name="find_lines", text=text)
+            problems = composite.validate_skill(spec, os.path.join(tmp, "skills_system", "tools"),
+                                                agent.domain_registry()["domains"]["repo_analysis"]["tools"])
+            assert any("--case" in x for x in problems), ("搜尋的字不分大小寫：骨架加 --case 的擋下", problems)
+
         def t_form_tool():
             fake = FakeChat(main=[task("找 pkg 裡的 alpha 定義在哪", ["定義在哪"]), say("好")],
                             session=[ds("domains", domains=["repo_analysis"]), ds("skill", skill="search_text"),
@@ -608,6 +656,7 @@ def main():
                          ("有骨架的技能：合約、執行、一模一樣的不執行", t_composite),
                          ("路徑的一段混了說明的字或萬用字元：只留原文裡的名稱、結果裡寫明", t_path_names),
                          ("參數表單：抄到程式的標題照樣核對、重填還是沒過回到選技能", t_form),
+                         ("參數表單：值對得上原文的不擋（值本身在原文裡、大小寫、預設值、工作目錄的絕對路徑）、編的與翻譯的照舊交回", t_grounded),
                          ("工具的參數表單：args 寫成 JSON、照抄佔位符的交回重填", t_form_tool),
                          ("有骨架的技能的彙整：程式照收據算的數量存成 #編號、總數照它寫就過核對", t_totals), ("回退換技能", t_composite_switch),
                          ("路徑有好幾個交回決定、0 筆照實交回", t_composite_need_and_empty), ("狀態與上限", t_states_limits),
