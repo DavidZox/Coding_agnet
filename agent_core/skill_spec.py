@@ -5,6 +5,8 @@ frontmatter 的這幾個欄位是給程式看的，值寫成一行 JSON（JSON �
 - receipt：腳本收據（skills_system/scripts/_receipt_common.py）的欄位：counts、items 的鍵與其他欄位，後面加 ? 的是不一定有的；
 - narrow：逾時（還沒有任何結果）時第 1 級可以怎麼縮小範圍——腳本 parse_args 結果的鍵 → 規則（inside：路徑換成原本路徑裡面的；
   added：清單多加幾項），低階執行器（agent_core/edg.py）核對修正只動了這些。沒寫的工具逾時就往上報。
+- listing：`true`＝輸出是程式整理好的清單（每一行一筆、附路徑或行號，總數也是程式算的）：超過工具回傳門檻、但放得進一段時直接給原文、
+  不提煉（agent_core/turn.py 的 listing_raw；照存檔的收據寫的技能認）。
 載入規格給模型看時拿掉這幾行（for_model），模型讀到的跟以前一樣。
 
 有骨架的技能（skills_system/<領域>/<名稱>.md，agent_core/composite.py 讀；寫法見 doc/技能撰寫規範.md）另外有：
@@ -15,7 +17,7 @@ frontmatter 的這幾個欄位是給程式看的，值寫成一行 JSON（JSON �
 import json
 import re
 
-_MACHINE = re.compile(r"^(parameters|receipt|narrow|topology|answers):\s*(.*)$")
+_MACHINE = re.compile(r"^(parameters|receipt|narrow|listing|topology|answers):\s*(.*)$")
 _EXECUTE = re.compile(r"EXECUTE:\s*scripts/([A-Za-z0-9_]+\.py)")
 MACHINE_SECTIONS = ("骨架", "回退")      # 複合技能正文裡給程式看的章節
 _FENCE = re.compile(r"^\s*```")
@@ -101,7 +103,7 @@ def composite(text):
 
 
 def contract(text):
-    """規格裡給程式看的欄位 → {"parameters": [...], "receipt": {...}, "narrow": {...}}；沒寫的不在結果裡。JSON 寫錯時丟 ValueError。"""
+    """規格裡給程式看的欄位 → {"parameters": [...], "receipt": {...}, "narrow": {...}, "listing": true}；沒寫的不在結果裡。JSON 寫錯時丟 ValueError。"""
     head, _ = _split(text)
     out = {}
     for ln in head or []:

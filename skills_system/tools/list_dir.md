@@ -6,6 +6,7 @@ version: 1.5.0
 dependencies: []
 parameters: [{"name": "path", "required": false, "default": ".", "fetch": "find_file <目錄名稱>"}]
 receipt: {"counts": ["total", "files", "dirs", "links", "unreadable", "matched?"], "items": ["path", "name", "kind", "link", "size", "mtime"], "fields": ["path", "filter", "newest"]}
+listing: true
 ---
 
 # 用途

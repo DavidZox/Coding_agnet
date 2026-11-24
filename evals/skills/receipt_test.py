@@ -455,14 +455,15 @@ def t_spec_matches_receipts():
 
 def t_parse_args_contract():
     """寫收據的腳本都有純函式 parse_args（最後一個回傳值是錯誤；低階執行器執行前用它檢查參數）；規格的 narrow 寫的是 parse_args 結果的鍵；
-    規格的腳本（skill_spec.script）就是這支；載入給模型時 narrow 也拿掉"""
+    規格的腳本（skill_spec.script）就是這支；載入給模型時 narrow 也拿掉。規格寫了 listing 的（程式整理好的清單，放得進一段時直接給原文；
+    設計筆記 2.68）只有六個清單型的技能、值是 true、載入給模型時拿掉"""
     import importlib
     sys.path.insert(0, PROJECT)
     from agent_core import skill_spec
     ok_args = {"search_text": ["x", "."], "find_file": ["x", "."], "list_dir": ["."], "view_file": ["a.txt"],
                "code_ast_reader": ["a.py", "--refs", "x"], "result_list": [], "result_grep": ["latest", "x"], "result_view": ["latest"],
                "code_defs": ["."], "py_refs": ["x", "."]}
-    narrowed = []
+    narrowed, listed = [], []
     for skill, script in V1.items():
         with open(os.path.join(PROJECT, "skills_system", "tools", f"{skill}.md"), encoding="utf-8") as f:
             text = f.read()
@@ -478,4 +479,8 @@ def t_parse_args_contract():
             assert isinstance(out[0], dict) and set(narrow) <= set(out[0]), (skill, set(narrow) - set(out[0] or {}))
             assert all(r["rule"] in ("inside", "added") and r.get("arg") for r in narrow.values()), (skill, narrow)
             assert "\nnarrow:" not in skill_spec.for_model(text), skill
+        if "listing" in skill_spec.contract(text):
+            listed.append(skill)
+            assert skill_spec.contract(text)["listing"] is True and "\nlisting:" not in skill_spec.for_model(text), skill
     assert sorted(narrowed) == ["code_defs", "find_file", "py_refs", "search_text"], narrowed
+    assert sorted(listed) == ["code_defs", "find_file", "list_dir", "py_refs", "result_grep", "search_text"], listed

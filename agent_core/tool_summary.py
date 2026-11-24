@@ -2,6 +2,7 @@
 兩者共用 agent_core/extract.py 的 Extraction（程式切段 → 每段一個 worker → 整合，程式核對引用的行號，全部的中間產物存檔）。
 這裡負責：錨點（使用者的目標、這一步的目的、recall 的問題與背景）、交給主對話的文字（_render_tool_summary）與下一步建議。"""
 import json
+import os
 import re
 import shlex
 from skills_system.scripts import _results_common
@@ -13,7 +14,7 @@ from .config import (
     TOOL_SUMMARY_TAG,
     VISION_ARCHIVE_SCRIPT,
 )
-from . import prompt_files
+from . import prompt_files, skill_spec
 from .extract import Extraction, lines_text
 from .protocol import action_text, parse_agent_reply
 
@@ -313,15 +314,31 @@ class ToolSummaryMixin:
         )
         return output_text
 
-    def _file_lines(self, rid, lines):
-        """存檔 #rid 的每一行在檔案裡的位置（_results_common.file_lines，照存檔的收據）；沒有收據的回空的。"""
+    def _receipt(self, rid):
+        """存檔 #rid 的收據（腳本寫的，跟存檔放在一起：<存檔>.receipt.json）；沒有收據、讀不到的回 None。"""
         path = self.result_file_path(rid) if str(rid or "").isdigit() else None
         try:
             with open(path[:-3] + ".receipt.json", encoding="utf-8") as f:
-                receipt = json.load(f)
+                return json.load(f)
         except (TypeError, OSError, ValueError):
-            return {}
-        return _results_common.file_lines(lines, receipt)
+            return None
+
+    def _file_lines(self, rid, lines):
+        """存檔 #rid 的每一行在檔案裡的位置（_results_common.file_lines，照存檔的收據）；沒有收據的回空的。"""
+        receipt = self._receipt(rid)
+        return _results_common.file_lines(lines, receipt) if receipt else {}
+
+    def listing_result(self, rid):
+        """存檔 #rid 是不是程式整理好的清單：收據寫的技能（tool）的規格寫了 listing（每一行一筆、附路徑或行號；skill_spec）。
+        turn.listing_raw 照它決定直接給原文、不提煉（設計筆記 2.68）。沒有收據的（凍結的工具）不是。"""
+        tool = (self._receipt(rid) or {}).get("tool")
+        if not tool:
+            return False
+        try:
+            with open(os.path.join(self.tools_dir, f"{tool}.md"), encoding="utf-8") as f:
+                return skill_spec.contract(f.read()).get("listing") is True
+        except (OSError, ValueError):
+            return False
 
     def _missing_reason(self, rid, err):
         """存檔找不到的原因：編號比目前最大的編號還大（沒有這個編號）、檢索清單有它但檔案不在（超過保留上限被清掉）、其他（resolve_result 的訊息）。"""

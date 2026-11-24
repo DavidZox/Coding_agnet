@@ -6,6 +6,7 @@ version: 2.0.0
 dependencies: ["find"]
 parameters: [{"name": "keyword", "required": true, "ask": "要找的名稱（使用者的問題裡沒有時才問）"}, {"name": "path", "required": false, "default": ".", "fetch": "find_file <目錄名稱>"}]
 receipt: {"counts": ["total", "files", "dirs"], "items": ["path", "kind"], "fields": ["keyword", "root", "match", "type", "all_dirs", "excluded_dirs", "skipped", "timed_out"]}
+listing: true
 narrow: {"path": {"rule": "inside", "arg": "路徑"}}
 ---
 

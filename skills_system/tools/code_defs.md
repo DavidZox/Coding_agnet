@@ -6,6 +6,7 @@ version: 1.1.0
 dependencies: []
 parameters: [{"name": "path", "required": false, "default": ".", "fetch": "find_file <目錄名稱>"}]
 receipt: {"counts": ["files", "lines", "classes", "functions"], "items": ["path", "line", "end", "kind", "name", "qualname", "decorator?"], "fields": ["per_file", "paths", "include", "exclude_dirs", "name", "kind", "timed_out"]}
+listing: true
 narrow: {"paths": {"rule": "inside", "arg": "路徑"}, "include": {"rule": "added", "arg": "--include"}}
 ---
 

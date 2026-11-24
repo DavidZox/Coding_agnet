@@ -335,6 +335,42 @@ def main():
             out = agent._result_recall(recall)
             assert f"#{a} 原文第 1～20 行提煉失敗" in out and f"#{b} 原文第 1～20 行提煉失敗" in out, "合成的一段失敗：每一份都寫進未涵蓋"
 
+        def t_listing_raw():
+            # 程式整理好的清單（規格寫了 listing 的技能：每一行一筆、附路徑或行號，總數也是程式算的）放得進一段：直接給原文、不提煉——
+            # 提煉只能從清單挑，e4b 的 worker 有時只摘開頭的總數（設計筆記 2.68）。照存檔的收據寫的技能認；放不進一段、不是清單型、
+            # 沒有收據（凍結的工具）的照舊提煉；claude_code 模式不變
+            from agent_core.config import EXTRACT_CHUNK_CHARS, TOOL_RESULT_TOKEN_THRESHOLD
+            from agent_core.turn import _content_for_context, listing_raw
+
+            def run(skill, n, use_summary=True):
+                rows = [f"src/模組_{i}/節點_{i}.py:{10 + i}: 宣告參數「最大速度_{i}」與「加速度上限_{i}」" for i in range(n)]
+                text = "\n".join([f"[PASS] 搜尋「參數」：共 {n} 筆（{n} 個檔案）"] + rows)
+                agent.set_current_task("列出每一個參數宣告的位置")
+                agent.last_receipt = {"tool": skill, "status": "pass", "counts": {"hits": n}, "items": [], "truncated": False} if skill else None
+                try:
+                    agent._record_trajectory("grep_cmd.py", ["參數", "src"], text, tmp, "", "")
+                finally:
+                    agent.last_receipt = None
+                ollama.chat = fake = FakeExtract()
+                tokens = agent.count_tokens(text)
+                return text, tokens, _content_for_context(text, tokens, agent, use_summary=use_summary), fake
+
+            text, tokens, out, fake = run("search_text", 25)
+            assert tokens > TOOL_RESULT_TOKEN_THRESHOLD and len(text) <= EXTRACT_CHUNK_CHARS, (tokens, len(text))
+            assert out == text and not fake.calls and listing_raw(agent, text), "清單型、放得進一段：原文、沒有模型呼叫"
+            assert run("list_dir", 25, use_summary=False)[2].startswith("[PASS] 搜尋"), "/summarize off 也給原文（不是只有成功／失敗）"
+            text, tokens, out, fake = run("search_text", 60)
+            assert len(text) > EXTRACT_CHUNK_CHARS and fake.calls and not listing_raw(agent, text), "放不進一段：照舊提煉"
+            for skill in ("view_file", None):      # 看檔案內容的；沒有收據的（凍結的工具）
+                text, tokens, out, fake = run(skill, 25)
+                assert fake.calls and not listing_raw(agent, text), (skill, "不是清單型：照舊提煉")
+            text = run("search_text", 25)[0]
+            agent.context_mode = "claude_code"
+            try:
+                assert not listing_raw(agent, text), "claude_code 模式不變（原文本來就直接進上下文）"
+            finally:
+                agent.context_mode = "harness"
+
         def t_line_numbers():
             text = "\n".join(f"line {i}" for i in range(1, 301))
             rid = archive(text, script="cat_cmd.py")
@@ -520,6 +556,8 @@ def main():
                          ("result_recall：好幾份一起、參數順序錯、編號抄錯、檔案被清掉（清單也不再列它）", t_recall),
                          ("好幾份加起來放得進一段（設計筆記 2.66）：合成一段、一個 worker 一起讀（每一份標存檔編號、record 只能填這幾份）→ 事實寫是哪一份、"
                           "整合的輸入也寫；record 填另一份的照那一份核對、拿掉；合成的一段失敗時每一份都寫進未涵蓋", t_together),
+                         ("程式整理好的清單（規格寫了 listing 的技能，照存檔的收據認；設計筆記 2.68）放得進一段：直接給原文、沒有模型呼叫"
+                          "（/summarize off 也是）；放不進一段、不是清單型、沒有收據的照舊提煉；claude_code 模式不變", t_listing_raw),
                          ("行號：result_view、result_grep、claude_code 的截斷說明同一套；result_view --outline", t_line_numbers),
                          ("存檔：照編號排（#1000 在 #999 後面）、新編號接在目錄裡最大的編號後面", t_prune_order),
                          ("狀態標記只認輸出最後的那幾行", t_trailing_markers),

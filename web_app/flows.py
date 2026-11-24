@@ -14,7 +14,7 @@ from agent_core.config import (
     TOOL_RESULT_TOKEN_THRESHOLD,
 )
 from agent_core.protocol import action_text, is_exempt_result, tool_result_message
-from agent_core.turn import _append_discarded_tool_result, _content_for_context, context_kind, oversized_notice
+from agent_core.turn import _append_discarded_tool_result, _content_for_context, context_kind, listing_raw, oversized_notice
 from agent_core import prompt_files
 
 _ATTACH = "harness/attachments.md"   # 附圖、手動載入技能時放進主對話的字
@@ -209,8 +209,9 @@ def _handle_tool_result(result, events):
     if result:
         tool_tokens = agent.count_tokens(result)
         agent.total_tool_tokens += tool_tokens
-        # 規格文件載入不受門檻限制（_content_for_context 會完整放行），不標 ⚠️
-        oversized = tool_tokens > TOOL_RESULT_TOKEN_THRESHOLD and not is_exempt_result(result, tool_tokens)
+        # 規格文件載入、程式整理好的清單放得進一段的不受門檻限制（_content_for_context 會完整放行），不標 ⚠️
+        oversized = (tool_tokens > TOOL_RESULT_TOKEN_THRESHOLD and not is_exempt_result(result, tool_tokens)
+                     and not listing_raw(agent, result))
         events.append({
             "channel": "tool",
             "text": result,

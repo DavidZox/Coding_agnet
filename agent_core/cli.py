@@ -13,7 +13,8 @@ from .config import (
 )
 from .context_mode import CONTEXT_MODE_DESCRIPTIONS
 from .protocol import attach_skill_docs, is_exempt_result, tool_result_message
-from .turn import _append_discarded_tool_result, _content_for_context, after_turn_compression, context_kind, oversized_notice
+from .turn import (_append_discarded_tool_result, _content_for_context, after_turn_compression, context_kind, listing_raw,
+                   oversized_notice)
 
 _DIRECT = "harness/direct_commands.md"   # /analyze 替使用者與 AI 放進主對話的那兩則
 
@@ -140,7 +141,8 @@ def main():
                     print(f"📄 已存檔 #{agent.last_result_id}（logs/{TOOL_RESULTS_DIRNAME}/{agent.last_result_file}）；"
                           f"之後可用 result_grep {agent.last_result_id} <關鍵字> 回查")
                 print(f"🧰 Tool Tokens: {tool_tokens}")
-                if tool_tokens > TOOL_RESULT_TOKEN_THRESHOLD and not is_exempt_result(result, tool_tokens):
+                if (tool_tokens > TOOL_RESULT_TOKEN_THRESHOLD and not is_exempt_result(result, tool_tokens)
+                        and not listing_raw(agent, result)):
                     print(oversized_notice(agent, tool_tokens, tool_summary_mode))
             else:
                 print("✅ 無工具需要執行")

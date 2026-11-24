@@ -6,6 +6,7 @@ version: 1.1.0
 dependencies: []
 parameters: [{"name": "name", "required": true, "ask": "要找哪一個 Python 的名稱（函式、方法、類別、變數）？"}, {"name": "path", "required": false, "default": ".", "fetch": "find_file <目錄名稱>"}]
 receipt: {"counts": ["refs", "files", "defs", "calls", "imports", "assigns", "others", "scanned"], "items": ["name", "kind", "line", "scope", "text", "path", "qualname?", "in_class?", "decorator?", "end?"], "fields": ["per_file", "name", "paths", "kind", "exclude_dirs", "cpp_files", "syntax_errors", "timed_out"]}
+listing: true
 narrow: {"paths": {"rule": "inside", "arg": "路徑"}}
 ---
 

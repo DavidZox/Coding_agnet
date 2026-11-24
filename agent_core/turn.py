@@ -1,6 +1,7 @@
 """回合層的共用函式（CLI 與 Web 都用）：工具回傳怎麼進主對話、捨棄通知、回合結束的軟水位壓縮。"""
 import os
 from .config import (
+    EXTRACT_CHUNK_CHARS,
     MIN_COMPRESS_TOKENS,
     RAW_RESULT_MAX_TOKENS,
     SOFT_TOKEN_THRESHOLD,
@@ -35,8 +36,9 @@ def _content_for_context(result, tool_tokens, agent=None, use_summary=True, step
     harness 模式：門檻內原封不動。超過 TOOL_RESULT_TOKEN_THRESHOLD 時：
     - use_summary=True（預設）且提供 agent：交給 agent.summarize_tool_result()——獨立、乾淨的 session 拿完整原始輸出
       + 使用者目標 + 這一步的目的做任務導向提煉（長的依結構切段、每段一個 worker 再整合，見 agent_core/extract.py），
-      主對話收到的是跟任務有關的重點（每條附原文的行號）。例外只有 is_exempt_result 的那幾種：規格文件、
-      已經是提煉結果的、程式整理好的報告（數據分析）——直接原文。
+      主對話收到的是跟任務有關的重點（每條附原文的行號）。例外是 is_exempt_result 的那幾種：規格文件、
+      已經是提煉結果的、程式整理好的報告（數據分析、交辦的報告）——直接原文；還有程式整理好的清單（規格寫了 listing 的技能）
+      放得進一段的（listing_raw）——直接原文，/summarize off 也是。
     - use_summary=False（/summarize off）、沒有 agent、或摘要 session 失敗：退回只給成功／失敗判定——零延遲，
       但模型拿不到內容，只能換更精確的參數重查。
     step、anchor：領域 session（agent_core/domain_session.py）的這一步與「想知道什麼」（不在主對話裡，提煉不能從主對話找）；sub：領域 session——
@@ -47,6 +49,8 @@ def _content_for_context(result, tool_tokens, agent=None, use_summary=True, step
     if agent is not None and getattr(agent, "context_mode", "harness") == "claude_code":
         return agent.raw_result_for_context(result, tool_tokens, sub=sub)
     if tool_tokens <= TOOL_RESULT_TOKEN_THRESHOLD:
+        return result
+    if listing_raw(agent, result):
         return result
 
     if use_summary and agent is not None:
@@ -67,6 +71,14 @@ def _content_for_context(result, tool_tokens, agent=None, use_summary=True, step
               else prompt_files.load(_RESULTS, "reduced_no_recall"))
     return f"{TOOL_REDUCED_TAG}\n" + prompt_files.load(_RESULTS, "reduced", status=status, tokens=tool_tokens,
                                                      threshold=TOOL_RESULT_TOKEN_THRESHOLD, recall=recall)
+
+
+def listing_raw(agent, result):
+    """harness 模式下，程式整理好的清單（存檔的收據寫的技能，規格寫了 listing：每一行一筆、附路徑或行號，總數也是程式算的）
+    放得進一段（EXTRACT_CHUNK_CHARS）：直接給原文、不提煉——提煉只能從清單挑，挑的時候會漏（e4b 的 worker 有時只摘開頭的總數；
+    設計筆記 2.68）。agent.last_result_id 是這份輸出的存檔。_content_for_context 與 CLI／Web 的「超過門檻」提示共用這個判斷。"""
+    return (agent is not None and getattr(agent, "context_mode", "harness") == "harness" and len(result) <= EXTRACT_CHUNK_CHARS
+            and agent.listing_result(getattr(agent, "last_result_id", None)))
 
 
 def oversized_notice(agent, tool_tokens, use_summary):

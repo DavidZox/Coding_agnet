@@ -6,6 +6,7 @@ version: 2.0.1
 dependencies: []
 parameters: [{"name": "id", "required": true, "fetch": "result_list"}, {"name": "keyword", "required": true, "ask": "要找的字"}]
 receipt: {"counts": ["hits", "files"], "items": ["id", "line"], "fields": ["per_file", "pattern", "ref", "timed_out", "clipped_output"]}
+listing: true
 ---
 
 # 用途

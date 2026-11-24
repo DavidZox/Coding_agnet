@@ -6,6 +6,7 @@ version: 2.1.0
 dependencies: ["grep"]
 parameters: [{"name": "keyword", "required": true, "ask": "要搜的字（使用者的問題裡沒有時才問）"}, {"name": "path", "required": false, "default": ".", "fetch": "find_file <目錄名稱>"}]
 receipt: {"counts": ["hits", "files"], "items": ["path", "line", "words?"], "fields": ["per_file", "pattern", "paths", "options", "excluded_dirs", "skipped", "timed_out"]}
+listing: true
 narrow: {"paths": {"rule": "inside", "arg": "路徑"}, "include": {"rule": "added", "arg": "--include"}}
 ---
 
