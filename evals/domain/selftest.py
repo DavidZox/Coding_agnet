@@ -12,7 +12,8 @@
 - 選了技能之後的參數表單：schema 只有該填的欄位（有骨架的技能每個參數一欄、參數名稱就是欄位；工具只有 args）、表單的那一輪不算在回的輪數裡；
   工具的 args 整個是 JSON、或照抄了〈語法〉的佔位符的交回重填一次、還是一樣就回到選技能（不算一步；有中括號的搜尋字不誤擋）；
 - 有骨架的技能：合約（原文要在給它看過的字裡）沒過的只把那幾個參數交回重填一次、還是沒過就回到選技能，都不算一步；原文開頭抄了程式的
-  標題（「【子目標】」）的拿掉再核對；照骨架執行、每個節點的結果附 #編號；一模一樣的不執行；
+  標題（「【子目標】」）的拿掉再核對；照骨架執行、每個節點的結果附 #編號；一模一樣的不執行；路徑的一段混了說明的字或結尾的萬用字元時
+  只留原文裡的那個名稱（結果裡寫明；好幾個名稱、翻譯、接在一起的照舊交回）；
   回退換技能（.py 沒有、C++ 檔有 → cpp_symbol）；路徑有好幾個交回它決定（附候選）；0 筆照實交回（跑完、結果是 0 筆）；
   程式照收據算的彙整（AST 的定義、呼叫與 import 每個檔案幾處、總共幾處；名稱符合的檔案扣掉不含的子目錄）存成 #編號、接在技能的狀態後面，
   回報的總數照它寫、出處寫它的 #編號就過核對；
@@ -159,7 +160,7 @@ def main():
     try:
         import ollama
         ollama.list = lambda: {"models": []}
-        from agent_core import answers, domain_session
+        from agent_core import answers, composite, domain_session
         from agent_core.config import DOMAIN_RESULT_HEAD
         from agent_core.jobstore import JobStore
         from agent_core.config import REPLY_ARGS_CHARS
@@ -363,6 +364,34 @@ def main():
             same = fake.session_msgs(6)[-1]["content"]
             assert "一模一樣" in same, same[:200]
 
+        def t_path_names():
+            goal = "找 pkg 裡的 alpha 定義在哪、哪裡用到"
+            fake = FakeChat(main=[task(goal, ["定義在哪", "哪裡用到"]), say("好")],
+                            session=[ds("domains", domains=["repo_analysis"]), ds("skill", skill="py_usage"),
+                                     fill(params=[("name", "alpha", "alpha"), ("path", "pkg 裡", "pkg 裡的 alpha")])])
+            turn("pkg 裡的 alpha 定義在哪、哪裡用到？", fake)
+            shown = fake.session_msgs(3)[-1]["content"]
+            assert "系統只留原文裡的名稱：path「pkg 裡」→ pkg" in shown and "技能的狀態：跑完" in shown, shown[:500]
+            st = next(s for s in last_job()["steps"] if s["kind"] == "composite")
+            assert st["params"]["path"]["value"] == "pkg" and st["params"]["path"]["given"] == "pkg 裡", st["params"]
+            assert "given" not in st["params"]["name"], ("照寫的不記", st["params"])
+            P = {"name": "doc", "type": "path"}
+            q = "amr_07 的 cam_driver 規格書"
+
+            def vp(quote, value):
+                return composite.verify_param(P, quote, value, quote)
+
+            assert vp(q, "amr_07/cam_driver 規格書") == ("amr_07/cam_driver", None), "名稱＋說明的字：只留名稱"
+            assert vp(q, "amr_07/cam_driver*") == ("amr_07/cam_driver", None), "結尾的萬用字元：只留名稱"
+            assert vp(q, "cam_driver 規格書") == ("cam_driver", None)
+            assert vp("amr_07/", "./amr_07/") == ("amr_07", None), "開頭的 ./、結尾的 / 照舊"
+            for quote, value in ((q, "amr_07 的 cam_driver 規格書"), (q, "amr_07/cam_driver_spec"), (q, "amr_07/cam_driver_規格書"),
+                                 (q, "amr_07/driver 規格書"), ("amr_07", "../amr_07"), ("docs 底下的 *.md", "docs/*.md"),
+                                 ("Camera Driver Spec.md", "Camera Driver Spec.md"), (q, "amr_07/規格書 cam_driver x")):
+                got = vp(quote, value)
+                assert got[0] is None and "不是抄的原文" in got[1], ("好幾個名稱、翻譯、接在一起、名稱的一部分、原文沒有的目錄、開頭的萬用字元、"
+                                                                    "沒有拿掉東西、有別的英數字：照舊交回", value, got)
+
         def t_form():
             q = "pkg 裡的 alpha 定義在哪？"
             goal = "找 pkg 裡的 alpha 定義在哪"
@@ -557,6 +586,7 @@ def main():
                          ("領域 session 用工具：選領域、技能清單、結果、回報、主 session 照項目回答", t_tool_flow),
                          ("評測的紀錄（domain_calls）", t_tool_records),
                          ("有骨架的技能：合約、執行、一模一樣的不執行", t_composite),
+                         ("路徑的一段混了說明的字或萬用字元：只留原文裡的名稱、結果裡寫明", t_path_names),
                          ("參數表單：抄到程式的標題照樣核對、重填還是沒過回到選技能", t_form),
                          ("工具的參數表單：args 寫成 JSON、照抄佔位符的交回重填", t_form_tool),
                          ("有骨架的技能的彙整：程式照收據算的數量存成 #編號、總數照它寫就過核對", t_totals), ("回退換技能", t_composite_switch),

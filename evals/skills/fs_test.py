@@ -487,7 +487,8 @@ TEST_SRC = "def test_one():\n    pass\n\n\nclass TestBox:\n    def test_two(self
 
 def t_code_defs():
     """code_defs：每份檔案的行數與數量由腳本算；Python 照 AST（含方法、巢狀）、C++ 照定義的寫法（建構子的初始化、類別外的方法、樣板、
-    多行參數；註解、enum class、只有宣告、lambda 不算）；--include／--name／--kind 篩選；--files 每份一行、--sort lines 照行數；預設略過 build"""
+    多行參數；註解、enum class、只有宣告、lambda 不算）；--include／--name／--kind 篩選（--name 寫成萬用字元的樣子回 [ERROR]、附對應的正規表示式，
+    跳脫的 \\w* 不算）；--files 每份一行、--sort lines 照行數；預設略過 build"""
     d = _tmp()
     _w(d, "src/engine.cpp", CPP_SRC)
     _w(d, "src/tests/test_box.py", TEST_SRC)
@@ -516,7 +517,14 @@ def t_code_defs():
     assert_error(run("code_defs_cmd.py", "nope", d=d), "找不到")
     assert_error(run("code_defs_cmd.py", "src", "--kind", "method", d=d), "--kind 要是 class")
     assert_error(run("code_defs_cmd.py", "src", "--name", "(", d=d), "正規表示式")
-    assert_error(run("code_defs_cmd.py", "src", "--bogus", d=d), "不支援的選項")
+    out = run("code_defs_cmd.py", "src", "--name", "test*", "--kind", "def", d=d)
+    assert_error(out, "萬用字元的寫法")
+    assert '寫成 --name "^test"' in out, ("--name 寫成萬用字元的樣子：擋下、附對應的正規表示式", out)
+    for glob, rx in (("*box", '"box$"'), ("*Box*", '"Box"'), ("test_*_two", '"^test_.*_two$"')):
+        assert rx in run("code_defs_cmd.py", "src", "--name", glob, d=d), (glob, rx)
+    assert "改成正規表示式的寫法" in run("code_defs_cmd.py", "src", "--name", "(test)|one*", d=d), "換不出來的：只說明寫法"
+    out = run("code_defs_cmd.py", "src", "--name", r"^test_\w*", "--kind", "def", d=d)
+    assert first_line(out).startswith("[PASS]") and "test_two" in out, ("跳脫的 \\w* 是正規表示式，不擋", out)
     assert_error(run("code_defs_cmd.py", "/", d=d), "不列 /")
 
 

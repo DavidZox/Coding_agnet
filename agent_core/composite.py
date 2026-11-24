@@ -4,7 +4,8 @@
 1. **規格**（skills_system/<領域>/<技能>.md）：frontmatter 的 parameters（名稱、種類、說明、必填或預設、路徑的 fetch）、answers、topology，
    〈骨架〉（工具節點：程式做的步驟）與〈回退〉（照收據的條件改圖）。骨架裡沒有判斷節點：讀交給提煉，下一步交給領域 session（F2）。
 2. **合約**（verify_param，F3）：每個參數的原文要一字不改地在給的原文裡（領域 session 給的：問題、子目標、項目、前面每一步的結果），
-   值照種類對得上原文（名稱、名稱清單、搜尋的字要原樣在原文裡；路徑的每一段是原文的名稱；文字與檔案名稱的寫法每一段在原文裡）。
+   值照種類對得上原文（名稱、名稱清單、搜尋的字要原樣在原文裡；路徑的每一段是原文的名稱——一段混了說明的字或萬用字元時只留那個名稱，_name_only；
+   文字與檔案名稱的寫法每一段在原文裡）。
 3. **補齊**（Runner.run 的第一步）：沒提到的用預設值；路徑在工作目錄找不到時照 fetch 查一次（剛好一個就自己補，記在 auto_filled）。
    必填的沒有、路徑有好幾個或找不到：不問使用者，回 need（說明與候選），交回領域 session 決定（寫完整的路徑、換參數、換技能或回報）。
 4. **排圖、執行**：〈骨架〉代入參數就是一張圖（`{"if": 參數, "args": [...]}` 的參數有值才放，名稱清單一項一組；節點寫 if 的，參數沒有值就
@@ -331,6 +332,28 @@ def _in_source(q, source, t):
     return t in ("names", "words") and len(parts) > 1 and all(x in src for x in parts)
 
 
+def plain_path(v):
+    """路徑照寫的值：去掉開頭的 ./ 與結尾的 /。"""
+    return (v[2:] if v.startswith("./") else v).rstrip("/") or v
+
+
+def _name_only(seg, q):
+    """一段路徑混了說明的字或萬用字元（「<名稱> 規格書」「<名稱>*」）→ 只留那個名稱；照空白分開，剛好一個是抄的原文裡整個的名稱（結尾的 * ?
+    不算），其他的都沒有英數字（說明的字），而且真的拿掉了東西才算。好幾個名稱（看不出是上下層還是並列）或有別的寫法回 None，照舊交回。
+    單一迴圈的四批比較（f～i）裡，doc 參數被擋最多的就是這種（設計筆記 2.63）。"""
+    names, dropped = [], False
+    for tok in seg.split():
+        t = tok.rstrip("*?")
+        if not re.search(r"[A-Za-z0-9]", tok):
+            dropped = True
+        elif t and _DIRNAME.match(t) and re.search(rf"(?<![A-Za-z0-9_]){re.escape(t)}(?![A-Za-z0-9_])", q):
+            names.append(t)
+            dropped = dropped or t != tok
+        else:
+            return None
+    return names[0] if len(names) == 1 and dropped else None
+
+
 def verify_param(p, quote, value, source):
     """(值, 交回修的那一則)：值是 None 表示沒提到或沒過（沒過時第二個是給模型的說明）。名稱清單與搜尋的字的值是 list。"""
     q, v, name = _unquote(quote), _unquote(value), p["name"]
@@ -346,10 +369,14 @@ def verify_param(p, quote, value, source):
         miss = [w for w in words if w.lower() not in q.lower()]
         return (v, None) if words and not miss else (None, _i("reject_fragments", name=name, value=v, quote=q, missing="、".join(miss) or v))
     if t == "path":
-        pv = (v[2:] if v.startswith("./") else v).rstrip("/") or v
-        parts = [x for x in pv.split("/") if x not in ("", "~")]
-        bad = [x for x in parts if not _DIRNAME.match(x) or x not in q]
-        return (pv, None) if parts and not bad else (None, _i("reject_path", name=name, value=v, quote=q, missing="、".join(bad) or v))
+        segs, bad = [], []
+        for x in plain_path(v).split("/"):
+            kept = x if x in ("", "~") or (_DIRNAME.match(x) and x in q) else _name_only(x, q)
+            segs.append(kept or x)
+            if not kept:
+                bad.append(x)
+        named = [x for x in segs if x not in ("", "~")]
+        return ("/".join(segs), None) if named and not bad else (None, _i("reject_path", name=name, value=v, quote=q, missing="、".join(bad) or v))
     if t == "words":
         items = words_of(v)
         miss = [x for x in items if x not in q or not WORD.match(x) or x.startswith("-")]

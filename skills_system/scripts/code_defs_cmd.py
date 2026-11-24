@@ -9,7 +9,7 @@
 - C／C++（.h、.hh、.hpp、.hxx、.c、.cc、.cpp、.cxx）：先把註解與字串換成空白（行號不變），class／struct 有本體的定義（前向宣告、enum class
   不算）；有本體的函式定義（名稱後面的括號配對之後接 `{`，或建構子的 `:` 初始化再接 `{`；if、for、while、switch、catch… 不算），在類別
   本體裡的、或寫成 `類別::名稱` 的是方法（qualname 是 類別::名稱）。只有宣告（`;` 結尾的原型）不列。
-- --name（正規表示式，分大小寫）、--kind（class／def）篩定義；--files 只列每份檔案的行數與定義的數量；--sort lines 照行數由多到少。
+- --name（正規表示式，分大小寫；寫成萬用字元的樣子 `<字>*` 回 [ERROR]、附對應的正規表示式，_glob_name）、--kind（class／def）篩定義；--files 只列每份檔案的行數與定義的數量；--sort lines 照行數由多到少。
 收據（_receipt_common，欄位見規格的 receipt）：每一個定義一筆（路徑、行號、結束的行、種類、名稱、qualname；Python 有裝飾器的另記 decorator——
 定義的行號從 def／class 那一行算），每份檔案的行數與數量（per_file）。
 """
@@ -44,6 +44,21 @@ _AFTER = re.compile(r"\s*(?:(?:const|override|final|noexcept|volatile|mutable|&&
                     r"|->\s*[\w:<>,\s\*&]+?(?=[{;:=])|\[\[[^\]]*\]\]\s*)*")
 
 
+_GLOB_STAR = re.compile(r"^\*|(?<!\\)[A-Za-z0-9_]\*")   # 萬用字元的 *：開頭，或接在英數字、底線後面（名稱裡不會有 *；\w* 這種跳脫的不算）
+
+
+def _glob_name(v):
+    """--name 寫成萬用字元的樣子（`<字>*`：正規表示式裡是「<字> 的最後一個字元重複任意次」，會多列）→ 對應的正規表示式；只有名稱的字、* 與 ?
+    才換得出來，其他的回 ""；不是萬用字元的樣子回 None。單一迴圈的比較裡 26b 寫了 `<字>*`，多列了別的名稱（設計筆記 2.63）。"""
+    if not _GLOB_STAR.search(v):
+        return None
+    core = v.strip("*")
+    if not core or not re.fullmatch(r"[\w.:*?-]+", v):
+        return ""
+    rx = "".join(".*" if c == "*" else "." if c == "?" else re.escape(c) for c in core)
+    return ("" if v.startswith("*") else "^") + rx + ("" if v.endswith("*") else "$")
+
+
 def parse_args(argv):
     """解析命令列參數 → (選項 dict, 錯誤)。"""
     o = {"paths": [], "include": [], "exclude_dir": [], "name": None, "kind": None, "files": False, "sort": "path"}
@@ -60,6 +75,11 @@ def parse_args(argv):
             elif a == "--exclude-dir":
                 o["exclude_dir"] += [x.strip("/") for x in pc.split_globs(v)]
             elif a == "--name":
+                rx = _glob_name(v)
+                if rx is not None:
+                    fix = f"寫成 --name \"{rx}\"" if rx else "改成正規表示式的寫法"
+                    return None, (f"[ERROR] --name 是正規表示式，「{v}」是萬用字元的寫法（正規表示式的 * 是「前一個字元重複任意次」，不是任意字元）。"
+                                  f"下一步：{fix}（^ 是開頭、$ 是結尾、.* 是任意字元）。\n{USAGE}")
                 try:
                     re.compile(v)
                 except re.error as e:

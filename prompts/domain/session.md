@@ -175,6 +175,9 @@ args 照抄了寫法裡的 {marks}（沒有換成值）
 <!-- @composite_fallback -->
 回退：{say}
 
+<!-- @composite_kept -->
+系統只留原文裡的名稱：{name}「{given}」→ {value}（路徑的每一段是一個目錄或檔案的名稱，說明的字與萬用字元不寫進去）
+
 <!-- @composite_filled -->
 系統補的參數：{name}「{given}」→ {value}
 

@@ -53,7 +53,8 @@ package "prompts/（改字不用改程式；evals/integrity 檢查範本跟程�
       **summary/rolling.md**：滾動摘要的規則與 user 訊息
     ]
     rectangle P_EXTRACT #FCE5CD [
-      **extract/**：worker.md、synthesizer.md（規則）、
+      **extract/**：worker.md（每段摘事實）、synthesizer.md（一段：
+        回答與事實）、merger.md（分段的整合：只寫回答，事實由程式列）、
       inputs.md（user 訊息的標籤、程式的說明、修一次，
         含回答把存檔的行號寫成檔案的行號）
       **harness/extract_anchor.md、anchor.md**：
@@ -129,8 +130,9 @@ package "用到它們的 session" {
   ]
   rectangle S_EXTRACT #FCE5CD [
     **提煉**（summarize_tool_result、result_recall）：
-    每段一個 worker → 整合；EXTRACT_WORKER_SCHEMA／
-    TOOL_SUMMARY_SCHEMA
+    每段一個 worker → 程式列出核對過的事實 → 整合寫回答；
+    EXTRACT_WORKER_SCHEMA／TOOL_SUMMARY_MERGE_SCHEMA
+    （放得進一段：一次寫完，TOOL_SUMMARY_SCHEMA）
   ]
   rectangle S_VISION #DDEEF6 [
     **視覺 session**：extraction_schema(張數)

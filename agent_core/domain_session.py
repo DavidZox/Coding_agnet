@@ -367,6 +367,8 @@ class DomainSession:
                 bad.append(p["name"])
             elif value is not None:
                 params[p["name"]] = {"value": value, "quote": quote, "source": "contract"}
+                if p["type"] == "path" and value != composite.plain_path(given):
+                    params[p["name"]]["given"] = given      # 程式只留了原文裡的名稱（composite._name_only）：結果裡寫明
         return params, problems, bad
 
     def _composite(self, job, parsed, domain, name, params, how):
@@ -378,6 +380,7 @@ class DomainSession:
         for fb in res["fallbacks"]:
             if fb.get("result") == "replanned":
                 lines.append(_s("composite_fallback", say=fb["say"]))
+        lines += [_s("composite_kept", name=k, given=v["given"], value=v["value"]) for k, v in params.items() if v.get("given")]
         for a in res["auto_filled"]:
             lines.append(_s("composite_filled", name=a["param"], given=a["given"], value=a["value"]))
         if res["need"]:

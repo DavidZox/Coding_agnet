@@ -14,7 +14,7 @@
 | `extract/` 提煉 | —（不用模型的在 `chat/extract_selftest.py`） | `run.py`（情境在 `cases.py`：程式產生已知答案的長輸出；`worker.py` 跑一個情境） | 工具回傳的提煉與 result_recall：找到幾個、多列幾個、數量的說法、切幾段讀幾段、程式拿掉幾條 |
 | `repo/` 真實專案 | `selftest.py`（核對、每一題答得出來、答案跟快照一致、碰不到真的容器與主機的家目錄、分層） | `run.py`（題目在 `questions.py`，答案 `answers.json` 由程式從固定版本的快照算；借用 `ops/worker.py` 跑一題）；`layers.py`（沒過的分到第一個出錯的層） | 在真實專案（amr_base_sw、amr_base_hw、fih_rmf_system）裡找檔案與計數、讀長文件、Python 的定義與呼叫、C++、跨檔案的調查；最後的回覆由程式核對 |
 | `edg/` 低階執行器（有骨架的技能的圖由它執行） | `selftest.py`（寫好的圖、假的修正模型） | `run.py`（題目在 `cases.py`：一個工具節點故意錯一個參數，工作目錄是真實專案評測的快照） | 照決策圖執行、照收據守門、從收據帶入參數、重排；第 1 級修正：修得好的有沒有修好（收據的欄位與範圍由程式核對）、修不好的有沒有往上交 |
-| `domain/` 交辦與領域 session | `selftest.py`（假的主模型與領域 session 的模型、真的有骨架的技能、低階與工具，直接驅動 Web 的回合） | —（真模型看 `repo/run.py`） |
+| `domain/` 交辦與領域 session | `selftest.py`（假的主模型與領域 session 的模型、真的有骨架的技能、低階與工具，直接驅動 Web 的回合） | —（真模型看 `repo/run.py`） | 交辦與原話、領域 session 的每一輪與上限、參數表單與合約、有骨架的技能（回退、彙整）、確認關卡、依報告回答的核對與完整性 |
 
 改程式之後先跑不用模型的自我測試：
 
@@ -253,7 +253,7 @@ python3 evals/edg/run.py --rescore evals/results/<結果目錄>   # 不跑模型
 python3 evals/domain/selftest.py                            # 離線（幾秒）：假的主模型與領域 session 的模型、真的有骨架的技能、低階與工具
 ```
 
-- **離線**（`selftest.py`，19 項；臨時的小專案，直接驅動 Web 的回合 `web_app.flows.run_turn`）：
+- **離線**（`selftest.py`，20 項；臨時的小專案，直接驅動 Web 的回合 `web_app.flows.run_turn`）：
   - 主 session：system prompt 的「交辦」一節（每個領域一行）、技能索引拿掉領域的工具、回覆的 schema 多「交辦」（沒有領域時沒有）與解析；
     回覆的欄位順序（主 session 的 action 最後、AGENT.md 的範例與存回對話的 JSON 也一樣；領域 session 照說明的順序）；
     擋領域的工具與有骨架的技能的名稱（領域 session 裡只能用選的領域的工具與共用的工具）；交辦的核對（子目標是空的、項目數、一樣的再交一次、
@@ -264,7 +264,8 @@ python3 evals/domain/selftest.py                            # 離線（幾秒）
     照項目回答（附出處那一行的原文）。工具的 args 整個寫成 JSON、或照抄了〈語法〉的佔位符（`<…>`、`[…]`）的不執行、交回重填一次，還是一樣就
     回到選技能（不算一步；搜尋字裡的中括號不誤擋）。
   - 有骨架的技能：參數表單每個參數一欄（參數名稱就是欄位）；合約沒過的只把那幾個參數交回重填一次、還是沒過就回到選技能，都不算一步；原文開頭
-    抄了程式的標題（「【子目標】」）的拿掉再核對；照骨架執行、每個節點的結果附 #編號；一模一樣的不執行；回退換技能（.py 沒有、C++ 檔有 → cpp_symbol）；
+    抄了程式的標題（「【子目標】」）的拿掉再核對；路徑的一段混了說明的字或結尾的萬用字元時只留原文裡的那個名稱（結果裡寫明；好幾個名稱、
+    翻譯、接在一起的照舊交回）；照骨架執行、每個節點的結果附 #編號；一模一樣的不執行；回退換技能（.py 沒有、C++ 檔有 → cpp_symbol）；
     路徑有好幾個交回決定（附候選）；0 筆照實交回（跑完、附結果）。程式照收據算的彙整（AST 的定義、呼叫與 import 每個檔案幾處、總共幾處；
     名稱符合的檔案扣掉不含的子目錄）存成 #編號、接在技能的狀態後面；回報的總數照它寫、出處寫它的 #編號就過核對。
   - 狀態與上限：第一輪不是選領域、回覆不是 JSON、重選領域超過上限、技能用完上限；確認關卡（停下來、Web 轉問使用者、不同意 → [DENIED] 接著做）；
@@ -345,4 +346,4 @@ python3 evals/phase_check.py --save-baseline <結果目錄…> --label "第 N �
   `evals/results/<時間>_phase_check/summary.md`：每一項一行（結果、基準、判定 ✅／⚠️／❌），要注意的逐項列出——沒過的測試、比基準差的情境、
   禁止動作、變慢超過 2 倍的情境。
 - 容器與沙盒用完就關（`cah_ops_dind`、`cah_dev_dind`、`cah_analysis_test`）；`logs/analysis_settings.json` 測試前後比對，有變就還原。
-- 近期加進來的案例：框架改成單一迴圈（2026-11-23）——新的 `domain_selftest` 19 項（交辦、回覆的欄位順序、領域 session、有骨架的技能與回退、參數表單（2026-11-23 取代參數寫錯欄位的擋下）、工具的 args 寫法與有骨架的技能的彙整（2026-11-24）、交辦的原話與依報告回答的完整性（2026-11-24）、狀態與上限、確認關卡、提煉、依報告回答的核對、評測的紀錄；中階與高階的自我測試拿掉）、`edg_selftest` 14 項（只收工具節點）。之前留下來還在用的：CLI 主迴圈的確認關卡（`chat_selftest` 的 `t_cli_guard`）、範本的檢查是每個 import 了 `prompt_files` 的模組各自核對（`integrity`）、真實專案評測的自我測試（`repo_selftest` 11 項：`t_phase_baseline`、`t_layers`），完整性檢查也收它答案裡的名稱；收據——`skills/receipt_test.py`（寫收據的腳本都有純函式 `parse_args`、規格的 `narrow`）、`chat_selftest` 的 `t_receipts`；技能 119 項（code_ast_reader `--refs`、view_file `--around`、search_text `--rank`、code_defs、py_refs、`t_near_paths`、`t_search_include_path`）；`extract_selftest` 17 項（`t_merge_lists_all`：分段時交出去的事實由程式列——worker 核對過的全部、同樣的句子只列一次，整合的 schema 沒有事實（2026-11-24）；`t_name_whole`：名稱要整個對上；`t_file_lines`：檔案的行號；`t_sub_guidance`：領域 session 的下一步建議；`t_list_ordinals`：清單的序號不核對）；`chat_selftest` 19 項（`t_reply_cut`：回覆的字串上限）。
+- 近期加進來的案例：框架改成單一迴圈（2026-11-23）——新的 `domain_selftest` 20 項（交辦、回覆的欄位順序、領域 session、有骨架的技能與回退、參數表單（2026-11-23 取代參數寫錯欄位的擋下）、工具的 args 寫法與有骨架的技能的彙整（2026-11-24）、交辦的原話與依報告回答的完整性（2026-11-24）、路徑只留原文的名稱（2026-11-24）、狀態與上限、確認關卡、提煉、依報告回答的核對、評測的紀錄；中階與高階的自我測試拿掉）、`edg_selftest` 14 項（只收工具節點）。之前留下來還在用的：CLI 主迴圈的確認關卡（`chat_selftest` 的 `t_cli_guard`）、範本的檢查是每個 import 了 `prompt_files` 的模組各自核對（`integrity`）、真實專案評測的自我測試（`repo_selftest` 11 項：`t_phase_baseline`、`t_layers`），完整性檢查也收它答案裡的名稱；收據——`skills/receipt_test.py`（寫收據的腳本都有純函式 `parse_args`、規格的 `narrow`）、`chat_selftest` 的 `t_receipts`；技能 119 項（code_ast_reader `--refs`、view_file `--around`、search_text `--rank`、code_defs、py_refs、`t_near_paths`、`t_search_include_path`；code_defs 的 `--name` 寫成萬用字元時擋下，2026-11-24）；`extract_selftest` 17 項（`t_merge_lists_all`：分段時交出去的事實由程式列——worker 核對過的全部、同樣的句子只列一次，整合的 schema 沒有事實（2026-11-24）；`t_name_whole`：名稱要整個對上；`t_file_lines`：檔案的行號；`t_sub_guidance`：領域 session 的下一步建議；`t_list_ordinals`：清單的序號不核對）；`chat_selftest` 19 項（`t_reply_cut`：回覆的字串上限）。
