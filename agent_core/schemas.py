@@ -152,6 +152,16 @@ EXTRACT_WORKER_SCHEMA = {
     "required": ["relevant", "facts", "errors", "summary"],
 }
 
+
+def extract_worker_multi_schema(records):
+    """好幾份存檔加起來放得進一段、合成一段由一個 worker 一起讀時（agent_core/extract.py）：每條事實與錯誤多一個 record＝出自哪一份存檔，
+    只能填這幾份的編號（enum；程式照那一份核對名稱與數值）。record 放第一個：先寫哪一份，再寫事實。"""
+    item = {"type": "object", "properties": {"record": {"type": "string", "enum": [str(r) for r in records]}, **_LINED["properties"]},
+            "required": ["record", *_LINED["required"]]}
+    props = dict(EXTRACT_WORKER_SCHEMA["properties"], facts={"type": "array", "items": item}, errors={"type": "array", "items": item})
+    return dict(EXTRACT_WORKER_SCHEMA, properties=props)
+
+
 # 低階執行器的第 1 級修正（agent_core/edg.py）：一個工具節點參數錯（或逾時）時，只改這個節點的字面參數。先寫理由（哪裡錯、照規格怎麼改），
 # 再寫修不修得好（要換工具、要使用者決定的是修不好，往上交）與新的參數（一個一個的字串，不用 shell 的引號）；程式再用腳本的 parse_args
 # 檢查、核對逾時的縮小方式與範圍。寫成一行參數（像主對話的 action.args）時，e4b 常漏了引號、把腳本路徑也寫進去（2.29）。

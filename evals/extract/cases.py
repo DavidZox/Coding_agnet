@@ -6,7 +6,10 @@
   question  使用者的問題（錨點）；step：這一步的目的（決策模型的 thought／action）
   truth     正確答案：[{"key": 名稱或時間戳, "value": 值或 None}]
   match     怎麼在回答裡找答案：fleet（名稱＋電量同一行）／name（名稱）／text（字串）
-  recall    有的話是追問：先照 text 提煉一次，再用 result_recall 問這一句（同一份存檔）"""
+  recall    有的話是追問：先照 text 提煉一次，再用 result_recall 問這一句（同一份存檔）
+  texts     有的話是好幾份短輸出（[{text, task}]，取代 text）：照順序存檔（短的不提煉），再用 result_recall 一起問 question
+  score_on  answer＝只看提煉的回答那一行（「回答：」；列出的事實不算）；others＝不是答案的名稱（回答寫了算多列的）；
+            count_claims＝False 時不核對回答裡「共 N 個」的說法（說的是清單的總數，不是答案的個數）"""
 import os
 import random
 
@@ -81,7 +84,60 @@ def robot_heading():
             "truth": [{"key": "a7", "value": None}], "match": "text"}
 
 
+def compare_nodes():
+    """yard_sim 上午、下午各查一次 node 清單（各約 30 行、加起來放得進一段），一起 recall、問兩次差在哪裡：下午多了 /pallet_scanner 與
+    /agv_5/bumper_watch、少了 /legacy_relay。每一份各自一段、各一個 worker 時，各自只看得到自己那一份，比不出差異（2026-11-24 主對話評測
+    compare_two_archives 0／4；設計筆記 2.66）。只看回答那一行：列出的事實把兩份的名稱都列了，不代表比過。"""
+    root = ["/yard_dispatcher", "/map_keeper", "/traffic_light_bridge", "/door_gateway", "/lift_gateway", "/charger_monitor"]
+    robot = ["controller_server", "planner_server", "bt_navigator", "amcl", "lidar_driver", "battery_monitor"]
+    am = root + ["/legacy_relay"] + [f"/agv_{k}/{n}" for k in (3, 5, 8) for n in robot]
+    pm = root + ["/pallet_scanner"] + [f"/agv_{k}/{n}" for k in (3, 5, 8) for n in robot + (["bumper_watch"] if k == 5 else [])]
+
+    def listing(names):
+        groups = {}
+        for n in names:
+            groups.setdefault(n.rsplit("/", 1)[0] or "/", []).append(n)
+        lines = [f"[PASS] 容器 'yard_sim' 的 node：共 {len(names)} 個；ROS_DOMAIN_ID 12（shell 的設定：容器的環境變數或 ~/.bashrc）"]
+        for ns, items in groups.items():
+            lines.append(f"## {ns}（根命名空間，{len(items)} 項）" if ns == "/" else f"## {ns}（{len(items)} 項）")
+            lines += items
+        return "\n".join(lines)
+
+    diff = ["/pallet_scanner", "/agv_5/bumper_watch", "/legacy_relay"]
+    return {"id": "compare_nodes", "kind": "compare", "script": "ROS2_node_list_cmd.py", "args": ["yard_sim"],
+            "texts": [{"text": listing(am), "task": "上午看一下 yard_sim 有哪些 node"},
+                      {"text": listing(pm), "task": "下午再看一次 yard_sim 的 node"}],
+            "question": "yard_sim 上午和下午各查了一次 node，兩次有什麼不一樣？",
+            "truth": [{"key": n, "value": None} for n in diff], "match": "name", "score_on": "answer",
+            "others": sorted(set(am) & set(pm)), "count_claims": False}
+
+
+def compare_flat():
+    """跟 compare_nodes 一樣是兩份短的 node 清單一起 recall、問差在哪裡，但只有根命名空間：清單不分節（ROS2_node_list 只有一個命名空間時
+    不加標題），每一份的 worker 沒辦法把一節寫成一條，列不完名稱就只寫總數（compare_nodes 分節，改之前的 26b 每一份的 worker 把一節寫成一條、
+    名稱都在裡面，整合照樣比得出來，3／3；設計筆記 2.66）。下午多了 /pallet_scanner 與 /bumper_watch、少了 /legacy_relay。"""
+    base = ["/yard_dispatcher", "/map_keeper", "/traffic_light_bridge", "/door_gateway", "/lift_gateway", "/charger_monitor",
+            "/route_planner", "/zone_manager", "/fleet_bridge", "/task_board", "/alarm_center", "/camera_hub", "/weather_feed",
+            "/conveyor_link", "/shelf_tracker", "/rack_mapper", "/gate_guard", "/visitor_log", "/power_meter", "/clock_sync",
+            "/parcel_router", "/light_switch"]
+    am = base[:12] + ["/legacy_relay"] + base[12:]
+    pm = base[:7] + ["/pallet_scanner"] + base[7:18] + ["/bumper_watch"] + base[18:]
+
+    def listing(names):
+        return "\n".join([f"[PASS] 容器 'yard_sim' 的 node：共 {len(names)} 個；ROS_DOMAIN_ID 12（shell 的設定：容器的環境變數或 ~/.bashrc）"] + names)
+
+    diff = ["/pallet_scanner", "/bumper_watch", "/legacy_relay"]
+    return {"id": "compare_flat", "kind": "compare", "script": "ROS2_node_list_cmd.py", "args": ["yard_sim"],
+            "texts": [{"text": listing(am), "task": "上午看一下 yard_sim 有哪些 node"},
+                      {"text": listing(pm), "task": "下午再看一次 yard_sim 的 node"}],
+            "question": "yard_sim 上午和下午各查了一次 node，兩次有什麼不一樣？",
+            "truth": [{"key": n, "value": None} for n in diff], "match": "name", "score_on": "answer",
+            "others": base, "count_claims": False}
+
+
 def all_cases():
     """fleet_40：一段就放得下（一個 worker 讀全部）；fleet_80：小模型一次讀會漏、切 2 段；fleet_120：切 3 段；log_200k：切 26 段、依問題挑 8 段讀；
-    recall_fleet_120：追問同一份存檔裡提煉沒寫到的；robot_heading：一段就放得下，但答案（要去哪一站）不在數值變化裡，要看問題挑欄位。"""
-    return [fleet_low_battery(40), fleet_low_battery(80), fleet_low_battery(120), long_log(), fleet_recall(120), robot_heading()]
+    recall_fleet_120：追問同一份存檔裡提煉沒寫到的；robot_heading：一段就放得下，但答案（要去哪一站）不在數值變化裡，要看問題挑欄位；
+    compare_nodes／compare_flat：兩份短的一起 recall、比較差異（加起來放得進一段，一個 worker 一起讀；flat 是不分節的清單）。"""
+    return [fleet_low_battery(40), fleet_low_battery(80), fleet_low_battery(120), long_log(), fleet_recall(120), robot_heading(), compare_nodes(),
+            compare_flat()]

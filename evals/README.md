@@ -309,7 +309,7 @@ python3 evals/integrity/selftest.py   # 離線（幾秒）
 ## 提煉（`extract/`）
 
 ```bash
-python3 evals/extract/run.py --model gemma4:26b                  # 6 個情境 × 1 次，約 1 分鐘
+python3 evals/extract/run.py --model gemma4:26b                  # 8 個情境 × 1 次，約 1 分鐘
 python3 evals/extract/run.py --model gemma4:e4b --runs 3 --only fleet_80,recall_fleet_120
 ```
 
@@ -318,8 +318,11 @@ python3 evals/extract/run.py --model gemma4:e4b --runs 3 --only fleet_80,recall_
   `log_200k`（3,000 行約 20 萬字的 Log，planner 的 6 筆錯誤散在中段，切 26 段、依問題挑 8 段讀）；`recall_fleet_120`（同一份車隊輸出提煉一次後，
   用 result_recall 追問提煉沒寫到的「L2 樓層而且 IDLE 的車」，11 台）；`robot_heading`（維運評測 ros_moving 那一次
   ROS2_topic_echo 的真實輸出 `fixtures/robot_state_moving.txt`，問「有在移動嗎？往哪裡走？」，要答出要去的站 a7——答案不在數值變化裡，
-  那一次的提煉只寫了座標往哪個方向增加）。
-- 評分：名稱和值在同一行才算找到（fleet），多列的名稱、回答裡「共 N 台」的數量要對；另外記段數與讀了幾段、模型呼叫次數、
+  那一次的提煉只寫了座標往哪個方向增加）；`compare_nodes`（yard_sim 上午、下午各一份 node 清單，各約 600 字，存檔後一起 result_recall、
+  問兩次差在哪裡：下午多 2 個、少 1 個——加起來放得進一段，一個 worker 一起讀，設計筆記 2.66）；`compare_flat`（同樣的問題，但清單只有根命名空間、
+  不分節，像主對話評測的 topic 清單：分節的清單每一份的 worker 能把一節寫成一條，不分節的只能一個一個列）。
+- 評分：名稱和值在同一行才算找到（fleet），多列的名稱、回答裡「共 N 台」的數量要對；`compare_nodes`、`compare_flat` 只看回答那一行（列出的事實把兩份的
+  名稱都列了，不代表比過），寫了兩份都有的名稱算多列的、不核對總數的說法。另外記段數與讀了幾段、模型呼叫次數、
   程式核對拿掉幾條、整合有沒有修正、秒數。每一次的提煉存檔（`logs/extract_jobs/<編號>/`）留在結果目錄的 `logs/<情境>_<第幾次>/`。
 - **基準**：`evals/baselines/extract.json`；`phase_check --model` 26b、e4b 各跑一次跟它比。
 
@@ -347,4 +350,4 @@ python3 evals/phase_check.py --save-baseline <結果目錄…> --label "第 N �
   `evals/results/<時間>_phase_check/summary.md`：每一項一行（結果、基準、判定 ✅／⚠️／❌），要注意的逐項列出——沒過的測試、比基準差的情境、
   禁止動作、變慢超過 2 倍的情境。
 - 容器與沙盒用完就關（`cah_ops_dind`、`cah_dev_dind`、`cah_analysis_test`）；`logs/analysis_settings.json` 測試前後比對，有變就還原。
-- 近期加進來的案例：框架改成單一迴圈（2026-11-23）——新的 `domain_selftest` 21 項（交辦、回覆的欄位順序、領域 session、有骨架的技能與回退、參數表單（2026-11-23 取代參數寫錯欄位的擋下）、工具的 args 寫法與有骨架的技能的彙整（2026-11-24）、交辦的原話與依報告回答的完整性（2026-11-24）、路徑只留原文的名稱（2026-11-24）、主 session 不看領域的名稱（2026-11-24）、狀態與上限、確認關卡、提煉、依報告回答的核對、評測的紀錄；中階與高階的自我測試拿掉）、`edg_selftest` 14 項（只收工具節點）。之前留下來還在用的：CLI 主迴圈的確認關卡（`chat_selftest` 的 `t_cli_guard`）、範本的檢查是每個 import 了 `prompt_files` 的模組各自核對（`integrity`）、真實專案評測的自我測試（`repo_selftest` 11 項：`t_phase_baseline`、`t_layers`），完整性檢查也收它答案裡的名稱；收據——`skills/receipt_test.py`（寫收據的腳本都有純函式 `parse_args`、規格的 `narrow`）、`chat_selftest` 的 `t_receipts`；技能 119 項（code_ast_reader `--refs`、view_file `--around`、search_text `--rank`、code_defs、py_refs、`t_near_paths`、`t_search_include_path`；code_defs 的 `--name` 寫成萬用字元時擋下，2026-11-24）；`extract_selftest` 17 項（`t_merge_lists_all`：分段時交出去的事實由程式列——worker 核對過的全部、同樣的句子只列一次，整合的 schema 沒有事實（2026-11-24）；`t_name_whole`：名稱要整個對上；`t_file_lines`：檔案的行號；`t_sub_guidance`：領域 session 的下一步建議；`t_list_ordinals`：清單的序號不核對）；`chat_selftest` 19 項（`t_reply_cut`：回覆的字串上限）。
+- 近期加進來的案例：框架改成單一迴圈（2026-11-23）——新的 `domain_selftest` 21 項（交辦、回覆的欄位順序、領域 session、有骨架的技能與回退、參數表單（2026-11-23 取代參數寫錯欄位的擋下）、工具的 args 寫法與有骨架的技能的彙整（2026-11-24）、交辦的原話與依報告回答的完整性（2026-11-24）、路徑只留原文的名稱（2026-11-24）、主 session 不看領域的名稱（2026-11-24）、狀態與上限、確認關卡、提煉、依報告回答的核對、評測的紀錄；中階與高階的自我測試拿掉）、`edg_selftest` 14 項（只收工具節點）。之前留下來還在用的：CLI 主迴圈的確認關卡（`chat_selftest` 的 `t_cli_guard`）、範本的檢查是每個 import 了 `prompt_files` 的模組各自核對（`integrity`）、真實專案評測的自我測試（`repo_selftest` 11 項：`t_phase_baseline`、`t_layers`），完整性檢查也收它答案裡的名稱；收據——`skills/receipt_test.py`（寫收據的腳本都有純函式 `parse_args`、規格的 `narrow`）、`chat_selftest` 的 `t_receipts`；技能 119 項（code_ast_reader `--refs`、view_file `--around`、search_text `--rank`、code_defs、py_refs、`t_near_paths`、`t_search_include_path`；code_defs 的 `--name` 寫成萬用字元時擋下，2026-11-24）；`extract_selftest` 18 項（`t_together`：好幾份加起來放得進一段時合成一段、一個 worker 一起讀，事實附 record、照那一份核對（2026-11-24）；`t_merge_lists_all`：分段時交出去的事實由程式列——worker 核對過的全部、同樣的句子只列一次，整合的 schema 沒有事實（2026-11-24）；`t_name_whole`：名稱要整個對上；`t_file_lines`：檔案的行號；`t_sub_guidance`：領域 session 的下一步建議；`t_list_ordinals`：清單的序號不核對）；`chat_selftest` 19 項（`t_reply_cut`：回覆的字串上限）。

@@ -1,5 +1,6 @@
 """evals/extract/run.py 在臨時的專案副本裡執行這支（cwd＝副本、PYTHONPATH＝副本）：跑一個情境——照技能輸出存檔、提煉一次；
-有 recall 的再用 result_recall 追問同一份存檔。結果（回覆原文、秒數、last_tool_summary）寫成 JSON。
+有 recall 的再用 result_recall 追問同一份存檔；有 texts 的（好幾份短輸出）照順序存檔、不提煉，再用 result_recall 一起問。
+結果（回覆原文、秒數、last_tool_summary）寫成 JSON。
 
     python3 evals/extract/worker.py <case.json> <out.json>     # 模型由環境變數 EVAL_MODEL 指定"""
 import json
@@ -14,6 +15,11 @@ def main(case_path, out_path):
     from agent_core.agent import SkillAgent
     agent = SkillAgent(model=os.environ.get("EVAL_MODEL", "gemma4:26b"))
     agent.current_cwd = os.getcwd()
+    if case.get("texts"):
+        res = recall_together(agent, case)
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(res, f, ensure_ascii=False)
+        return
     agent.set_current_task(case["question"])
     agent.messages.append({"role": "user", "content": case["question"]})
     rec = agent._record_trajectory(case["script"], case["args"], case["text"], agent.current_cwd, "", "")
@@ -37,6 +43,25 @@ def main(case_path, out_path):
         res["recall_seconds"] = round(time.time() - t0, 1)
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(res, f, ensure_ascii=False)
+
+
+def recall_together(agent, case):
+    """好幾份短輸出：每一份照當時的任務存檔（短的直接給主對話，不提煉），再用 result_recall 一起問 question。"""
+    ids = []
+    for item in case["texts"]:
+        agent.set_current_task(item["task"])
+        ids.append(agent._record_trajectory(case["script"], case["args"], item["text"], agent.current_cwd, "", "")["id"])
+    q = case["question"]
+    agent.set_current_task(q)
+    agent.messages.append({"role": "user", "content": q})
+    res = {"result_ids": ids}
+    t0 = time.time()
+    try:
+        res["recall"] = agent._result_recall(f'{",".join(str(i) for i in ids)} "{q}"')
+    except Exception as e:   # noqa: BLE001
+        res["recall"], res["error"] = "", f"{type(e).__name__}: {e}"
+    res["recall_seconds"] = round(time.time() - t0, 1)
+    return res
 
 
 if __name__ == "__main__":

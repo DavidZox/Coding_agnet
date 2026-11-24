@@ -177,7 +177,7 @@ EXTRACT_WORKER_PREDICT = 1500       # worker 輸出的 num_predict 上限（被�
 EXTRACT_SYNTH_PREDICT = 2500        # 整合的 num_predict 上限
 EXTRACT_JOBS_DIRNAME = "extract_jobs"
 EXTRACT_JOBS_KEEP = int(os.environ.get("AGENT_EXTRACT_JOBS_KEEP", "500"))   # 提煉的存檔只留最近幾次（每次幾十 KB：prompt 含那一段的原文）
-RECALL_MAX_RECORDS = 3   # result_recall 一次最多讀幾份存檔（幾份的段落交給 worker，同一個整合看全部）
+RECALL_MAX_RECORDS = 3   # result_recall 一次最多讀幾份存檔（加起來放得進一段的合成一段、一個 worker 一起讀；同一個整合看全部）
 
 # 🔗 低階執行器（agent_core/edg.py）：有骨架的技能的圖照順序執行工具節點、執行前用腳本的 parse_args 檢查參數、照收據守門、
 # 第 1 級修正（每個節點修一次）。每一次執行存在 logs/edg_jobs/<編號>/（圖、每個節點的嘗試與收據、修正的模型呼叫）。

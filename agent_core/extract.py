@@ -3,7 +3,9 @@
 
 1. 切段（_results_common.chunk_lines）：依原文的結構（章節、一筆一筆的紀錄、空行）切成每段不超過 EXTRACT_CHUNK_CHARS 字，每段附讀它要知道的
    前情（狀態列、所在的章節、表格的表頭）。放得進一段的就是一段（每一份原文至少一段），一樣交給 worker——以前由一次呼叫寫完（挑事實又寫回答，
-   篇幅只有原文的四分之一），只挑幾條、寫成「例如」，提煉比原文短就取代了原文（設計筆記 2.65）。
+   篇幅只有原文的四分之一），只挑幾條、寫成「例如」，提煉比原文短就取代了原文（設計筆記 2.65）。好幾份（recall 一起讀）加起來放得進一段時
+   合成一段、一個 worker 一起讀：每一份前面標存檔編號，每條事實寫出自哪一份（record），程式照那一份核對——每一份各自一段時各讀各的，
+   沒有人看得到兩份，比不出差異（設計筆記 2.66）。
 2. Workers：每段一個乾淨的 session，只讀那一段（每行前面是原文的行號；只有一段時讀全部），摘出跟使用者的目標／問題有關的事實與錯誤，每條附行號。
    程式核對（missing_tokens）：每條寫的數字與名稱要在它引用的那幾行裡（前後 EVIDENCE_SPAN 行，加上縮排的上層——YAML、巢狀的輸出名稱常在
    上幾行）；對不上的不交給整合，記在存檔裡。段數超過 EXTRACT_MAX_CHUNKS 時依問題裡的名稱、數字出現在哪幾段挑著讀，沒讀的行號範圍由程式
@@ -43,7 +45,7 @@ from .config import (
 )
 from . import prompt_files
 from .jobstore import JobStore
-from .schemas import EXTRACT_WORKER_SCHEMA, TOOL_SUMMARY_MERGE_SCHEMA
+from .schemas import EXTRACT_WORKER_SCHEMA, TOOL_SUMMARY_MERGE_SCHEMA, extract_worker_multi_schema
 
 LINE_MAX_CHARS = 2000          # 交給模型的一行最多幾個字（更長的截斷並註明；只有一行的那一段放寬到整段的篇幅）
 EVIDENCE_SPAN = 2              # 核對時引用的行前後各多看幾行（模型的行號常差一兩行）
@@ -358,7 +360,7 @@ class Extraction:
         return None
 
     def _ground(self, item, si=None, within=None):
-        """一條事實或錯誤 → (核對過的 item 或 None, 對不上的字)。si＝哪一份（None：依 record 找，找不到就每一份都試）；within＝(開始, 結束)
+        """一條事實或錯誤 → (核對過的 item 或 None, 對不上的字)。si＝哪一份（None：依 record 找——好幾份合成的那一段，找不到就每一份都試）；within＝(開始, 結束)
         這一段的範圍（worker 的事實只能引用自己那一段附近的行）。沒寫行號、或行號不在範圍裡：在範圍（或整份）裡找出現那些字的行補上。"""
         cands = [si] if si is not None else ([self._src_index(item.get("record"))] if self._src_index(item.get("record")) is not None
                                              else list(range(len(self.sources))))
@@ -433,16 +435,20 @@ class Extraction:
         total = sum(len(t) + 1 for t in self.texts)
         self.max_chars = max(EXTRACT_SUMMARY_MIN_CHARS, min(EXTRACT_SUMMARY_MAX_CHARS, total // 4))
         self.chunks = []
-        for si, s in enumerate(self.sources):
-            spans = rc.chunk_lines(s["lines"], EXTRACT_CHUNK_CHARS) or [(0, 0)]
-            for k, (a, b) in enumerate(spans, 1):
-                self.chunks.append({"id": len(self.chunks) + 1, "src": si, "k": k, "of": len(spans), "start": a, "end": b,
-                                    "chars": sum(len(x) + 1 for x in s["lines"][a:b])})
+        if len(self.sources) > 1 and total <= EXTRACT_CHUNK_CHARS:
+            # 好幾份加起來放得進一段：合成一段、一個 worker 一起讀全部（每一份各自一段時各讀各的，比不出差異；設計筆記 2.66）
+            self.chunks.append({"id": 1, "src": None, "together": list(range(len(self.sources))), "k": 1, "of": 1, "chars": total})
+        else:
+            for si, s in enumerate(self.sources):
+                spans = rc.chunk_lines(s["lines"], EXTRACT_CHUNK_CHARS) or [(0, 0)]
+                for k, (a, b) in enumerate(spans, 1):
+                    self.chunks.append({"id": len(self.chunks) + 1, "src": si, "k": k, "of": len(spans), "start": a, "end": b,
+                                        "chars": sum(len(x) + 1 for x in s["lines"][a:b])})
         self.job = {"id": self.jid, "kind": self.kind, "status": "working", "created": time.strftime("%Y-%m-%d %H:%M:%S"),
                     "model": self.agent.summary_model, "purpose": self.purpose,
                     "sources": [{"rid": s["rid"], "label": s["label"], "lines": len(s["lines"]), "chars": len(t)}
                                 for s, t in zip(self.sources, self.texts)],
-                    "chunks": [{k: c[k] for k in ("id", "src", "start", "end", "chars")} for c in self.chunks],
+                    "chunks": [{k: c[k] for k in ("id", "src", "together", "start", "end", "chars") if k in c} for c in self.chunks],
                     "summary_max_chars": self.max_chars}
         self.store.save(self.job)
         try:
@@ -491,40 +497,63 @@ class Extraction:
         return [c for c in self.chunks if c["id"] in keep], [c for c in self.chunks if c["id"] not in keep]
 
     @staticmethod
-    def _ranges(chunks):
-        """段落 → 合併相鄰的行號範圍：「366～607、729～1208」。"""
-        spans = []
-        for c in sorted(chunks, key=lambda c: c["start"]):
-            if spans and spans[-1][1] == c["start"]:
-                spans[-1][1] = c["end"]
+    def _ranges(spans):
+        """同一份的幾個範圍 [(開始, 結束)] → 合併相鄰的行號範圍：「366～607、729～1208」。"""
+        out = []
+        for a, b in sorted(spans):
+            if out and out[-1][1] == a:
+                out[-1][1] = b
             else:
-                spans.append([c["start"], c["end"]])
-        return "、".join(f"{a + 1}～{b}" for a, b in spans)
+                out.append([a, b])
+        return "、".join(f"{a + 1}～{b}" for a, b in out)
+
+    def _spans(self, c):
+        """一段讀的範圍 → [(第幾份, 開始, 結束)]：合成的那一段是那幾份的全部。"""
+        if c.get("together"):
+            return [(si, 0, len(self.sources[si]["lines"])) for si in c["together"]]
+        return [(c["src"], c["start"], c["end"])]
+
+    def _together_input(self, c):
+        """合成的那一段交給 worker 的 user 訊息：每一份前面標存檔編號，行號是那一份原文的行號。"""
+        blocks = []
+        for si in c["together"]:
+            s = self.sources[si]
+            limit = EXTRACT_CHUNK_CHARS if len(s["lines"]) == 1 else LINE_MAX_CHARS
+            blocks.append(_x("worker_together_item", rid=s["rid"], label=s["label"], count=len(s["lines"]),
+                             lines="\n".join(rc.numbered(i + 1, _cut(x, limit)) for i, x in enumerate(s["lines"]))))
+        return f"{self.purpose}\n\n" + _x("worker_together", count=len(c["together"])) + "\n\n" + "\n\n".join(blocks)
 
     def _worker(self, c):
-        s = self.sources[c["src"]]
-        lines = s["lines"]
-        a, b = c["start"], c["end"]
-        limit = EXTRACT_CHUNK_CHARS if b - a == 1 else LINE_MAX_CHARS
-        ctx = rc.chunk_context(lines, a)
-        head = (_x("worker_whole", label=s["label"], count=len(lines)) if c["of"] == 1     # 放得進一段：讀全部（不寫「第 1/1 段」）
-                else _x("worker_chunk", label=s["label"], count=len(lines), of=c["of"], k=c["k"], start=a + 1, end=b))
-        user = (f"{self.purpose}\n\n" + head + "\n"
-                + (_x("worker_context", lines="\n".join(rc.numbered(j + 1, _cut(lines[j], 300)) for j in ctx)) + "\n" if ctx else "")
-                + "\n" + _x("worker_body", lines="\n".join(rc.numbered(i + 1, _cut(lines[i], limit)) for i in range(a, b))))
-        data, raw, err = self._call("worker", read_prompt("worker.md", max_facts=EXTRACT_WORKER_FACTS), user, EXTRACT_WORKER_SCHEMA,
+        if c.get("together"):     # 好幾份合成的一段：事實附 record（只能填這幾份的編號），照那一份核對
+            user = self._together_input(c)
+            schema, si, within = extract_worker_multi_schema([s["rid"] for s in self.sources]), None, None
+        else:
+            s = self.sources[c["src"]]
+            lines = s["lines"]
+            a, b = c["start"], c["end"]
+            limit = EXTRACT_CHUNK_CHARS if b - a == 1 else LINE_MAX_CHARS
+            ctx = rc.chunk_context(lines, a)
+            head = (_x("worker_whole", label=s["label"], count=len(lines)) if c["of"] == 1     # 放得進一段：讀全部（不寫「第 1/1 段」）
+                    else _x("worker_chunk", label=s["label"], count=len(lines), of=c["of"], k=c["k"], start=a + 1, end=b))
+            user = (f"{self.purpose}\n\n" + head + "\n"
+                    + (_x("worker_context", lines="\n".join(rc.numbered(j + 1, _cut(lines[j], 300)) for j in ctx)) + "\n" if ctx else "")
+                    + "\n" + _x("worker_body", lines="\n".join(rc.numbered(i + 1, _cut(lines[i], limit)) for i in range(a, b))))
+            schema, si, within = EXTRACT_WORKER_SCHEMA, c["src"], (a, b)
+        data, raw, err = self._call("worker", read_prompt("worker.md", max_facts=EXTRACT_WORKER_FACTS), user, schema,
                                     EXTRACT_WORKER_PREDICT, chunk=c["id"])
         if data is None:
             out = {"chunk": c["id"], "ok": False, "error": err}
         else:
-            facts, dropped = self._ground_all(cited_items(data.get("facts")), c["src"], (a, b))
-            errors, dropped_e = self._ground_all(cited_items(data.get("errors")), c["src"], (a, b))
+            facts, dropped = self._ground_all(cited_items(data.get("facts")), si, within)
+            errors, dropped_e = self._ground_all(cited_items(data.get("errors")), si, within)
             out = {"chunk": c["id"], "ok": True, "relevant": bool(data.get("relevant")) or bool(facts or errors),
                    "summary": " ".join(str(data.get("summary") or "").split()), "facts": facts, "errors": errors,
                    "dropped": dropped + dropped_e}
-        self.note(f"{PROGRESS_MARK} 提煉：第 {c['id']}/{len(self.chunks)} 段（{'#' + str(s['rid']) + ' ' if len(self.sources) > 1 else ''}"
-                  f"行 {a + 1}～{b}）" + (f"：{len(out['facts'])} 條事實" + (f"，程式拿掉 {len(out['dropped'])} 條對不上原文的" if out["dropped"] else "")
-                                         if out["ok"] else f"：失敗（{out['error']}）"))
+        tag = (lambda sj: "#" + str(self.sources[sj]["rid"]) + " ") if len(self.sources) > 1 else (lambda sj: "")
+        where = "、".join(f"{tag(sj)}行 {a + 1}～{b}" for sj, a, b in self._spans(c))
+        self.note(f"{PROGRESS_MARK} 提煉：第 {c['id']}/{len(self.chunks)} 段（{where}）"
+                  + (f"：{len(out['facts'])} 條事實" + (f"，程式拿掉 {len(out['dropped'])} 條對不上原文的" if out["dropped"] else "")
+                     if out["ok"] else f"：失敗（{out['error']}）"))
         return out
 
     def _merge(self):
@@ -538,14 +567,16 @@ class Extraction:
         self.job["workers"] = results
         self.job["unread"] = [c["id"] for c in unread]
         notes = []
-        for si, s in enumerate(self.sources):
-            miss = [c for c in unread if c["src"] == si]
-            if miss:
-                notes.append(_x("note_unread", source="#" + str(s["rid"]) + " " if len(self.sources) > 1 else "", lines=self._ranges(miss),
-                                count=len(miss), max=EXTRACT_MAX_CHUNKS))
         failed = [c for c, r in zip(selected, results) if not r["ok"]]
-        if failed:
-            notes.append(_x("note_failed", lines=self._ranges(failed)))
+        tag = (lambda s: "#" + str(s["rid"]) + " ") if len(self.sources) > 1 else (lambda s: "")
+        for si, s in enumerate(self.sources):
+            miss = [(a, b) for c in unread for sj, a, b in self._spans(c) if sj == si]
+            if miss:
+                notes.append(_x("note_unread", source=tag(s), lines=self._ranges(miss), count=len(miss), max=EXTRACT_MAX_CHUNKS))
+        for si, s in enumerate(self.sources):     # 好幾份時寫是哪一份（合成的那一段失敗時每一份都寫）
+            bad = [(a, b) for c in failed for sj, a, b in self._spans(c) if sj == si]
+            if bad:
+                notes.append(_x("note_failed", source=tag(s), lines=self._ranges(bad)))
         listed = listed_items(results)
         self.job["listed"] = {"facts": len(listed[0]), "errors": len(listed[1])}
         self.note(f"{PROGRESS_MARK} 整合中：{len(listed[0])} 條事實（{sum(1 for r in results if r.get('relevant'))} 段有相關內容）")
@@ -563,45 +594,58 @@ class Extraction:
         cat = self._catalog_block()
         if cat:
             parts.append(cat)
-        budget = EXTRACT_EVIDENCE_CHARS
-        shown = set()
-        by_src = {}
-        for c, r in zip(selected, results):
-            by_src.setdefault(c["src"], []).append((c, r))
+        room = {"budget": EXTRACT_EVIDENCE_CHARS, "shown": set()}   # 事實引用的原文合計最多幾個字、已經附過的行
+        together = [(c, r) for c, r in zip(selected, results) if c.get("together")]
         for si, s in enumerate(self.sources):
             lines = s["lines"]
-            n_chunks = sum(1 for c in self.chunks if c["src"] == si)
             head = _x("merge_source_head", rid=s["rid"], label=s["label"]) + "\n" if len(self.sources) > 1 else ""
-            parts.append(_x("merge_source", head=head, label=s["label"], count=len(lines), chars=len(self.texts[si]), chunks=n_chunks)
-                         + (_x("merge_background", background=s["background"]) if s.get("background") else ""))
+            src = (_x("merge_source_together", head=head, label=s["label"], count=len(lines), chars=len(self.texts[si]), n=len(self.sources))
+                   if together else _x("merge_source", head=head, label=s["label"], count=len(lines), chars=len(self.texts[si]),
+                                       chunks=sum(1 for c in self.chunks if c["src"] == si)))
+            parts.append(src + (_x("merge_background", background=s["background"]) if s.get("background") else ""))
             parts.append(_x("merge_opening", lines="\n".join(rc.numbered(i + 1, _cut(lines[i], 300)) for i in range(min(3, len(lines))))))
             ol = rc.outline(lines)
             if ol:
                 parts.append(_x("merge_outline", lines="\n".join(_x("merge_outline_item", n=n, title=t, count=k) for n, t, k in ol)))
+            if not together:
+                parts.append(_x("merge_facts_header"))
+                for c, r in zip(selected, results):
+                    if c["src"] == si:
+                        parts += self._chunk_facts(c, r, room)
+        for c, r in together:     # 合成的那一段：每一份的開頭與大綱之後一起列，事實的行號前面寫存檔編號
             parts.append(_x("merge_facts_header"))
-            for c, r in by_src.get(si, []):
-                title = _x("merge_chunk_title", k=c["k"], start=c["start"] + 1, end=c["end"])
-                if not r["ok"]:
-                    parts.append(_x("merge_chunk_failed", title=title))
-                    continue
-                if not (r["facts"] or r["errors"]):
-                    parts.append(_x("merge_chunk_empty", title=title) + (_x("merge_chunk_empty_summary", summary=r["summary"]) if r["summary"] else ""))
-                    continue
-                parts.append(_x("merge_chunk_summary", title=title, summary=r["summary"] or _x("merge_no_summary")))
-                for label, items in (("", r["facts"]), (_x("merge_error_label"), r["errors"])):
-                    for it in items:
-                        at = self._at(si, it["nums"])
-                        where = (lines_text(it["nums"]) + (f"＝{at}" if at else "")) or _x("merge_unknown_lines")
-                        parts.append(_x("merge_fact", label=label, text=it["text"], lines=where))
-                        new = [x for x in evidence_lines(lines, it["nums"], span=0) if (si, x) not in shown][:EVIDENCE_LINES_PER_FACT]
-                        text = "\n".join("      " + rc.numbered(x, _cut(lines[x - 1], 300)).lstrip() for x in new)
-                        if new and budget - len(text) > 0:
-                            parts.append(text)
-                            budget -= len(text)
-                            shown.update((si, x) for x in new)
+            parts += self._chunk_facts(c, r, room)
         if notes:
             parts.append(_x("merge_notes", notes="\n".join(f"- {n}" for n in notes)))
         return "\n".join(parts)
+
+    def _chunk_facts(self, c, r, room):
+        """一段的結果交給整合：標題與總結、每條事實（附行號與那幾行的原文，原文合計最多 EXTRACT_EVIDENCE_CHARS 字、同一行只附一次）；
+        合成的那一段在行號前面寫存檔編號。"""
+        if c.get("together"):
+            title = _x("merge_together_title", ranges="、".join(f"#{self.sources[si]['rid']} 行 {a + 1}～{b}" for si, a, b in self._spans(c)))
+        else:
+            title = _x("merge_chunk_title", k=c["k"], start=c["start"] + 1, end=c["end"])
+        if not r["ok"]:
+            return [_x("merge_chunk_failed", title=title)]
+        if not (r["facts"] or r["errors"]):
+            return [_x("merge_chunk_empty", title=title) + (_x("merge_chunk_empty_summary", summary=r["summary"]) if r["summary"] else "")]
+        out = [_x("merge_chunk_summary", title=title, summary=r["summary"] or _x("merge_no_summary"))]
+        for label, items in (("", r["facts"]), (_x("merge_error_label"), r["errors"])):
+            for it in items:
+                si = it["src"]
+                lines = self.sources[si]["lines"]
+                at = self._at(si, it["nums"])
+                where = (lines_text(it["nums"]) + (f"＝{at}" if at else "")) or _x("merge_unknown_lines")
+                out.append(_x("merge_fact_record", label=label, text=it["text"], rid=self.sources[si]["rid"], lines=where) if c.get("together")
+                           else _x("merge_fact", label=label, text=it["text"], lines=where))
+                new = [x for x in evidence_lines(lines, it["nums"], span=0) if (si, x) not in room["shown"]][:EVIDENCE_LINES_PER_FACT]
+                text = "\n".join("      " + rc.numbered(x, _cut(lines[x - 1], 300)).lstrip() for x in new)
+                if new and room["budget"] - len(text) > 0:
+                    out.append(text)
+                    room["budget"] -= len(text)
+                    room["shown"].update((si, x) for x in new)
+        return out
 
     def _fallback(self, listed, notes, raw):
         """整合失敗：事實照樣由程式列（listed_items，不丟掉 worker 的結果），回答留空、由呼叫端說明。"""

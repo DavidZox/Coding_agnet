@@ -113,7 +113,7 @@ class ToolSummaryMixin:
 
     def _followup_guidance(self, ids, out, recalled=False, directive=True, sub=False):
         """接在提煉結果後面、給 main session 的下一步建議——獨立 session 看過完整原文與檢索清單後的判斷，依序：還需要之前的存檔 → 把
-        「這一份＋那幾份」一起 recall（同一個整合才比得了）；有沒讀到的段落或缺口 → 自然地問使用者或用更具體的問題 recall；已經回答 → 直接回答。
+        「這一份＋那幾份」一起 recall（一起讀才比得了）；有沒讀到的段落或缺口 → 自然地問使用者或用更具體的問題 recall；已經回答 → 直接回答。
         提煉沒有成功（回覆不是 JSON）時照實說，不說成「已經回答」。directive=False（claude_code 模式）：只陳述事實，下一步由模型自己決定。
         sub=True（領域 session，agent_core/domain_session.py）：照它能用的工具寫（共用的 result_grep、result_view 回原文看；它沒有
         result_recall），也沒有使用者可以問。"""
@@ -233,8 +233,9 @@ class ToolSummaryMixin:
         問題原文執行；這裡把那幾份存檔的完整原文交給同一套提煉（Extraction：切段 → worker → 整合，附檢索清單讓它判斷還需要哪一筆），
         main session 只收到提煉後的重點（附行號）與下一步建議。跟 result_grep 的差別是語意由獨立 session 理解，不是 main session 自己想
         關鍵字比對字面。錨點用任務線（_build_task_anchor_text：最新一句＋前幾句）——實測使用者回答追問時最新一句常只剩「第一個」，
-        模型給的參數只當聚焦點。可以一次給多個編號（1,2，最多 RECALL_MAX_RECORDS 份）：要一起看幾份存檔時（比較兩次的清單），每一份的段落
-        交給 worker、同一個整合看全部（以前只能 recall 一份時會來回跳——讀 #1 的說「還需要 #2」，讀 #2 的又說「還需要 #1」）。
+        模型給的參數只當聚焦點。可以一次給多個編號（1,2，最多 RECALL_MAX_RECORDS 份）：要一起看幾份存檔時（比較兩次的清單），加起來放得進一段的
+        合成一段、一個 worker 一起讀，放不進的每一份各自切段，同一個整合看全部（以前只能 recall 一份時會來回跳——讀 #1 的說「還需要 #2」，
+        讀 #2 的又說「還需要 #1」）。
         這是 main session 主動選的一次動作，照樣記軌跡、產生新的存檔編號；但不記進 tools_use_index.md（清單留原本的那幾筆）。"""
         usage = '用法：result_recall <編號>[,<編號>] "<使用者的問題原文>"（編號＝檢索清單或提煉結果裡的 #數字，最多 3 個）'
         try:

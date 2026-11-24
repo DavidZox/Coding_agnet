@@ -46,8 +46,11 @@ def _value_pat(v):
 
 
 def score(case, text):
-    """回覆原文對正確答案：found（找到幾個）、missing（漏了哪些）、extra（多列的名稱）、count_claims（回覆裡「共 N 台」這類說法）、count_ok。"""
+    """回覆原文對正確答案：found（找到幾個）、missing（漏了哪些）、extra（多列的名稱）、count_claims（回覆裡「共 N 台」這類說法）、count_ok。
+    情境有 score_on＝answer 的只看提煉的回答那一行；others（不是答案的名稱）寫進回答的算多列的；count_claims＝False 的不核對總數的說法。"""
     text = text or ""
+    if case.get("score_on") == "answer":
+        text = next((ln for ln in text.splitlines() if ln.startswith("回答：")), "")
     lines = text.splitlines()
     truth = case["truth"]
     found, missing = [], []
@@ -60,10 +63,12 @@ def score(case, text):
             ok = t["key"] in text
         (found if ok else missing).append(t["key"])
     extra = []
-    if case["match"] in ("fleet", "name"):
+    if case.get("others"):
+        extra = sorted(n for n in case["others"] if _name_pat(n).search(text))
+    elif case["match"] in ("fleet", "name"):
         keys = {t["key"] for t in truth}
         extra = sorted({m for m in _NAME_RE.findall(text) if m not in keys})
-    claims = [int(n) for n in _COUNT_RE.findall(text)]
+    claims = [int(n) for n in _COUNT_RE.findall(text)] if case.get("count_claims", True) else []
     return {"found": len(found), "total": len(truth), "missing": missing, "extra": extra, "count_claims": claims,
             "count_ok": (all(n == len(truth) for n in claims) if claims else None)}
 
@@ -110,7 +115,7 @@ def run_one(case, args, out_dir, k):
             r["error"] = f"逾時（{args.timeout} 秒）"
         r["wall_seconds"] = round(time.time() - t0, 1)
         r["jobs"] = job_info(os.path.join(tmp, "logs"))
-        answer = r.get("recall") if case.get("recall") else r.get("summary")
+        answer = r.get("recall") if (case.get("recall") or case.get("texts")) else r.get("summary")
         r["score"] = score(case, answer)
         if os.path.isdir(os.path.join(tmp, "logs")):
             shutil.copytree(os.path.join(tmp, "logs"), os.path.join(out_dir, "logs", f"{case['id']}_{k}"), dirs_exist_ok=True)
@@ -128,7 +133,7 @@ def write_report(path, results, args):
         jobs = r.get("jobs") or []
         j = jobs[-1] if jobs else {}
         claims = "、".join(map(str, s["count_claims"])) or "—"
-        secs = r.get("recall_seconds") if r["case"].startswith("recall") else r.get("summary_seconds")
+        secs = r.get("recall_seconds") if r.get("recall_seconds") is not None else r.get("summary_seconds")
         lines.append(f"| {r['case']} | {r['run']} | {s['found']}/{s['total']} | {'、'.join(s['missing'][:6]) or '—'} | {'、'.join(s['extra'][:6]) or '—'} | "
                      f"{claims}{'' if s['count_ok'] in (None, True) else ' ❌'} | {j.get('chunks', '—')}（{j.get('read', '—')}） | "
                      f"{sum(x.get('calls', 0) for x in jobs)} | {sum(x.get('dropped', 0) for x in jobs)} | {'是' if any(x.get('repaired') for x in jobs) else '否'} | "

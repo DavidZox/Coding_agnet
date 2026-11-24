@@ -8,7 +8,8 @@
   名稱要整個對上（av2_test 不算 nav2_test 裡有；待辦 4j ①）；
 - 放得進一段（一個 worker 讀全部）與分段（每段一個 worker）→ 程式列事實 → 整合：每條事實附行號、對不上的拿掉、回答找不到的字請整合修一次、
   還是不行就標明；交出去的事實由程式列（worker 核對過的全部，整合不挑、不寫事實；放得進一段的也一樣，設計筆記 2.65）；整合失敗時回答留空、事實一樣由程式列；每一次的切段、模型呼叫、結果都存在 logs/extract_jobs/<編號>/；
-- result_recall：好幾份一起讀、編號錯／檔案被清掉的說明、提煉失敗照實回報；
+- result_recall：好幾份一起讀（加起來放得進一段的合成一段、一個 worker 一起讀，事實附 record、照那一份核對；放不進的每一份各自切段；
+  設計筆記 2.66）、編號錯／檔案被清掉的說明、提煉失敗照實回報；
 - 行號：result_view、result_grep、提煉結果、claude_code 模式的截斷說明都是原文的行號；result_view --outline；
   檔案的行號（待辦 4k ②）：照收據把存檔的每一行對到檔案（只認收據裡的絕對路徑，result_grep 的存檔編號不算），事實附「檔案:行號」，
   回答把存檔的行號寫成檔案的行號交回修一次、還是錯就標明；
@@ -42,29 +43,40 @@ def fleet_yaml():
 class FakeExtract:
     """假的提煉模型：worker 依原文找「battery_percent」的行回事實（名字從往上找）；整合把 worker 的事實照抄、回答寫第一條。
     mode 可以讓它故意出錯：bad_worker（事實寫錯車號）、bad_answer（回答寫原文沒有的數字）、synth_fail（整合回非 JSON）、raise（丟例外）、
-    synth_partial（分段的整合只寫第一條事實：交出去的還是要全部）。props 記每次呼叫的 schema 欄位。"""
+    synth_partial（分段的整合只寫第一條事實：交出去的還是要全部）、wrong_record（好幾份合成一段時 record 填另一份）、worker_fail（worker 回非 JSON）。
+    好幾份合成的一段（schema 的事實有 record）：照「===== 存檔 #N」那一行之後的是哪一份填 record。props 記每次呼叫的 schema 欄位，formats 記整個 schema。"""
 
     def __init__(self, mode=""):
-        self.mode, self.calls, self.props = mode, [], []
+        self.mode, self.calls, self.props, self.formats = mode, [], [], []
 
     def __call__(self, model=None, messages=None, format=None, **kw):
         props = set((format or {}).get("properties", {})) if isinstance(format, dict) else set()
         user = messages[-1]["content"] if messages else ""
         self.calls.append(("worker" if "relevant" in props else "synth" if "index_hint" in props else "other", user))
         self.props.append(props)
+        self.formats.append(format)
         if self.mode == "raise":
             raise ConnectionError("ollama 沒有回應")
         if "relevant" in props:
-            facts, name = [], None
-            for m in re.finditer(r"^\s*(\d+)→(.*)$", user, re.M):
-                n, text = int(m.group(1)), m.group(2)
+            if self.mode == "worker_fail":
+                return {"message": {"content": "（不是 JSON）"}, "prompt_eval_count": 10, "eval_count": 5}
+            records = format["properties"]["facts"]["items"]["properties"].get("record", {}).get("enum") or []
+            facts, name, rid = [], None, None
+            for m in re.finditer(r"^===== 存檔 #(\d+)|^\s*(\d+)→(.*)$", user, re.M):
+                if m.group(1):
+                    rid, name = m.group(1), None
+                    continue
+                n, text = int(m.group(2)), m.group(3)
                 nm = re.search(r"name: (tb\d+)", text)
                 if nm:
                     name = nm.group(1)
                 b = re.search(r"battery_percent: ([\d.]+)", text)
                 if b and name and float(b.group(1)) < 40:
                     shown = name if self.mode != "bad_worker" else "tb99"
-                    facts.append({"text": f"{shown} 電量 {b.group(1)}%", "lines": str(n)})
+                    fact = {"text": f"{shown} 電量 {b.group(1)}%", "lines": str(n)}
+                    if records:
+                        fact["record"] = rid if self.mode != "wrong_record" else next(r for r in records if r != rid)
+                    facts.append(fact)
             data = {"relevant": bool(facts), "facts": facts, "errors": [], "summary": f"{len(facts)} 台電量低於 40%"}
         elif "index_hint" in props:
             if self.mode == "synth_fail" and "【各段提煉的事實" in user:
@@ -113,6 +125,13 @@ def main():
             agent.set_current_task(task)
             rec = agent._record_trajectory(script, ["/fleet_states"], text, tmp, "", "")
             return rec["id"]
+
+        def job_of(out):
+            """提煉結果寫的存檔位置（logs/extract_jobs/<編號>/）→ 那一次提煉的 job.json。"""
+            m = re.search(r"logs/extract_jobs/([^/]+)/", out)
+            assert m, out[-300:]
+            with open(os.path.join(tmp, "logs", "extract_jobs", m.group(1), "job.json"), encoding="utf-8") as f:
+                return json.load(f)
 
         def check(name, fn):
             try:
@@ -274,6 +293,7 @@ def main():
             out = agent._result_recall(f'{a},{b} "比較兩次低電量的車"')
             assert out.startswith("[tool result - 任務導向摘要]") and f"#{a}、#{b}" in out, out[:300]
             assert any(c[0] == "worker" for c in fake.calls), "長的那份分段"
+            assert all("===== 存檔 #" not in u for k, u in fake.calls if k == "worker"), "加起來放不進一段：每一份各自切段，不合成一段"
             assert agent._result_recall('"哪台車" 12').startswith("[ERROR] 第一個參數要是存檔編號"), "參數順序錯"
             assert "不存在（目前最大的存檔編號是" in agent._result_recall('99999 "那台車"'), "編號抄錯"
             gone = archive("[PASS] 舊的輸出\n" + "x\n" * 10)
@@ -281,6 +301,37 @@ def main():
             os.remove(os.path.join(agent.results_dir(), agent.last_result_file))
             assert "超過保留上限被清掉" in agent._result_recall(f'{gone} "那份"'), "清單有、檔案不在"
             assert all(e["id"] != gone for e in agent._index_entries()), "檢索清單不列檔案已經不在的"
+
+        def t_together():
+            # 好幾份加起來放得進一段（設計筆記 2.66）：第 12 輪每一份各自一段、各一個 worker，兩份短的一起 recall 時各讀各的、比不出差異
+            # （主對話評測 compare_two_archives 0／4）。現在合成一段、一個 worker 一起讀，每條事實寫出自哪一份（record 只能填這幾份），照那一份核對
+            rows = fleet_yaml().splitlines()
+            a = archive("\n".join(rows[:20]), task="早上的車隊")                # 行 3～20：tb1～tb3（電量 23.5、27.0、30.5）
+            b = archive("\n".join(rows[:2] + rows[20:38]), task="下午的車隊")   # 同樣的行號：tb4～tb6（34.0、37.5、41.0）
+            recall = f'{a},{b} "比較兩次低電量的車"'
+            ollama.chat = fake = FakeExtract()
+            out = agent._result_recall(recall)
+            assert [c[0] for c in fake.calls] == ["worker", "synth"], [c[0] for c in fake.calls]
+            w = fake.calls[0][1]
+            assert f"===== 存檔 #{a}" in w and f"===== 存檔 #{b}" in w and "你一起讀全部" in w, w[:800]
+            assert fake.formats[0]["properties"]["facts"]["items"]["properties"]["record"]["enum"] == [str(a), str(b)], "record 只能填這兩份"
+            from agent_core.schemas import TOOL_SUMMARY_MERGE_SCHEMA
+            assert fake.formats[1] == TOOL_SUMMARY_MERGE_SCHEMA, "整合的 schema 不變（只寫回答）"
+            for name, bat, rid in (("tb1", 23.5, a), ("tb3", 30.5, a), ("tb4", 34.0, b), ("tb5", 37.5, b)):
+                assert f"{name} 電量 {bat}%（#{rid} 行 " in out, (name, out)
+            assert "tb6" not in out.split("相關事實")[1].split("\n（")[0], "電量 41.0 的不列"
+            synth_in = fake.calls[1][1]
+            assert "由一個 worker 一起讀" in synth_in and "一個 worker 一起讀（" in synth_in and f"tb4 電量 34.0%（#{b} 行 8）" in synth_in, synth_in
+            assert "分 2 段" not in out and "分 1 段" not in out, "合成的一段：不寫分段"
+            j = job_of(out)
+            assert len(j["chunks"]) == 1 and j["chunks"][0]["together"] == [0, 1] and len(j["workers"]) == 1, j["chunks"]
+            assert {f["record"] for f in j["final"]["facts"]} == {str(a), str(b)}, j["final"]["facts"]
+            ollama.chat = FakeExtract("wrong_record")
+            j = job_of(agent._result_recall(recall))
+            assert not j["workers"][0]["facts"] and len(j["workers"][0]["dropped"]) == 5, "record 填另一份：照那一份核對對不上，拿掉、記在存檔裡"
+            ollama.chat = FakeExtract("worker_fail")
+            out = agent._result_recall(recall)
+            assert f"#{a} 原文第 1～20 行提煉失敗" in out and f"#{b} 原文第 1～20 行提煉失敗" in out, "合成的一段失敗：每一份都寫進未涵蓋"
 
         def t_line_numbers():
             text = "\n".join(f"line {i}" for i in range(1, 301))
@@ -465,6 +516,8 @@ def main():
                          ("對不上原文的事實拿掉並記錄；回答寫了原文沒有的數字：請整合修一次，還是不行就標明", t_grounding_drops_and_repair),
                          ("整合失敗由程式排出各段的事實；模型沒有回應照實回報、不說成已經回答", t_fallbacks),
                          ("result_recall：好幾份一起、參數順序錯、編號抄錯、檔案被清掉（清單也不再列它）", t_recall),
+                         ("好幾份加起來放得進一段（設計筆記 2.66）：合成一段、一個 worker 一起讀（每一份標存檔編號、record 只能填這幾份）→ 事實寫是哪一份、"
+                          "整合的輸入也寫；record 填另一份的照那一份核對、拿掉；合成的一段失敗時每一份都寫進未涵蓋", t_together),
                          ("行號：result_view、result_grep、claude_code 的截斷說明同一套；result_view --outline", t_line_numbers),
                          ("存檔：照編號排（#1000 在 #999 後面）、新編號接在目錄裡最大的編號後面", t_prune_order),
                          ("狀態標記只認輸出最後的那幾行", t_trailing_markers),
