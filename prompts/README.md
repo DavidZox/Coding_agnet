@@ -29,7 +29,7 @@ harness 送給模型的字都在這裡：改字不用改程式，存檔之後下
 | `extract/inputs.md` | 提煉的 user 訊息裡程式組的標籤、程式的說明、修一次的說明 | `extract.py` |
 | `edg/fix.md` | 低階執行器（有骨架的技能的圖由它執行）：第 1 級修正（一個工具節點參數錯或逾時，只改字面參數；修不好就說修不好）的規則 | `edg.ModelFixer` |
 | `edg/inputs.md` | 第 1 級修正的 user 訊息裡程式組的標籤（子目標、規格、參數、錯誤、逾時的縮小方式） | `edg.fix_message` |
-| `domain/session.md` | 領域 session 看到的字：system prompt（三種狀態 domains／skill／report 的寫法、怎麼做、領域清單）、第一則訊息（子目標、項目、原始問題、上一次的經過）、選了領域之後的技能清單（〈做法〉、有骨架的技能與參數、工具與 args 的寫法、共用的工具）、選了技能之後的參數表單（`form_*`；重問 `retry_form`）、每一步的結果（步驟的標頭、有骨架的技能的狀態與回退、每個節點的結果、存檔編號）、擋下與交回改的說明（`err_*`）、回報的核對沒過（`answers_fix`）、回覆不是 JSON、截斷、清掉的舊結果、提煉的錨點；有骨架的技能的合約沒過（`reject_*`）、要領域 session 決定的事（`need_*`） | `domain_session.py`、`composite.py`、`orchestrator.domain_gate`（`not_my_tool`） |
+| `domain/session.md` | 領域 session 看到的字：system prompt（三種狀態 domains／skill／report 的寫法、怎麼做、領域清單）、第一則訊息（子目標、項目、原始問題、上一次的經過）、選了領域之後的技能清單（〈做法〉、有骨架的技能與參數、工具與 args 的寫法、共用的工具）、選了技能之後的參數表單（`form_*`；工具的 args 寫成 JSON 或照抄佔位符 `reject_args_*`；重問 `retry_form`）、每一步的結果（步驟的標頭、有骨架的技能的狀態與回退、程式算的彙整 `composite_totals`、每個節點的結果、存檔編號）、擋下與交回改的說明（`err_*`）、回報的核對沒過（`answers_fix`）、回覆不是 JSON、截斷、清掉的舊結果、提煉的錨點；有骨架的技能的合約沒過（`reject_*`）、要領域 session 決定的事（`need_*`） | `domain_session.py`、`composite.py`、`orchestrator.domain_gate`（`not_my_tool`） |
 | `vision/extraction.md` | Web 附圖的影像提取（視覺模型的 system、純文字的退路、user 訊息） | `vision/extraction.py` |
 
 ## 範本的寫法

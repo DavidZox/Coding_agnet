@@ -8,9 +8,12 @@
 - 領域 session 用工具：選領域 → 技能清單（做法、有骨架的技能與參數、工具與 args 的寫法、共用的工具）→ 用一個工具（存檔 #編號）→ 回報（核對過）
   → 報告交回主 session（不提煉）＋依報告回答的說明 → 主 session 照項目回答（附出處那一行的原文）；
 - 選了技能之後的參數表單：schema 只有該填的欄位（有骨架的技能每個參數一欄、參數名稱就是欄位；工具只有 args）、表單的那一輪不算在回的輪數裡；
+  工具的 args 整個是 JSON、或照抄了〈語法〉的佔位符的交回重填一次、還是一樣就回到選技能（不算一步；有中括號的搜尋字不誤擋）；
 - 有骨架的技能：合約（原文要在給它看過的字裡）沒過的只把那幾個參數交回重填一次、還是沒過就回到選技能，都不算一步；原文開頭抄了程式的
   標題（「【子目標】」）的拿掉再核對；照骨架執行、每個節點的結果附 #編號；一模一樣的不執行；
   回退換技能（.py 沒有、C++ 檔有 → cpp_symbol）；路徑有好幾個交回它決定（附候選）；0 筆照實交回（跑完、結果是 0 筆）；
+  程式照收據算的彙整（AST 的定義、呼叫與 import 每個檔案幾處、總共幾處；名稱符合的檔案扣掉不含的子目錄）存成 #編號、接在技能的狀態後面，
+  回報的總數照它寫、出處寫它的 #編號就過核對；
 - 狀態與上限：第一輪不是選領域、回覆不是 JSON、重選領域超過上限、技能用完上限；
 - 確認關卡：停下來、主 session 轉問使用者（Web）、不同意 → [DENIED] 交給它接著做；
 - 長的結果照舊提煉（錨點是交辦的子目標與項目）；
@@ -353,6 +356,59 @@ def main():
             assert whys[:2] == ["cpp_symbol 的參數沒有通過核對", "cpp_symbol 的參數重填之後還是沒有通過核對"], whys
             assert job["turns"] == 4 and job["forms"] == 3, (job["turns"], job["forms"])
 
+        def t_form_tool():
+            fake = FakeChat(main=[task("找 pkg 裡的 alpha 定義在哪", ["定義在哪"]), say("好")],
+                            session=[ds("domains", domains=["repo_analysis"]), ds("skill", skill="search_text"),
+                                     fill(args='{"<關鍵字>": "def alpha", "[路徑…]": "pkg"}'), fill(args='"<關鍵字>" pkg'),
+                                     ds("skill", skill="search_text"), fill(args='"[a-z]+ alpha" pkg')])
+            turn("pkg 裡的 alpha 定義在哪？", fake)
+            calls = [c for c in fake.calls if c["role"] == "session"]
+            form = fake.session_msgs(2)[-1]["content"]
+            assert form.startswith("【參數表單】search_text（工具）") and "不是 JSON" in form, form[:300]
+            fix = fake.session_msgs(3)[-1]["content"]
+            assert "args 沒有通過核對" in fix and "args 寫成了 JSON" in fix and "`\"<關鍵字>\" [路徑…] [選項]`" in fix, fix[:400]
+            assert set(calls[3]["format"]["properties"]) == {"thought", "args"}, "重填：一樣只有 args"
+            failed = fake.session_msgs(4)[-1]["content"]
+            assert "重填之後還是沒有通過核對" in failed and "照抄了寫法裡的 <關鍵字>" in failed, failed[:300]
+            assert "state" in calls[4]["format"]["properties"], "重填還是沒過：回到每一輪的決定"
+            job = last_job()
+            assert [(s["skill"], s["args"]) for s in job["steps"]] == [("search_text", '"[a-z]+ alpha" pkg')], job["steps"]
+            assert [b["why"] for b in job["blocked"]][:2] == ["search_text 的 args 寫法不對", "search_text 的 args 重填之後還是寫法不對"], job["blocked"]
+            assert job["forms"] == 3 and job["turns"] == 4, (job["forms"], job["turns"])
+            sess = domain_session.DomainSession(agent, agent.domain_registry())
+            assert sess._args_problem("search_text", '"[A-Z]+_ERR" pkg -C 2') == "", "中括號的搜尋字不是佔位符"
+            assert sess._args_problem("search_text", '["def alpha", "pkg"]') and sess._args_problem("view_file", "<檔案> --from 3"), "陣列、照抄佔位符"
+
+        def t_totals():
+            def report(messages):
+                text = "\n".join(m["content"] for m in messages if m["role"] == "user")
+                rid = re.findall(r"【程式照收據算的彙整】（存檔 #(\d+)", text)[-1]
+                return ds("report", answers=[(1, "answered", "呼叫總共 2 次：pkg/mod.py 1 次、pkg/use.py 1 次", [f"#{rid}"])], reply="數好了")
+            fake = FakeChat(main=[task("數 pkg 裡的 alpha 呼叫幾次", ["各檔案幾次、總共幾次"]), say("好")],
+                            session=[ds("domains", domains=["repo_analysis"]), ds("skill", skill="py_usage"),
+                                     fill(params=[("name", "alpha", "alpha"), ("path", "pkg", "pkg")]), report])
+            turn("pkg 裡的 alpha 在哪些檔案呼叫、各幾次、總共幾次？", fake)
+            shown = fake.session_msgs(3)[-1]["content"]
+            for want in ("【程式照收據算的彙整】（存檔 #", "## 名稱的每一處（code_ast_reader）", "- 定義（1）：\n    - pkg/mod.py:1　def alpha",
+                         "- 呼叫：總共 2 次（2 個檔案）：\n    - pkg/mod.py：1 次\n    - pkg/use.py：1 次", "- import：總共 1 處（1 個檔案）",
+                         "- 定義以外的每一種加起來：總共 3 處（2 個檔案）"):
+                assert want in shown, (want, shown[:1500])
+            assert shown.index("【程式照收據算的彙整】") < shown.index("— 名稱的每一處：code_ast_reader"), "彙整接在技能的狀態後面、各節點的結果前面"
+            rid = int(re.search(r"【程式照收據算的彙整】（存檔 #(\d+)", shown).group(1))
+            job = last_job()
+            assert job["steps"][0]["result_ids"][0] == rid and len(job["steps"][0]["result_ids"]) >= 3, job["steps"][0]["result_ids"]
+            assert job["status"] == "done" and not job["blocked"], ("總數照彙整寫、出處是彙整的 #編號：核對過", job["blocked"])
+            with open(agent.result_file_path(rid), encoding="utf-8") as f:
+                assert "[PASS] py_usage 的彙整" in f.read(), "彙整存成 #編號"
+            fake = FakeChat(main=[task("數 . 底下名稱符合 *.cpp 的檔案，不含 left", ["有幾個"]), say("好")],
+                            session=[ds("domains", domains=["repo_analysis"]), ds("skill", skill="count_in_scope"),
+                                     fill(params=[("files", "*.cpp", "*.cpp"), ("exclude", "left", "left")])])
+            turn("數 . 底下名稱符合 *.cpp 的檔案有幾個，不含 left 目錄", fake)
+            shown = fake.session_msgs(3)[-1]["content"]
+            head = shown.split("\n— ")[0]
+            assert "- 名稱符合「*.cpp」的檔案：總共 2 個（從 . 開始找）；不含 left 裡的 1 個：" in head, shown[:1500]
+            assert "right/sub/b.cpp" in head and "left/sub/a.cpp" not in head, ("扣掉的不列", head)
+
         def t_composite_switch():
             q = "cpp 底下的 delta 定義在哪？"
             fake = FakeChat(main=[task("找 cpp 底下的 delta 定義在哪", ["定義在哪"]), say("好")],
@@ -451,7 +507,9 @@ def main():
                          ("交辦的核對", t_task_checks), ("領域 session 用工具：選領域、技能清單、結果、回報、主 session 照項目回答", t_tool_flow),
                          ("評測的紀錄（domain_calls）", t_tool_records),
                          ("有骨架的技能：合約、執行、一模一樣的不執行", t_composite),
-                         ("參數表單：抄到程式的標題照樣核對、重填還是沒過回到選技能", t_form), ("回退換技能", t_composite_switch),
+                         ("參數表單：抄到程式的標題照樣核對、重填還是沒過回到選技能", t_form),
+                         ("工具的參數表單：args 寫成 JSON、照抄佔位符的交回重填", t_form_tool),
+                         ("有骨架的技能的彙整：程式照收據算的數量存成 #編號、總數照它寫就過核對", t_totals), ("回退換技能", t_composite_switch),
                          ("路徑有好幾個交回決定、0 筆照實交回", t_composite_need_and_empty), ("狀態與上限", t_states_limits),
                          ("確認關卡", t_guard), ("長的結果照舊提煉", t_long_output), ("再交辦帶著上一次的經過", t_previous),
                          ("主 session 依報告回答的核對", t_main_check)]:

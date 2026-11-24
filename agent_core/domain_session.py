@@ -8,8 +8,10 @@
    - 有骨架的技能（composite.py）：每個參數一欄（quote、value），原文要一字不改（F3），程式核對（composite.verify_param；原文＝問題、
      子目標、項目、前面每一步交給它的結果；開頭多抄了程式的標題「【子目標】」這種的，拿掉標題再核對）。沒過的只把那幾個參數交回重填
      一次，還是沒過就回到選技能，都不算一步；過了交給 composite.Runner 跑骨架與回退。缺參數、路徑有好幾個也交回它決定（附候選）。
-   - 工具：表單只有 args（照工具的〈語法〉寫），程式照技能名稱找腳本執行（agent._run_tool_once：跟主對話同一條路——確認關卡、
-     存檔 #編號、收據、狀態標記的同步）；只能用選的領域的工具與共用的工具（orchestrator.domain_gate 看 agent._sub_allowed）。
+   - 工具：表單只有 args（一行參數，照工具的〈語法〉寫，不是 JSON），程式照技能名稱找腳本執行（agent._run_tool_once：跟主對話同一條路——
+     確認關卡、存檔 #編號、收據、狀態標記的同步）；只能用選的領域的工具與共用的工具（orchestrator.domain_gate 看 agent._sub_allowed）。
+     args 整個是 JSON、或照抄了〈語法〉的佔位符（<…>、[…]）的不執行，交回重填一次，還是一樣就回到選技能，都不算一步（_args_problem）。
+   - 有骨架的技能跑完，程式照收據算的彙整（composite.Runner._totals：每個檔案的數量與總數）存成 #編號，接在技能的狀態後面（回報時可以當出處）。
    - 結果太長就分段提煉（turn._content_for_context；錨點是子目標與項目，事實附 檔案:行號），短的照原文；每份結果附 #編號。
    - 跟之前某一步一模一樣的技能＋參數不執行（附那一步的結果）；最多 DOMAIN_STEPS_MAX 步。
 3. **report**（回報）：answers 照項目一項一筆（answered／not_found、回答、出處），程式核對（answers.answer_problems：出處是這個 session 的
@@ -39,6 +41,7 @@ STATUS_TEXT = {"running": "執行中", "need_user": "等使用者回答", "done"
                "cancelled": "使用者取消", "failed": "失敗（模型沒有回覆）"}
 _KEEP_RESULTS = 3                           # 對話太長時，最新的這幾份結果不清
 _SYNTAX = re.compile(r"`EXECUTE:\s*scripts/[\w.-]+\s*([^`]*)`")
+_PLACEHOLDER = re.compile(r"<[^<>`\s][^<>`]*>|\[[^\[\]`]+\]")   # 〈語法〉的佔位符：<名稱>、[路徑]（args 照抄了它＝沒有換成值）
 # 程式給模型看的標題（「【子目標】」「【要回答的項目】（…）」「【第 2 步的結果】…（…）」）：表單的原文開頭抄了它、核對沒過時拿掉再核對
 # 一次（第 3 步 e4b 合約沒過的 191 個參數裡 110 個是這樣，值是對的；設計筆記 2.57 ①）
 _LABEL = re.compile(r"^【[^】]{1,20}】\s*(?:（[^）]{0,60}）)?\s*")
@@ -250,8 +253,9 @@ class DomainSession:
         self._note(job["id"], f"🧭 選技能：{name}（{parsed['thought'][:60]}）")
 
     def _form_turn(self, job):
-        """填表單的那一輪：有骨架的技能照合約核對——沒過的只把那幾個參數交回重填一次，還是沒過就回到選技能（都不算一步）；工具拿掉照抄的
-        工具名稱。過了就執行（跟之前某一步一模一樣的不執行）。回 job＝停下來（確認關卡、模型沒有回覆），None＝接著做。"""
+        """填表單的那一輪：有骨架的技能照合約核對、工具核對 args 的寫法（_args_problem）——沒過的交回重填一次（有骨架的技能只有沒過的那幾個
+        參數），還是沒過就回到選技能（都不算一步）；工具先拿掉照抄的工具名稱。過了就執行（跟之前某一步一模一樣的不執行）。
+        回 job＝停下來（確認關卡、模型沒有回覆），None＝接著做。"""
         form = job["form"]
         name = form["skill"]
         skills, _ = self._available(job)
@@ -266,6 +270,14 @@ class DomainSession:
         pending = {"skill": name, "thought": form["thought"], "reply": form["reply"]}
         if spec is None:
             pending["args"] = self._own_args(name, parsed["args"])
+            why = self._args_problem(name, pending["args"])
+            if why and form["round"] == 1:
+                job["form"] = dict(form, round=2)
+                self._tell(job, _s("form_fix_tool", skill=name, problem=why, syntax=self._syntax(name)), f"{name} 的 args 寫法不對")
+                return None
+            if why:
+                self._tell(job, _s("form_failed", skill=name, problems=why), f"{name} 的 args 重填之後還是寫法不對")
+                return None
             if self._same(job, name, " ".join(pending["args"].split())):
                 return None
             guard = self.agent.guard_check({"action": self._action(name, pending["args"])})
@@ -297,6 +309,20 @@ class DomainSession:
         if head in (tool, f"{tool}.md") or (script and os.path.basename(head) == script):
             return rest.strip()
         return args
+
+    def _args_problem(self, tool, args):
+        """工具表單的 args 寫法：整個是 JSON（物件或陣列）、或照抄了〈語法〉的佔位符（<…>、[…]）→ 說明；過了是 ""。
+        建議 1 的比較裡 26b 一次把佔位符當成鍵寫成 JSON（{"<名稱關鍵字>": …}），連錯 4 步（設計筆記 2.58）。"""
+        text = args.strip()
+        if text.startswith(("{", "[")):
+            try:
+                if isinstance(json.loads(text), (dict, list)):
+                    return _s("reject_args_json")
+            except ValueError:
+                pass
+        marks = sorted({m.group() for row in self._syntax_args(tool) for m in _PLACEHOLDER.finditer(row)})
+        copied = [m for m in marks if m in text]
+        return _s("reject_args_placeholder", marks="、".join(copied)) if copied else ""
 
     def _same(self, job, skill, how):
         """跟之前某一步一模一樣：不執行，交給模型那一步的結果（回 True）。"""
@@ -347,7 +373,8 @@ class DomainSession:
         if res["need"]:
             cands = "；".join(res["need"].get("candidates") or [])
             lines.append(_s("composite_need", question=res["need"]["question"], candidates=_s("composite_candidates", candidates=cands) if cands else ""))
-        parts, rids, summarized = ["\n".join(lines)], [], False
+        totals, trid = self._totals(res)
+        parts, rids, summarized = ["\n".join(lines + ([totals] if totals else []))], [trid] if trid else [], False
         for o in res["outputs"]:
             title = o["report"] or o["why"] or o["node"]
             head = _s("output_head", title=title, tool=o["tool"], args=" ".join(o["args"]), state=o["state"],
@@ -366,6 +393,17 @@ class DomainSession:
                 "composite": dict({k: res[k] for k in ("skill", "switched", "fallbacks", "auto_filled", "need", "note", "edg_jobs")},
                                   outputs=[{k: o[k] for k in ("node", "tool", "args", "state", "result_id")} for o in res["outputs"]])}
         self._record(job, step, "\n\n".join(parts))
+
+    def _totals(self, res):
+        """有骨架的技能的彙整（composite.Runner._totals）存成 #編號、回報時可以當出處 → (接在技能的狀態後面的那一段, #編號)；沒有是 ("", None)。"""
+        if not res.get("totals"):
+            return "", None
+        a, text = self.agent, "\n".join(res["totals"])
+        a.last_receipt = None               # 不是腳本的輸出：軌跡不要記上一支腳本的收據
+        a._record_trajectory(f"{res['skill']}_totals", [], text, a.current_cwd, a.container_cwd, a.target_container)
+        if not a.last_result_id:              # 存檔失敗：照樣給它看，只是不能當出處
+            return text, None
+        return _s("composite_totals", rid=a.last_result_id, text=text), a.last_result_id
 
     def _shown(self, job, rid, step):
         """一份存檔 → (交給模型的文字, 有沒有提煉)：門檻內原文，太長的提煉（錨點是子目標與項目；照收據把行號對到檔案）；開頭寫存檔編號。"""
@@ -645,14 +683,18 @@ class DomainSession:
             out.append(_s("tool_entry", line=ln, syntax=self._syntax(m.group(1))))
         return "\n".join(out)
 
-    def _syntax(self, tool):
-        """規格的〈語法〉：每一個 `EXECUTE: scripts/x.py <參數>` 只留參數的部分（就是 args 要寫的），最多 DOMAIN_SYNTAX_LINES 行。"""
+    def _syntax_args(self, tool):
+        """規格的〈語法〉裡每一個 `EXECUTE: scripts/x.py <參數>` 的參數部分（就是 args 要寫的）。"""
         try:
             with open(os.path.join(self.agent.tools_dir, f"{tool}.md"), encoding="utf-8") as f:
                 body = skill_spec.sections(f.read()).get("語法", "")
         except OSError:
-            body = ""
-        rows = [f"`{m.group(1).strip()}`" if m.group(1).strip() else _s("syntax_none") for m in _SYNTAX.finditer(body)]
+            return []
+        return [m.group(1).strip() for m in _SYNTAX.finditer(body)]
+
+    def _syntax(self, tool):
+        """交給模型看的 args 寫法：〈語法〉的參數部分，最多 DOMAIN_SYNTAX_LINES 行。"""
+        rows = [f"`{row}`" if row else _s("syntax_none") for row in self._syntax_args(tool)]
         return "　".join(dict.fromkeys(rows[:DOMAIN_SYNTAX_LINES])) or "—"
 
     @staticmethod

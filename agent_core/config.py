@@ -192,6 +192,9 @@ EDG_FIX_PREDICT = 600   # 修正的輸出（理由＋參數）的 num_predict �
 # 有骨架的技能（agent_core/composite.py）：〈回退〉的加節點重排與換技能合計最多幾次，再要就熔斷（預算，不是調來讓某一題過的門檻；
 # 收斂與否另外看「加的節點是不是全都跑過」）。
 MID_REPLAN_MAX = 3
+# 有骨架的技能的彙整（composite.Runner._totals：照收據算的每個檔案的數量與總數）每一節最多列幾行，其他的看各節點的 #編號
+# （資源的上限，同三階層的中階報告；總數照收據算全部，不受這個上限影響）。
+COMPOSITE_TOTALS_LINES = 120
 
 # 🧷 主對話與領域 session 回覆的字串上限（schemas；資源的上限，跟其他 schema 的字串一樣：小模型偶爾在字串裡一直重複同一段，
 # 沒有上限時一次寫兩萬多個 token、寫到 JSON 解析不了）。Ollama（llama.cpp 的文法）只照 2000 字以內的 maxLength 截斷，

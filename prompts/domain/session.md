@@ -1,7 +1,8 @@
 領域 session（agent_core/domain_session.py，docs/框架討論紀錄.md）看到的字：system prompt（system 與領域清單的一行 domain_entry）、
 第一則訊息（first、上一次的經過 previous）、選了領域之後的技能清單（skills 與它的各段：skills_domain、skills_practice、skills_composites、
 composite_entry、param_*、type_*、skills_tools、skills_shared、tool_entry）、選了技能之後的參數表單（form_composite、form_tool；沒過的交回重填
-form_fix、重填還是沒過 form_failed）、每一步的結果（step_head、composite_*、output_head、result_id）、程式擋下的說明（err_*、not_my_tool）、
+form_fix、工具的 args 寫法不對 form_fix_tool 與 reject_args_*、重填還是沒過 form_failed）、每一步的結果（step_head、composite_*（程式算的彙整
+composite_totals）、output_head、result_id）、程式擋下的說明（err_*、not_my_tool）、
 回報的核對沒過（answers_fix、why_ref_unknown；其他原因用 harness/domain.md 的 why_*）、回覆不是 JSON（retry、表單的 retry_form）、
 寫到長度上限被截斷（cut）、對話太長時清掉的舊結果（cleared）、提煉時的「想知道什麼」（anchor）。
 agent_core/composite.py 也用這份：合約沒過的說明（reject_*）、要領域 session 決定的事（need_*）、骨架裡有要確認的動作（guard_in_skill）。
@@ -130,8 +131,19 @@ agent_core/composite.py 也用這份：合約沒過的說明（reject_*）、要
 {params}
 
 <!-- @form_tool -->
-【參數表單】{skill}（工具）：這一輪只填 args——照下面的寫法寫參數，不含工具名稱與腳本路徑（含空白的參數用雙引號；不用參數就寫 ""）。
+【參數表單】{skill}（工具）：這一輪只填 args——一行參數，跟在指令列上打的一樣（不是 JSON）：照下面的寫法把 <…> 換成要的值，[…] 是可以不寫的部分（要用就只寫括號裡的字）；不含工具名稱與腳本路徑（含空白的參數用雙引號；不用參數就寫 ""）。
 args 的寫法：{syntax}
+
+<!-- @form_fix_tool -->
+【系統】{skill} 的 args 沒有通過核對，沒有執行：{problem}。
+這一輪只重填 args：一行參數，跟在指令列上打的一樣（不是 JSON）；<…> 換成要的值，[…] 是可以不寫的部分（要用就只寫括號裡的字，不寫括號）。
+args 的寫法：{syntax}
+
+<!-- @reject_args_json -->
+args 寫成了 JSON
+
+<!-- @reject_args_placeholder -->
+args 照抄了寫法裡的 {marks}（沒有換成值）
 
 <!-- @form_fix -->
 【系統】{skill} 的參數沒有通過核對，沒有執行：
@@ -165,6 +177,10 @@ args 的寫法：{syntax}
 
 <!-- @composite_candidates -->
 （候選：{candidates}）
+
+<!-- @composite_totals -->
+【程式照收據算的彙整】（存檔 #{rid}：回報時 refs 可以寫 #{rid}；數量照這裡寫，不要自己加）
+{text}
 
 <!-- @output_head -->
 — {title}：{tool} {args} → {state}{rid}

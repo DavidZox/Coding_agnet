@@ -14,6 +14,9 @@
    再要就熔斷；加的節點全都跑過＝不收斂，不再重排。
 6. **結果**：狀態（done 跑完、stopped 有節點沒成功、need 要領域 session 決定、circuit_break、failed）、最後用的技能與參數、自己補的、
    回退與換技能的經過，與每一個節點跑過的實例（工具、參數、狀態、#編號）。原文由領域 session 照 #編號讀（太長的提煉）。
+7. **彙整**（_totals，建議 2）：骨架裡寫了 report 的節點，照收據算的數量——AST 分的定義與每一種用到（每個檔案幾處、總共幾處）、搜尋每個
+   檔案的筆數與總數、名稱符合的檔案有幾個（不含的子目錄從收據扣掉）。程式算的事實，不是判斷；領域 session 把它存成 #編號（回報時可以當出處），
+   總數不用模型自己加（第 3 步的 cnt_hw_params：每個檔案的數量都對、總數沒有人加）。每一處的原文在各節點的結果，這裡不重列。
 """
 import collections
 import json
@@ -22,7 +25,7 @@ import re
 import time
 
 from . import edg, prompt_files, skill_spec
-from .config import EDG_JOBS_DIRNAME, MID_REPLAN_MAX
+from .config import COMPOSITE_TOTALS_LINES, EDG_JOBS_DIRNAME, MID_REPLAN_MAX
 
 TYPES = ("name", "text", "path", "glob", "names", "words")
 KINDS = ("位置", "數量", "內容")       # 複合技能規格的 answers：它答得了問題要的哪幾種（載入時核對寫法）
@@ -38,6 +41,7 @@ _SPLIT = re.compile(r"[、,，;；\s]+")
 _WORD_SPLIT = re.compile(r"[、,，;；\n]+")      # 搜尋的字用「、」分開（英文的詞組裡的空白不分）
 _ENTRY = re.compile(r"^- \[([A-Za-z0-9_]+)\]\(([^)]+)\)")
 _QUOTES = "\"'`「」『』“”‘’"
+_REF_GROUPS = (("import", "import", "處"), ("assign", "指定", "處"), ("ref", "其他用到", "處"))   # AST 分的定義與呼叫以外的用到（code_ast_reader --refs）
 
 
 def _i(key, /, **fields):
@@ -562,6 +566,7 @@ class Runner:
         """結果：狀態、說明、要領域 session 決定的事，與每一版的圖跑過的節點實例（同一份結果只列一次）。"""
         st.update(status=status, note=note, need=need)
         st["outputs"] = self._outputs(st)
+        st["totals"] = self._totals(st)
         self.note(f"🧱 {st['skill']}：{STATUS_TEXT[status]}" + (f"（{note[:100]}）" if note else ""))
         return st
 
@@ -582,6 +587,126 @@ class Runner:
                     out.append({"node": nid, "tool": n.get("tool"), "args": inst.get("args") or [], "state": inst.get("state"),
                                 "reason": inst.get("reason", ""), "result_id": a.get("result_id"), "head": a.get("head", ""),
                                 "why": n.get("why", ""), "report": n.get("report", "")})
+        return out
+
+    # ---------------------------------------------------------------- 彙整（建議 2）
+    def _totals(self, st):
+        """骨架裡寫了 report 的節點照收據算的數量（模組說明的 7）→ 行（第一行是 [PASS] 開頭的標題）；沒有可以彙整的節點是 []。"""
+        render = {"code_ast_reader": self._totals_refs, "search_text": self._totals_hits, "find_file": self._totals_files}
+        out = []
+        ex = self._executor()
+        for jid in st["edg_jobs"]:
+            ej = ex.store.load(jid) or {}
+            nodes = {n["id"]: n for g in st["graphs"] if g.get("edg_job") == jid for n in g["graph"]["nodes"]}
+            for nid in ej.get("order") or []:
+                n = nodes.get(nid) or {}
+                insts = self._instances(ej, nid)
+                if not n.get("report") or n.get("tool") not in render or not insts:
+                    continue
+                ids = [a["result_id"] for _, a, _ in insts if a.get("result_id")]
+                out += ["", f"## {n['report']}（{n['tool']}）"] + render[n["tool"]](st, ej, n, insts, ids)
+                if ids:
+                    out.append("- 出處：" + "、".join(f"#{i}" for i in ids))
+        return [f"[PASS] {st['skill']} 的彙整：照收據算的數量（每一處的原文在各節點的結果）"] + out if out else []
+
+    def _instances(self, ej, nid):
+        """節點每個實例：(實例, 最後一次嘗試, 收據或 None)。"""
+        out = []
+        for inst in ((ej.get("nodes") or {}).get(nid) or {}).get("instances", []):
+            a = (inst.get("attempts") or [{}])[-1]
+            out.append((inst, a, self._receipt(ej, a)))
+        return out
+
+    @staticmethod
+    def _cap(rows, ids):
+        if len(rows) <= COMPOSITE_TOTALS_LINES:
+            return rows
+        more = len(rows) - COMPOSITE_TOTALS_LINES
+        return rows[:COMPOSITE_TOTALS_LINES] + [f"    - 還有 {more} 行沒有列（見 {'、'.join(f'#{i}' for i in ids) or '收據'}）"]
+
+    def _totals_refs(self, st, ej, node, insts, ids):
+        """code_ast_reader --refs（一個檔案一個實例）：定義在哪；呼叫與其他每一種用到，每個檔案幾處、總共幾處；只在註解或字串裡提到的檔案；
+        AST 沒跑成的檔案（附搜尋命中的行）；帶入的檔案超過上限、沒有看的。"""
+        items, names, failed, mentioned = [], [], [], []
+        for inst, _, r in insts:
+            path = self._rel(st, inst["args"][0]) if inst.get("args") else "—"
+            if inst.get("state") == "done" and r and r.get("status") in ("pass", "empty"):
+                items += r.get("items") or []
+                if r.get("refs") and r["refs"] not in names:
+                    names.append(r["refs"])
+                if r["status"] == "empty":
+                    mentioned.append(path)
+            else:
+                failed.append((path, inst.get("reason", "")))
+        defs = [i for i in items if i["kind"] in ("def", "class")]
+        out = [f"- 名稱：{'、'.join(names) or '—'}（AST 分的：註解與字串裡提到的不算，import 不算呼叫）",
+               f"- 定義（{len(defs)}）：" + ("" if defs else "沒有")]
+        out += [f"    - {self._rel(st, d['path'])}:{d['line']}　{d['kind']} {d.get('qualname') or d['name']}" for d in defs]
+        kinds = 0
+        for kind, label, unit in (("call", "呼叫", "次"),) + _REF_GROUPS:
+            group = [i for i in items if i["kind"] == kind]
+            if not group and kind != "call":
+                continue
+            kinds += bool(group)
+            per = collections.Counter(self._rel(st, i["path"]) for i in group)
+            out.append(f"- {label}：總共 {len(group)} {unit}（{len(per)} 個檔案）" + ("：" if group else ""))
+            out += self._cap([f"    - {p}：{c} {unit}" for p, c in sorted(per.items())], ids)
+        if kinds > 1:
+            uses = [i for i in items if i["kind"] not in ("def", "class")]
+            out.append(f"- 定義以外的每一種加起來：總共 {len(uses)} 處（{len({i['path'] for i in uses})} 個檔案）")
+        if mentioned:
+            out.append(f"- 只在註解或字串裡提到、程式裡沒有用到的檔案（{len(mentioned)}）：" + "、".join(mentioned))
+        if failed:
+            src = next((a["from"] for a in node.get("args", []) if isinstance(a, dict) and a.get("from")), None)
+            hits = collections.defaultdict(list)
+            for _, _, r in self._instances(ej, src) if src else []:
+                for it in (r or {}).get("items") or []:
+                    if it.get("line"):
+                        hits[self._rel(st, it["path"])].append(str(it["line"]))
+            out.append(f"- AST 沒有分類的檔案（{len(failed)}）：")
+            out += [f"    - {p}：{why or '沒有跑成'}" + (f"；搜尋命中的行：{'、'.join(hits[p][:30])}" if hits.get(p) else "") for p, why in failed]
+        each = ((ej.get("nodes") or {}).get(node["id"]) or {}).get("each") or {}
+        if each.get("instances", 0) > each.get("ran", 0):
+            out.append(f"- 還有 {each['instances'] - each['ran']} 個檔案沒有看（一次最多 {each['ran']} 個）：上面的數字不是全部")
+        return out
+
+    def _totals_hits(self, st, ej, node, insts, ids):
+        """search_text：每一次搜尋的字與範圍、總共幾筆、每個檔案幾筆（收據記全部的檔案；一行算一筆）；逾時沒搜完要寫。"""
+        out = []
+        for inst, a, r in insts:
+            if not r or r.get("status") == "error":
+                out.append(f"- 沒有搜成：{inst.get('reason') or a.get('head') or '—'}")
+                continue
+            opts = r.get("options") or {}
+            scope = "、".join(self._rel(st, p) for p in r.get("paths") or []) or "."
+            out.append(f"- 搜尋「{r.get('pattern')}」，範圍：{scope}" + (f"；只看 {'、'.join(opts['include'])}" if opts.get("include") else "")
+                       + (f"；不含 {'、'.join(opts['exclude_dir'])}" if opts.get("exclude_dir") else "") + ("；整個字" if opts.get("word") else ""))
+            per = r.get("per_file") or {}
+            if not per:
+                out.append("- 沒有任何一行提到（0 筆）")
+            else:
+                out.append(f"- 總共 {sum(per.values())} 筆（{len(per)} 個檔案；一行算一筆）：")
+                out += self._cap([f"    - {self._rel(st, p)}：{n} 筆" for p, n in sorted(per.items())], ids)
+            if r.get("timed_out"):
+                out.append("- 逾時沒有搜完：上面的數字不是全部")
+        return out
+
+    def _totals_files(self, st, ej, node, insts, ids):
+        """find_file：名稱符合的檔案有幾個、是哪些（參數 exclude 的子目錄由程式從收據扣掉，寫明扣了幾個）。"""
+        given = (st["params"].get("exclude") or {}).get("value") or []
+        skip = set(given if isinstance(given, list) else _SPLIT.split(str(given))) - {""}
+        out = []
+        for inst, _, r in insts:
+            if not r or r.get("status") == "error":
+                out.append(f"- 沒有找成：{inst.get('reason') or '—'}")
+                continue
+            files = [self._rel(st, it["path"]) for it in r.get("items") or [] if it.get("kind") == "file"]
+            kept = [f for f in files if not skip & set(f.split("/")[:-1])]
+            out.append(f"- 名稱符合「{r.get('keyword')}」的檔案：總共 {len(kept)} 個（從 {self._rel(st, r.get('root') or '.')} 開始找）"
+                       + (f"；不含 {'、'.join(sorted(skip))} 裡的 {len(files) - len(kept)} 個" if len(kept) != len(files) else "") + "：")
+            out += self._cap([f"    - {f}" for f in kept], ids)
+            if r.get("truncated") or r.get("timed_out"):
+                out.append("- 收據不完整（逾時或超過上限）：上面的數字不是全部")
         return out
 
     # ---------------------------------------------------------------- 小工具
