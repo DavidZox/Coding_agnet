@@ -5,15 +5,18 @@
    主 session 的 system prompt 多一節「交辦」（domain_block）：怎麼交辦，與每個領域一行（標題、說明的第一句），讓主模型知道哪些事要交辦。
    領域的工具（共用的以外）從主 session 的技能索引拿掉（skills_index_text），主模型直接叫的時候程式擋下來（domain_gate；有骨架的技能的
    名稱也擋）；領域 session 裡只能用它選的領域的工具與共用的工具（agent._sub_allowed）。規格有問題的領域不列、它的工具也不擋，問題放進通知。
-2. **交辦**（run_task，F1）：主模型在 action 填 {"task": {"goal", "items"}}——子目標與要回答的項目，不指定領域。程式核對（子目標不是空的、
-   項目 1～DOMAIN_ITEMS_MAX 項、跟這一回合交辦過的不一樣、同一個項目最多 DOMAIN_ITEM_TRIES 次），交給領域 session
+2. **交辦**（run_task，F1）：主模型在 action 填 {"task": {"goal", "items"}}——子目標與要回答的項目，不指定領域；每一項 {quote, item}：
+   quote 一字不改地抄使用者的原話（這段對話裡使用者說過的任何一則，_user_words），item 是要回報的事（框架討論紀錄第 6 輪的 B：關鍵資訊由
+   程式原樣帶著走，領域 session 照原話判斷項目的意思）。程式核對（子目標不是空的、項目 1～DOMAIN_ITEMS_MAX 項、每一項的原話在使用者說過的話裡、
+   跟這一回合交辦過的不一樣、同一個項目最多 DOMAIN_ITEM_TRIES 次），交給領域 session
    （agent_core/domain_session.py：選領域、一次一個技能、太長就提煉、決定回報或再選）。同一個問題再交辦時，之前幾次的經過（每一步的技能
    與結果）一起交下去。結果存成 #編號，報告交回主模型（DOMAIN_RESULT_HEAD 開頭：程式整理好的，不再提煉），後面接依報告回答的說明。
 3. **問使用者**：領域 session 停在確認關卡時，程式把問題直接給使用者（domain_pending、domain_ask_text），answer_domain 接回同一步、
    cancel_domain 取消（照做到的收尾）。
 4. **依報告回答**（F6）：這一回合有交辦的報告時，回覆的 schema 多 answers（domain_items 的每一項一筆：答到／查不到、回答、出處）。
    domain_reply_check 核對（answers.answer_problems）：每一項都有、答到的出處在報告裡（#編號要是交辦的結果或這一回合執行過的工具結果，
-   _known_ids）、回答裡的數字與名稱在出處那幾段裡、查不到的寫了原因，回覆開頭寫的出處也要在報告裡；沒過的只把那幾項交回修一次。
+   _known_ids）、回答裡的數字與名稱在出處那幾段裡、查不到的寫了原因，回覆開頭寫的出處也要在報告裡；報告裡這一項的回答寫的編號與數字，
+   回答裡也要有（answers.dropped：漏了報告的編號，B）；沒過的只把那幾項交回修一次。
    domain_render 照項目排使用者看到的回答，每一項附出處那一行的原文（從報告取），還是沒過的標「沒有通過核對」。
 """
 import os
@@ -186,22 +189,23 @@ class DomainMixin:
         """交辦（F1）：核對 → 交給領域 session → 報告存成 #編號交回（後面接依報告回答的說明）；停在確認關卡時回等回答的說明。
         核對沒過回 [ERROR]（附下一步），不執行。"""
         task = action.get("task") or {}
-        goal, items = task.get("goal") or "", task.get("items") or []
-        why = self._check_task(goal, items)
+        goal, rows = task.get("goal") or "", task.get("items") or []
+        items, quotes = [x["item"] for x in rows], [x["quote"] for x in rows]
+        why = self._check_task(goal, items, quotes)
         if why:
             return "[ERROR] " + why
         turn = self._domain_turn
-        entry = {"key": [goal, items], "goal": goal, "items": items, "n": len(turn["tasks"]) + 1, "job": None, "status": None,
-                 "steps": "", "note": "", "report": "", "result_id": None, "previous": self._previous()}
+        entry = {"key": [goal, items], "goal": goal, "items": items, "quotes": quotes, "n": len(turn["tasks"]) + 1, "job": None,
+                 "status": None, "steps": "", "note": "", "report": "", "result_id": None, "answered": [], "previous": self._previous()}
         turn["tasks"].append(entry)
         before = (self.current_cwd, self.container_cwd, self.target_container)
-        job = domain_session.DomainSession(self, self.domain_registry()).start(self.current_task or goal, goal, items,
+        job = domain_session.DomainSession(self, self.domain_registry()).start(self.current_task or goal, goal, items, quotes=quotes,
                                                                                previous=entry["previous"], attempt=entry["n"])
         return self._task_finish(entry, job, before)
 
-    def _check_task(self, goal, items):
-        """交辦的核對：有領域、子目標不是空的、項目 1～DOMAIN_ITEMS_MAX 項、跟這一回合交辦過的不一樣（一樣的再交一次結果也一樣）、
-        同一個項目最多 DOMAIN_ITEM_TRIES 次。過了回 None，沒過回說明（不含 [ERROR]）。"""
+    def _check_task(self, goal, items, quotes):
+        """交辦的核對：有領域、子目標不是空的、項目 1～DOMAIN_ITEMS_MAX 項、每一項的原話一字不改地在使用者說過的話裡（_user_words）、
+        跟這一回合交辦過的不一樣（一樣的再交一次結果也一樣）、同一個項目最多 DOMAIN_ITEM_TRIES 次。過了回 None，沒過回說明（不含 [ERROR]）。"""
         turn = self._domain_turn
         if not self.domain_registry()["domains"]:
             return _d("err_no_domain")
@@ -209,6 +213,10 @@ class DomainMixin:
             return _d("err_goal")
         if not 1 <= len(items) <= DOMAIN_ITEMS_MAX:
             return _d("err_items", count=len(items), max=DOMAIN_ITEMS_MAX)
+        said = self._user_words()
+        for k, (it, q) in enumerate(zip(items, quotes), 1):
+            if not composite._unquote(q) or composite._unquote(q) not in said:
+                return _d("err_quote", k=k, item=it, quote=q or "（空的）")
         same = next((x for x in turn["tasks"] if x["key"] == [goal, items]), None)
         if same:
             return _d("err_same", n=same["n"], status=domain_session.STATUS_TEXT.get(same["status"], same["status"] or "—"))
@@ -217,6 +225,11 @@ class DomainMixin:
             if len(tries) >= DOMAIN_ITEM_TRIES:
                 return _d("err_item_tries", item=it, n=len(tries), max=DOMAIN_ITEM_TRIES, history=self._task_history(tries))
         return None
+
+    def _user_words(self):
+        """交辦的原話要在這裡：這段對話裡使用者說過的每一則（set_current_task 記的 _user_said，加上這一則），空白正規化之後接在一起。"""
+        said = [x["text"] for x in getattr(self, "_user_said", None) or []] + [self.current_task or ""]
+        return "\n".join(composite._norm(x) for x in said)
 
     def _previous(self):
         """這一回合之前的交辦 → 領域 session 的「上一次的經過」（每一次的步驟、結果、原因；程式從紀錄取）。"""
@@ -229,7 +242,8 @@ class DomainMixin:
 
     def _task_finish(self, entry, job, before, prefix=""):
         """領域 session 的 job → 交回主模型的文字（存成 #編號）；停在確認關卡時設 domain_pending、回等回答的說明。"""
-        entry.update(job=job["id"], status=job["status"], steps=domain_session.steps_text(job), note=(job.get("result") or {}).get("note") or "")
+        entry.update(job=job["id"], status=job["status"], steps=domain_session.steps_text(job), note=(job.get("result") or {}).get("note") or "",
+                     answered=domain_session.answered_items(job))
         if job["status"] == "need_user":
             need = job["need_user"]
             self.domain_pending = {"job": job["id"], "kind": need["kind"], "question": need.get("question") or "", "entry": entry, "before": before}
@@ -246,8 +260,14 @@ class DomainMixin:
         self._record_trajectory("domain_task", [entry["goal"]] + entry["items"], DOMAIN_RESULT_HEAD + text, *before)
         entry["result_id"] = self.last_result_id
         items = self.domain_items()
-        hint = _d("answer_hint", items="\n".join(f"{k}. {x}" for k, x in enumerate(items, 1))) if items else ""
+        hint = _d("answer_hint", items="\n".join(self._hint_row(k, x) for k, x in enumerate(items, 1))) if items else ""
         return DOMAIN_RESULT_HEAD + text + ("\n\n" + hint if hint else "")
+
+    def _hint_row(self, k, item):
+        """要回答的項目的一行：附使用者的原話（第一次交辦這一項時抄的）。"""
+        quote = next((q for x in self._domain_turn["tasks"] for it, q in zip(x["items"], x.get("quotes") or [])
+                      if q and answers.norm(it) == answers.norm(item)), "")
+        return _d("hint_item", k=k, item=item, quote=quote) if quote else f"{k}. {item}"
 
     # ---------------------------------------------------------------- 問使用者（程式轉、程式接回）
     def domain_ask_text(self):
@@ -350,10 +370,19 @@ class DomainMixin:
         return rows, texts
 
     def _answer_problems(self, parsed):
-        """answers 的核對 → {項目編號: [沒過的原因]}（0＝回覆的開頭）；全部過了是空的。"""
+        """answers 的核對 → {項目編號: [沒過的原因]}（0＝回覆的開頭）；全部過了是空的。答到的照 answers.answer_problems；另外報告裡這一項的
+        回答（領域 session 寫的、過了它的核對）寫的編號與數字，回答裡要有（answers.dropped；同一個項目交辦好幾次的看最後一次）。"""
         items, turn = self.domain_items(), self._domain_turn
-        allowed = "\n".join([self.current_task or ""] + items + [x["goal"] for x in turn["tasks"]])
+        allowed = "\n".join([self.current_task or ""] + items + [x["goal"] for x in turn["tasks"]]
+                            + [q for x in turn["tasks"] for q in x.get("quotes") or []])
         out = answers.answer_problems(items, parsed.get("answers"), self._cited, allowed, "\n".join(turn["reports"]))
+        reported = {answers.norm(it): text for x in turn["tasks"] for it, text in x.get("answered") or []}
+        given = {a["item"]: a for a in parsed.get("answers") or [] if 1 <= a["item"] <= len(items)}
+        for k, it in enumerate(items, 1):
+            a, text = given.get(k), reported.get(answers.norm(it))
+            lost = answers.dropped(text, " ".join([a["text"]] + list(a["refs"])), allowed) if a and text else []
+            if lost:
+                out.setdefault(k, []).append(_d("why_dropped", tokens="、".join(lost)))
         lead = [r for r in dict.fromkeys(answers.REF.findall(parsed.get("reply") or "")) if self._cited(r)[0] != "line"]
         if lead:
             out[0] = [_d("why_lead_refs", refs="、".join(lead))]

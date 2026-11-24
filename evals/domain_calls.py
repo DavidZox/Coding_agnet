@@ -1,7 +1,7 @@
 """評測的 worker（evals/chat/worker.py、evals/ops/worker.py）共用：主模型「交辦」的那一步怎麼收尾、怎麼記。
 
 - 確認關卡（領域 session 碰到會改狀態的工具）照情境的 guard 回答（approve 同意、deny 不同意），跟主對話的確認關卡一樣算進 guards。
-- 記成 tool_calls：交辦一筆（skill＝domain_session，附子目標、項目、選過的領域、領域 session 的狀態、工作編號、交辦的結果 #編號），
+- 記成 tool_calls：交辦一筆（skill＝domain_session，附子目標、項目與每一項的原話、選過的領域、領域 session 的狀態、工作編號、交辦的結果 #編號），
   領域 session 的每一步各一筆（via＝domain_session；工具附參數，有骨架的技能附參數的值），有骨架的技能再把骨架裡執行的工具各記一筆
   （via＝那個技能）——情境的「用了哪個工具」照樣看得到。交辦沒過核對（[ERROR]）時只有交辦那一筆、狀態 ERROR。
 - 依報告回答：這一步的 answers 與核對的結果記進那一步（record_answers）；最後的回答換成程式照項目排好的那一份（finalize：
@@ -31,10 +31,11 @@ def calls(agent, parsed, result):
     """交辦的這一步 → tool_calls 的紀錄。"""
     task = parsed["action"]["task"]
     status = "ERROR" if result.lstrip().startswith(("[ERROR]", "[DENIED]")) else "PASS"
-    entry = {"script": None, "skill": "domain_session", "domain": "domain_session", "goal": task.get("goal", ""),
-             "items": task.get("items") or [], "args": [task.get("goal", "")] + list(task.get("items") or []), "status": status, "result_id": None}
+    items = [x["item"] for x in task.get("items") or []]
+    entry = {"script": None, "skill": "domain_session", "domain": "domain_session", "goal": task.get("goal", ""), "items": items,
+             "quotes": [x["quote"] for x in task.get("items") or []], "args": [task.get("goal", "")] + items, "status": status, "result_id": None}
     tasks = agent._domain_turn["tasks"]
-    d = tasks[-1] if status == "PASS" and tasks and tasks[-1]["key"] == [task.get("goal", ""), task.get("items") or []] else None
+    d = tasks[-1] if status == "PASS" and tasks and tasks[-1]["key"] == [task.get("goal", ""), items] else None
     job = JobStore(os.path.join(agent.script_dir, "logs", DOMAIN_JOBS_DIRNAME)).load(d["job"]) if d and d.get("job") else None
     if not job:
         return [entry]

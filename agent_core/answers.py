@@ -1,5 +1,6 @@
 """依報告回答的核對（agent_core/orchestrator.py）與領域 session 回報的核對（agent_core/domain_session.py）共用的部分：
-出處的寫法（檔案:行號、#編號）、照收據從檔案讀那幾行、answers 每一項的核對（answer_problems）、相近的寫法、顯示用的出處。
+出處的寫法（檔案:行號、#編號）、照收據從檔案讀那幾行、answers 每一項的核對（answer_problems）、報告的編號與數字回答裡有沒有漏（dropped，
+主對話用）、相近的寫法、顯示用的出處。
 兩邊只差「出處要在哪裡」：主對話的出處在這一回合的報告與自己執行過的工具結果，領域 session 的出處在它自己執行過的工具結果（cited 由呼叫的一方給）。"""
 import difflib
 import json
@@ -7,7 +8,7 @@ import os
 import re
 
 from . import prompt_files
-from .extract import missing_tokens
+from .extract import _NUM, _REF_TEXT, _drop_ordinals, _has_name, _num_values, missing_tokens
 
 REF = re.compile(r"[\w./-]*\w\.[A-Za-z][A-Za-z0-9]*:\d+")      # 出處：檔案:行號（副檔名是字母開頭，時間、IP 不算）
 CITE = re.compile(r"(" + REF.pattern + r")(?:\s*[-~～]\s*(\d+))?")    # 出處：檔案:行號，可以是一段（a.py:31-35）
@@ -15,6 +16,8 @@ ID = re.compile(r"#(\d+)")
 # 回答的內文寫的 檔案:行號（待辦 4l ①）：只認英數字的路徑（CITE 的 \w 連中文也算，「定義在pkg/a.py:3」會整串當成路徑）
 _TEXT_CITE = re.compile(r"(?<![A-Za-z0-9_./-])([A-Za-z0-9_./-]*[A-Za-z0-9_]\.[A-Za-z][A-Za-z0-9]*:\d+)(?:\s*[-~～]\s*(\d+))?")
 _WORD = re.compile(r"[A-Za-z_][\w./-]*[\w]")
+# 編號（dropped）：英數字用 - 或 _ 接起來的一段，最後一段有數字（XX-F23-B04、WP_0815、amr_07）；路徑與檔名裡的不算（前面接 / .、後面接 .副檔名）
+_KEPT_ID = re.compile(r"(?<![A-Za-z0-9_./-])[A-Za-z0-9]+(?:[-_][A-Za-z0-9]+)+(?![A-Za-z0-9_-]|\.[A-Za-z0-9])")
 
 
 def why(key, /, **fields):
@@ -130,6 +133,26 @@ def _located(text, cited, evidence, lines):
         lines.extend(nums)
         return " "
     return _TEXT_CITE.sub(one, str(text or ""))
+
+
+def dropped(reported, answer, allowed=""):
+    """報告裡這一項的回答寫了、回答裡沒有的編號與數字（清單；框架討論紀錄第 6 輪的 B：主 session 照報告重寫回答時不能漏掉關鍵資訊）。
+    編號＝_KEPT_ID 裡有字母的（只有數字的日期不算編號，裡面的數字照數字核對）；數字照 missing_tokens 的認法——10 以下的整數、行號、
+    檔案:行號、清單的序號不算，寫法不同但數值一樣的算有（15.5＝15.50）。名稱不核對（寧可漏掉也不誤擋）；allowed（問題、項目、原話）裡
+    本來就有的不核對。"""
+    text = _drop_ordinals(_REF_TEXT.sub(" ", _TEXT_CITE.sub(" ", str(reported or ""))))
+    said, ok = str(answer or "").lower(), str(allowed or "").lower()
+    ids = [m.group() for m in _KEPT_ID.finditer(text) if re.search(r"[A-Za-z]", m.group()) and re.search(r"\d", re.split(r"[-_]", m.group())[-1])]
+    lost = [x for x in dict.fromkeys(ids) if not _has_name(x.lower(), said) and not _has_name(x.lower(), ok)]
+    rest = text
+    for x in ids:                                   # 編號裡的數字不另外當成數字
+        rest = rest.replace(x, " ")
+    have, given = _num_values(answer), _num_values(allowed)
+    for m in _NUM.finditer(rest):
+        v = float(m.group())
+        if not ((v.is_integer() and abs(v) < 10) or v in have or v in given):
+            lost.append(m.group())
+    return list(dict.fromkeys(lost))
 
 
 def answer_problems(items, answers, cited, allowed, source, unknown=None):

@@ -19,7 +19,8 @@ def _text(n):
 # 給人看的文字與給系統執行的指令分開存放，不再用文字比對從回覆裡找指令。以 Ollama 的 format= schema 強制
 # 結構（與摘要同一機制），小模型不需要自律「解釋時不要輸出指令」。
 # action 為 null、{"command": 技能名稱｜規格標明的腳本路徑, "args": 參數字串}，或（有領域時）「交辦」{"task": {"goal": 子目標,
-# "items": [要回答的項目]}}（agent_core/orchestrator.py：交給領域 session，不指定領域）。
+# "items": [{"quote": 使用者的原話, "item": 要回答的項目}]}}（agent_core/orchestrator.py：交給領域 session，不指定領域；
+# quote 一字不改地抄使用者的原話、程式核對，領域 session 照原話判斷項目的意思——框架討論紀錄第 6 輪的 B）。
 # args 是字串而不是物件，因為所有技能腳本都吃位置參數、規格文件的寫法也是位置參數，這樣既有的 tools/*.md 一份都不用改：
 # 規格裡的 `EXECUTE: <路徑> <參數>` 範例就對應 command=<路徑>、args=<參數>。
 # items：這一回合交辦、有報告的項目數。有的時候多一個 answers：每一項一筆 {item: 編號, status: answered／not_found,
@@ -36,6 +37,13 @@ def _answer(items):
     return {"type": "object", "properties": p, "required": list(p)}
 
 
+def _task_item():
+    """交辦的一項：quote＝使用者的原話裡、這一項在問的那一段（一字不改，orchestrator._check_task 核對），item＝要回報的事（可以把「它」
+    這種指代補上名稱）。先寫 quote 再寫 item：欄位的順序就是生成的順序，先抄原話再寫自己的話（同參數表單的 quote、value）。"""
+    p = {"quote": _text(DOMAIN_GOAL_CHARS), "item": _text(DOMAIN_ITEM_CHARS)}
+    return {"type": "object", "properties": p, "required": list(p)}
+
+
 def agent_reply_schema(tasks=False, items=0):
     actions = [
         {"type": "null"},
@@ -44,7 +52,7 @@ def agent_reply_schema(tasks=False, items=0):
     if tasks:
         task = {"type": "object", "properties": {
             "goal": _text(DOMAIN_GOAL_CHARS),
-            "items": {"type": "array", "items": _text(DOMAIN_ITEM_CHARS), "minItems": 1, "maxItems": DOMAIN_ITEMS_MAX}},
+            "items": {"type": "array", "items": _task_item(), "minItems": 1, "maxItems": DOMAIN_ITEMS_MAX}},
             "required": ["goal", "items"]}
         actions.append({"type": "object", "properties": {"task": task}, "required": ["task"]})
     props = {"thought": _text(REPLY_THOUGHT_CHARS), "reply": {"type": "string"}}

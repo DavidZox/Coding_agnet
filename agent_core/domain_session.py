@@ -1,4 +1,5 @@
 """領域 session（2026-11-23 框架，docs/框架討論紀錄.md）：主 session 交辦的任務（子目標、要回答的項目）在這裡做完，經過與結果交回主 session。
+每一項附使用者的原話（主 session 抄、程式核對過；框架討論紀錄第 6 輪的 B）：第一則訊息、提煉的錨點與報告都帶著，項目的意思以原話為準。
 
 一個迴圈，每一輪模型回一個 JSON，state 是三種之一，由程式核對、照它接著做（F4）：
 1. **domains**（選領域，可以多個）：要在 DOMAIN.md 的清單裡。程式載入這些領域的技能清單交給它——領域的〈做法〉、有骨架的技能（說明、
@@ -118,6 +119,13 @@ def steps_text(job):
     return "；".join(f"{st['skill']}（{st['how']}）→ {st['status']}" for st in job.get("steps") or []) or "沒有用技能"
 
 
+def answered_items(job):
+    """回報裡答到、而且過了核對的每一項：[(項目, 回答)]（主 session 依報告回答時核對有沒有漏了報告的編號與數字，orchestrator._answer_problems）。"""
+    bad, items = set(job.get("problems") or {}), job.get("items") or []
+    return [(items[a["item"] - 1], a["text"]) for a in job.get("answers") or []
+            if a.get("status") == "answered" and 1 <= a.get("item", 0) <= len(items) and str(a["item"]) not in bad]
+
+
 class DomainSession:
     """start(問題, 子目標, 項目) → job（也存成 job.json）；停在確認關卡時 resume(編號, approve=…)，使用者取消 cancel(編號)。
     registry：orchestrator.load_registry 的結果。fixer：有骨架的技能交給低階的第 1 級修正（None＝預設的模型）。"""
@@ -129,17 +137,19 @@ class DomainSession:
         self.store = JobStore(os.path.join(agent.script_dir, "logs", DOMAIN_JOBS_DIRNAME))
 
     # ---------------------------------------------------------------- 進入點
-    def start(self, question, goal, items, previous=None, attempt=1):
-        """previous：同一個問題之前交辦的經過（[{"n", "job", "status_text", "note", "steps"}]，orchestrator 從這一回合的紀錄取）。"""
+    def start(self, question, goal, items, quotes=None, previous=None, attempt=1):
+        """quotes：每一項的使用者原話（跟 items 一樣長；orchestrator 核對過）。previous：同一個問題之前交辦的經過
+        （[{"n", "job", "status_text", "note", "steps"}]，orchestrator 從這一回合的紀錄取）。"""
         jid = self.store.new_id()
         self.store.prune(DOMAIN_JOBS_KEEP)
         job = {"id": jid, "kind": "domain", "status": "running", "created": _now(), "updated": _now(), "cwd": self.agent.current_cwd,
-               "question": question, "goal": (goal or question).strip(), "items": list(items or []), "attempt": attempt,
+               "question": question, "goal": (goal or question).strip(), "items": list(items or []),
+               "quotes": list(quotes or [""] * len(items or [])), "attempt": attempt,
                "previous": list(previous or []), "domains": [], "picks": [], "messages": [], "steps": [], "turns": 0, "form": None, "forms": 0,
                "blocked": [], "sources": "", "need_user": None, "asked": [], "nudged": False, "answers": [], "problems": {}, "result": None}
         job["system"] = self._system()
         job["messages"].append({"role": "user", "content": self._first(job)})
-        job["sources"] = "\n".join([job["question"], job["goal"]] + job["items"])
+        job["sources"] = "\n".join([job["question"], job["goal"]] + job["items"] + [q for q in job["quotes"] if q])
         self.store.save(job)
         self._note(jid, f"🧭 領域 session 開始：{job['goal'][:80]}")
         return self._loop(job)
@@ -512,7 +522,7 @@ class DomainSession:
 
     def _problems(self, job, given):
         archives = self._archives(job)
-        allowed = "\n".join([job["question"], job["goal"]] + job["items"])
+        allowed = "\n".join([job["question"], job["goal"]] + job["items"] + job["quotes"])
         source = "\n".join(answers.read(p) for _, p in archives)
         return answers.answer_problems(job["items"], given, lambda ref: self._cited(job, ref, archives), allowed, source,
                                        unknown=lambda ref: _s("why_ref_unknown", ref=ref))
@@ -531,7 +541,7 @@ class DomainSession:
         lines = [f"# 領域 session 的結果：{STATUS_TEXT[job['status']]}", f"- 問題：{job['question']}"]
         if job["goal"] != job["question"]:
             lines.append(f"- 子目標：{job['goal']}")
-        lines += [f"- 要回答的項目 {k}：{x}" for k, x in enumerate(job["items"], 1)]
+        lines += [f"- 要回答的項目 {k}：{x}" + (f"（使用者的原話：「{q}」）" if q else "") for k, (x, q) in enumerate(zip(job["items"], job["quotes"]), 1)]
         if job["previous"]:
             lines.append(f"- 第 {job['attempt']} 次交辦（之前：" + "；".join(f"第 {p.get('n')} 次 {p.get('status_text') or '—'}" for p in job["previous"]) + "）")
         lines.append(f"- 領域：{'、'.join(job['domains']) or '（沒有選）'}；用了 {len(job['steps'])} 個技能")
@@ -625,7 +635,7 @@ class DomainSession:
                   memory=self.agent.load_long_term_memory())
 
     def _first(self, job):
-        items = "\n".join(f"{k}. {x}" for k, x in enumerate(job["items"], 1))
+        items = "\n".join(_s("item_quote", k=k, item=x, quote=q) if q else f"{k}. {x}" for k, (x, q) in enumerate(zip(job["items"], job["quotes"]), 1))
         prev = ""
         if job["previous"]:
             rows = [_s("previous_attempt", n=p.get("n"), steps=p.get("steps") or "—", status=p.get("status_text") or "—",
@@ -699,8 +709,9 @@ class DomainSession:
 
     @staticmethod
     def _anchor(job):
-        """提煉長輸出時的「想知道什麼」：這一件事的子目標與項目。"""
-        return _s("anchor", goal=job["goal"], items="；".join(job["items"]))
+        """提煉長輸出時的「想知道什麼」：這一件事的子目標與項目（附使用者的原話）。"""
+        items = [_s("anchor_item", item=x, quote=q) if q else x for x, q in zip(job["items"], job["quotes"])]
+        return _s("anchor", goal=job["goal"], items="；".join(items))
 
     def _note(self, jid, text):
         """進度：印出、記進 events.jsonl、交給畫面（progress_callback）。"""

@@ -1,11 +1,15 @@
 主 session 這一側的交辦（agent_core/orchestrator.py）：主模型「交辦」之後，程式交回主模型的文字（交辦的報告 report、停在確認關卡 ask_waiting、
 使用者回答之後接著做完 answered、取消 cancelled、依報告回答的說明 answer_hint），擋領域的工具與有骨架的技能（tool_blocked、skill_blocked）、
-交辦沒過核對的說明（err_*；[ERROR] 後面的部分）、依報告回答時 answers 沒有通過核對的說明（answers_fix、answers_problem、answers_lead、why_*；
+交辦沒過核對的說明（err_*，原話不在使用者說過的話裡 err_quote；[ERROR] 後面的部分）、要回答的項目附原話（hint_item）、
+依報告回答時 answers 沒有通過核對的說明（answers_fix、answers_problem、answers_lead、why_*，漏了報告的編號與數字 why_dropped；
 why_* 也用在使用者看到的「沒有通過核對」與領域 session 回報的核對，agent_core/answers.py）。開頭的 [PASS] 🗺️／[ERROR] 由程式加。{名稱} 是程式填的值。
 
 <!-- @report -->
 交辦的報告（{status}）：
 {report}
+
+<!-- @hint_item -->
+{k}. {item}（使用者的原話：「{quote}」）
 
 <!-- @answer_hint -->
 這一回合要回答的項目（answers 照這個編號）：
@@ -42,7 +46,10 @@ text 寫回答，not_found 寫原因（照報告寫的說明）；refs 寫報告
 交辦的 goal 是空的。下一步：goal 照使用者的原話寫這一件事要找什麼、要做什麼。
 
 <!-- @err_items -->
-交辦的 items 有 {count} 項（要 1～{max} 項）。下一步：每一項一句話，寫要回報的（問題要回答的，或要它做的事的結果）。
+交辦的 items 有 {count} 項（要 1～{max} 項）。下一步：每一項寫 quote（使用者的原話裡、這一項在問的那一段）與 item（要回報的：問題要回答的，或要它做的事的結果）。
+
+<!-- @err_quote -->
+交辦的第 {k} 項（{item}）的 quote「{quote}」不在使用者說過的話裡。下一步：quote 一字不改地抄使用者的原話裡、這一項在問的那一段（之前幾則訊息裡的也可以）；item 照舊寫要回報的事。
 
 <!-- @err_same -->
 這一回合第 {n} 次交辦的子目標與項目跟這次一模一樣（那一次：{status}），再交一次結果也一樣。下一步：照報告回答；還要查的話，只帶報告沒答到的項目、子目標寫清楚還缺什麼。
@@ -59,7 +66,7 @@ text 寫回答，not_found 寫原因（照報告寫的說明）；refs 寫報告
 【系統核對】answers 有幾項沒有通過核對：
 {problems}
 請重寫 answers（每一項都要有一筆；只有上面這幾項要改）：答到的 refs 只寫報告或這一回合自己執行過的工具結果裡有的出處（檔案:行號，或 #編號），
-text 裡的數字與名稱要是出處那幾行裡的；報告沒寫到的 status 寫 not_found，text 寫原因。
+text 裡的數字與名稱要是出處那幾行裡的，報告這一項寫的編號與數字照寫；報告沒寫到的 status 寫 not_found，text 寫原因。
 
 <!-- @answers_problem -->
 - 第 {k} 項（{item}）：{why}
@@ -90,3 +97,6 @@ text 裡的數字與名稱要是出處那幾行裡的；報告沒寫到的 statu
 
 <!-- @why_lead_refs -->
 寫了報告裡沒有的出處 {refs}
+
+<!-- @why_dropped -->
+報告裡這一項寫了「{tokens}」，回答裡沒有（照報告寫上）

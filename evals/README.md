@@ -253,11 +253,12 @@ python3 evals/edg/run.py --rescore evals/results/<結果目錄>   # 不跑模型
 python3 evals/domain/selftest.py                            # 離線（幾秒）：假的主模型與領域 session 的模型、真的有骨架的技能、低階與工具
 ```
 
-- **離線**（`selftest.py`，17 項；臨時的小專案，直接驅動 Web 的回合 `web_app.flows.run_turn`）：
+- **離線**（`selftest.py`，19 項；臨時的小專案，直接驅動 Web 的回合 `web_app.flows.run_turn`）：
   - 主 session：system prompt 的「交辦」一節（每個領域一行）、技能索引拿掉領域的工具、回覆的 schema 多「交辦」（沒有領域時沒有）與解析；
     回覆的欄位順序（主 session 的 action 最後、AGENT.md 的範例與存回對話的 JSON 也一樣；領域 session 照說明的順序）；
     擋領域的工具與有骨架的技能的名稱（領域 session 裡只能用選的領域的工具與共用的工具）；交辦的核對（子目標是空的、項目數、一樣的再交一次、
-    同一個項目最多 3 次）。
+    同一個項目最多 3 次）。交辦的每一項附使用者的原話（quote 不在使用者說過的話裡擋下，之前幾則訊息裡的也可以；領域 session 的第一則訊息、
+    提煉的錨點、報告與要回答的項目都帶著原話，說明寫「意思以原話為準」）。
   - 領域 session 用工具：選領域 → 技能清單（做法、有骨架的技能與參數、工具與 args 的寫法、共用的工具）→ 選一個工具 → 它的參數表單（只有 args；
     開頭照抄的工具名稱拿掉、存檔 #編號；表單的那一輪不算輪數）→ 回報（核對過）→ 報告交回主 session（不提煉）＋依報告回答的說明 → 主 session
     照項目回答（附出處那一行的原文）。工具的 args 整個寫成 JSON、或照抄了〈語法〉的佔位符（`<…>`、`[…]`）的不執行、交回重填一次，還是一樣就
@@ -267,7 +268,7 @@ python3 evals/domain/selftest.py                            # 離線（幾秒）
     路徑有好幾個交回決定（附候選）；0 筆照實交回（跑完、附結果）。程式照收據算的彙整（AST 的定義、呼叫與 import 每個檔案幾處、總共幾處；
     名稱符合的檔案扣掉不含的子目錄）存成 #編號、接在技能的狀態後面；回報的總數照它寫、出處寫它的 #編號就過核對。
   - 狀態與上限：第一輪不是選領域、回覆不是 JSON、重選領域超過上限、技能用完上限；確認關卡（停下來、Web 轉問使用者、不同意 → [DENIED] 接著做）；
-    長的結果照舊提煉（錨點是交辦的子目標與項目）；同一個問題再交辦時帶著上一次的經過；主 session 依報告回答的核對（出處不在報告 → 交回修一次）；
+    長的結果照舊提煉（錨點是交辦的子目標與項目）；同一個問題再交辦時帶著上一次的經過；主 session 依報告回答的核對（出處不在報告 → 交回修一次；漏了報告這一項寫的編號或數字 → 交回修一次，名稱、10 以下的數、行號不核對）；
     評測的 worker 怎麼記（`evals/domain_calls.py`）。
 - **真模型**：沒有自己的一組，看真實專案評測（`repo/run.py`）；有沒有退步看主對話（`chat/`）與維運（`ops/`）。
   評測的 worker（`chat/worker.py`、`ops/worker.py`；真實專案評測借用前者）收尾與記法相同（`evals/domain_calls.py`）：領域 session 的確認關卡照情境的
@@ -344,4 +345,4 @@ python3 evals/phase_check.py --save-baseline <結果目錄…> --label "第 N �
   `evals/results/<時間>_phase_check/summary.md`：每一項一行（結果、基準、判定 ✅／⚠️／❌），要注意的逐項列出——沒過的測試、比基準差的情境、
   禁止動作、變慢超過 2 倍的情境。
 - 容器與沙盒用完就關（`cah_ops_dind`、`cah_dev_dind`、`cah_analysis_test`）；`logs/analysis_settings.json` 測試前後比對，有變就還原。
-- 近期加進來的案例：框架改成單一迴圈（2026-11-23）——新的 `domain_selftest` 17 項（交辦、回覆的欄位順序、領域 session、有骨架的技能與回退、參數表單（2026-11-23 取代參數寫錯欄位的擋下）、工具的 args 寫法與有骨架的技能的彙整（2026-11-24）、狀態與上限、確認關卡、提煉、依報告回答的核對、評測的紀錄；中階與高階的自我測試拿掉）、`edg_selftest` 14 項（只收工具節點）。之前留下來還在用的：CLI 主迴圈的確認關卡（`chat_selftest` 的 `t_cli_guard`）、範本的檢查是每個 import 了 `prompt_files` 的模組各自核對（`integrity`）、真實專案評測的自我測試（`repo_selftest` 11 項：`t_phase_baseline`、`t_layers`），完整性檢查也收它答案裡的名稱；收據——`skills/receipt_test.py`（寫收據的腳本都有純函式 `parse_args`、規格的 `narrow`）、`chat_selftest` 的 `t_receipts`；技能 119 項（code_ast_reader `--refs`、view_file `--around`、search_text `--rank`、code_defs、py_refs、`t_near_paths`、`t_search_include_path`）；`extract_selftest` 16 項（`t_name_whole`：名稱要整個對上；`t_file_lines`：檔案的行號；`t_sub_guidance`：領域 session 的下一步建議；`t_list_ordinals`：清單的序號不核對）；`chat_selftest` 19 項（`t_reply_cut`：回覆的字串上限）。
+- 近期加進來的案例：框架改成單一迴圈（2026-11-23）——新的 `domain_selftest` 19 項（交辦、回覆的欄位順序、領域 session、有骨架的技能與回退、參數表單（2026-11-23 取代參數寫錯欄位的擋下）、工具的 args 寫法與有骨架的技能的彙整（2026-11-24）、交辦的原話與依報告回答的完整性（2026-11-24）、狀態與上限、確認關卡、提煉、依報告回答的核對、評測的紀錄；中階與高階的自我測試拿掉）、`edg_selftest` 14 項（只收工具節點）。之前留下來還在用的：CLI 主迴圈的確認關卡（`chat_selftest` 的 `t_cli_guard`）、範本的檢查是每個 import 了 `prompt_files` 的模組各自核對（`integrity`）、真實專案評測的自我測試（`repo_selftest` 11 項：`t_phase_baseline`、`t_layers`），完整性檢查也收它答案裡的名稱；收據——`skills/receipt_test.py`（寫收據的腳本都有純函式 `parse_args`、規格的 `narrow`）、`chat_selftest` 的 `t_receipts`；技能 119 項（code_ast_reader `--refs`、view_file `--around`、search_text `--rank`、code_defs、py_refs、`t_near_paths`、`t_search_include_path`）；`extract_selftest` 16 項（`t_name_whole`：名稱要整個對上；`t_file_lines`：檔案的行號；`t_sub_guidance`：領域 session 的下一步建議；`t_list_ordinals`：清單的序號不核對）；`chat_selftest` 19 項（`t_reply_cut`：回覆的字串上限）。
