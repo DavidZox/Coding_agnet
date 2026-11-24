@@ -37,7 +37,8 @@ package "prompts/（改字不用改程式；evals/integrity 檢查範本跟程�
       domain：交辦的結果（報告 report、這一回合要回答的項目
         answer_hint 與附原話的 hint_item、停在確認關卡 ask_waiting、回答之後做完
         answered、取消 cancelled）、擋領域的工具與有骨架的技能
-        （tool_blocked、skill_blocked）、交辦沒過核對的說明（err_*：
+        （tool_blocked、skill_blocked）、領域的名稱當成技能叫
+        （domain_named）、交辦沒過核對的說明（err_*：
         子目標、項目數、原話不是使用者說的 err_quote、一樣的再交辦、
         同一個項目交太多次…）、answers 沒有通過核對的說明（answers_fix、
         why_*，漏了報告的編號與數字 why_dropped；
@@ -53,8 +54,8 @@ package "prompts/（改字不用改程式；evals/integrity 檢查範本跟程�
       **summary/rolling.md**：滾動摘要的規則與 user 訊息
     ]
     rectangle P_EXTRACT #FCE5CD [
-      **extract/**：worker.md（每段摘事實）、synthesizer.md（一段：
-        回答與事實）、merger.md（分段的整合：只寫回答，事實由程式列）、
+      **extract/**：worker.md（每段摘事實；放得進一段時讀全部）、
+        merger.md（整合：只寫回答，事實由程式列）、
       inputs.md（user 訊息的標籤、程式的說明、修一次，
         含回答把存檔的行號寫成檔案的行號）
       **harness/extract_anchor.md、anchor.md**：
@@ -99,8 +100,9 @@ package "skills_system/：也是模型會讀的" {
   rectangle K_DOMAIN #D5E8D4 [
     **<領域>/SKILLS.md**（repo_analysis 與凍結的四個）：
     領域的說明（含不包含什麼）、〈做法〉、有骨架的技能與工具的清單；
-    標題與說明的第一行組進主 session 的「交辦」一節；說明給領域
-    session 選領域，選了之後〈做法〉與技能清單交給它
+    標題（拿掉開頭的識別名稱）與說明的第一行組進主 session 的
+    「交辦」一節；說明給領域 session 選領域，選了之後〈做法〉與
+    技能清單交給它
     **<領域>/<技能>.md**（有骨架的技能）：說明、〈什麼時候用〉、
     參數的說明給領域 session 選技能、填參數；〈骨架〉〈回退〉給程式
     （composite.py）排圖與換做法，回退的 say 交給領域 session
@@ -132,7 +134,7 @@ package "用到它們的 session" {
     **提煉**（summarize_tool_result、result_recall）：
     每段一個 worker → 程式列出核對過的事實 → 整合寫回答；
     EXTRACT_WORKER_SCHEMA／TOOL_SUMMARY_MERGE_SCHEMA
-    （放得進一段：一次寫完，TOOL_SUMMARY_SCHEMA）
+    （放得進一段的就是一段：一個 worker 讀全部）
   ]
   rectangle S_VISION #DDEEF6 [
     **視覺 session**：extraction_schema(張數)

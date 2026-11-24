@@ -82,6 +82,6 @@ def robot_heading():
 
 
 def all_cases():
-    """fleet_40：一段就放得下（一次寫完）；fleet_80：小模型一次讀會漏、切 2 段；fleet_120：切 3 段；log_200k：切 26 段、依問題挑 8 段讀；
+    """fleet_40：一段就放得下（一個 worker 讀全部）；fleet_80：小模型一次讀會漏、切 2 段；fleet_120：切 3 段；log_200k：切 26 段、依問題挑 8 段讀；
     recall_fleet_120：追問同一份存檔裡提煉沒寫到的；robot_heading：一段就放得下，但答案（要去哪一站）不在數值變化裡，要看問題挑欄位。"""
     return [fleet_low_battery(40), fleet_low_battery(80), fleet_low_battery(120), long_log(), fleet_recall(120), robot_heading()]

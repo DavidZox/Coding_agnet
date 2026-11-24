@@ -161,7 +161,7 @@ ANALYSIS_ANSWER_NOTE = "（依這份報告回答使用者"
 # _content_for_context 退回「只給成功／失敗判定」時的固定開頭（/summarize off 或摘要 session 失敗）；UI 據此標示 AI 實際收到的是哪一種。
 TOOL_REDUCED_TAG = "[tool result - 已精簡]"
 # 🧩 工具回傳的提煉（agent_core/extract.py；summarize_tool_result 與 result_recall 共用）：程式依原文的結構切段 → 每段一個 worker
-# 摘出跟問題有關的事實（附原文的行號，程式核對名稱與數值）→ 整合成交給主對話的重點。只有一段時一次呼叫直接寫結果。
+# 摘出跟問題有關的事實（附原文的行號，程式核對名稱與數值）→ 程式列出核對過的全部、整合寫回答。放得進一段的也是一段、一個 worker。
 # 全文都會讀（以前超過 16000 字只讀頭尾，中間的內容主對話永遠看不到）；每一次的切段、各段的結果、核對、整合都存在 logs/extract_jobs/<編號>/。
 EXTRACT_CHUNK_CHARS = int(os.environ.get("AGENT_EXTRACT_CHUNK_CHARS", "8000"))   # 每段最多幾個字（≈4200 tokens；worker 的輸入）
 # 一次提煉最多讀幾段（≈ 8 × 8000 字）：更長的依跟問題的關係（問題裡的名稱、數字出現在哪幾段）挑，沒讀的行號範圍由程式寫進「未涵蓋」，
@@ -170,11 +170,11 @@ EXTRACT_MAX_CHUNKS = int(os.environ.get("AGENT_EXTRACT_MAX_CHUNKS", "8"))
 EXTRACT_PARALLEL = int(os.environ.get("AGENT_EXTRACT_PARALLEL", "2"))   # 同時送出幾個 worker（同一個模型時只是重疊網路與排隊）
 EXTRACT_WORKER_FACTS = 12           # 每個 worker 最多摘幾條事實（寫進 prompt）
 EXTRACT_EVIDENCE_CHARS = 12000      # 交給整合的「事實引用的原文」最多幾個字（超過的事實只給行號、不附原文）
-# 交給主對話的重點的長度目標（字，寫進 prompt）：原文的四分之一，介於 400～1500 字。以前固定 400 字，長的輸出（12 台車、幾十個錯誤）主對話
-# 只拿得到幾條，使用者一問細節就要回存檔；工具回傳門檻 500 tokens ≈ 950 字，摘要不比原文短時主對話直接收到原文（turn._content_for_context）。
+# 整合寫的部分（回答、未涵蓋…）的長度目標（字，寫進 merger.md）：原文的四分之一，介於 400～1500 字；事實由程式列，不算在內（以前一次寫完的
+# 提煉連事實也算在這個篇幅裡，只挑幾條，設計筆記 2.65）。工具回傳門檻 500 tokens ≈ 950 字，提煉不比原文短時直接給原文（turn._content_for_context）。
 EXTRACT_SUMMARY_MIN_CHARS, EXTRACT_SUMMARY_MAX_CHARS = 400, 1500
 EXTRACT_WORKER_PREDICT = 1500       # worker 輸出的 num_predict 上限（被截斷時 JSON 解析失敗，那一段記成提煉失敗、寫進未涵蓋）
-EXTRACT_SYNTH_PREDICT = 2500        # 整合（與一次寫完）的 num_predict 上限
+EXTRACT_SYNTH_PREDICT = 2500        # 整合的 num_predict 上限
 EXTRACT_JOBS_DIRNAME = "extract_jobs"
 EXTRACT_JOBS_KEEP = int(os.environ.get("AGENT_EXTRACT_JOBS_KEEP", "500"))   # 提煉的存檔只留最近幾次（每次幾十 KB：prompt 含那一段的原文）
 RECALL_MAX_RECORDS = 3   # result_recall 一次最多讀幾份存檔（幾份的段落交給 worker，同一個整合看全部）

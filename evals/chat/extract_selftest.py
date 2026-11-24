@@ -6,8 +6,8 @@
 - 切段：依結構切（章節、--- #序號、表格的列），每段附前情（狀態列、章節標題、表頭），大綱；
 - 核對：事實寫的數字與名稱要在引用的行（前後 2 行＋縮排的上層）裡——寫錯對象、編出來的名稱擋下，一般的詞、使用者問題裡的數字放行；
   名稱要整個對上（av2_test 不算 nav2_test 裡有；待辦 4j ①）；
-- 一次寫完（短的輸出）與分段（worker → 整合）：每條事實附行號、對不上的拿掉、回答找不到的字請整合修一次、還是不行就標明；
-  分段時交出去的事實由程式列（worker 核對過的全部，整合不挑、不寫事實）；整合失敗時回答留空、事實一樣由程式列；每一次的切段、模型呼叫、結果都存在 logs/extract_jobs/<編號>/；
+- 放得進一段（一個 worker 讀全部）與分段（每段一個 worker）→ 程式列事實 → 整合：每條事實附行號、對不上的拿掉、回答找不到的字請整合修一次、
+  還是不行就標明；交出去的事實由程式列（worker 核對過的全部，整合不挑、不寫事實；放得進一段的也一樣，設計筆記 2.65）；整合失敗時回答留空、事實一樣由程式列；每一次的切段、模型呼叫、結果都存在 logs/extract_jobs/<編號>/；
 - result_recall：好幾份一起讀、編號錯／檔案被清掉的說明、提煉失敗照實回報；
 - 行號：result_view、result_grep、提煉結果、claude_code 模式的截斷說明都是原文的行號；result_view --outline；
   檔案的行號（待辦 4k ②）：照收據把存檔的每一行對到檔案（只認收據裡的絕對路徑，result_grep 的存檔編號不算），事實附「檔案:行號」，
@@ -73,10 +73,6 @@ class FakeExtract:
                      for m in re.finditer(r"^- (tb\d+ 電量 [\d.]+%)（行 ([\d、\-]+)）", user, re.M)]
             if self.mode == "synth_partial" and "【各段提煉的事實" in user:
                 facts = facts[:1]
-            if not facts:   # 一次寫完：自己從原文找
-                for m in re.finditer(r"^\s*(\d+)→\s*battery_percent: ([\d.]+)", user, re.M):
-                    if float(m.group(2)) < 40:
-                        facts.append({"text": f"電量 {m.group(2)}%", "lines": m.group(1), "record": ""})
             answer = "電量最低的是 tb1（23.5%）" if self.mode != "bad_answer" else "電量最低的是 tb1（12.3%）"
             data = {"answer": answer, "facts": facts, "errors": [], "not_covered": "無", "suggested_questions": [],
                     "index_hint": "想找低電量的車：40 台車的狀態，含 tb1、tb2", "related_records": []}
@@ -162,21 +158,33 @@ def main():
             g, bad = ex._ground({"text": "tb6 電量 41.0%", "lines": "", "record": ""})
             assert g is not None and g["nums"], "沒寫行號：找出現那些字的行補上"
 
-        def t_direct():
-            text = "\n".join(fleet_yaml().splitlines()[:30])
+        def t_one_chunk():
+            # 放得進一段（設計筆記 2.65）：以前由一次呼叫寫完——挑事實又寫回答，篇幅只有原文的四分之一，e4b 把 8 處呼叫寫成「例如」一處、
+            # 提煉比原文短就取代了原文。現在也是一個 worker 讀全部 → 程式列出核對過的全部 → 整合只寫回答
+            text = "\n".join(fleet_yaml().splitlines()[:30])     # 前 4 台車（電量 23.5～34.0）與第 5 台的開頭
             rid = archive(text)
-            ollama.chat = fake = FakeExtract()
-            out = agent.summarize_tool_result(text, 600, step={"action": {"command": "scripts/ROS2_topic_echo_cmd.py", "args": "/fleet_states"}},
-                                              result_id=rid)
-            assert len(fake.calls) == 1 and fake.calls[0][0] == "synth", [c[0] for c in fake.calls]
-            assert out.startswith("[tool result - 任務導向摘要]") and "（行 " in out and "電量 23.5%" in out, out
+            ollama.chat = fake = FakeExtract("synth_partial")
+            notes = []
+            agent.progress_callback = notes.append
+            try:
+                out = agent.summarize_tool_result(text, 600, step={"action": {"command": "scripts/ROS2_topic_echo_cmd.py", "args": "/fleet_states"}},
+                                                  result_id=rid)
+            finally:
+                agent.progress_callback = None
+            assert [c[0] for c in fake.calls] == ["worker", "synth"], [c[0] for c in fake.calls]
+            assert "你讀全部（第 1～30 行）" in fake.calls[0][1] and "第 1/1 段" not in fake.calls[0][1], "只有一段：給 worker 的標籤寫讀全部"
+            assert "facts" not in fake.props[1] and "errors" not in fake.props[1] and "answer" in fake.props[1], "整合的 schema 沒有事實"
+            low = [(name, bat) for name, bat, _ in ROBOTS[:4]]
+            assert all(bat < 40 for _, bat in low) and all(f"{name} 電量 {bat}%" in out for name, bat in low), "整合只寫了一條：交出去的還是全部"
+            assert out.startswith("[tool result - 任務導向摘要]") and "由獨立 session 讀完整原文" in out, out
             assert f"行號＝存檔 #{rid} 原文的行號" in out and f"result_view {rid} --from" in out, out
-            job = agent.last_tool_summary["job"]
-            d = os.path.join(tmp, "logs", "extract_jobs", job)
-            assert os.path.exists(os.path.join(d, "job.json")) and os.path.exists(os.path.join(d, "calls.jsonl")), os.listdir(d)
+            assert any("一個 worker 讀全部" in n for n in notes), notes
+            d = os.path.join(tmp, "logs", "extract_jobs", agent.last_tool_summary["job"])
             with open(os.path.join(d, "job.json"), encoding="utf-8") as f:
                 j = json.load(f)
-            assert j["mode"] == "direct" and j["status"] == "done" and j["final"]["facts"], j
+            assert j["status"] == "done" and len(j["workers"]) == 1 and j["listed"]["facts"] == len(j["final"]["facts"]) == len(low), j
+            calls = [json.loads(x) for x in open(os.path.join(d, "calls.jsonl"), encoding="utf-8")]
+            assert [c["role"] for c in calls] == ["worker", "synth"], "兩次呼叫都存檔"
 
         def t_merge():
             text = fleet_yaml()
@@ -198,7 +206,7 @@ def main():
             assert "【各段提煉的事實" in synth_in and "battery_percent: 23.5" in synth_in, "整合看得到事實引用的原文"
             assert notes and all(n.startswith("📑") for n in notes), notes
             j = json.load(open(os.path.join(tmp, "logs", "extract_jobs", agent.last_tool_summary["job"], "job.json"), encoding="utf-8"))
-            assert j["mode"] == "merge" and j["workers"] and j["final"]["facts"], j.keys()
+            assert j["workers"] and j["final"]["facts"], j.keys()
             calls = [json.loads(x) for x in open(os.path.join(tmp, "logs", "extract_jobs", j["id"], "calls.jsonl"), encoding="utf-8")]
             assert [c["role"] for c in calls].count("worker") == kinds.count("worker") and calls[-1]["role"] == "synth", "每次呼叫都存檔"
 
@@ -383,17 +391,21 @@ def main():
                 "result_grep 的收據記的是存檔編號、N→ 是存檔的行號：不對到檔案"
 
             class FakeLines:
-                """一次寫完：回答寫 wrong（存檔的行號）；修的那一次（看得到「存檔行號」的問題）回答寫 fixed。"""
+                """worker 摘「q = make_q(q)」（存檔的第 4 行）；整合的回答寫 wrong（存檔的行號），修的那一次（看得到「存檔行號」的問題）寫 fixed。
+                users 只記整合的（第一次與修的那一次）。"""
 
                 def __init__(self, wrong, fixed):
                     self.wrong, self.fixed, self.users = wrong, fixed, []
 
                 def __call__(self, model=None, messages=None, format=None, **kw):
                     user = messages[-1]["content"]
-                    self.users.append(user)
-                    where = self.fixed if "存檔行號" in user else self.wrong
-                    data = {"answer": f"q 在 a.cpp {where}", "facts": [{"text": "q = make_q(q)", "lines": "4"}], "errors": [],
-                            "not_covered": "無", "suggested_questions": [], "index_hint": "q 的位置", "related_records": []}
+                    if "relevant" in (format or {}).get("properties", {}):
+                        data = {"relevant": True, "facts": [{"text": "q = make_q(q)", "lines": "4"}], "errors": [], "summary": "q 的位置"}
+                    else:
+                        self.users.append(user)
+                        where = self.fixed if "存檔行號" in user else self.wrong
+                        data = {"answer": f"q 在 a.cpp {where}", "not_covered": "無", "suggested_questions": [], "index_hint": "q 的位置",
+                                "related_records": []}
                     return {"message": {"content": json.dumps(data, ensure_ascii=False)}, "prompt_eval_count": 10, "eval_count": 5}
 
             agent.last_receipt = rec
@@ -445,7 +457,8 @@ def main():
 
         for name, fn in [("切段：依結構切（不切在縮排的中間）、前情帶狀態列、章節與表頭、大綱", t_chunker),
                          ("核對：名字在縮排的上層也算、寫錯對象與編出來的車號擋下、一般的詞與問題裡的數字放行", t_grounding),
-                         ("一次寫完（短的輸出）：一次呼叫、每條附行號、存檔（job.json、calls.jsonl）", t_direct),
+                         ("放得進一段（設計筆記 2.65）：一個 worker 讀全部（標籤不寫第 1/1 段）→ 程式列出核對過的全部 → 整合只寫回答（schema 沒有事實、"
+                          "只寫了一條也全部交出去）；兩次呼叫都存檔", t_one_chunk),
                          ("分段：每段一個 worker → 整合（附引用的原文）、進度、每次呼叫都存檔", t_merge),
                          ("分段的事實由程式列：worker 核對過的全部照段落的順序、同樣的句子只列一次；整合的 schema 沒有事實，只寫了一條也一樣全部交出去", t_merge_lists_all),
                          ("段數太多：依問題挑段落讀，沒讀的行號寫進未涵蓋", t_long_selects),

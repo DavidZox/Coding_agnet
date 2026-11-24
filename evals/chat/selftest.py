@@ -193,7 +193,7 @@ def main():
                 assert first in text, f"system prompt 裡沒有 prompts/{rel}"
             assert agent._memory_entries(), "讀不到 prompts/Memory.md 的條目"
             from agent_core.extract import read_prompt as extract_prompt
-            for name in ("worker.md", "synthesizer.md"):
+            for name in ("worker.md", "merger.md"):
                 assert extract_prompt(name).strip(), f"讀不到 prompts/extract/{name}"
 
         def fake_show(model):

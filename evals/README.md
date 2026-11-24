@@ -313,13 +313,13 @@ python3 evals/extract/run.py --model gemma4:26b                  # 6 個情境 �
 python3 evals/extract/run.py --model gemma4:e4b --runs 3 --only fleet_80,recall_fleet_120
 ```
 
-- 情境（`cases.py`，亂數種子固定，每次產生一樣的輸出）：`fleet_40`（7,416 字，一段就放得下，一次寫完）、
+- 情境（`cases.py`，亂數種子固定，每次產生一樣的輸出）：`fleet_40`（7,416 字，一段就放得下，一個 worker 讀全部）、
   `fleet_80`（小模型一次讀會漏、切 2 段）、`fleet_120`（22,124 字、切 3 段）——問「電量低於 40% 的車」，答案 7／21／30 台；
   `log_200k`（3,000 行約 20 萬字的 Log，planner 的 6 筆錯誤散在中段，切 26 段、依問題挑 8 段讀）；`recall_fleet_120`（同一份車隊輸出提煉一次後，
   用 result_recall 追問提煉沒寫到的「L2 樓層而且 IDLE 的車」，11 台）；`robot_heading`（維運評測 ros_moving 那一次
   ROS2_topic_echo 的真實輸出 `fixtures/robot_state_moving.txt`，問「有在移動嗎？往哪裡走？」，要答出要去的站 a7——答案不在數值變化裡，
   那一次的提煉只寫了座標往哪個方向增加）。
-- 評分：名稱和值在同一行才算找到（fleet），多列的名稱、回答裡「共 N 台」的數量要對；另外記模式（一次寫完／切段）、段數與讀了幾段、模型呼叫次數、
+- 評分：名稱和值在同一行才算找到（fleet），多列的名稱、回答裡「共 N 台」的數量要對；另外記段數與讀了幾段、模型呼叫次數、
   程式核對拿掉幾條、整合有沒有修正、秒數。每一次的提煉存檔（`logs/extract_jobs/<編號>/`）留在結果目錄的 `logs/<情境>_<第幾次>/`。
 - **基準**：`evals/baselines/extract.json`；`phase_check --model` 26b、e4b 各跑一次跟它比。
 

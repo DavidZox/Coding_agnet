@@ -114,19 +114,13 @@ SUMMARY_SCHEMA = {
     "required": ["overview", "key_progress", "results_and_errors", "user_preferences", "open_items", "segment_hint"],
 }
 
-# 任務導向摘要的結構（Ollama format=）：answer 一句話回答這一步的目的、facts 照抄的相關事實、errors 錯誤原文、
-# not_covered 原始輸出沒有／被省略而無法確認的部分——讓主模型知道「摘要裡沒有」不等於「輸出裡沒有」。
-_CITED = {"type": "object", "properties": {"text": {"type": "string"}, "lines": {"type": "string"}, "record": {"type": "string"}},
-          "required": ["text", "lines"]}
-
-# 工具回傳的提煉（agent_core/extract.py）：整合（或輸出不長時一次寫完）的結果。facts／errors 每一條附原文的行號（lines：「120」或「120-125」；
-# 好幾份存檔一起讀時 record＝存檔編號），程式核對寫的名稱與數值真的在那幾行。
-TOOL_SUMMARY_SCHEMA = {
+# 工具回傳的提煉（agent_core/extract.py）的整合：交出去的事實與錯誤由程式列（worker 核對過的全部，extract.listed_items；放得進一段的也是），
+# 整合不挑、不寫事實，只寫 answer（一到三句回答這一步的目的）、not_covered（原始輸出沒有／沒讀到而無法確認的部分——讓主模型知道
+# 「摘要裡沒有」不等於「輸出裡沒有」）與其他欄位。
+TOOL_SUMMARY_MERGE_SCHEMA = {
     "type": "object",
     "properties": {
         "answer": {"type": "string"},
-        "facts": {"type": "array", "items": _CITED},
-        "errors": {"type": "array", "items": _CITED},
         "not_covered": {"type": "string"},
         "suggested_questions": {
             "type": "array",
@@ -142,14 +136,7 @@ TOOL_SUMMARY_SCHEMA = {
             },
         },
     },
-    "required": ["answer", "facts", "errors", "not_covered", "suggested_questions", "index_hint", "related_records"],
-}
-
-# 分段提煉的整合：交出去的事實與錯誤由程式列（worker 核對過的全部，extract.listed_items），整合不挑、不寫事實，只寫回答與其他欄位
-TOOL_SUMMARY_MERGE_SCHEMA = {
-    "type": "object",
-    "properties": {k: v for k, v in TOOL_SUMMARY_SCHEMA["properties"].items() if k not in ("facts", "errors")},
-    "required": [k for k in TOOL_SUMMARY_SCHEMA["required"] if k not in ("facts", "errors")],
+    "required": ["answer", "not_covered", "suggested_questions", "index_hint", "related_records"],
 }
 
 # 提煉的 worker：只讀一段原文，摘出跟問題有關的事實（附行號）

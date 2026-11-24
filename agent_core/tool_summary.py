@@ -179,7 +179,7 @@ class ToolSummaryMixin:
         """任務導向提煉（Task-Oriented Extraction）：把超過門檻的工具回傳交給獨立、乾淨的 session（不接觸 self.messages）依問題提煉，
         主對話只收到重點。錨點有兩層：1. 使用者的目標（_build_task_anchor_text：Objective、使用者最近 3 句原話）；
         2. 這一步的目的（_last_assistant_step：決策 AI 剛才的 thought／reply 與執行的 action）。
-        提煉讀全文（agent_core/extract.py：放得進一段就一次寫完；更長的依結構切段、每段一個 worker、再整合），每條事實附原文的行號、
+        提煉讀全文（agent_core/extract.py：依結構切段（放得進一段的就是一段）、每段一個 worker 摘事實、程式列出核對過的全部、整合寫回答），每條事實附原文的行號、
         由程式核對；以前超過 16000 字只讀頭尾，中間的內容主對話永遠看不到。
         result_id 預設取最近一次 run_tool 的存檔編號：回答回填到 index.md，index_hint 記進 tools_use_index.md（result_* 這類看舊存檔的
         衍生輸出不記）——這份永久累加、跨 session 存活，讓再久以前的工具回傳也有機會被日後的 main session 從檢索清單裡認出來。
@@ -214,14 +214,14 @@ class ToolSummaryMixin:
             body = (f"（獨立 session 提煉失敗：{out['error']}）" if out.get("error") else out.get("raw") or "（獨立 session 沒有回覆）")
             answer = ""
         self.last_tool_summary = {"structured": ok, "input_tokens": tool_tokens, "summary_tokens": self.count_tokens(body),
-                                  "model": self.summary_model, "result_id": result_id, "job": out.get("job"), "mode": out.get("mode"),
-                                  "chunks": out.get("chunks"), "read": out.get("read"), "dropped": out.get("dropped")}
+                                  "model": self.summary_model, "result_id": result_id, "job": out.get("job"),
+                                  "chunks": out.get("chunks"), "read": out.get("read")}
         if result_id and answer:
             self.update_result_answer(result_id, answer)
         if ok and (record or {}).get("script") not in DERIVED_RESULT_SCRIPTS:
             self._append_tool_use_index(result_id, self.last_result_file, out["data"].get("index_hint"))
         status = "失敗（[ERROR]）" if result.lstrip().startswith("[ERROR]") else "成功"
-        how = (f"分 {out['chunks']} 段由獨立 session 各讀一段再整合" if out.get("mode") == "merge" else "由獨立 session 讀完整原文")
+        how = (f"分 {out['chunks']} 段由獨立 session 各讀一段再整合" if (out.get("chunks") or 0) > 1 else "由獨立 session 讀完整原文")
         job = f"；提煉過程存在 logs/extract_jobs/{out['job']}/" if out.get("job") else ""
         shown = "" if sub else "，完整內容已顯示給使用者"           # 領域 session 的工具輸出使用者沒有看到
         note = (f"（原始輸出約 {tool_tokens} tokens，超過門檻 {TOOL_RESULT_TOKEN_THRESHOLD}；以上依{'這一層的子目標' if sub else '使用者目標'}"
@@ -300,7 +300,7 @@ class ToolSummaryMixin:
             notes.append(f"一次最多讀 {RECALL_MAX_RECORDS} 份，{'、'.join('#' + r.lstrip('#') for r in extra)} 這次沒有讀（要的話另外 recall）。")
         gone = "".join(f"（{n}）\n" for n in notes)
         harness = self.context_mode == "harness"
-        how = f"，分 {out['chunks']} 段由獨立 session 各讀一段再整合" if out.get("mode") == "merge" else ""
+        how = f"，分 {out['chunks']} 段由獨立 session 各讀一段再整合" if (out.get("chunks") or 0) > 1 else ""
         job = f"；提煉過程存在 logs/extract_jobs/{out['job']}/" if out.get("job") else ""
         output_text = (f"{TOOL_SUMMARY_TAG}\n重新讀取存檔 {label} 的完整原文{how}，針對「{primary}」"
                        f"{'（聚焦：' + focus + '）' if focus else ''}提煉：\n{gone}{body}\n"

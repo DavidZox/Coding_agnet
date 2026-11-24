@@ -69,7 +69,7 @@ def score(case, text):
 
 
 def job_info(logs_dir):
-    """這一次提煉的存檔（logs/extract_jobs/*）：模式、段數、讀了幾段、程式拿掉幾條、整合有沒有修正、模型呼叫幾次。"""
+    """這一次提煉的存檔（logs/extract_jobs/*）：段數、讀了幾段、程式拿掉幾條、整合有沒有修正、模型呼叫幾次。"""
     jobs = []
     for d in sorted(glob.glob(os.path.join(logs_dir, "extract_jobs", "*"))):
         try:
@@ -83,8 +83,8 @@ def job_info(logs_dir):
         except OSError:
             calls = 0
         synth = job.get("synth") or {}
-        jobs.append({"kind": job.get("kind"), "mode": job.get("mode"), "chunks": len(job.get("chunks") or []), "read": len(job.get("workers") or []),
-                     "dropped": sum(len(w.get("dropped") or []) for w in job.get("workers") or []) + len(synth.get("dropped") or []),
+        jobs.append({"kind": job.get("kind"), "chunks": len(job.get("chunks") or []), "read": len(job.get("workers") or []),
+                     "dropped": sum(len(w.get("dropped") or []) for w in job.get("workers") or []),
                      "repaired": bool(synth.get("repaired")), "calls": calls, "status": job.get("status"), "seconds": job.get("seconds")})
     return jobs
 
@@ -121,8 +121,8 @@ def run_one(case, args, out_dir, k):
 
 def write_report(path, results, args):
     lines = [f"# 提煉的真模型評測：{args.model}", "", f"- 時間：{time.strftime('%Y-%m-%d %H:%M')}；{len(results)} 次", "",
-             "| 情境 | 第幾次 | 找到 | 漏了 | 多列的 | 數量的說法 | 模式 | 段數（讀了） | 模型呼叫 | 程式拿掉 | 整合修正 | 秒 |",
-             "|---|---|---|---|---|---|---|---|---|---|---|---|"]
+             "| 情境 | 第幾次 | 找到 | 漏了 | 多列的 | 數量的說法 | 段數（讀了） | 模型呼叫 | 程式拿掉 | 整合修正 | 秒 |",
+             "|---|---|---|---|---|---|---|---|---|---|---|"]
     for r in results:
         s = r["score"]
         jobs = r.get("jobs") or []
@@ -130,7 +130,7 @@ def write_report(path, results, args):
         claims = "、".join(map(str, s["count_claims"])) or "—"
         secs = r.get("recall_seconds") if r["case"].startswith("recall") else r.get("summary_seconds")
         lines.append(f"| {r['case']} | {r['run']} | {s['found']}/{s['total']} | {'、'.join(s['missing'][:6]) or '—'} | {'、'.join(s['extra'][:6]) or '—'} | "
-                     f"{claims}{'' if s['count_ok'] in (None, True) else ' ❌'} | {j.get('mode', '—')} | {j.get('chunks', '—')}（{j.get('read', '—')}） | "
+                     f"{claims}{'' if s['count_ok'] in (None, True) else ' ❌'} | {j.get('chunks', '—')}（{j.get('read', '—')}） | "
                      f"{sum(x.get('calls', 0) for x in jobs)} | {sum(x.get('dropped', 0) for x in jobs)} | {'是' if any(x.get('repaired') for x in jobs) else '否'} | "
                      f"{secs if secs is not None else '—'}{'（' + r['error'][:60] + '）' if r.get('error') else ''} |")
     with open(path, "w", encoding="utf-8") as f:
