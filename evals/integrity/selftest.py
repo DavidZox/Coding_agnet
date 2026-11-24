@@ -16,6 +16,9 @@ file_ops 的範例正好是那一題的答案；設計筆記 2.17）。這裡把
 還有沒人用的程式（2026-11 第 6 階段清掉舊路徑之後，不要再累積）：agent_core、web_app、vision、技能腳本裡定義了卻沒有人用的函式、方法、
 類別、模組層的常數，與各檔 import 了卻沒用到的名稱。
 
+還有文件寫的程式名稱（2026-11-23）：寫現在的程式的文件與架構圖（README、CLAUDE.md、架構說明、技能撰寫規範、各個 README、doc/diagrams）
+寫到的函式、方法、常數、檔案，要在程式、範本、技能規格或專案的檔案裡找得到——改了程式漏改文件時擋下。
+
 還有階段驗證的維運比對（evals/phase_check.py）：基準記每個情境每一次的結果，只跑一部分（2026-11 起維運分成「檔案與調查」與凍結的工具）
 時總分跟基準裡同一組情境比；只更新一部分的基準時，其他情境的基準不動。
 
@@ -340,6 +343,103 @@ def t_dead_code():
         assert [n for _, _, n in unused_imports(d)] == ["json"], unused_imports(d)
 
 
+# ---------------------------------------------------------------- 文件寫的程式名稱
+# 寫現在的程式的文件與架構圖裡寫到的函式、方法、常數、檔案，要在程式、範本、技能規格或專案的檔案裡找得到：改了程式漏改文件時擋下
+# （2026-11-23 使用者同意；盤點時找到架構說明還寫著 fd3999e 拿掉的常數）。設計筆記、框架討論紀錄、待辦清單記的是歷史與計畫，會寫到拿掉的
+# 東西，不查。.md 只看反引號裡的；.puml 沒有反引號，看長得像識別字或檔名的（圖自己的元件代號不算）。名稱出現在註解、字串裡也算找得到
+# （寧可漏也不誤報）。
+DOC_GLOBS = ("README.md", "CLAUDE.md", "doc/架構說明.md", "doc/技能撰寫規範.md", "doc/README.md", "prompts/README.md",
+             "evals/README.md", "evals/*/README.md", "doc/diagrams/*.puml")
+DOC_REF_DIRS = ("agent_core", "skills_system", "prompts", "evals", "web_app", "vision")   # 找名稱的範圍
+DOC_REF_EXT = (".py", ".md", ".json", ".html", ".js", ".sh", ".yaml", ".yml")
+# 文件裡寫的、程式裡沒有字面的：執行時組出來的名稱與說明用的例子
+DOC_ALLOWED = {"tool_summary_worker", "_synth",   # perf.jsonl 的分類：extract._call 照 f"{kind}_{role}" 組
+               "od.py"}                           # 架構說明〈依報告回答〉比對檔名的例子（od.py 不算 mod.py）
+_DOC_EXT = r"\.(?:jsonl|json|py|md|puml|png|sh|yaml|html|js)"
+_DOC_TICK = re.compile(r"`([^`\n]+)`")
+_DOC_PUML = re.compile(r"(?<![\w\\])(?:[A-Za-z_][\w./-]*" + _DOC_EXT + r"|_?[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+|_[a-z][a-z0-9]+)"
+                       r"(?![A-Za-z0-9_])")
+_DOC_ALIAS = re.compile(r"^\s*(?:rectangle|package|node|component|card|frame|folder|database|cloud|actor|usecase|state|partition|class|"
+                        r"object|artifact|queue|storage|file|agent)\s+(?:\"[^\"]*\"\s+as\s+)?([A-Za-z_]\w*)|\bas\s+([A-Za-z_]\w*)", re.M)
+_DOC_IDENT = re.compile(r"^_?[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+$|^_[a-z][a-z0-9]+$")
+_DOC_PATH = re.compile(r"^(?:agent_core|skills_system|prompts|evals|web_app|vision|doc|docs)/\S*$|^[\w.-]+\.(?:py|puml|sh)$")
+
+
+def _doc_names(rel, text):
+    """[(行號, 名稱)]：文件裡寫的程式名稱（識別字要有底線，或是 _開頭；檔案是專案的路徑或 .py、.puml、.sh）。"""
+    alias = {a or b for a, b in _DOC_ALIAS.findall(text)} if rel.endswith(".puml") else set()
+    out = []
+    for i, line in enumerate(text.split("\n"), 1):
+        if rel.endswith(".md"):
+            toks = [t for span in _DOC_TICK.findall(line) for t in re.split(r"[、，,；;／\s（）()=：:]+", span)]
+        else:
+            toks = _DOC_PUML.findall(line)
+        for tok in toks:
+            t = tok.strip().strip(".").split("(")[0]
+            if (not t or t in alias or any(c in t for c in "<>*{}[]$#~|\"'…")
+                    or t.startswith(("-", "/", "http", "evals/results/", "logs/"))):   # 評測的結果、執行時的紀錄不是程式
+                continue
+            if "." in t and not re.search(_DOC_EXT + "$", t):
+                t = t.rsplit(".", 1)[-1]                       # 模組.函式 → 函式
+            if _DOC_IDENT.match(t) and any(seg.isdigit() for seg in t.strip("_").split("_")):
+                continue                                        # amr_41 這種資料的例子
+            if _DOC_PATH.match(t) or _DOC_IDENT.match(t):
+                out.append((i, t))
+    return out
+
+
+def doc_refs(root=PROJECT):
+    """[(文件, 行號, 名稱)]：DOC_GLOBS 的文件裡寫的程式名稱，在程式、範本、技能規格與專案的檔案裡都找不到的。"""
+    files = []
+    for d in DOC_REF_DIRS + ("doc", "docs"):
+        for dp, dn, fn in os.walk(os.path.join(root, d)):
+            dn[:] = [x for x in dn if x not in _SKIP_DIRS]
+            files += [os.path.relpath(os.path.join(dp, f), root) for f in fn]
+    files += [f for f in os.listdir(root) if os.path.isfile(os.path.join(root, f))]
+    docs = [os.path.relpath(p, root) for g in DOC_GLOBS for p in sorted(glob.glob(os.path.join(root, g)))]
+    words, known = set(), set()
+    for f in files:
+        parts = f.split(os.sep)
+        known.update("/".join(parts[i:]) for i in range(len(parts)))                 # evals/chat/run.py、chat/run.py、run.py
+        known.update("/".join(parts[i:j]) + "/" for i in range(len(parts)) for j in range(i + 1, len(parts)))   # evals/、chat/
+        words.add(os.path.splitext(parts[-1])[0])                                     # 用檔名指一個檔案：state_tail
+        if f.endswith(DOC_REF_EXT) and (parts[0] in DOC_REF_DIRS or len(parts) == 1) and f not in docs:   # 查的文件自己不算
+            with open(os.path.join(root, f), encoding="utf-8", errors="replace") as fh:
+                text = fh.read()
+            words.update(re.findall(r"[A-Za-z0-9_]+", text))                         # 識別字（self.x 的 x 也算）
+            words.update(re.findall(r"[A-Za-z0-9_][A-Za-z0-9_.-]*", text))           # 檔名（calls.jsonl）
+    bad = []
+    for rel in docs:
+        with open(os.path.join(root, rel), encoding="utf-8") as fh:
+            text = fh.read()
+        for ln, name in _doc_names(rel, text):
+            p = name.rstrip("/")
+            if name in DOC_ALLOWED or {name, p, os.path.basename(p)} & words or {name, p, p + "/"} & known:
+                continue
+            bad.append((rel, ln, name))
+    return bad
+
+
+def t_doc_refs():
+    bad = doc_refs()
+    assert not bad, ("文件或架構圖寫的程式名稱在程式裡找不到（改了程式要同步改文件；真的是執行時組的或例子，加進 DOC_ALLOWED）：\n"
+                     + "\n".join(f"  {p}:{ln} {n}" for p, ln, n in bad))
+    with tempfile.TemporaryDirectory() as d:     # 抓得到：拿掉的函式、常數、檔案；圖的元件代號、執行時的檔名、用檔名指的範本、資料的例子不算
+        def put(rel, text):
+            os.makedirs(os.path.dirname(os.path.join(d, rel)), exist_ok=True)
+            with open(os.path.join(d, rel), "w", encoding="utf-8") as fh:
+                fh.write(text)
+        put("agent_core/mod.py", "LIMIT_MAX = 3\n\n\ndef run_task(job):\n    job.store.append('calls.jsonl')\n")
+        put("prompts/harness/state_tail.md", "<!-- @a -->\n動態區\n")
+        put("doc/架構說明.md", "`run_task`（`agent_core/mod.py`、`mod.run_task(x)`）看 `LIMIT_MAX`、記進 `calls.jsonl`；`old_helper` 拿掉了\n"
+                              "`state_tail`、`agent_core/gone.py`、`- name: amr_41`\n")
+        put("doc/diagrams/x.puml", "rectangle S_MAIN #FFFFFF [\n  run_task 與 OLD_CONST（見〈複合技能_cpp_symbol〉）\n]\nS_MAIN --> S_MAIN\n")
+        put("evals/README.md", "`run_task`、`old_runner`\n")   # 放在程式的目錄裡的文件也查（查的文件自己不算找得到）
+        got = doc_refs(d)
+        assert got == [("doc/架構說明.md", 1, "old_helper"), ("doc/架構說明.md", 2, "agent_core/gone.py"),
+                       ("evals/README.md", 1, "old_runner"), ("doc/diagrams/x.puml", 2, "OLD_CONST")], got
+
+
 def t_ops_compare():
     sys.path.insert(0, os.path.join(PROJECT, "evals"))
     import phase_check as pc
@@ -489,6 +589,7 @@ def main():
                      ("prompts/ 的範本跟程式對得上：用到的每一則都在、填的名稱範本裡都有、沒有沒人用的一則", t_templates),
                      ("讀範本（agent_core/prompt_files.py）：取一則、一次填完、讀不到回空字串、檔案改了就重讀", t_loader),
                      ("沒人用的程式：定義了卻沒有人用的函式、類別、常數，import 了卻沒用到的（清掉的舊路徑不要再累積）", t_dead_code),
+                     ("文件與架構圖寫的程式名稱（函式、常數、檔案）在程式裡找得到：改了程式漏改文件時擋下", t_doc_refs),
                      ("階段驗證的維運比對：只跑一部分時跟基準裡同一組情境的每一次比；只更新一部分的基準時其他情境不動", t_ops_compare)]:
         check(name, fn)
     failed = [r for r in results if not r[1]]

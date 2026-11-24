@@ -10,7 +10,7 @@
 | `analysis/` 數據解析 | `selftest.py`（數據技能用錄下的真實輸出 `fixtures/`） | `regression.py`（回歸評分；數據分析全部由程式做，不需要 Ollama，要測試容器）、`tools_live.py`（在真的容器裡跑數據技能） | 事實的整理、重點、報告、主對話回答的核對；回歸評分只評事實 |
 | `datagen/` 隨機情境的錄製產生器 | `check_facts.py`（只驗程式那一層，需要容器） | 產生的錄製交給 `analysis/regression.py` | 六個開發中套件的模擬，評分標準由注入的事件自動產生（見 [`datagen/README.md`](datagen/README.md)） |
 | `ops/` 多步驟維運 | `selftest.py`（file_ops、維運技能的確認關卡、沙盒 daemon 怎麼起） | `run.py`（情境在 `dataset/`，在 Docker-in-Docker 沙盒裡真的執行；`worker.py` 跑一個情境） | 主對話用技能做完維運任務（需要時交給領域）；狀態、回覆、禁止動作由程式計分 |
-| `integrity/` 評測的完整性 | `selftest.py` | — | 模型會讀的文字（prompt、技能說明、程式回給模型的字）沒有評測世界的名稱（從評測的來源自動取）；`prompts/` 的範本跟程式對得上；沒人用的程式 |
+| `integrity/` 評測的完整性 | `selftest.py` | — | 模型會讀的文字（prompt、技能說明、程式回給模型的字）沒有評測世界的名稱（從評測的來源自動取）；`prompts/` 的範本跟程式對得上；沒人用的程式；文件與架構圖寫的程式名稱在程式裡找得到 |
 | `extract/` 提煉 | —（不用模型的在 `chat/extract_selftest.py`） | `run.py`（情境在 `cases.py`：程式產生已知答案的長輸出；`worker.py` 跑一個情境） | 工具回傳的提煉與 result_recall：找到幾個、多列幾個、數量的說法、切幾段讀幾段、程式拿掉幾條 |
 | `repo/` 真實專案 | `selftest.py`（核對、每一題答得出來、答案跟快照一致、碰不到真的容器與主機的家目錄、分層） | `run.py`（題目在 `questions.py`，答案 `answers.json` 由程式從固定版本的快照算；借用 `ops/worker.py` 跑一題）；`layers.py`（沒過的分到第一個出錯的層） | 在真實專案（amr_base_sw、amr_base_hw、fih_rmf_system）裡找檔案與計數、讀長文件、Python 的定義與呼叫、C++、跨檔案的調查；最後的回覆由程式核對 |
 | `edg/` 低階執行器（有骨架的技能的圖由它執行） | `selftest.py`（寫好的圖、假的修正模型） | `run.py`（題目在 `cases.py`：一個工具節點故意錯一個參數，工作目錄是真實專案評測的快照） | 照決策圖執行、照收據守門、從收據帶入參數、重排；第 1 級修正：修得好的有沒有修好（收據的欄位與範圍由程式核對）、修不好的有沒有往上交 |
@@ -294,6 +294,13 @@ python3 evals/integrity/selftest.py   # 離線（幾秒）
 模組層的大寫常數（名稱在全部的程式、`evals/`、網頁裡只出現在定義那一次），與 import 了卻沒用到的名稱（`__init__.py`、`__future__`、標了 `noqa` 的不算）。
 靜態的粗略比對：名稱出現在字串、註解裡也算有人用（寧可漏也不誤報）；框架照名稱呼叫的（`ast.NodeVisitor` 的 `visit_*`、`do_GET`…）列在 `_CALLED_BY_NAME`。
 
+還有一項（2026-11-23）：**文件寫的程式名稱**——寫現在的程式的文件與架構圖（`README.md`、`CLAUDE.md`、`doc/架構說明.md`、`doc/技能撰寫規範.md`、
+各個 README、`doc/diagrams/*.puml`）寫到的函式、方法、常數、檔案，要在程式、範本、技能規格或專案的檔案裡找得到；改了程式漏改文件時擋下。
+`.md` 只看反引號裡的，`.puml` 看長得像識別字或檔名的（圖自己的元件代號不算）；名稱有底線或 `_` 開頭的才算程式名稱，路徑要是專案的目錄開頭或
+`.py`、`.puml`、`.sh`。設計筆記、框架討論紀錄、待辦清單記的是歷史與計畫，不查；查的文件自己不算找得到（放在 `evals/`、`prompts/` 底下的 README 也照查），
+評測的結果目錄與 `logs/` 不算程式。執行時才組出來的名稱與說明用的例子列在 `DOC_ALLOWED`（附原因）。拿掉的東西要在近期的修改紀錄裡提，
+用文字寫（不要寫成程式名稱）。
+
 ## 提煉（`extract/`）
 
 ```bash
@@ -335,4 +342,4 @@ python3 evals/phase_check.py --save-baseline <結果目錄…> --label "第 N �
   `evals/results/<時間>_phase_check/summary.md`：每一項一行（結果、基準、判定 ✅／⚠️／❌），要注意的逐項列出——沒過的測試、比基準差的情境、
   禁止動作、變慢超過 2 倍的情境。
 - 容器與沙盒用完就關（`cah_ops_dind`、`cah_dev_dind`、`cah_analysis_test`）；`logs/analysis_settings.json` 測試前後比對，有變就還原。
-- 近期加進來的案例：框架改成單一迴圈（2026-11-23）——新的 `domain_selftest` 15 項（交辦、回覆的欄位順序、領域 session、有骨架的技能與回退、參數表單（2026-11-23 取代參數寫錯欄位的擋下）、狀態與上限、確認關卡、提煉、依報告回答的核對、評測的紀錄；中階與高階的 `mid_selftest`、`orch_selftest` 拿掉）、`edg_selftest` 14 項（只收工具節點）。之前留下來還在用的：CLI 主迴圈的確認關卡（`chat_selftest` 的 `t_cli_guard`）、範本的檢查是每個 import 了 `prompt_files` 的模組各自核對（`integrity`）、真實專案評測的自我測試（`repo_selftest` 11 項：`t_phase_baseline`、`t_layers`），完整性檢查也收它答案裡的名稱；收據——`skills/receipt_test.py`（寫收據的腳本都有純函式 `parse_args`、規格的 `narrow`）、`chat_selftest` 的 `t_receipts`；技能 119 項（code_ast_reader `--refs`、view_file `--around`、search_text `--rank`、code_defs、py_refs、`t_near_paths`、`t_search_include_path`）；`extract_selftest` 16 項（`t_name_whole`：名稱要整個對上；`t_file_lines`：檔案的行號；`t_sub_guidance`：領域 session 的下一步建議；`t_list_ordinals`：清單的序號不核對）；`chat_selftest` 19 項（`t_reply_cut`：回覆的字串上限）。
+- 近期加進來的案例：框架改成單一迴圈（2026-11-23）——新的 `domain_selftest` 15 項（交辦、回覆的欄位順序、領域 session、有骨架的技能與回退、參數表單（2026-11-23 取代參數寫錯欄位的擋下）、狀態與上限、確認關卡、提煉、依報告回答的核對、評測的紀錄；中階與高階的自我測試拿掉）、`edg_selftest` 14 項（只收工具節點）。之前留下來還在用的：CLI 主迴圈的確認關卡（`chat_selftest` 的 `t_cli_guard`）、範本的檢查是每個 import 了 `prompt_files` 的模組各自核對（`integrity`）、真實專案評測的自我測試（`repo_selftest` 11 項：`t_phase_baseline`、`t_layers`），完整性檢查也收它答案裡的名稱；收據——`skills/receipt_test.py`（寫收據的腳本都有純函式 `parse_args`、規格的 `narrow`）、`chat_selftest` 的 `t_receipts`；技能 119 項（code_ast_reader `--refs`、view_file `--around`、search_text `--rank`、code_defs、py_refs、`t_near_paths`、`t_search_include_path`）；`extract_selftest` 16 項（`t_name_whole`：名稱要整個對上；`t_file_lines`：檔案的行號；`t_sub_guidance`：領域 session 的下一步建議；`t_list_ordinals`：清單的序號不核對）；`chat_selftest` 19 項（`t_reply_cut`：回覆的字串上限）。

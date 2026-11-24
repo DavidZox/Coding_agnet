@@ -73,11 +73,13 @@ package "prompts/（改字不用改程式；evals/integrity 檢查範本跟程�
       first（子目標、要回答的項目、原始問題（只用來對照）、
       上一次的經過 previous）、技能清單 skills（〈做法〉、有骨架的技能
       composite_entry 與參數 param_*、工具 tool_entry 與 args 的寫法、
-      共用的工具）、每一步的結果（step_head、composite_*：技能的狀態、
-      回退、補的參數、要它決定的 need；output_head、result_id）、
-      擋下或交回改的 err_*、not_my_tool、合約沒過 reject_*、
-      要它決定的 need_*（reject_*、need_* 也給 composite.py 用）、
-      回報沒過 answers_fix、retry、cut、cleared、anchor（子目標與項目）
+      共用的工具）、選了技能之後的參數表單（form_composite、form_tool；
+      沒過的重填 form_fix、重填還是沒過 form_failed）、每一步的結果
+      （step_head、composite_*：技能的狀態、回退、補的參數、要它決定的
+      need；output_head、result_id）、擋下或交回改的 err_*、not_my_tool、
+      合約沒過 reject_*、要它決定的 need_*（reject_*、need_* 也給
+      composite.py 用）、回報沒過 answers_fix、retry（表單 retry_form）、
+      cut、cleared、anchor（子目標與項目）
     ]
   }
 }
@@ -113,17 +115,19 @@ package "用到它們的 session" {
   rectangle S_DOMAIN #E2F0D9 [
     **領域 session**（交辦之後）：自己的對話，每一輪
     domain_session_schema(領域, 項目數)（thought、state、domains、
-    skill、params（name、value、quote）、args、answers、reply；
-    用不到的寫空的）；程式照 state 核對：領域在清單裡、技能在選的
-    領域裡、合約的原文、回報的出處（answers.py，跟主對話依報告
-    回答同一套）、整理成報告
+    skill（只寫名稱）、answers、reply；用不到的寫空的）；選了技能的
+    下一輪 domain_form_schema(參數)（有骨架的技能：每個參數一欄
+    quote、value；工具：args；不算輪數）；程式照 state 核對：領域在
+    清單裡、技能在選的領域裡、合約的原文（沒過的重填一次）、
+    回報的出處（answers.py，跟主對話依報告回答同一套）、整理成報告
   ]
   rectangle S_SUMMARY #FCE5CD [
     **滾動摘要**：超過水位、/compress；SUMMARY_SCHEMA
   ]
   rectangle S_EXTRACT #FCE5CD [
     **提煉**（summarize_tool_result、result_recall）：
-    每段一個 worker → 整合；EXTRACT_WORKER／TOOL_SUMMARY_SCHEMA
+    每段一個 worker → 整合；EXTRACT_WORKER_SCHEMA／
+    TOOL_SUMMARY_SCHEMA
   ]
   rectangle S_VISION #DDEEF6 [
     **視覺 session**：extraction_schema(張數)

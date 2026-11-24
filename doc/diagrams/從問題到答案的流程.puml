@@ -53,9 +53,10 @@ repeat
   note left
     每一輪只回一個 JSON（固定格式）：
     thought、state、domains、skill、
-    params、args、answers、reply；
+    answers、reply；
     state 是 domains／skill／report 之一，
     程式照它核對、接著做（第一輪一定是 domains）；
+    選了技能的下一輪只填那個技能的參數表單；
     不是 JSON、寫到上限被截斷的重問一次
   end note
 
@@ -68,15 +69,24 @@ repeat
   |領域 session（模型）|
   repeat
     :state＝skill：從技能清單選一個技能
-    ・有骨架的技能：params 每個參數一筆
-      （name、value、一字不改的原文 quote）
-    ・工具：args 照它的寫法; <<#FFE6CC>>
+    （只寫名稱）; <<#FFE6CC>>
 
     |領域 session 的程式（domain_session.py）|
-    :核對：技能在選的領域的清單裡、
-    跟之前某一步不是一模一樣（一樣的附那一步的結果）；
-    沒過的交回改，不算一步; <<#D5E8D4>>
+    :核對：技能在選的領域的清單裡（沒過交回改）
+    → 把那個技能的參數表單接進對話
+    （有骨架的技能：每個參數的名稱、種類、說明；
+    工具：args 的寫法）; <<#D5E8D4>>
+
+    |領域 session（模型）|
+    :下一輪只填表單（這一輪不算在輪數裡）：
+    ・有骨架的技能：每個參數一欄
+      （一字不改的原文 quote、value）
+    ・工具：args; <<#FFE6CC>>
+
+    |領域 session 的程式（domain_session.py）|
     if (哪一種？) then (工具)
+      :跟之前某一步一模一樣的不執行
+      （附那一步的結果）; <<#D5E8D4>>
       if (會改狀態（確認關卡）？) then (要確認)
         :停下來（need_user）; <<#F8CECC>>
         |主 session 的程式（orchestrator.py）|
@@ -99,7 +109,9 @@ repeat
       |領域 session 的程式（domain_session.py）|
       :合約：每個參數的原文一字不改地在問題、
       子目標、項目或前面的結果裡，值照種類
-      對得上原文（沒過交回改，不算一步）; <<#D5E8D4>>
+      對得上原文；沒過的只把那幾個參數交回重填
+      一次，還是沒過回到選技能（都不算一步）；
+      跟之前某一步一模一樣的不執行; <<#D5E8D4>>
       |執行（composite.py → edg.py → 腳本）|
       :composite.py 補齊參數：沒寫的用預設值；
       路徑找不到時照 fetch 找一次（剛好一個就自己補）

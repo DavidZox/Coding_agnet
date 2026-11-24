@@ -35,9 +35,9 @@
   "total": 16
  },
  "integrity": {
-  "label": "第 5 步（6958dac）（2026-11-20）",
-  "passed": 8,
-  "total": 8
+  "label": "評測的完整性：加上文件與架構圖寫的程式名稱要在程式裡找得到（2026-11-23）",
+  "passed": 9,
+  "total": 9
  },
  "ops_selftest": {
   "label": "第 5 步（6958dac）（2026-11-20）",
