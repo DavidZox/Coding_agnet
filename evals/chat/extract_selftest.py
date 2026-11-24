@@ -304,7 +304,8 @@ def main():
 
         def t_together():
             # 好幾份加起來放得進一段（設計筆記 2.66）：第 12 輪每一份各自一段、各一個 worker，兩份短的一起 recall 時各讀各的、比不出差異
-            # （主對話評測 compare_two_archives 0／4）。現在合成一段、一個 worker 一起讀，每條事實寫出自哪一份（record 只能填這幾份），照那一份核對
+            # （主對話評測 compare_two_archives 0／4）。現在合成一段、一個 worker 一起讀，每條事實寫出自哪一份（record 只能填這幾份），照那一份核對；
+            # 要比較時只列有差異的（2.67：幾份都有的一條一條列，26b 寫到輸出上限）
             rows = fleet_yaml().splitlines()
             a = archive("\n".join(rows[:20]), task="早上的車隊")                # 行 3～20：tb1～tb3（電量 23.5、27.0、30.5）
             b = archive("\n".join(rows[:2] + rows[20:38]), task="下午的車隊")   # 同樣的行號：tb4～tb6（34.0、37.5、41.0）
@@ -314,6 +315,7 @@ def main():
             assert [c[0] for c in fake.calls] == ["worker", "synth"], [c[0] for c in fake.calls]
             w = fake.calls[0][1]
             assert f"===== 存檔 #{a}" in w and f"===== 存檔 #{b}" in w and "你一起讀全部" in w, w[:800]
+            assert "要比較這幾份時，只列有差異的" in w, "合成一段：要比較時只列有差異的、幾份都有的不用一條一條列"
             assert fake.formats[0]["properties"]["facts"]["items"]["properties"]["record"]["enum"] == [str(a), str(b)], "record 只能填這兩份"
             from agent_core.schemas import TOOL_SUMMARY_MERGE_SCHEMA
             assert fake.formats[1] == TOOL_SUMMARY_MERGE_SCHEMA, "整合的 schema 不變（只寫回答）"
