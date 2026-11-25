@@ -333,6 +333,25 @@ SCENARIOS = [
      "state": {"target_container": "rmf_sim"},
      "turns": [{"user": "rmf_sim 裡總共有幾個 topic？",
                 "expect": {"tools_any": ["ROS2_topic_list"], "reply_any": ["23"]}}]},
+    # 多輪：後一輪用指代或省略接前一輪、要再查才答得出來（框架討論紀錄第 28 輪：交辦時要看得到前面的對話）
+    {"id": "followup_node_info", "desc": "後一輪用「它」指前一輪問的 node：要查那個 node 的資訊",
+     "state": {"target_container": "rmf_sim"},
+     "turns": [{"user": "rmf_sim 裡有沒有 /task_agent 這個 node？",
+                "expect": {"tools_any": ["ROS2_node_list", "ROS2_node_info"]}},
+               {"user": "它訂閱了哪些 topic？",
+                "expect": {"args_any": ["task_agent"], "reply_all": ["/incoming_tasks", "/fleet_states_json"]}}]},
+    {"id": "followup_topic_echo", "desc": "後一輪沒寫主詞、接著前一輪問的 topic：要讀那個 topic",
+     "state": {"target_container": "rmf_sim"},
+     "turns": [{"user": "rmf_sim 裡有 /incoming_tasks 這個 topic 嗎？",
+                "expect": {"tools_any": ["ROS2_topic_list", "ROS2_topic_echo"]}},
+               {"user": "讀一筆內容，task_id 是多少？",
+                "expect": {"args_any": ["incoming_tasks"], "reply_any": ["WP107-1"]}}]},
+    {"id": "followup_ai_named", "desc": "後一輪的「它」指上一輪回覆裡說的那台車：照那份狀態回答它的 task_id",
+     "state": {"target_container": "rmf_sim"},
+     "turns": [{"user": "幫我讀一下 topic /fleet_states_json，電量最低的是哪一台？",
+                "expect": {"tools_any": ["ROS2_topic_echo"], "reply_any": ["tb9"]}},
+               {"user": "它現在的 task_id 是什麼？",
+                "expect": {"reply_any": ["WP108-2"]}}]},
 ]
 
 # ---------------------------------------------------------------- 穩健性情境（evals/chat/run.py --suite robust）

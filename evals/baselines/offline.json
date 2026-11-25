@@ -20,9 +20,9 @@
   "total": 8
  },
  "domain_selftest": {
-  "label": "交辦照原話、回答的文字不寫存檔的 #編號（t_archive_id）（2026-11-25）",
-  "passed": 25,
-  "total": 25
+  "label": "問句都要放進項目、交辦帶前文（t_cover、t_context、t_context_long）（2026-11-26）",
+  "passed": 28,
+  "total": 28
  },
  "edg_selftest": {
   "label": "單一迴圈：交辦與領域 session（框架討論紀錄 F1～F6）（2026-11-23）",

@@ -34,7 +34,7 @@ from skills_system.scripts import _results_common
 from . import answers, composite, prompt_files, skill_spec
 from .config import (ANALYSIS_REPORT_HEAD, DOMAIN_JOBS_DIRNAME, DOMAIN_JOBS_KEEP, DOMAIN_MODEL, DOMAIN_QUOTE_LINES, DOMAIN_RESELECT_MAX,
                      DOMAIN_STEPS_MAX, DOMAIN_SYNTAX_LINES, DOMAIN_TURNS_MAX, NUM_CTX, REPLY_ARGS_CHARS, REPLY_THOUGHT_CHARS,
-                     TOKEN_THRESHOLD, TOOL_SUMMARY_DEFAULT)
+                     TOKEN_THRESHOLD, TOOL_RESULT_TOKEN_THRESHOLD, TOOL_SUMMARY_DEFAULT)
 from .jobstore import JobStore
 from .protocol import parse_answers, tool_result_message
 from .schemas import DOMAIN_REPLY_CHARS, domain_form_schema, domain_session_schema
@@ -141,18 +141,20 @@ class DomainSession:
         self.store = JobStore(os.path.join(agent.script_dir, "logs", DOMAIN_JOBS_DIRNAME))
 
     # ---------------------------------------------------------------- 進入點
-    def start(self, question, goal, items, previous=None, attempt=1):
+    def start(self, question, goal, items, previous=None, attempt=1, earlier=None):
         """items：要回答的項目——每一項是使用者的原話（orchestrator 核對過；框架討論紀錄第 27 輪）。previous：同一個問題之前交辦的經過
-        （[{"n", "job", "status_text", "note", "steps"}]，orchestrator 從這一回合的紀錄取）。"""
+        （[{"n", "job", "status_text", "note", "steps"}]，orchestrator 從這一回合的紀錄取）。earlier：這一則之前的對話（[{"user", "reply"}]，
+        orchestrator._earlier_turns）→【前文】（_context；框架討論紀錄第 28 輪）。"""
         jid = self.store.new_id()
         self.store.prune(DOMAIN_JOBS_KEEP)
         job = {"id": jid, "kind": "domain", "status": "running", "created": _now(), "updated": _now(), "cwd": self.agent.current_cwd,
                "question": question, "goal": (goal or question).strip(), "items": list(items or []), "attempt": attempt,
-               "previous": list(previous or []), "domains": [], "picks": [], "messages": [], "steps": [], "turns": 0, "form": None, "forms": 0,
+               "previous": list(previous or []), "earlier": list(earlier or []), "context": None, "domains": [], "picks": [], "messages": [], "steps": [], "turns": 0, "form": None, "forms": 0,
                "blocked": [], "sources": "", "need_user": None, "asked": [], "nudged": False, "answers": [], "problems": {}, "result": None}
         job["system"] = self._system()
+        job["context"] = self._context(job)
         job["messages"].append({"role": "user", "content": self._first(job)})
-        job["sources"] = "\n".join([job["question"], job["goal"]] + job["items"])
+        job["sources"] = "\n".join([job["question"], job["goal"]] + job["items"] + ([job["context"]["text"]] if job["context"] else []))
         self.store.save(job)
         self._note(jid, f"🧭 領域 session 開始：{job['goal'][:80]}")
         return self._loop(job)
@@ -593,10 +595,14 @@ class DomainSession:
 
     def _problems(self, job, given):
         archives = self._archives(job)
-        allowed = "\n".join([job["question"], job["goal"]] + job["items"])
         source = "\n".join(answers.read(p) for _, p in archives)
-        return answers.answer_problems(job["items"], given, lambda ref: self._cited(job, ref, archives), allowed, source,
+        return answers.answer_problems(job["items"], given, lambda ref: self._cited(job, ref, archives), self._allowed(job), source,
                                        unknown=lambda ref: _s("why_ref_unknown", ref=ref))
+
+    @staticmethod
+    def _allowed(job):
+        """回答的核對裡本來就有、不用在出處裡找的字：使用者的話（這一則與前文裡的）、子目標、項目。前文裡當時的回覆不算——答案要是這次查到的。"""
+        return "\n".join([job["question"], job["goal"]] + job["items"] + [x["user"] for x in job["earlier"]])
 
     def _finish(self, job, status, note="", reply="", answered=None, problems=None):
         problems = problems or {}
@@ -713,7 +719,26 @@ class DomainSession:
             rows = [_s("previous_attempt", n=p.get("n"), steps=p.get("steps") or "—", status=p.get("status_text") or "—",
                        note=f"（{p['note']}）" if p.get("note") else "") for p in job["previous"]]
             prev = _s("previous", count=len(job["previous"]), attempts="\n".join(rows))
-        return _s("first", goal=job["goal"], items=items, question=job["question"], previous=prev)
+        ctx, context = job["context"], ""
+        if ctx:
+            context = (_s("context", turns=ctx["shown"]) if ctx["result_id"] is None
+                       else _s("context_archived", rid=ctx["result_id"], shown=ctx["shown"]))
+        return _s("first", goal=job["goal"], items=items, question=job["question"], context=context, previous=prev)
+
+    def _context(self, job):
+        """【前文】：這一則之前的對話（job["earlier"]）。跟工具結果進上下文一樣：門檻（TOOL_RESULT_TOKEN_THRESHOLD）內照原文；超過的存成一份
+        存檔（dispatch_context）、照錨點提煉（turn._content_for_context）→ {"text", "shown", "result_id", "tokens"}；沒有前文回 None。"""
+        if not job["earlier"]:
+            return None
+        a = self.agent
+        text = "\n".join(_s("context_turn", user=x["user"], reply=x["reply"] or "—") for x in job["earlier"])
+        tokens = a.count_tokens(text)
+        if tokens <= TOOL_RESULT_TOKEN_THRESHOLD:
+            return {"text": text, "shown": text, "result_id": None, "tokens": tokens}
+        a._record_trajectory("dispatch_context", [], text, a.current_cwd, a.container_cwd, a.target_container)
+        rid = a.last_result_id
+        shown = _content_for_context(text, tokens, a, use_summary=TOOL_SUMMARY_DEFAULT, step={}, anchor=self._anchor(job), sub=True)
+        return {"text": text, "shown": shown, "result_id": rid, "tokens": tokens}
 
     @staticmethod
     def _param_rows(spec, only=None):
@@ -781,8 +806,10 @@ class DomainSession:
 
     @staticmethod
     def _anchor(job):
-        """提煉長輸出時的「想知道什麼」：這一件事的子目標與項目（使用者的原話）。"""
-        return _s("anchor", goal=job["goal"], items="；".join(job["items"]))
+        """提煉長輸出時的「想知道什麼」：這一件事的子目標與項目（使用者的原話）；有前文時加上使用者前面的話（跟主 session 的任務線一樣）。"""
+        earlier = [x["user"] for x in job["earlier"]]
+        return (_s("anchor", goal=job["goal"], items="；".join(job["items"]))
+                + (_s("anchor_earlier", words="；".join(earlier)) if earlier else ""))
 
     def _note(self, jid, text):
         """進度：印出、記進 events.jsonl、交給畫面（progress_callback）。"""

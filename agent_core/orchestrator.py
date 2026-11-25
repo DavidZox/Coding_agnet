@@ -23,6 +23,7 @@ import os
 import re
 
 from . import answers, composite, domain_session, prompt_files
+from .protocol import answers_text, parse_agent_reply
 from .config import DOMAIN_INDEX_NAME, DOMAIN_ITEM_TRIES, DOMAIN_ITEMS_MAX, DOMAIN_QUOTE_LINES, DOMAIN_RESULT_HEAD
 
 _ENTRY = re.compile(r"^- \[([A-Za-z0-9_]+)\]\(([^)]+)\)")
@@ -33,6 +34,21 @@ _YES = ("y", "yes", "是", "好", "同意", "可以", "1")
 def _d(key, /, **fields):
     """prompts/harness/domain.md 的一則：交辦的結果、核對沒過的說明。"""
     return prompt_files.load("harness/domain.md", key, **fields)
+
+
+_ASK = re.compile(r"？|\?(?=\s|$)")       # 問句的結尾：「？」，或「?」後面是空白或結尾（a?b 這種寫法裡的不算）
+
+
+def questions(text):
+    """使用者這一則裡的問句 → [(開始, 結束)]（結束是問號的位置；沒有字的那一段不算）。"""
+    out, start = [], 0
+    for m in _ASK.finditer(text):
+        seg = text[start:m.start()]
+        lead = len(seg) - len(seg.lstrip())
+        if seg.strip():
+            out.append((start + lead, m.start()))
+        start = m.end()
+    return out
 
 
 def load_registry(base_path, tools_dir):
@@ -154,7 +170,7 @@ class DomainMixin:
     # ---------------------------------------------------------------- 一回合的狀態
     def _reset_domain_turn(self):
         """使用者送出新的問題：這一回合交辦過的、報告歸零（回答確認關卡不算新的問題）。"""
-        self._domain_turn = {"tasks": [], "reports": [], "reply_nudged": False,
+        self._domain_turn = {"tasks": [], "reports": [], "reply_nudged": False, "cover_asked": False,
                              "since": len(getattr(self, "trajectory", None) or [])}     # 這一回合的工具結果從軌跡的第幾筆開始
 
     def _tool_of(self, token):
@@ -203,11 +219,13 @@ class DomainMixin:
         turn["tasks"].append(entry)
         before = (self.current_cwd, self.container_cwd, self.target_container)
         job = domain_session.DomainSession(self, self.domain_registry()).start(self.current_task or goal, goal, items,
-                                                                               previous=entry["previous"], attempt=entry["n"])
+                                                                               previous=entry["previous"], attempt=entry["n"],
+                                                                               earlier=self._earlier_turns())
         return self._task_finish(entry, job, before)
 
     def _check_task(self, goal, items):
         """交辦的核對：有領域、子目標不是空的、項目 1～DOMAIN_ITEMS_MAX 項、每一項（使用者的原話）一字不改地在使用者說過的話裡（_user_words）、
+        一輪的第一次交辦要把最新這一則的每一個問句放進項目（_uncovered；交回一次，交回過照收——框架討論紀錄第 28 輪）、
         跟這一回合交辦過的不一樣（一樣的再交一次結果也一樣）、同一個項目最多 DOMAIN_ITEM_TRIES 次。過了回 None，沒過回說明（不含 [ERROR]）。"""
         turn = self._domain_turn
         if not self.domain_registry()["domains"]:
@@ -220,6 +238,11 @@ class DomainMixin:
         for k, it in enumerate(items, 1):
             if not composite._unquote(it) or composite._unquote(it) not in said:
                 return _d("err_quote", k=k, quote=it or "（空的）")
+        if not turn["tasks"] and not turn["cover_asked"]:
+            missing = self._uncovered(items)
+            if missing:
+                turn["cover_asked"] = True
+                return _d("err_cover", questions="、".join(f"「{q}」" for q in missing))
         same = next((x for x in turn["tasks"] if x["key"] == [goal, items]), None)
         if same:
             return _d("err_same", n=same["n"], status=domain_session.STATUS_TEXT.get(same["status"], same["status"] or "—"))
@@ -228,6 +251,46 @@ class DomainMixin:
             if len(tries) >= DOMAIN_ITEM_TRIES:
                 return _d("err_item_tries", item=it, n=len(tries), max=DOMAIN_ITEM_TRIES, history=self._task_history(tries))
         return None
+
+    def _uncovered(self, items):
+        """最新這一則裡，沒有跟任何一項的原話重疊的問句（questions；照 _user_words 的方式正規化空白）。"""
+        text = composite._norm(self.current_task or "")
+        spans = []
+        for it in items:
+            q = composite._unquote(it)
+            at = text.find(q) if q else -1
+            while at >= 0:
+                spans.append((at, at + len(q)))
+                at = text.find(q, at + 1)
+        return [text[s:e + 1] for s, e in questions(text) if not any(a < e and b > s for a, b in spans)]
+
+    def _earlier_turns(self):
+        """【前文】的來源（框架討論紀錄第 28 輪）：任務線上這一則之前的使用者的話（最多 TASK_HISTORY_KEEP − 1 則），各附那一回合最後的回覆
+        （reply 與 answers；不含 thought、工具結果）→ [{"user", "reply"}]。程式從 messages 取：使用者的訊息以那一句開頭（後面可能接了技能規格
+        或影像分析）；那一回合被壓縮掉了的只有使用者的話。/clear 之後沒有。"""
+        now = self.current_task or ""
+        earlier = [t for t in (self.task_history or [])[:-1] if t and t != now]
+        if not earlier:
+            return []
+        msgs = list(self.messages)
+
+        def said(i, t):
+            m = msgs[i]
+            return m.get("role") == "user" and str(m.get("content") or "").strip().startswith(t.strip())
+
+        end = max((i for i in range(len(msgs)) if said(i, now)), default=len(msgs))
+        out = []
+        for t in earlier:
+            start = max((i for i in range(end) if said(i, t)), default=None)
+            reply = ""
+            if start is not None:
+                stop = next((i for i in range(start + 1, end) if any(said(i, u) for u in earlier)), end)
+                last = next((msgs[i] for i in range(stop - 1, start, -1) if msgs[i].get("role") == "assistant"), None)
+                parsed = parse_agent_reply(last["content"]) if last else {"valid": False}
+                if parsed["valid"]:
+                    reply = "\n".join(x for x in (parsed["reply"], answers_text(parsed["answers"])) if x)
+            out.append({"user": t, "reply": reply})
+        return out
 
     def _user_words(self):
         """交辦的原話要在這裡：這段對話裡使用者說過的每一則（set_current_task 記的 _user_said，加上這一則），空白正規化之後接在一起。"""

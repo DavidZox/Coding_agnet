@@ -125,7 +125,8 @@ TOOL_USE_INDEX_NAME = "tools_use_index.md"
 TOOL_USE_INDEX_SHOW = int(os.environ.get("AGENT_TOOL_USE_INDEX_SHOW", "30"))
 TOOL_USE_INDEX_HINT_TARGET = 60   # prompt 要求的描述長度（中文字數，一段英數路徑算 1 字）；只是給模型的目標，程式不截斷
 # 看舊存檔的衍生輸出：不記進檢索清單（會跟原本那筆重複佔位，recall 到它只拿得到部分內容）
-DERIVED_RESULT_SCRIPTS = {"result_grep_cmd.py", "result_view_cmd.py", "result_list_cmd.py", "result_recall_cmd.py"}
+DERIVED_RESULT_SCRIPTS = {"result_grep_cmd.py", "result_view_cmd.py", "result_list_cmd.py", "result_recall_cmd.py",
+                          "dispatch_context"}    # 交辦的前文：從對話取的（agent_core/domain_session.py，框架討論紀錄第 28 輪）
 TASK_HISTORY_KEEP = 3   # 任務線：摘要錨點帶最近幾則使用者訊息（使用者回答追問時，最新一句往往只是關鍵字，原本要做什麼在前一句）
 TRAJECTORY_OUTPUT_HEAD = 300          # 每筆軌跡保留的輸出開頭字元數（稽核時看得出結果長什麼樣；完整的在工具結果存檔）
 

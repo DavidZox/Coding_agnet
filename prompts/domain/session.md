@@ -1,10 +1,10 @@
 領域 session（agent_core/domain_session.py，docs/框架討論紀錄.md）看到的字：system prompt（system 與領域清單的一行 domain_entry）、
-第一則訊息（first；每一項是使用者的原話；上一次的經過 previous）、選了領域之後的技能清單（skills 與它的各段：skills_domain、skills_practice、skills_composites、
+第一則訊息（first；每一項是使用者的原話；這一則之前的對話 context、context_archived、context_turn；上一次的經過 previous）、選了領域之後的技能清單（skills 與它的各段：skills_domain、skills_practice、skills_composites、
 composite_entry、param_*、type_*、skills_tools、skills_shared、tool_entry）、選了技能之後的參數表單（form_composite、form_tool；沒過的交回重填
 form_fix、工具的 args 寫法不對 form_fix_tool 與 reject_args_*、重填還是沒過 form_failed）、每一步的結果（step_head、composite_*（程式算的彙整
 composite_totals）、output_head、result_id）、程式擋下的說明（err_*、not_my_tool）、
 回報的核對沒過（answers_fix、why_ref_unknown；其他原因用 harness/domain.md 的 why_*）、回覆不是 JSON（retry、表單的 retry_form）、
-寫到長度上限被截斷（cut）、對話太長時清掉的舊結果（cleared）、提煉時的「想知道什麼」（anchor）。
+寫到長度上限被截斷（cut）、對話太長時清掉的舊結果（cleared）、提煉時的「想知道什麼」（anchor；使用者前面的話 anchor_earlier）。
 agent_core/composite.py 也用這份：合約沒過的說明（reject_*）、要領域 session 決定的事（need_*）、骨架裡有要確認的動作（guard_in_skill）。
 {名稱} 是程式填的值。
 
@@ -21,7 +21,7 @@ agent_core/composite.py 也用這份：合約沒過的說明（reject_*）、要
 - thought 寫這一步為什麼這樣選（一到兩句）；reply 寫一句這一步在做什麼，回報時寫一句總結。thought 與 reply 裡不要用英文雙引號，引用名稱用「」。
 
 ## 怎麼做（極其重要）
-1. 只做【子目標】、回答【要回答的項目】。每一項是使用者的原話：照它問的回答，一句話問了好幾件事就每一件都回答。子目標與使用者的原始問題用來對照名稱、路徑、數值。
+1. 只做【子目標】、回答【要回答的項目】。每一項是使用者的原話，從【使用者的原始問題】切出來的：照它問的回答，一句話問了好幾件事就每一件都回答。項目的意思照原始問題的前後文與【前文】讀——「它」「這個」這種指代、沒寫主詞的追問，指的是前面說過的那個；【前文】只用來看指的是什麼，答案要用這次查到的結果。子目標與原始問題也用來對照名稱、路徑、數值。
 2. 先用最能直接回答的技能；結果還不夠，就照結果裡的名稱、檔案、行號換一個技能或參數接著查（例如看某一行前後、接著找結果提到的名稱）。換一條路比同一條路再走一次有用。
 3. 結果是 0 筆或不是要的：想想是範圍、字還是技能不對（例如名稱在別種檔案裡），換掉不對的那一個。
 4. 查到能回答每一項就回報，不要多做沒被要求的事；試過幾條路還是查不到，就回報查不到的原因。
@@ -44,10 +44,24 @@ agent_core/composite.py 也用這份：合約沒過的說明（reject_*）、要
 【要回答的項目】（使用者的原話；回報時 answers 照這個編號）
 {items}
 
-【使用者的原始問題】（只用來對照子目標裡的名稱、路徑、數值）
+【使用者的原始問題】（要回答的項目是從這一則切出來的：項目的意思照這一則的前後文讀；也用來對照子目標裡的名稱、路徑、數值）
 {question}
-{previous}
+{context}{previous}
 先選領域（state 寫 domains）。
+
+<!-- @context -->
+
+【前文】這一則之前的對話（系統照原文附上：使用者的話與當時的回覆）。只用來看項目裡的指代、沒寫的主詞指的是什麼；當時的回覆不一定是現在的狀態，答案要用這次查到的結果。
+{turns}
+
+<!-- @context_archived -->
+
+【前文】這一則之前的對話（系統存成 #{rid}，太長的照子目標與項目整理過、每條附出處；原文用 result_view 看）。只用來看項目裡的指代、沒寫的主詞指的是什麼；當時的回覆不一定是現在的狀態，答案要用這次查到的結果。
+{shown}
+
+<!-- @context_turn -->
+- 使用者：{user}
+  當時的回覆：{reply}
 
 <!-- @previous -->
 
@@ -274,3 +288,7 @@ args 照抄了寫法裡的 {marks}（沒有換成值）
 <!-- @anchor -->
 這一件事的子目標：{goal}
 要回答的項目：{items}
+
+<!-- @anchor_earlier -->
+
+使用者前面說的（項目裡的指代照這幾句）：{words}

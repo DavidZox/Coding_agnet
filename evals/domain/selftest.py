@@ -5,8 +5,10 @@
 - 主 session：system prompt 的「交辦」一節（每個領域一行）、技能索引拿掉領域的工具、回覆的 schema 多「交辦」；回覆的欄位順序（主 session 的
   action 最後、AGENT.md 的範例與存回對話的 JSON 也一樣；領域 session 照說明的順序）；擋領域的工具與有骨架的技能
   （領域 session 裡只能用它選的領域的工具與共用的工具）；交辦的核對（子目標是空的、項目數、一樣的再交一次、同一個項目最多 3 次）；
-- 交辦的每一項附使用者的原話（quote 不在使用者說過的話裡擋下；之前幾則訊息裡的也可以）：領域 session 的第一則訊息、提煉的錨點、報告與
-  要回答的項目都帶著原話，說明寫「意思以原話為準」；
+- 交辦的每一項是使用者的原話（quote 不在使用者說過的話裡擋下；之前幾則訊息裡的也可以）：領域 session 的第一則訊息、提煉的錨點、報告與
+  要回答的項目都用原話；一輪的第一次交辦要把最新這一則的每一個問句放進項目（漏了交回一次、交回過照收）；
+- 交辦帶前文：這一則之前的對話（使用者的話與當時的回覆）附在領域 session 的第一則訊息、算可以抄的原文，錨點帶使用者前面的話；長的存檔並提煉；
+  每一項從新的對話開始（前文只看這一段對話）；
 - 領域 session 用工具：選領域 → 技能清單（做法、有骨架的技能與參數、工具與 args 的寫法、共用的工具）→ 用一個工具（存檔 #編號）→ 回報（核對過）
   → 報告交回主 session（不提煉）＋依報告回答的說明 → 主 session 照項目回答（附出處那一行的原文）；
 - 選了技能之後的參數表單：schema 只有該填的欄位（有骨架的技能每個參數一欄、參數名稱就是欄位；工具只有 args）、表單的那一輪不算在回的輪數裡；
@@ -159,6 +161,7 @@ def main():
 
     def check(name, fn):
         try:
+            agent.reset_conversation()      # 每一項從新的對話開始：前文只看這一段對話（框架討論紀錄第 28 輪）
             fn()
             results.append((name, True, ""))
             print(f"✅ {name}")
@@ -170,7 +173,7 @@ def main():
         import ollama
         ollama.list = lambda: {"models": []}
         from agent_core import answers, composite, domain_session, skill_spec
-        from agent_core.config import DOMAIN_RESULT_HEAD
+        from agent_core.config import DOMAIN_RESULT_HEAD, TOOL_RESULT_TOKEN_THRESHOLD
         from agent_core.jobstore import JobStore
         from agent_core.config import REPLY_ARGS_CHARS
         from agent_core.protocol import action_text, drop_cut, parse_agent_reply
@@ -306,9 +309,9 @@ def main():
             assert "- 要回答的項目 2：它還被誰用到\n" in job["result"]["report"], job["result"]["report"][:400]
             assert "1. beta 定義在哪\n2. 它還被誰用到" in outs[1], "主 session 要回答的項目也是原話"
             assert "它還被誰用到" in domain_session.DomainSession._anchor(job), "提煉的錨點是原話"
-            fake = FakeChat(main=[task("找 pkg 裡呼叫 beta 的函式", ["它還被誰用到"]), say("好")])
+            fake = FakeChat(main=[task("找 pkg 裡呼叫 beta 的函式", ["那呼叫它的函式呢", "它還被誰用到"]), say("好")])
             events, _ = turn("那呼叫它的函式呢？", fake)
-            assert tools_of(events)[0].startswith(DOMAIN_RESULT_HEAD), ("之前一則訊息裡的原話也可以", tools_of(events)[0][:200])
+            assert tools_of(events)[0].startswith(DOMAIN_RESULT_HEAD), ("之前一則訊息裡的原話也可以（這一則的問句也放進了項目）", tools_of(events)[0][:200])
 
         # ------------------------------------------------------------ 領域 session：工具
         def t_domain_named():
@@ -355,6 +358,12 @@ def main():
             assert "1. alpha 定義在哪個檔案的第幾行：定義在 pkg/mod.py:1" in shown and "> " in shown, ("照項目（原話）排", shown)
 
         def t_tool_records():
+            fake = FakeChat(    # 這一項自己交辦一次（每一項從新的對話開始；之前用的是上一項留下的）
+                main=[task("在 pkg 找 alpha 定義在哪", ["alpha 定義在哪個檔案的第幾行"]),
+                      answer("找到了。", [(1, "answered", "定義在 pkg/mod.py:1（def alpha）", ["pkg/mod.py:1"])])],
+                session=[ds("domains", domains=["repo_analysis"]), ds("skill", skill="search_text"), fill(args='search_text "def alpha" pkg'),
+                         ds("report", answers=[(1, "answered", "定義在 pkg/mod.py 第 1 行（def alpha）", ["pkg/mod.py:1"])], reply="找到了")])
+            turn("pkg 裡的 alpha 定義在哪個檔案的第幾行？", fake)
             parsed = {"action": {"task": {"goal": "在 pkg 找 alpha 定義在哪",
                                           "items": [{"quote": "alpha 定義在哪個檔案的第幾行"}]}}}
             recs = domain_calls.calls(agent, parsed, DOMAIN_RESULT_HEAD + "報告")
@@ -802,6 +811,66 @@ def main():
             assert not answers.answer_problems(["x"], [{"item": 1, "status": "not_found", "text": "#4 裡沒有", "refs": []}], cited, "", ""), \
                 "查不到的原因不擋"
 
+        def t_cover():
+            # 問句都要放進項目（框架討論紀錄第 28 輪的 1）：一輪的第一次交辦漏了問句交回一次、補上就過；交回過一次照收；之後的交辦不核對
+            q = "pkg 裡的 alpha 定義在哪？誰呼叫它？"
+            fake = FakeChat(main=[task("找 pkg 裡的 alpha", ["pkg 裡的 alpha 定義在哪"]),
+                                  task("找 pkg 裡的 alpha", ["pkg 裡的 alpha 定義在哪", "誰呼叫它"]), say("好")],
+                            session=[ds("domains", domains=["repo_analysis"])])
+            events, _ = turn(q, fake)
+            outs = tools_of(events)
+            assert outs[0].startswith("[ERROR]") and "「誰呼叫它？」沒有放進任何一項" in outs[0], ("漏了的問句交回", outs[0][:300])
+            assert last_job()["items"] == ["pkg 裡的 alpha 定義在哪", "誰呼叫它"], "補上就過"
+            fake = FakeChat(main=[task("找 pkg 裡的 alpha", ["pkg 裡的 alpha 定義在哪"]), task("找 pkg 裡的 alpha", ["pkg 裡的 alpha 定義在哪"]),
+                                  task("找呼叫 alpha 的地方", ["pkg 裡的 alpha 定義在哪"]), say("好")],
+                            session=[ds("domains", domains=["repo_analysis"])])
+            events, _ = turn(q, fake)
+            outs = tools_of(events)
+            assert outs[0].startswith("[ERROR]") and not outs[1].startswith("[ERROR]"), ("交回過一次照收", [o[:80] for o in outs])
+            assert len(outs) > 2 and not outs[2].startswith("[ERROR]"), ("之後的交辦不核對", [o[:80] for o in outs])
+            agent.current_task = "照 docs/spec.md：alpha 在哪？預設多少？引用規格的編號。"
+            assert agent._uncovered(["alpha 在哪"]) == ["預設多少？"], agent._uncovered(["alpha 在哪"])
+            assert agent._uncovered(["alpha 在哪？預設多少"]) == [], "原話跨兩句：兩句都算"
+            agent.current_task = "alpha 在哪? 誰用到?"
+            assert agent._uncovered(["alpha 在哪"]) == ["誰用到?"], agent._uncovered(["alpha 在哪"])
+            agent.current_task = "列出 pkg 底下符合 a?b 的檔案"
+            assert agent._uncovered(["列出"]) == [], "「?」在字中間不算問句；沒有問句的不核對"
+
+        def t_context():
+            # 交辦帶前文（第 28 輪的 2、3）：第一句沒有前文；第二句附上一句與當時的回覆、算可以抄的原文；前文裡使用者的話不用在出處裡找、
+            # 當時的回覆要；錨點帶使用者前面的話；最新這一則的標示寫明項目照前後文讀；短的照原文、不提煉
+            fake = FakeChat(main=[task("找 pkg 裡的 alpha", ["pkg 裡的 alpha 定義在哪"]), say("好")], session=[ds("domains", domains=["repo_analysis"])])
+            turn("pkg 裡的 alpha 定義在哪？", fake)
+            assert last_job()["context"] is None and "【前文】" not in fake.session_msgs(0)[-1]["content"], "第一句沒有前文"
+            agent.reset_conversation()
+            turn("pkg 裡的 alpha 定義在哪？", FakeChat(main=[say("alpha 定義在 pkg/mod.py 的第 1 行。")]))
+            fake = FakeChat(main=[task("找呼叫 pkg 裡的 alpha 的地方", ["誰呼叫它"]), say("好")], session=[ds("domains", domains=["repo_analysis"])])
+            turn("誰呼叫它？", fake)
+            first = fake.session_msgs(0)[-1]["content"]
+            assert "要回答的項目是從這一則切出來的" in first, first[:600]
+            assert "【前文】" in first and "- 使用者：pkg 裡的 alpha 定義在哪？\n  當時的回覆：alpha 定義在 pkg/mod.py 的第 1 行。" in first, first[:900]
+            job = last_job()
+            assert job["context"] and job["context"]["result_id"] is None, job["context"]
+            assert "當時的回覆：alpha 定義在 pkg/mod.py 的第 1 行。" in job["sources"], "前文算可以抄的原文"
+            allowed = domain_session.DomainSession._allowed(job)
+            assert "pkg 裡的 alpha 定義在哪？" in allowed and "pkg/mod.py 的第 1 行" not in allowed, "前文裡使用者的話不核對、當時的回覆要"
+            assert "使用者前面說的" in domain_session.DomainSession._anchor(job) and "pkg 裡的 alpha 定義在哪？" in domain_session.DomainSession._anchor(job)
+            assert not [c for c in fake.calls if c["role"] == "other"], "前文短的照原文：不提煉"
+
+        def t_context_long():
+            # 前文超過門檻：存成一份存檔（dispatch_context）、照錨點提煉，附提煉的結果（跟工具結果一樣）
+            turn("把 pkg 的說明都列出來", FakeChat(main=[say("alpha 的說明：" + "、".join(f"第 {k} 段 value {k * 3}" for k in range(400)))]))
+            fake = FakeChat(main=[task("找呼叫 alpha 的地方", ["誰呼叫它"]), say("好")], session=[ds("domains", domains=["repo_analysis"])])
+            turn("誰呼叫它？", fake)
+            ctx = last_job()["context"]
+            assert ctx and ctx["result_id"] and ctx["tokens"] > TOOL_RESULT_TOKEN_THRESHOLD, ctx
+            first = fake.session_msgs(0)[-1]["content"]
+            assert f"系統存成 #{ctx['result_id']}" in first and ctx["shown"] in first, first[:600]
+            extract = [c for c in fake.calls if c["role"] == "other"]
+            assert extract and any("誰呼叫它" in json.dumps(c["messages"], ensure_ascii=False) for c in extract), "照錨點（子目標與項目）提煉"
+            rec = next(r for r in reversed(agent.trajectory) if r.get("id") == ctx["result_id"])
+            assert rec["script"] == "dispatch_context", rec
+
         for name, fn in [("主 session：交辦一節、索引、回覆的 schema 與解析", t_prompt_schema),
                          ("回覆的欄位順序（主 session 的 action 最後；領域 session 照說明的順序）", t_reply_order), ("擋領域的工具與有骨架的技能", t_gate),
                          ("主 session 把領域的名稱當技能：說明要交辦；看到的字不寫識別名稱", t_domain_named),
@@ -820,7 +889,10 @@ def main():
                          ("路徑有好幾個交回決定、0 筆照實交回", t_composite_need_and_empty), ("狀態與上限", t_states_limits),
                          ("確認關卡", t_guard), ("長的結果照舊提煉", t_long_output), ("再交辦帶著上一次的經過", t_previous),
                          ("主 session 依報告回答的核對", t_main_check), ("依報告回答漏了報告的編號與數字：交回修一次", t_kept),
-                         ("回答的文字寫了存檔的 #編號：交回修一次（回報與主 session 的回答；使用者自己寫了的、查不到的原因不擋）", t_archive_id)]:
+                         ("回答的文字寫了存檔的 #編號：交回修一次（回報與主 session 的回答；使用者自己寫了的、查不到的原因不擋）", t_archive_id),
+                         ("問句都要放進項目：一輪的第一次交辦漏了交回一次、補上就過、交回過照收、之後的交辦不核對（「?」在字中間、沒有問句的不核對）", t_cover),
+                         ("交辦帶前文：附上一句與當時的回覆、算可以抄的原文、錨點帶使用者前面的話；第一句沒有前文", t_context),
+                         ("交辦帶前文：長的存檔並照錨點提煉", t_context_long)]:
             check(name, fn)
     finally:
         os.chdir(cwd)
