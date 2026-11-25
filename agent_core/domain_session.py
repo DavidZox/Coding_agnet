@@ -8,11 +8,13 @@
    schemas.domain_form_schema；表單的那一輪不算在回的輪數裡）。
    - 有骨架的技能（composite.py）：每個參數一欄（quote、value），原文要一字不改（F3），程式核對（composite.verify_param；原文＝問題、
      子目標、項目、前面每一步交給它的結果；開頭多抄了程式的標題「【子目標】」這種的，拿掉標題再核對；quote 抄了別段、值本身就在原文裡的也收；
-     空的與預設值當成沒提到（路徑的預設值配的 quote 寫了別的名稱的照核對交回），工作目錄底下的絕對路徑換成相對的：_contract）。沒過的只把那幾個參數交回重填
+     空的與預設值當成沒提到（路徑的預設值配的 quote 寫了別的名稱的照核對交回），工作目錄底下的絕對路徑換成相對的；範圍是 path 的技能的搜尋字與
+     檔名寫法原文裡沒有、要搜的範圍裡有的也收：_contract、_scope_hits）。沒過的只把那幾個參數交回重填
      一次，還是沒過就回到選技能，都不算一步；過了交給 composite.Runner 跑骨架與回退。缺參數、路徑有好幾個也交回它決定（附候選）。
    - 工具：表單只有 args（一行參數，照工具的〈語法〉寫，不是 JSON），程式照技能名稱找腳本執行（agent._run_tool_once：跟主對話同一條路——
      確認關卡、存檔 #編號、收據、狀態標記的同步）；只能用選的領域的工具與共用的工具（orchestrator.domain_gate 看 agent._sub_allowed）。
-     args 整個是 JSON、或照抄了〈語法〉的佔位符（<…>、[…]）的不執行，交回重填一次，還是一樣就回到選技能，都不算一步（_args_problem）。
+     args 整個是 JSON、照抄了〈語法〉的佔位符（<…>、[…]）、或可以不寫的部分填成「[]」的不執行，交回重填一次，還是一樣就回到選技能，
+     都不算一步（_args_problem）。
    - 有骨架的技能跑完，程式照收據算的彙整（composite.Runner._totals：每個檔案的數量與總數）存成 #編號，接在技能的狀態後面（回報時可以當出處）。
    - 結果太長就分段提煉（turn._content_for_context；錨點是子目標與項目，事實附 檔案:行號），短的照原文；每份結果附 #編號。
    - 跟之前某一步一模一樣的技能＋參數不執行（附那一步的結果）；最多 DOMAIN_STEPS_MAX 步。
@@ -23,6 +25,7 @@
 存檔：logs/domain_jobs/<編號>/——job.json（每一步：選的領域、技能、參數與原文、核對、結果的 #編號）、calls.jsonl（每次模型呼叫）、
 events.jsonl（進度）、report.md。
 """
+import fnmatch
 import json
 import os
 import re
@@ -44,6 +47,7 @@ STATUS_TEXT = {"running": "執行中", "need_user": "等使用者回答", "done"
 _KEEP_RESULTS = 3                           # 對話太長時，最新的這幾份結果不清
 _SYNTAX = re.compile(r"`EXECUTE:\s*scripts/[\w.-]+\s*([^`]*)`")
 _PLACEHOLDER = re.compile(r"<[^<>`\s][^<>`]*>|\[[^\[\]`]+\]")   # 〈語法〉的佔位符：<名稱>、[路徑]（args 照抄了它＝沒有換成值）
+_EMPTY_ARG = re.compile(r"(?<!\S)\[\s*\](?!\S)")    # args 裡單獨的「[]」：〈語法〉裡可以不寫的部分填成空的中括號（沒有換成值；引號裡的不算）
 # 程式給模型看的標題（「【子目標】」「【要回答的項目】（…）」「【第 2 步的結果】…（…）」）：表單的原文開頭抄了它、核對沒過時拿掉再核對
 # 一次（第 3 步 e4b 合約沒過的 191 個參數裡 110 個是這樣，值是對的；設計筆記 2.57 ①）
 _LABEL = re.compile(r"^【[^】]{1,20}】\s*(?:（[^）]{0,60}）)?\s*")
@@ -322,8 +326,9 @@ class DomainSession:
         return args
 
     def _args_problem(self, tool, args):
-        """工具表單的 args 寫法：整個是 JSON（物件或陣列）、或照抄了〈語法〉的佔位符（<…>、[…]）→ 說明；過了是 ""。
-        建議 1 的比較裡 26b 一次把佔位符當成鍵寫成 JSON（{"<名稱關鍵字>": …}），連錯 4 步（設計筆記 2.58）。"""
+        """工具表單的 args 寫法：整個是 JSON（物件或陣列）、照抄了〈語法〉的佔位符（<…>、[…]）、或可以不寫的部分填成單獨的「[]」→ 說明；
+        過了是 ""。建議 1 的比較裡 26b 一次把佔位符當成鍵寫成 JSON（{"<名稱關鍵字>": …}），連錯 4 步（設計筆記 2.58）；e4b 把〈語法〉裡可以不寫的
+        部分填成「[]」照樣執行、回「找不到路徑：[]」（設計筆記 2.70、2.71）。"""
         text = args.strip()
         if text.startswith(("{", "[")):
             try:
@@ -332,7 +337,7 @@ class DomainSession:
             except ValueError:
                 pass
         marks = sorted({m.group() for row in self._syntax_args(tool) for m in _PLACEHOLDER.finditer(row)})
-        copied = [m for m in marks if m in text]
+        copied = [m for m in marks if m in text] + (["[]"] if _EMPTY_ARG.search(text) else [])
         return _s("reject_args_placeholder", marks="、".join(copied)) if copied else ""
 
     def _same(self, job, skill, how):
@@ -347,9 +352,11 @@ class DomainSession:
         值是空的或規格的預設值（路徑寫工作目錄本身＝「.」）當成沒提到（表單列出每個參數，模型會把「沒有提到就用 .」照寫進 value）——路徑的預設值
         配的 quote 寫了別的名稱的不算，照核對交回（quote 寫的範圍不換成整個工作目錄，設計筆記 2.70）；
         工作目錄底下的絕對路徑先換成相對的（composite.unmentioned、relative）。原文要在這個 session 給模型看過的字裡：照 quote 核對沒過的，原文開頭是
-        程式的標題（_LABEL）就拿掉標題再核對一次，再拿值本身當原文核對一次（值就在原文裡就收，composite.own_quote；設計筆記 2.69）。都沒過的交回，
+        程式的標題（_LABEL）就拿掉標題再核對一次，再拿值本身當原文核對一次（值就在原文裡就收，composite.own_quote；設計筆記 2.69）。範圍是 path 的
+        技能的搜尋字與檔名寫法還是沒過的，最後數要搜的範圍裡有沒有（_scope_hits：每一個都有才收，出處寫 scope；設計筆記 2.71）。都沒過的交回，
         說明照模型抄的 quote 寫（沒抄 quote 的寫明沒抄原文）。"""
-        params, problems, bad = {}, [], []
+        params, problems, later = {}, {}, []
+        scope = composite.scope_param(spec)
         for p in spec["parameters"]:
             cell = cells.get(p["name"])
             if not cell:
@@ -365,14 +372,58 @@ class DomainSession:
                 if not why2:
                     quote, value, why = again, value2, None
                     break
-            if why:
-                problems.append(why)
-                bad.append(p["name"])
+            if why and scope and composite.scope_items(p, given):
+                later.append((p, quote, given, why))
+            elif why:
+                problems[p["name"]] = why
             elif value is not None:
                 params[p["name"]] = {"value": value, "quote": quote, "source": "contract"}
                 if p["type"] == "path" and value != composite.plain_path(given):
                     params[p["name"]]["given"] = given      # 程式只留了原文裡的名稱（composite._name_only）：結果裡寫明
-        return params, problems, bad
+        for p, quote, given, why in sorted(later, key=lambda x: x[0]["type"] != "glob"):    # 檔名寫法先數：收了的 files 縮小搜尋字的範圍
+            hits = None if scope in problems else self._scope_hits(job, p, given, params, scope)
+            if hits is None:
+                problems[p["name"]] = why
+            else:
+                params[p["name"]] = {"value": composite.words_of(given) if p["type"] == "words" else given, "quote": quote, "source": "scope",
+                                     "hits": hits}
+        bad = [p["name"] for p in spec["parameters"] if p["name"] in problems]
+        return params, [problems[k] for k in bad], bad
+
+    def _scope_hits(self, job, p, value, params, scope):
+        """原文沒有的搜尋字與檔名寫法：程式數要搜的範圍裡有沒有（composite.scope_items 的每一個；原文裡有的那一個不數）→ {每一個: 筆數}，
+        有一個是 0 就回 None。範圍＝同一張表單核對過的 path（沒提到、或工作目錄裡還找不到——執行時才照 fetch 查——用工作目錄）與骨架搜尋時的
+        files、exclude；搜尋字照 search_text 照字面、不分大小寫數幾行，檔名寫法照 find_file 數幾個檔案（設計筆記 2.71）。範圍裡有這個 agent 自己的
+        logs（工作目錄就是它的專案）時不數 logs：模型剛填的表單已經記在裡面，會數到它自己寫的字。"""
+        root = job["cwd"] or "."
+        if not os.path.isdir(root):
+            return None
+        where = os.path.join(root, (params.get(scope) or {}).get("value") or ".")
+        where = where if os.path.exists(where) else root
+        inc = (params.get("files") or {}).get("value") if p["name"] != "files" else None
+        exc = list((params.get("exclude") or {}).get("value") or [])
+        own = os.path.abspath(os.path.join(self.agent.script_dir, "logs"))
+        if own.startswith(os.path.abspath(where).rstrip("/") + "/"):
+            exc.append(os.path.basename(own))
+        out = {}
+        for x in composite.scope_items(p, value):
+            if p["type"] != "glob" and composite._in_source(x, job["sources"], p["type"]):
+                continue
+            goal = f"數「{x}」在範圍裡有沒有（參數 {p['name']}：原文沒有）"
+            if p["type"] == "glob":
+                n = (int(fnmatch.fnmatch(os.path.basename(where).lower(), x.lower())) if os.path.isfile(where)
+                     else self._count(goal, "find_file", [x, where, "--type", "f"]))
+            else:
+                n = self._count(goal, "search_text", [x, where, "-F", "-l"] + (["--include", inc] if inc else [])
+                                + (["--exclude-dir", "|".join(exc)] if exc else []))
+            if not n:
+                return None
+            out[x] = n
+        return out
+
+    def _count(self, goal, tool, args):
+        """程式照工具數一次（composite.Runner.count：不交給修正的模型、讀收據的筆數）。"""
+        return composite.Runner(self.agent).count(goal, tool, args)
 
     def _composite(self, job, parsed, domain, name, params, how):
         """執行有骨架的技能（parsed：選技能那一輪的 thought、reply），每個節點的結果接進對話、記一步。"""

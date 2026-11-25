@@ -10,13 +10,16 @@
 - 領域 session 用工具：選領域 → 技能清單（做法、有骨架的技能與參數、工具與 args 的寫法、共用的工具）→ 用一個工具（存檔 #編號）→ 回報（核對過）
   → 報告交回主 session（不提煉）＋依報告回答的說明 → 主 session 照項目回答（附出處那一行的原文）；
 - 選了技能之後的參數表單：schema 只有該填的欄位（有骨架的技能每個參數一欄、參數名稱就是欄位；工具只有 args）、表單的那一輪不算在回的輪數裡；
-  工具的 args 整個是 JSON、或照抄了〈語法〉的佔位符的交回重填一次、還是一樣就回到選技能（不算一步；有中括號的搜尋字不誤擋）；
+  工具的 args 整個是 JSON、照抄了〈語法〉的佔位符、或可以不寫的部分填成「[]」的交回重填一次、還是一樣就回到選技能（不算一步；有中括號的搜尋字、
+  引號裡的「[]」不誤擋）；
 - 有骨架的技能：合約（原文要在給它看過的字裡）沒過的只把那幾個參數交回重填一次、還是沒過就回到選技能，都不算一步；原文開頭抄了程式的
   標題（「【子目標】」）的拿掉再核對；照骨架執行、每個節點的結果附 #編號；一模一樣的不執行；路徑的一段混了說明的字或結尾的萬用字元時
   只留原文裡的那個名稱（結果裡寫明；好幾個名稱、翻譯、接在一起的照舊交回）；值對得上原文的不擋：quote 抄了別段或沒抄、值本身就在原文裡，
   搜尋的字不分大小寫，預設值與空的當成沒提到，工作目錄與底下的絕對路徑換成「.」與相對路徑（編的檔名、翻成英文的字、搜尋的文字寫成好幾個、
   原文沒有的值照舊交回；路徑的預設值配的 quote 寫了別的名稱的交回，quote 是工作目錄或它路徑上的一段的照收；「.」「..」不算名稱；
-  骨架對搜尋的字加 --case 的載入時擋下）；
+  骨架對搜尋的字加 --case 的載入時擋下）；原文沒有的搜尋字與檔名寫法，要搜的範圍（同一張表單的 path、files、exclude）裡有才收、出處寫範圍
+  （範圍裡沒有的、詞組照字面沒有的、| 分開的有一個沒有的、正規表示式的符號、寫成好幾個的、path 沒過的、doc_lookup 的字照舊交回；agent 自己的
+  logs 不數）；
   回退換技能（.py 沒有、C++ 檔有 → cpp_symbol）；路徑有好幾個交回它決定（附候選）；0 筆照實交回（跑完、結果是 0 筆）；
   程式照收據算的彙整（AST 的定義、呼叫與 import 每個檔案幾處、總共幾處；名稱符合的檔案扣掉不含的子目錄）存成 #編號、接在技能的狀態後面，
   回報的總數照它寫、出處寫它的 #編號就過核對；
@@ -420,14 +423,14 @@ def main():
             fake = FakeChat(main=[task(goal, ["定義在哪"]), say("好")],
                             session=[ds("domains", domains=["repo_analysis"]),
                                      ds("skill", skill="cpp_symbol"), fill(params=[("names", "zzz", "zzz"), ("path", ".", "")]),
-                                     fill(params=[("names", "yyy", "")]),
+                                     fill(params=[("names", "nosuch_name", "")]),
                                      ds("skill", skill="py_usage"),
                                      fill(params=[("name", "alpha", f"【子目標】\n{goal}"), ("path", "pkg", f"【子目標】{goal}")])])
             turn(q, fake)
             calls = [c for c in fake.calls if c["role"] == "session"]
             assert list(calls[3]["format"]["properties"]["params"]["properties"]) == ["names"], "照寫了預設值（沒抄原文）的 path 不算沒過"
             failed = fake.session_msgs(4)[-1]["content"]
-            assert "重填之後還是沒有通過核對" in failed and "值「yyy」沒有抄原文" in failed, failed[:300]
+            assert "重填之後還是沒有通過核對" in failed and "值「nosuch_name」沒有抄原文" in failed, failed[:300]
             assert "state" in calls[4]["format"]["properties"], "重填還是沒過：回到每一輪的決定"
             job = last_job()
             assert [s["skill"] for s in job["steps"]] == ["py_usage"], f"沒過的不算一步：{[s['skill'] for s in job['steps']]}"
@@ -499,6 +502,59 @@ def main():
                                                 agent.domain_registry()["domains"]["repo_analysis"]["tools"])
             assert any("--case" in x for x in problems), ("搜尋的字不分大小寫：骨架加 --case 的擋下", problems)
 
+        def t_scope():
+            # 原文沒有的搜尋字與檔名寫法：要搜的範圍裡有才收（框架討論紀錄第 20 輪，設計筆記 2.71）
+            fake = FakeChat(main=[task("找 pkg 裡的函式", ["在哪"]), say("好")],
+                            session=[ds("domains", domains=["repo_analysis"]), ds("skill", skill="find_lines"),
+                                     fill(params=[("keyword", "beta", "函式的名稱"), ("path", "pkg", "pkg 裡")])])
+            turn("pkg 裡的函式在哪？", fake)
+            job = last_job()
+            assert job["forms"] == 1 and not [b for b in job["blocked"] if "核對" in b["why"]], ("範圍裡有：第一次就過", job["blocked"])
+            kw = job["steps"][0]["params"]["keyword"]
+            assert kw["source"] == "scope" and kw["value"] == "beta" and kw["hits"]["beta"] >= 1, ("出處寫範圍與筆數", kw)
+            assert "def beta" in fake.session_msgs(3)[-1]["content"], "照那個字搜到"
+            with open(os.path.join(tmp, "logs", "note.txt"), "w", encoding="utf-8") as f:
+                f.write("uniq_logword\n")
+            sess = domain_session.DomainSession(agent, agent.domain_registry())
+            specs = agent.domain_registry()["domains"]["repo_analysis"]["skills"]
+            assert composite.scope_param(specs["find_lines"]) == "path" and composite.scope_param(specs["doc_lookup"]) is None
+            job = {"cwd": tmp, "sources": "找 pkg、cpp 與 sub 目錄裡的定義；照 docs/spec.md 回答"}
+
+            def form(skill, cells):
+                return sess._contract(job, specs[skill], {k: {"quote": q, "value": v} for k, (v, q) in cells.items()})
+
+            params, problems, _ = form("find_lines", {"keyword": ("beta|gamma", ""), "path": ("pkg", "pkg")})
+            assert not problems and params["keyword"]["source"] == "scope" and set(params["keyword"]["hits"]) == {"beta", "gamma"}, \
+                ("| 分開的每一個都有", params, problems)
+            params, problems, _ = form("find_lines", {"keyword": ("def beta", "定義"), "files": ("*.py", ""), "path": ("pkg", "pkg")})
+            assert not problems and params["files"]["source"] == params["keyword"]["source"] == "scope", ("詞組照字面有、檔名寫法對到檔案", params, problems)
+            params, problems, _ = form("cpp_symbol", {"names": ("delta", ""), "path": ("cpp", "cpp")})
+            assert not problems and params["names"]["value"] == ["delta"] and params["names"]["source"] == "scope", ("搜尋的字", params, problems)
+            params, problems, _ = form("py_usage", {"name": ("gamma", ""), "path": ("pkg", "pkg")})
+            assert not problems and params["name"]["source"] == "scope", ("名稱", params, problems)
+            params, problems, _ = form("find_lines", {"keyword": ("beta", "")})
+            assert not problems and params["keyword"]["source"] == "scope", ("沒寫 path：數工作目錄", params, problems)
+            params, problems, _ = form("find_lines", {"keyword": ("beta", ""), "path": ("sub", "sub 目錄")})
+            assert not problems and params["path"]["value"] == "sub", ("path 還找不到（執行時才照 fetch 查）：數工作目錄", params, problems)
+            params, problems, bad = form("find_lines", {"keyword": ("delta", ""), "files": ("*.py", ""), "path": ("cpp", "cpp")})
+            assert bad == ["files"] and params["keyword"]["source"] == "scope", ("檔名寫法對不到檔案的交回；搜尋字照 path 數", params, problems)
+            for cells, why in (({"keyword": ("beta", ""), "path": ("cpp", "cpp")}, "換了範圍就沒有"),
+                               ({"keyword": ("return", ""), "files": ("*.hpp", ""), "path": ("cpp", "cpp")}, "files 縮小之後沒有"),
+                               ({"keyword": ("omega", "函式"), "path": ("pkg", "pkg")}, "範圍裡沒有"),
+                               ({"keyword": ("beta def", ""), "path": ("pkg", "pkg")}, "詞組照字面沒有"),
+                               ({"keyword": ("beta|omega", ""), "path": ("pkg", "pkg")}, "| 分開的有一個沒有"),
+                               ({"keyword": ("bet.*", ""), "path": ("pkg", "pkg")}, "正規表示式的符號"),
+                               ({"keyword": ("beta、gamma", ""), "path": ("pkg", "pkg")}, "用「、」寫成好幾個（另外談）"),
+                               ({"keyword": ("beta", ""), "exclude": ("pkg", "pkg")}, "exclude 拿掉之後沒有"),
+                               ({"keyword": ("uniq_logword", "")}, "agent 自己的 logs 不數（剛填的表單記在裡面）")):
+                params, problems, bad = form("find_lines", cells)
+                assert bad == ["keyword"] and "keyword" not in params, (why, params, problems)
+            assert "抄的原文「函式」" in form("find_lines", {"keyword": ("omega", "函式"), "path": ("pkg", "pkg")})[1][0], "沒過的說明照舊"
+            params, problems, bad = form("find_lines", {"keyword": ("beta", ""), "path": ("pkgx", "pkgx")})
+            assert bad == ["keyword", "path"], ("path 沒過：不數，一起交回", params, problems)
+            params, problems, bad = form("doc_lookup", {"doc": ("docs/spec.md", "docs/spec.md"), "words": ("WAITING", "")})
+            assert bad == ["words"], ("doc_lookup 不數（要搜的文件執行時才找）", params, problems)
+
         def t_form_tool():
             fake = FakeChat(main=[task("找 pkg 裡的 alpha 定義在哪", ["定義在哪"]), say("好")],
                             session=[ds("domains", domains=["repo_analysis"]), ds("skill", skill="search_text"),
@@ -521,6 +577,8 @@ def main():
             sess = domain_session.DomainSession(agent, agent.domain_registry())
             assert sess._args_problem("search_text", '"[A-Z]+_ERR" pkg -C 2') == "", "中括號的搜尋字不是佔位符"
             assert sess._args_problem("search_text", '["def alpha", "pkg"]') and sess._args_problem("view_file", "<檔案> --from 3"), "陣列、照抄佔位符"
+            assert "[]" in sess._args_problem("search_text", '"def alpha" pkg [] []'), "可以不寫的部分填成「[]」：沒有換成值"
+            assert sess._args_problem("search_text", '"[]" pkg') == "" and sess._args_problem("search_text", '"a[]" pkg -C 2') == "", "引號裡的「[]」照搜"
 
         def t_totals():
             def report(messages):
@@ -675,7 +733,8 @@ def main():
                          ("參數表單：抄到程式的標題照樣核對、重填還是沒過回到選技能", t_form),
                          ("參數表單：值對得上原文的不擋（值本身在原文裡、大小寫、預設值、工作目錄的絕對路徑）、編的與翻譯的照舊交回、"
                           "預設值配寫著別的名稱的 quote 交回", t_grounded),
-                         ("工具的參數表單：args 寫成 JSON、照抄佔位符的交回重填", t_form_tool),
+                         ("參數表單：原文沒有的搜尋字與檔名寫法，要搜的範圍裡有才收（出處寫範圍）、範圍裡沒有的照舊交回", t_scope),
+                         ("工具的參數表單：args 寫成 JSON、照抄佔位符、填「[]」的交回重填", t_form_tool),
                          ("有骨架的技能的彙整：程式照收據算的數量存成 #編號、總數照它寫就過核對", t_totals), ("回退換技能", t_composite_switch),
                          ("路徑有好幾個交回決定、0 筆照實交回", t_composite_need_and_empty), ("狀態與上限", t_states_limits),
                          ("確認關卡", t_guard), ("長的結果照舊提煉", t_long_output), ("再交辦帶著上一次的經過", t_previous),
