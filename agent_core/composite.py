@@ -7,8 +7,8 @@
    值照種類對得上原文（名稱、名稱清單、搜尋的字要原樣在原文裡；路徑的每一段是原文的名稱——一段混了說明的字或萬用字元時只留那個名稱，_name_only；
    文字與檔案名稱的寫法每一段在原文裡）。搜尋的字（text、words：骨架交給 search_text，不分大小寫）核對也不分大小寫。領域 session 照 quote 核對
    沒過時，拿值本身當原文再核對一次（own_quote）；空的與預設值當成沒提到——路徑的預設值配的 quote 寫了別的名稱的不算，照核對交回
-   （unmentioned）；工作目錄底下的絕對路徑先換成相對的（relative）。範圍是 path 的技能的搜尋字與檔名寫法，原文裡沒有、要搜的範圍裡有的也收
-   （scope_param、scope_items；領域 session 照 Runner.count 數）。
+   （unmentioned）；工作目錄底下的絕對路徑先換成相對的（relative）。範圍是 path 的技能的搜尋字，原文裡沒有、要搜的範圍裡有的也收
+   （scope_param、scope_items；領域 session 照 Runner.count 數）；檔名寫法照舊照原文核對。
 3. **補齊**（Runner.run 的第一步）：沒提到的用預設值；路徑在工作目錄找不到時照 fetch 查一次（剛好一個就自己補，記在 auto_filled）。
    必填的沒有、路徑有好幾個或找不到：不問使用者，回 need（說明與候選），交回領域 session 決定（寫完整的路徑、換參數、換技能或回報）。
 4. **排圖、執行**：〈骨架〉代入參數就是一張圖（`{"if": 參數, "args": [...]}` 的參數有值才放，名稱清單一項一組；節點寫 if 的，參數沒有值就
@@ -407,16 +407,15 @@ def own_quote(p, value):
 
 def scope_param(spec):
     """要搜的範圍是哪個參數：種類是路徑、有預設值的那一個（path）→ 名稱；沒有的回 None（doc_lookup 的 doc 沒有預設值，要搜的文件執行時才照
-    fetch 找）。原文沒有的搜尋字與檔名寫法，領域 session 數這個範圍裡有沒有（設計筆記 2.71）。"""
+    fetch 找）。原文沒有的搜尋字，領域 session 數這個範圍裡有沒有（設計筆記 2.71、2.72）。"""
     return next((p["name"] for p in spec["parameters"] if p["type"] == "path" and "default" in p), None)
 
 
 def scope_items(p, value):
-    """原文沒有時要在範圍裡數的每一個（list）：搜尋的文字照 | 分開（search_text 的同義詞）、搜尋的字每一個、名稱、一種檔名寫法。有一個不是單純的
-    字或詞組（正規表示式的符號、用「、」「,」寫成好幾個、- 開頭）、或寫了好幾種檔名寫法 → None：照舊交回（一個參數好幾個值另外談）。"""
+    """原文沒有時要在範圍裡數的每一個（list）：搜尋的文字照 | 分開（search_text 的同義詞）、搜尋的字每一個、名稱。有一個不是單純的字或詞組
+    （正規表示式的符號、用「、」「,」寫成好幾個、- 開頭）→ None：照舊交回（一個參數好幾個值另外談）。檔名寫法（glob）不數、照舊照原文核對：
+    自己選的檔名寫法收下的多半縮到錯的地方，縮錯了 0 筆也看不出來（設計筆記 2.72）。"""
     t = p["type"]
-    if t == "glob":
-        return [value] if value and not re.search(r"[\s,，、;；|]", value) else None
     items = [x.strip() for x in (value.split("|") if t == "text" else words_of(value) if t == "words" else [value] if t == "name" else [])]
     if not items or any(not WORD.match(x) or x.startswith("-") for x in items) or (t == "name" and not _IDENT.match(value)):
         return None
@@ -567,15 +566,14 @@ class Runner:
                               "exact": exact[:CANDIDATES_MAX]})
         return exact, found
 
-    def count(self, goal, tool, args):
-        """程式數一次（原文沒有的搜尋字與檔名寫法在範圍裡有沒有，領域 session 的合約用）：照工具跑一個節點、不交給修正的模型 → 收據的筆數
-        （search_text 的 hits、find_file 的 files）；沒有跑成是 0。"""
+    def count(self, goal, args):
+        """程式數一次（原文沒有的搜尋字在範圍裡有沒有，領域 session 的合約用）：照 search_text 跑一個節點、不交給修正的模型 → 收據的筆數（hits）；
+        沒有跑成是 0。"""
         ej = edg.Executor(self.agent, fixer=False).start(
-            {"goal": goal, "nodes": [{"id": "count", "tool": tool, "args": args, "expect": ["pass", "empty"]}]})
-        key = "hits" if tool == "search_text" else "files"
+            {"goal": goal, "nodes": [{"id": "count", "tool": "search_text", "args": args, "expect": ["pass", "empty"]}]})
         for inst in ej["nodes"].get("count", {}).get("instances", []):
             r = self._receipt(ej, (inst.get("attempts") or [{}])[-1]) or {}
-            return int((r.get("counts") or {}).get(key) or 0)
+            return int((r.get("counts") or {}).get("hits") or 0)
         return 0
 
     # ---------------------------------------------------------------- 執行之後：回退
