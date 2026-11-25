@@ -15,7 +15,8 @@
   標題（「【子目標】」）的拿掉再核對；照骨架執行、每個節點的結果附 #編號；一模一樣的不執行；路徑的一段混了說明的字或結尾的萬用字元時
   只留原文裡的那個名稱（結果裡寫明；好幾個名稱、翻譯、接在一起的照舊交回）；值對得上原文的不擋：quote 抄了別段或沒抄、值本身就在原文裡，
   搜尋的字不分大小寫，預設值與空的當成沒提到，工作目錄與底下的絕對路徑換成「.」與相對路徑（編的檔名、翻成英文的字、搜尋的文字寫成好幾個、
-  原文沒有的值照舊交回；骨架對搜尋的字加 --case 的載入時擋下）；
+  原文沒有的值照舊交回；路徑的預設值配的 quote 寫了別的名稱的交回，quote 是工作目錄或它路徑上的一段的照收；「.」「..」不算名稱；
+  骨架對搜尋的字加 --case 的載入時擋下）；
   回退換技能（.py 沒有、C++ 檔有 → cpp_symbol）；路徑有好幾個交回它決定（附候選）；0 筆照實交回（跑完、結果是 0 筆）；
   程式照收據算的彙整（AST 的定義、呼叫與 import 每個檔案幾處、總共幾處；名稱符合的檔案扣掉不含的子目錄）存成 #編號、接在技能的狀態後面，
   回報的總數照它寫、出處寫它的 #編號就過核對；
@@ -449,6 +450,13 @@ def main():
             assert st["params"]["name"] == {"value": "alpha", "quote": "alpha", "source": "contract"}, ("值本身在原文裡", st["params"])
             assert st["params"]["path"]["value"] == "pkg" and "given" not in st["params"]["path"], ("工作目錄底下的絕對路徑", st["params"])
             assert "exclude" not in st["params"] and "技能的狀態：跑完" in fake.session_msgs(3)[-1]["content"], ("空的當成沒提到", st["params"])
+            fake = FakeChat(main=[task(goal, ["定義在哪"]), say("好")],
+                            session=[ds("domains", domains=["repo_analysis"]), ds("skill", skill="py_usage"),
+                                     fill(params=[("name", "alpha", "alpha"), ("path", ".", goal)]), fill(params=[("path", "pkg", goal)])])
+            turn("pkg 裡的 alpha 定義在哪？", fake)
+            fix = fake.session_msgs(3)[-1]["content"]
+            assert "參數沒有通過核對" in fix and "路徑「.」" in fix, ("預設值配寫著 pkg 的 quote：照核對交回重填", fix[:300])
+            assert last_job()["steps"][0]["params"]["path"]["value"] == "pkg", ("重填成 quote 寫的範圍", last_job()["steps"])
             sess = domain_session.DomainSession(agent, agent.domain_registry())
             specs = agent.domain_registry()["domains"]["repo_analysis"]["skills"]
             job = {"cwd": "/w/src", "sources": "照 amr_07 的 cam_driver 規格書：QoS 設定在哪？頻率多少？WP_0815、cam_driver 在哪一行？\n"
@@ -457,8 +465,14 @@ def main():
             def form(skill, cells):
                 return sess._contract(job, specs[skill], {k: {"quote": q, "value": v} for k, (v, q) in cells.items()})
 
-            params, problems, _ = form("find_lines", {"keyword": ("qos", "qos"), "path": (".", "amr_07 的設定檔"), "exclude": ("", "隨便一句")})
-            assert not problems and set(params) == {"keyword"} and params["keyword"]["value"] == "qos", ("大小寫、預設值配一句 quote、空的", params, problems)
+            params, problems, _ = form("find_lines", {"keyword": ("qos", "qos"), "path": (".", "沒有提到路徑"), "exclude": ("", "隨便一句")})
+            assert not problems and set(params) == {"keyword"} and params["keyword"]["value"] == "qos", ("大小寫、預設值配沒有名稱的 quote、空的", params, problems)
+            for quote in ("/w/src", "src 底下", "."):
+                params, problems, _ = form("find_lines", {"keyword": ("QoS", "QoS"), "path": (".", quote)})
+                assert not problems and set(params) == {"keyword"}, ("預設值配的 quote 是工作目錄或它路徑上的一段：當成沒提到", quote, params, problems)
+            for quote, why in (("照 amr_07 的 cam_driver 規格書", "路徑「.」"), ("amr_07/config/cam.yaml", "路徑「.」"), ("amr_07 的設定檔", "不在子目標")):
+                params, problems, bad = form("find_lines", {"keyword": ("QoS", "QoS"), "path": (".", quote)})
+                assert bad == ["path"] and why in problems[0], ("預設值配寫著別的名稱的 quote：照核對交回（quote 裡有「.」也一樣）", quote, params, problems)
             params, problems, _ = form("find_lines", {"keyword": ("QoS", ""), "path": ("/w/src/", "")})
             assert not problems and set(params) == {"keyword"}, ("沒抄 quote、值在原文裡；工作目錄本身＝預設值", params, problems)
             params, problems, _ = form("find_lines", {"keyword": ("QoS", "別段"), "path": ("/w/src/amr_07/config/", "")})
@@ -475,6 +489,9 @@ def main():
             assert "值「map」沒有抄原文" in form("find_lines", {"keyword": ("map", "")})[1][0], "沒抄 quote 的說明照舊"
             assert composite.verify_param({"name": "path", "type": "path"}, "/opt/amr_07", "/opt/amr_07", "/opt/amr_07") == ("/opt/amr_07", None), \
                 "絕對路徑開頭的空段照收"
+            vp = {"name": "path", "type": "path"}
+            assert composite.verify_param(vp, "amr_07/../cam.yaml", "../amr_07", "amr_07/../cam.yaml")[0] is None, "「..」不是名稱"
+            assert composite.verify_param(vp, "文件/設計.md", "文件/設計.md", "文件/設計.md") == ("文件/設計.md", None), "中文的名稱照收"
             text = open(os.path.join(tmp, "skills_system", "repo_analysis", "find_lines.md"), encoding="utf-8").read()
             assert text.count('"-C", "2"],') == 1, "骨架的寫法變了：改這個測試"
             spec = dict(skill_spec.composite(text.replace('"-C", "2"],', '"-C", "2", "--case"],')), name="find_lines", text=text)
@@ -656,7 +673,8 @@ def main():
                          ("有骨架的技能：合約、執行、一模一樣的不執行", t_composite),
                          ("路徑的一段混了說明的字或萬用字元：只留原文裡的名稱、結果裡寫明", t_path_names),
                          ("參數表單：抄到程式的標題照樣核對、重填還是沒過回到選技能", t_form),
-                         ("參數表單：值對得上原文的不擋（值本身在原文裡、大小寫、預設值、工作目錄的絕對路徑）、編的與翻譯的照舊交回", t_grounded),
+                         ("參數表單：值對得上原文的不擋（值本身在原文裡、大小寫、預設值、工作目錄的絕對路徑）、編的與翻譯的照舊交回、"
+                          "預設值配寫著別的名稱的 quote 交回", t_grounded),
                          ("工具的參數表單：args 寫成 JSON、照抄佔位符的交回重填", t_form_tool),
                          ("有骨架的技能的彙整：程式照收據算的數量存成 #編號、總數照它寫就過核對", t_totals), ("回退換技能", t_composite_switch),
                          ("路徑有好幾個交回決定、0 筆照實交回", t_composite_need_and_empty), ("狀態與上限", t_states_limits),

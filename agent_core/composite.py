@@ -6,7 +6,8 @@
 2. **合約**（verify_param，F3）：每個參數的原文要一字不改地在給的原文裡（領域 session 給的：問題、子目標、項目、前面每一步的結果），
    值照種類對得上原文（名稱、名稱清單、搜尋的字要原樣在原文裡；路徑的每一段是原文的名稱——一段混了說明的字或萬用字元時只留那個名稱，_name_only；
    文字與檔案名稱的寫法每一段在原文裡）。搜尋的字（text、words：骨架交給 search_text，不分大小寫）核對也不分大小寫。領域 session 照 quote 核對
-   沒過時，拿值本身當原文再核對一次（own_quote）；空的與預設值當成沒提到（unmentioned）；工作目錄底下的絕對路徑先換成相對的（relative）。
+   沒過時，拿值本身當原文再核對一次（own_quote）；空的與預設值當成沒提到——路徑的預設值配的 quote 寫了別的名稱的不算，照核對交回
+   （unmentioned）；工作目錄底下的絕對路徑先換成相對的（relative）。
 3. **補齊**（Runner.run 的第一步）：沒提到的用預設值；路徑在工作目錄找不到時照 fetch 查一次（剛好一個就自己補，記在 auto_filled）。
    必填的沒有、路徑有好幾個或找不到：不問使用者，回 need（說明與候選），交回領域 session 決定（寫完整的路徑、換參數、換技能或回報）。
 4. **排圖、執行**：〈骨架〉代入參數就是一張圖（`{"if": 參數, "args": [...]}` 的參數有值才放，名稱清單一項一組；節點寫 if 的，參數沒有值就
@@ -41,6 +42,7 @@ _PARAM = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
 _IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _DIRNAME = re.compile(r"^[\w.-]+$")             # 目錄或檔案的名稱（一段路徑；\w 含中文）
 _SPLIT = re.compile(r"[、,，;；\s]+")
+_QUOTE_NAME = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_./-]*")    # quote 裡的一個名稱（再要有英文字母）：路徑的預設值配這種 quote 時看寫的是不是別的地方
 _WORD_SPLIT = re.compile(r"[、,，;；\n]+")      # 搜尋的字用「、」分開（英文的詞組裡的空白不分）
 _ENTRY = re.compile(r"^- \[([A-Za-z0-9_]+)\]\(([^)]+)\)")
 _QUOTES = "\"'`「」『』“”‘’"
@@ -378,13 +380,18 @@ def relative(p, value, cwd):
     return "." if v == base else v[len(base) + 1:] if v.startswith(base + "/") else value
 
 
-def unmentioned(p, value):
-    """值是空的、或就是規格的預設值：當成沒提到（系統用預設值），抄的 quote 不看——表單寫「沒提到的參數…系統用預設值」，模型常把預設值照寫進
-    value、quote 隨便抄一句（設計筆記 2.69）。"""
+def unmentioned(p, value, quote, cwd):
+    """當成沒提到（系統用預設值）：值是空的，或就是規格的預設值——表單寫「沒提到的參數…系統用預設值」，模型常把預設值照寫進 value、quote 隨便
+    抄一句（設計筆記 2.69）。路徑的預設值配的 quote 寫了那個目錄以外的名稱（有英文字母的一串；那個目錄的路徑上的每一段不算：工作目錄 /w/src 的
+    w、src）的不算：值跟 quote 不一致，照核對交回，quote 寫的範圍不換成整個工作目錄（設計筆記 2.58、2.70）。"""
     if not value:
         return True
     d = str(p["default"]) if "default" in p else None
-    return d is not None and (value.rstrip("/") or value) == (d.rstrip("/") or d)
+    if d is None or (value.rstrip("/") or value) != (d.rstrip("/") or d):
+        return False
+    here = set(os.path.normpath(os.path.join(cwd or "/", d)).split("/"))
+    return p["type"] != "path" or not any(re.search(r"[A-Za-z]", t) and not set(t.strip("/").split("/")) <= here
+                                          for t in _QUOTE_NAME.findall(quote))
 
 
 def own_quote(p, value):
@@ -414,9 +421,9 @@ def verify_param(p, quote, value, source):
     if t == "path":
         segs, bad = [], []
         for x in plain_path(v).split("/"):
-            kept = x if x in ("", "~") or (_DIRNAME.match(x) and x in q) else _name_only(x, q)
+            kept = x if x in ("", "~") or (_DIRNAME.match(x) and re.search(r"[^\W_]", x) and x in q) else _name_only(x, q)
             segs.append(x if kept is None else kept)
-            if kept is None:          # 開頭的空段（絕對路徑）照收
+            if kept is None:          # 開頭的空段（絕對路徑）照收；「.」「..」不是名稱（照子字串會對上 quote 裡的「cam.yaml」，設計筆記 2.70）
                 bad.append(x)
         named = [x for x in segs if x not in ("", "~")]
         return ("/".join(segs), None) if named and not bad else (None, _i("reject_path", name=name, value=v, quote=q, missing="、".join(bad) or v))

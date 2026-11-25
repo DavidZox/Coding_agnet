@@ -8,7 +8,7 @@
    schemas.domain_form_schema；表單的那一輪不算在回的輪數裡）。
    - 有骨架的技能（composite.py）：每個參數一欄（quote、value），原文要一字不改（F3），程式核對（composite.verify_param；原文＝問題、
      子目標、項目、前面每一步交給它的結果；開頭多抄了程式的標題「【子目標】」這種的，拿掉標題再核對；quote 抄了別段、值本身就在原文裡的也收；
-     空的與預設值當成沒提到，工作目錄底下的絕對路徑換成相對的：_contract）。沒過的只把那幾個參數交回重填
+     空的與預設值當成沒提到（路徑的預設值配的 quote 寫了別的名稱的照核對交回），工作目錄底下的絕對路徑換成相對的：_contract）。沒過的只把那幾個參數交回重填
      一次，還是沒過就回到選技能，都不算一步；過了交給 composite.Runner 跑骨架與回退。缺參數、路徑有好幾個也交回它決定（附候選）。
    - 工具：表單只有 args（一行參數，照工具的〈語法〉寫，不是 JSON），程式照技能名稱找腳本執行（agent._run_tool_once：跟主對話同一條路——
      確認關卡、存檔 #編號、收據、狀態標記的同步）；只能用選的領域的工具與共用的工具（orchestrator.domain_gate 看 agent._sub_allowed）。
@@ -344,7 +344,8 @@ class DomainSession:
 
     def _contract(self, job, spec, cells):
         """表單的每一欄（{參數: {"quote", "value"}}）→ ({名稱: {"value", "quote"（核對過的那一段）, "source"}}, [沒過的說明], [沒過的參數])。
-        值是空的或規格的預設值（路徑寫工作目錄本身＝「.」）當成沒提到、不看 quote（表單列出每個參數，模型會把「沒有提到就用 .」照寫進 value）；
+        值是空的或規格的預設值（路徑寫工作目錄本身＝「.」）當成沒提到（表單列出每個參數，模型會把「沒有提到就用 .」照寫進 value）——路徑的預設值
+        配的 quote 寫了別的名稱的不算，照核對交回（quote 寫的範圍不換成整個工作目錄，設計筆記 2.70）；
         工作目錄底下的絕對路徑先換成相對的（composite.unmentioned、relative）。原文要在這個 session 給模型看過的字裡：照 quote 核對沒過的，原文開頭是
         程式的標題（_LABEL）就拿掉標題再核對一次，再拿值本身當原文核對一次（值就在原文裡就收，composite.own_quote；設計筆記 2.69）。都沒過的交回，
         說明照模型抄的 quote 寫（沒抄 quote 的寫明沒抄原文）。"""
@@ -355,7 +356,7 @@ class DomainSession:
                 continue
             quote = composite._unquote(cell["quote"])
             given = composite.relative(p, composite._unquote(cell["value"]), job["cwd"])
-            if composite.unmentioned(p, given):
+            if composite.unmentioned(p, given, quote, job["cwd"]):
                 continue
             value, why = (composite.verify_param(p, quote, given, job["sources"]) if quote
                           else (None, _s("reject_no_quote", name=p["name"], value=given)))
