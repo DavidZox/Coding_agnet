@@ -178,6 +178,9 @@ args 照抄了寫法裡的 {marks}（沒有換成值）
 <!-- @composite_kept -->
 系統只留原文裡的名稱：{name}「{given}」→ {value}（路徑的每一段是一個目錄或檔案的名稱，說明的字與萬用字元不寫進去）
 
+<!-- @composite_of -->
+系統照原文的「{of}」找到要讀的那一份：{name}「{given}」→ {value}（原文寫「<上層> 的 <名稱>」的，是上層底下檔名叫 <名稱> 的那一份）
+
 <!-- @composite_filled -->
 系統補的參數：{name}「{given}」→ {value}
 

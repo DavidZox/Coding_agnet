@@ -352,8 +352,9 @@ class DomainSession:
         配的 quote 寫了別的名稱的不算，照核對交回（quote 寫的範圍不換成整個工作目錄，設計筆記 2.70）；
         工作目錄底下的絕對路徑先換成相對的（composite.unmentioned、relative）。原文要在這個 session 給模型看過的字裡：照 quote 核對沒過的，原文開頭是
         程式的標題（_LABEL）就拿掉標題再核對一次，再拿值本身當原文核對一次（值就在原文裡就收，composite.own_quote；設計筆記 2.69）。範圍是 path 的
-        技能的搜尋字還是沒過的，最後數要搜的範圍裡有沒有（_scope_hits：每一個都有才收，出處寫 scope；檔名寫法不數；設計筆記 2.71、2.72）。都沒過的交回，
-        說明照模型抄的 quote 寫（沒抄 quote 的寫明沒抄原文）。"""
+        技能的搜尋字還是沒過的，最後數要搜的範圍裡有沒有（_scope_hits：每一個都有才收，出處寫 scope；檔名寫法不數；設計筆記 2.71、2.72）。要讀的那一份
+        （沒有預設值的路徑）只寫了上層、或上層與名稱寫在同一段，抄的原文寫「<a> 的 <b>」的，照補路徑的做法找到剛好一份就換成那一份（_doc_of，記 given、of；
+        設計筆記 2.74）。都沒過的交回，說明照模型抄的 quote 寫（沒抄 quote 的寫明沒抄原文）。"""
         params, problems, later = {}, {}, []
         scope = composite.scope_param(spec)
         for p in spec["parameters"]:
@@ -371,7 +372,10 @@ class DomainSession:
                 if not why2:
                     quote, value, why = again, value2, None
                     break
-            if why and scope and composite.scope_items(p, given):
+            of = self._doc_of(job, p, quote, given, value)
+            if of:
+                params[p["name"]] = {"value": of[0], "quote": quote, "source": "contract", "given": given, "of": of[1]}
+            elif why and scope and composite.scope_items(p, given):
                 later.append((p, quote, given, why))
             elif why:
                 problems[p["name"]] = why
@@ -419,6 +423,22 @@ class DomainSession:
         """程式照 search_text 數一次（composite.Runner.count：不交給修正的模型、讀收據的筆數）。"""
         return composite.Runner(self.agent).count(goal, args)
 
+    def _doc_of(self, job, p, quote, given, value):
+        """要讀的那一份（沒有預設值的路徑：doc_lookup 的 doc）只寫了上層、或上層與名稱寫在同一段，抄的原文（在原文裡）寫「<a> 的 <b>」（composite.path_of）
+        → 照補路徑的做法找 <a>/<b>（fetch：檔名是 <b>.md、路徑裡有 <a>），剛好一份 → (那一份的路徑, 原文的那一段)；不然 None，照原本的核對（只寫上層的
+        照舊用整個上層、同一段兩個名稱的照舊交回）。e4b 文件題 doc 只寫套件的 o～r 16 次：用整個套件當要讀的文件，詞一般的就讀不到那一行（設計筆記 2.74）。"""
+        if p["type"] != "path" or "default" in p or not p.get("fetch") or not quote or not composite._in_source(quote, job["sources"], p["type"]):
+            return None
+        got = composite.path_of(quote, given)
+        if not got or got[0] == value:
+            return None
+        found = self._find(job, p, got[0])
+        return (found[0], got[1]) if len(found) == 1 else None
+
+    def _find(self, job, p, value):
+        """程式照 fetch 找一次（composite.Runner.find：不交給修正的模型）→ 候選（相對於工作目錄）。"""
+        return composite.Runner(self.agent).find(job["cwd"], p, value)
+
     def _composite(self, job, parsed, domain, name, params, how):
         """執行有骨架的技能（parsed：選技能那一輪的 thought、reply），每個節點的結果接進對話、記一步。"""
         res = composite.Runner(self.agent, fixer=self.fixer, note=lambda t: self._note(job["id"], t)).run(domain, name, params)
@@ -428,7 +448,8 @@ class DomainSession:
         for fb in res["fallbacks"]:
             if fb.get("result") == "replanned":
                 lines.append(_s("composite_fallback", say=fb["say"]))
-        lines += [_s("composite_kept", name=k, given=v["given"], value=v["value"]) for k, v in params.items() if v.get("given")]
+        lines += [_s("composite_of", name=k, given=v["given"], value=v["value"], of=v["of"]) if v.get("of")
+                  else _s("composite_kept", name=k, given=v["given"], value=v["value"]) for k, v in params.items() if v.get("given")]
         for a in res["auto_filled"]:
             lines.append(_s("composite_filled", name=a["param"], given=a["given"], value=a["value"]))
         if res["need"]:

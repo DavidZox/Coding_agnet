@@ -44,6 +44,7 @@ _IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _DIRNAME = re.compile(r"^[\w.-]+$")             # 目錄或檔案的名稱（一段路徑；\w 含中文）
 _SPLIT = re.compile(r"[、,，;；\s]+")
 _QUOTE_NAME = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_./-]*")    # quote 裡的一個名稱（再要有英文字母）：路徑的預設值配這種 quote 時看寫的是不是別的地方
+_OF = re.compile(r"(?<![A-Za-z0-9_./-])([A-Za-z0-9_][A-Za-z0-9_./-]*)\s*的\s*(?=([A-Za-z0-9_][A-Za-z0-9_./-]*))")   # 原文的「<a> 的 <b>」（<b> 在 lookahead 裡：「x 的 a 的 b」兩組都找得到）
 _WORD_SPLIT = re.compile(r"[、,，;；\n]+")      # 搜尋的字用「、」分開（英文的詞組裡的空白不分）
 _ENTRY = re.compile(r"^- \[([A-Za-z0-9_]+)\]\(([^)]+)\)")
 _QUOTES = "\"'`「」『』“”‘’"
@@ -372,6 +373,21 @@ def _name_only(seg, q):
     return names[0] if len(names) == 1 and dropped else None
 
 
+def path_of(quote, value):
+    """要讀的那一份只寫了上層、或上層與名稱寫在同一段（設計筆記 2.74）：原文寫「<a> 的 <b>」（兩個名稱中間只有「的」與空白；名稱是有英文字母的
+    一串），值寫的名稱只有 <a>，或是 <a>、<b> 兩個（「<a> <b> 規格書」「<a> 的 <b> 規格書」：_name_only 看不出是上下層還是並列，原文的「的」說是
+    上下層）→ (「<a>/<b>」, 原文的那一段)；其他 None。原文裡 <a> 開頭的有好幾種（「<a> 的 <b>、<a> 的 <c>」）看不出是哪一個，也是 None。"""
+    names = [t.rstrip("./-") for t in _QUOTE_NAME.findall(value)]
+    if not 1 <= len(names) <= 2 or any("/" in t or not re.search(r"[A-Za-z]", t) for t in names):
+        return None
+    hits = {}
+    for m in _OF.finditer(quote):
+        a, b = m.group(1).rstrip("./-"), m.group(2).rstrip("./-")
+        if a == names[0] and names[1:] in ([], [b]) and re.search(r"[A-Za-z]", b):
+            hits.setdefault(f"{a}/{b}", quote[m.start(1):m.end() + len(b)])
+    return next(iter(hits.items())) if len(hits) == 1 else None
+
+
 def relative(p, value, cwd):
     """路徑寫成工作目錄（或底下）的絕對路徑 → 相對的寫法（工作目錄本身是「.」）；其他照原樣。狀態列寫著工作目錄的絕對路徑，模型會照抄
     （設計筆記 2.69）。"""
@@ -565,6 +581,10 @@ class Runner:
         st["fetches"].append({"param": p["name"], "given": value, "edg_job": ej["id"], "status": ej["status"], "found": len(found),
                               "exact": exact[:CANDIDATES_MAX]})
         return exact, found
+
+    def find(self, cwd, p, value):
+        """程式照 fetch 找一次（領域 session 的合約用：照原文找要讀的那一份，設計筆記 2.74）：不交給修正的模型、不記在技能的經過裡 → 候選。"""
+        return Runner(self.agent, fixer=False)._fetch({"cwd": cwd, "fetches": []}, p, value)[0]
 
     def count(self, goal, args):
         """程式數一次（原文沒有的搜尋字在範圍裡有沒有，領域 session 的合約用）：照 search_text 跑一個節點、不交給修正的模型 → 收據的筆數（hits）；

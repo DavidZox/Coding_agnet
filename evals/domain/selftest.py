@@ -53,6 +53,10 @@ FILES = {
     "left/sub/a.cpp": "// alpha\n",
     "right/sub/b.cpp": "// alpha\n",
     "docs/spec.md": "# 規格\n\n| 編號 | 狀態 | 情境 | 結果 |\n|---|---|---|---|\n| SPEC-A12 | WAITING | 不同編號的確認 | 不變：繼續等，最多 30 秒 |\n",
+    "amr_07/docs/cam_driver.md": "# cam_driver\n\n| 編號 | 指令 | 結果 |\n|---|---|---|\n| WP_0815 | stop | 停下、不回報 |\n",
+    "amr_07/test/test_cam_driver.md": "# cam_driver 的測試\n\nWP_0815 stop\n",
+    "amr_08/docs/lidar.md": "# lidar\n",
+    "amr_08/old/lidar.md": "# lidar（舊）\n",
     "logs/big.log": "".join(f"2026-01-01 00:00:{k % 60:02d} worker_{k % 7} step {k} value {k * 3}\n" for k in range(600)),
 }
 SESSION_MARK = "你是領域 session"
@@ -555,6 +559,54 @@ def main():
             params, problems, bad = form("doc_lookup", {"doc": ("docs/spec.md", "docs/spec.md"), "words": ("WAITING", "")})
             assert bad == ["words"], ("doc_lookup 不數（要搜的文件執行時才找）", params, problems)
 
+        def t_doc_of():
+            # 要讀的那一份只寫了上層、或上層與名稱寫在同一段：照原文的「<a> 的 <b>」找到那一份（框架討論紀錄第 24 輪，設計筆記 2.74）
+            q = "照 amr_07 的 cam_driver 規格書"
+            goal = f"{q}：WP_0815 收到 stop 會怎樣"
+            fake = FakeChat(main=[task(goal, ["收到 stop 會怎樣"]), say("好")],
+                            session=[ds("domains", domains=["repo_analysis"]), ds("skill", skill="doc_lookup"),
+                                     fill(params=[("doc", "amr_07", q), ("words", "WP_0815", "WP_0815")])])
+            turn(f"{goal}？", fake)
+            job = last_job()
+            assert job["forms"] == 1 and not [b for b in job["blocked"] if "核對" in b["why"]], ("第一次就過", job["blocked"])
+            doc = job["steps"][0]["params"]["doc"]
+            assert doc == {"value": "amr_07/docs/cam_driver.md", "quote": q, "source": "contract", "given": "amr_07", "of": "amr_07 的 cam_driver"}, doc
+            shown = fake.session_msgs(3)[-1]["content"]
+            assert "系統照原文的「amr_07 的 cam_driver」找到要讀的那一份：doc「amr_07」→ amr_07/docs/cam_driver.md" in shown, shown[:600]
+            assert "停下、不回報" in shown and "test_cam_driver" not in shown, ("照那一份搜到、沒有搜整個 amr_07", shown[:800])
+            sess = domain_session.DomainSession(agent, agent.domain_registry())
+            specs = agent.domain_registry()["domains"]["repo_analysis"]["skills"]
+            job = {"cwd": tmp, "sources": f"{q}；amr_08 的 lidar 規格書；amr_07 的 imu 規格書；amr_07 的 cam_driver 與 amr_07 的 imu；"
+                                          "amr_07 底下的 cam_driver 規格書；WP_0815"}
+
+            def doc_cell(value, quote):
+                params, _, bad = sess._contract(job, specs["doc_lookup"], {"doc": {"quote": quote, "value": value},
+                                                                           "words": {"quote": "WP_0815", "value": "WP_0815"}})
+                return params.get("doc"), bad
+
+            for value in ("amr_07", "amr_07 cam_driver 規格書", "amr_07 的 cam_driver 規格書", "amr_07的cam_driver規格書"):
+                got, bad = doc_cell(value, q)
+                assert not bad and got == {"value": "amr_07/docs/cam_driver.md", "quote": q, "source": "contract", "given": value,
+                                           "of": "amr_07 的 cam_driver"}, ("只寫上層、兩個名稱寫在同一段：照原文找到那一份（檔名一樣的才算，測試規格不算）", value, got, bad)
+            for value, quote, kept, why in (("amr_07/cam_driver 規格書", q, "amr_07/cam_driver", "已經寫成 <a>/<b>：照舊只留名稱，執行時照補路徑的做法找"),
+                                            ("cam_driver", q, "cam_driver", "只寫 <b>：照舊"),
+                                            ("amr_08", "amr_08 的 lidar 規格書", "amr_08", "好幾份：照舊用整個上層"),
+                                            ("amr_07", "amr_07 的 imu 規格書", "amr_07", "找不到：照舊"),
+                                            ("amr_07", "amr_07 的 cam_driver 與 amr_07 的 imu", "amr_07", "<a> 開頭的有好幾種：看不出是哪一個"),
+                                            ("amr_07", "amr_07 底下的 cam_driver 規格書", "amr_07", "原文沒有「<a> 的 <b>」"),
+                                            ("amr_07", "amr_07 的 cam_driver 說明", "amr_07", "抄的不在原文裡：不照它找（值本身在原文裡照舊收）")):
+                got, bad = doc_cell(value, quote)
+                assert not bad and got["value"] == kept and "of" not in got, (why, got, bad)
+            for value, quote, why in (("amr_08 lidar 規格書", "amr_08 的 lidar 規格書", "好幾份：同一段兩個名稱照舊交回"),
+                                      ("amr_07 imu 規格書", "amr_07 的 imu 規格書", "找不到：照舊交回"),
+                                      ("amr_07/cam_driver_spec.md", q, "編的檔名：照舊交回")):
+                got, bad = doc_cell(value, quote)
+                assert bad == ["doc"] and got is None, (why, got, bad)
+            params, problems, _ = sess._contract(job, specs["find_lines"], {"keyword": {"quote": "WP_0815", "value": "WP_0815"},
+                                                                            "path": {"quote": q, "value": "amr_07"}})
+            assert not problems and params["path"]["value"] == "amr_07" and "of" not in params["path"], ("有預設值的路徑（要搜的範圍）不在這一項", params, problems)
+            assert composite.path_of("x 的 amr_07 的 cam_driver", "amr_07") == ("amr_07/cam_driver", "amr_07 的 cam_driver"), "「x 的 <a> 的 <b>」也找得到"
+
         def t_form_tool():
             fake = FakeChat(main=[task("找 pkg 裡的 alpha 定義在哪", ["定義在哪"]), say("好")],
                             session=[ds("domains", domains=["repo_analysis"]), ds("skill", skill="search_text"),
@@ -734,6 +786,7 @@ def main():
                          ("參數表單：值對得上原文的不擋（值本身在原文裡、大小寫、預設值、工作目錄的絕對路徑）、編的與翻譯的照舊交回、"
                           "預設值配寫著別的名稱的 quote 交回", t_grounded),
                          ("參數表單：原文沒有的搜尋字，要搜的範圍裡有才收（出處寫範圍）、範圍裡沒有的與自己選的檔名寫法照舊交回", t_scope),
+                         ("參數表單：要讀的那一份只寫了上層、或上層與名稱寫在同一段，照原文的「<a> 的 <b>」找到剛好一份才換（找不到、好幾份照舊）", t_doc_of),
                          ("工具的參數表單：args 寫成 JSON、照抄佔位符、填「[]」的交回重填", t_form_tool),
                          ("有骨架的技能的彙整：程式照收據算的數量存成 #編號、總數照它寫就過核對", t_totals), ("回退換技能", t_composite_switch),
                          ("路徑有好幾個交回決定、0 筆照實交回", t_composite_need_and_empty), ("狀態與上限", t_states_limits),
