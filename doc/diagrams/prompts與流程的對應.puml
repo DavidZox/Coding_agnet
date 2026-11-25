@@ -35,7 +35,7 @@ package "prompts/（改字不用改程式；evals/integrity 檢查範本跟程�
       reminders：程式核對後的提醒（重複、沒動作卻說做了、
         依報告回答寫成因果、空白回覆、寫到長度上限被截斷）
       domain：交辦的結果（報告 report、這一回合要回答的項目
-        answer_hint 與附原話的 hint_item、停在確認關卡 ask_waiting、回答之後做完
+        answer_hint、停在確認關卡 ask_waiting、回答之後做完
         answered、取消 cancelled）、擋領域的工具與有骨架的技能
         （tool_blocked、skill_blocked）、領域的名稱當成技能叫
         （domain_named）、交辦沒過核對的說明（err_*：
@@ -73,7 +73,7 @@ package "prompts/（改字不用改程式；evals/integrity 檢查範本跟程�
     rectangle P_DOMAIN #E2F0D9 [
       **domain/session.md**（領域 session）：system（每一輪一個 JSON、
       state 三種之一、怎麼做、領域清單 domain_entry、長期記憶）、
-      first（子目標、要回答的項目（每一項附原話 item_quote）、原始問題（只用來對照）、
+      first（子目標、要回答的項目（使用者的原話）、原始問題（只用來對照）、
       上一次的經過 previous）、技能清單 skills（〈做法〉、有骨架的技能
       composite_entry 與參數 param_*、工具 tool_entry 與 args 的寫法、
       共用的工具）、選了技能之後的參數表單（form_composite、form_tool；
@@ -84,7 +84,7 @@ package "prompts/（改字不用改程式；evals/integrity 檢查範本跟程�
       擋下或交回改的 err_*、not_my_tool、
       合約沒過 reject_*、要它決定的 need_*（reject_*、need_* 也給
       composite.py 用）、回報沒過 answers_fix、retry（表單 retry_form）、
-      cut、cleared、anchor（子目標與項目，每一項附原話 anchor_item）
+      cut、cleared、anchor（子目標與項目（使用者的原話））
     ]
   }
 }
@@ -114,7 +114,7 @@ package "用到它們的 session" {
     **主 session（主對話）**：每一輪；agent_reply_schema(交辦, 項目數)
     （欄位依序 thought、reply、answers、action；thought、command、
     args 有長度上限，2000 字以內）（action 多「交辦」
-    {task: {goal, items}}：項目 1～6，每一項 {quote, item}；這一回合有交辦的報告時
+    {task: {goal, items}}：項目 1～6，每一項 {quote}（使用者的原話）；這一回合有交辦的報告時
     多 answers：每一項的答到／查不到、回答、出處，程式核對之後
     照項目排給使用者）
   ]

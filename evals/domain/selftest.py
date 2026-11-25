@@ -63,9 +63,8 @@ SESSION_MARK = "你是領域 session"
 
 
 def task(goal, items):
-    """主 session 的交辦：items 的每一項是項目（原話跟項目一樣）或 (原話, 項目)。"""
-    rows = [{"quote": x[0], "item": x[1]} if isinstance(x, tuple) else {"quote": x, "item": x} for x in items]
-    return {"thought": "交辦", "reply": "交辦給領域 session。", "action": {"task": {"goal": goal, "items": rows}}}
+    """主 session 的交辦：items 的每一項是使用者的原話（項目就是原話，框架討論紀錄第 27 輪）。"""
+    return {"thought": "交辦", "reply": "交辦給領域 session。", "action": {"task": {"goal": goal, "items": [{"quote": x} for x in items]}}}
 
 
 def say(reply):
@@ -226,11 +225,11 @@ def main():
             assert not any("domains" in (a.get("properties") or {}) for a in actions)
             assert "task" not in str(agent_reply_schema(False, 0)), "沒有領域時沒有交辦"
             items = next(a for a in actions if "task" in (a.get("properties") or {}))["properties"]["task"]["properties"]["items"]["items"]
-            assert list(items["properties"]) == ["quote", "item"], "交辦的每一項先抄原話再寫項目"
-            raw = {"goal": " 找  alpha ", "items": [{"quote": " 在 哪 ", "item": " 哪裡 "}, {"quote": "", "item": " "}, {"quote": "在哪", "item": ""}, "只寫字串"]}
+            assert list(items["properties"]) == ["quote"], "交辦的每一項只寫使用者的原話（項目就是原話）"
+            raw = {"goal": " 找  alpha ", "items": [{"quote": " 在 哪 ", "item": " 哪裡 "}, {"quote": "", "item": " "}, {"quote": "", "item": "在哪"}, "只寫字串"]}
             parsed = parse_agent_reply(json.dumps({"thought": "", "reply": "", "action": {"task": raw}}, ensure_ascii=False))
-            assert parsed["action"] == {"task": {"goal": "找 alpha", "items": [{"quote": "在 哪", "item": "哪裡"}, {"quote": "在哪", "item": "在哪"},
-                                                                          {"quote": "", "item": "只寫字串"}]}}, parsed["action"]
+            assert parsed["action"] == {"task": {"goal": "找 alpha", "items": [{"quote": "在 哪"}, {"quote": "在哪"}, {"quote": "只寫字串"}]}}, \
+                ("另外寫了 item 的只取 quote、quote 是空的才用 item、字串當成原話", parsed["action"])
             assert action_text(parsed["action"]).startswith("→ 交辦：找 alpha")
 
         def t_reply_order():
@@ -279,34 +278,35 @@ def main():
 
         def t_task_checks():
             agent.set_current_task("檢查")
-            assert "goal" in agent.run_task({"task": {"goal": "", "items": [{"quote": "檢查", "item": "a"}]}}), "子目標是空的要擋"
+            assert "goal" in agent.run_task({"task": {"goal": "", "items": [{"quote": "檢查"}]}}), "子目標是空的要擋"
             assert "1～6 項" in agent.run_task({"task": {"goal": "g", "items": []}}), "項目數要擋"
             fake = FakeChat(main=[task("找 alpha", ["定義在哪"]), task("找 alpha", ["定義在哪"]), say("好")])
             events, _ = turn("找 alpha 定義在哪", fake)
             outs = tools_of(events)
             assert outs[0].startswith(DOMAIN_RESULT_HEAD) and "交辦的報告" in outs[0], outs[0][:200]
             assert "一模一樣" in outs[1], outs[1][:200]
-            fake = FakeChat(main=[task(f"找 alpha 第 {k} 次", [("找 alpha", "項目A")]) for k in range(4)] + [say("好")])
+            fake = FakeChat(main=[task(f"找 alpha 第 {k} 次", ["找 alpha"]) for k in range(4)] + [say("好")])
             events, _ = turn("找 alpha", fake)
             assert "最多 3 次" in tools_of(events)[3], tools_of(events)[3][:200]
 
         def t_quote():
             q = "pkg 裡的 beta 定義在哪？它還被誰用到？"
             fake = FakeChat(main=[task("找 pkg 裡的 beta", ["beta 定義在哪個檔案"]),
-                                  task("找 pkg 裡的 beta", ["beta 定義在哪", ("它還被誰用到", "還有哪些地方用到 beta")]), say("好")],
+                                  task("找 pkg 裡的 beta", ["beta 定義在哪", "它還被誰用到"]), say("好")],
                             session=[ds("domains", domains=["repo_analysis"])])
             events, _ = turn(q, fake)
             outs = tools_of(events)
-            assert outs[0].startswith("[ERROR]") and "第 1 項" in outs[0] and "不在使用者說過的話裡" in outs[0], outs[0][:300]
+            assert outs[0].startswith("[ERROR]") and "第 1 項「beta 定義在哪個檔案」不在使用者說過的話裡" in outs[0], ("改寫過的擋下", outs[0][:300])
             first = fake.session_msgs(0)
-            assert "意思以附的使用者原話為準" in first[0]["content"], "system prompt 寫明照原話"
-            assert "2. 還有哪些地方用到 beta\n   使用者的原話：「它還被誰用到」" in first[-1]["content"], first[-1]["content"][:600]
+            assert "每一項是使用者的原話" in first[0]["content"], "system prompt 寫明項目是使用者的原話"
+            assert "【要回答的項目】（使用者的原話；回報時 answers 照這個編號）\n1. beta 定義在哪\n2. 它還被誰用到\n" in first[-1]["content"], \
+                first[-1]["content"][:600]
             job = last_job()
-            assert job["quotes"] == ["beta 定義在哪", "它還被誰用到"], job["quotes"]
-            assert "要回答的項目 2：還有哪些地方用到 beta（使用者的原話：「它還被誰用到」）" in job["result"]["report"], job["result"]["report"][:400]
-            assert "2. 還有哪些地方用到 beta（使用者的原話：「它還被誰用到」）" in outs[1], "要回答的項目附原話"
-            assert "它還被誰用到" in domain_session.DomainSession._anchor(job), "提煉的錨點帶原話"
-            fake = FakeChat(main=[task("找 pkg 裡呼叫 beta 的函式", [("它還被誰用到", "哪些函式呼叫 beta")]), say("好")])
+            assert job["items"] == ["beta 定義在哪", "它還被誰用到"] and "quotes" not in job, job["items"]
+            assert "- 要回答的項目 2：它還被誰用到\n" in job["result"]["report"], job["result"]["report"][:400]
+            assert "1. beta 定義在哪\n2. 它還被誰用到" in outs[1], "主 session 要回答的項目也是原話"
+            assert "它還被誰用到" in domain_session.DomainSession._anchor(job), "提煉的錨點是原話"
+            fake = FakeChat(main=[task("找 pkg 裡呼叫 beta 的函式", ["它還被誰用到"]), say("好")])
             events, _ = turn("那呼叫它的函式呢？", fake)
             assert tools_of(events)[0].startswith(DOMAIN_RESULT_HEAD), ("之前一則訊息裡的原話也可以", tools_of(events)[0][:200])
 
@@ -326,7 +326,7 @@ def main():
         def t_tool_flow():
             q = "pkg 裡的 alpha 定義在哪個檔案的第幾行？"
             fake = FakeChat(
-                main=[task("在 pkg 找 alpha 定義在哪", [("alpha 定義在哪個檔案的第幾行", "alpha 定義在哪個檔案、哪一行")]),
+                main=[task("在 pkg 找 alpha 定義在哪", ["alpha 定義在哪個檔案的第幾行"]),
                       answer("找到了。", [(1, "answered", "定義在 pkg/mod.py:1（def alpha）", ["pkg/mod.py:1"])])],
                 session=[ds("domains", domains=["repo_analysis"]), ds("skill", skill="search_text"), fill(args='search_text "def alpha" pkg'),
                          ds("report", answers=[(1, "answered", "定義在 pkg/mod.py 第 1 行（def alpha）", ["pkg/mod.py:1"])], reply="找到了")])
@@ -352,11 +352,11 @@ def main():
             assert report.startswith(DOMAIN_RESULT_HEAD) and "交辦的報告（做完）" in report and "這一回合要回答的項目" in report, report[:300]
             assert "> " in report and "pkg/mod.py:1" in report, "報告的回答附出處那一行"
             shown = final_reply(events)
-            assert "1. alpha 定義在哪個檔案、哪一行：定義在 pkg/mod.py:1" in shown and "> " in shown, shown
+            assert "1. alpha 定義在哪個檔案的第幾行：定義在 pkg/mod.py:1" in shown and "> " in shown, ("照項目（原話）排", shown)
 
         def t_tool_records():
             parsed = {"action": {"task": {"goal": "在 pkg 找 alpha 定義在哪",
-                                          "items": [{"quote": "alpha 定義在哪個檔案的第幾行", "item": "alpha 定義在哪個檔案、哪一行"}]}}}
+                                          "items": [{"quote": "alpha 定義在哪個檔案的第幾行"}]}}}
             recs = domain_calls.calls(agent, parsed, DOMAIN_RESULT_HEAD + "報告")
             head = recs[0]
             assert head["skill"] == "domain_session" and head["job"] and head["domains"] == ["repo_analysis"] and head["steps"] == 1, head
@@ -637,7 +637,7 @@ def main():
                 text = "\n".join(m["content"] for m in messages if m["role"] == "user")
                 rid = re.findall(r"【程式照收據算的彙整】（存檔 #(\d+)", text)[-1]
                 return ds("report", answers=[(1, "answered", "呼叫總共 2 次：pkg/mod.py 1 次、pkg/use.py 1 次", [f"#{rid}"])], reply="數好了")
-            fake = FakeChat(main=[task("數 pkg 裡的 alpha 呼叫幾次", [("各幾次、總共幾次", "各檔案幾次、總共幾次")]), say("好")],
+            fake = FakeChat(main=[task("數 pkg 裡的 alpha 呼叫幾次", ["各幾次、總共幾次"]), say("好")],
                             session=[ds("domains", domains=["repo_analysis"]), ds("skill", skill="py_usage"),
                                      fill(params=[("name", "alpha", "alpha"), ("path", "pkg", "pkg")]), report])
             turn("pkg 裡的 alpha 在哪些檔案呼叫、各幾次、總共幾次？", fake)
@@ -675,7 +675,7 @@ def main():
 
         def t_composite_need_and_empty():
             q = "sub 裡的 alpha 在哪？找不到的 zeta 呢？"
-            fake = FakeChat(main=[task("找 sub 裡的 alpha，與 zeta", ["alpha 在哪", ("找不到的 zeta 呢", "zeta 在哪")]), say("好")],
+            fake = FakeChat(main=[task("找 sub 裡的 alpha，與 zeta", ["alpha 在哪", "找不到的 zeta 呢"]), say("好")],
                             session=[ds("domains", domains=["repo_analysis"]),
                                      ds("skill", skill="cpp_symbol"), fill(params=[("names", "alpha", "alpha"), ("path", "sub", "sub")]),
                                      ds("skill", skill="cpp_symbol"), fill(params=[("names", "zeta", "zeta")])])
@@ -690,7 +690,7 @@ def main():
 
         # ------------------------------------------------------------ 狀態與上限
         def t_states_limits():
-            fake = FakeChat(main=[task("找 alpha", [("找 alpha", "在哪")]), say("好")],
+            fake = FakeChat(main=[task("找 alpha", ["找 alpha"]), say("好")],
                             session=["RAW:不是 JSON", ds("skill", skill="search_text"), ds("domains", domains=["repo_analysis"]),
                                      ds("domains", domains=["repo_analysis"]), ds("domains", domains=["repo_analysis"]),
                                      ds("domains", domains=["repo_analysis"])])
@@ -702,7 +702,7 @@ def main():
             saved = domain_session.DOMAIN_STEPS_MAX
             domain_session.DOMAIN_STEPS_MAX = 2
             try:
-                fake = FakeChat(main=[task("找 alpha 與 beta", [("找 alpha 與 beta", "在哪")]), say("好")],
+                fake = FakeChat(main=[task("找 alpha 與 beta", ["找 alpha 與 beta"]), say("好")],
                                 session=[ds("domains", domains=["repo_analysis"]), ds("skill", skill="search_text"), fill(args="alpha"),
                                          ds("skill", skill="search_text"), fill(args="beta"), ds("skill", skill="search_text"), fill(args="gamma")])
                 turn("找 alpha 與 beta", fake)
@@ -713,7 +713,7 @@ def main():
 
         # ------------------------------------------------------------ 確認關卡
         def t_guard():
-            fake = FakeChat(main=[task("重新啟動 cam_driver 容器", [("重新啟動 cam_driver", "重新啟動了沒")]), say("沒有重新啟動。")],
+            fake = FakeChat(main=[task("重新啟動 cam_driver 容器", ["重新啟動 cam_driver"]), say("沒有重新啟動。")],
                             session=[ds("domains", domains=["robotics_infra"]), ds("skill", skill="docker_ctl"), fill(args="restart cam_driver"),
                                      ds("report", answers=[(1, "not_found", "使用者沒有同意重新啟動", [])], reply="沒有做")])
             events, waiting = turn("重新啟動 cam_driver", fake)
@@ -757,7 +757,7 @@ def main():
 
         def t_kept():
             fake = FakeChat(
-                main=[task("照 docs/spec.md 回答", [("WAITING 時收到不同編號的確認會怎樣", "不同編號的確認會怎樣、規格的編號")]),
+                main=[task("照 docs/spec.md 回答", ["WAITING 時收到不同編號的確認會怎樣"]),
                       answer("查到了。", [(1, "answered", "不變、繼續等", ["docs/spec.md:5"])]),
                       answer("查到了。", [(1, "answered", "不變、繼續等，最多 30 秒（SPEC-A12）", ["docs/spec.md:5"])])],
                 session=[ds("domains", domains=["repo_analysis"]), ds("skill", skill="search_text"), fill(args='"SPEC-A12" docs'),
@@ -774,10 +774,38 @@ def main():
             assert answers.dropped("由 safety_node 合併，來源 3 個；設定在 config/nav2_v2.yaml", "由節點合併") == [], "名稱、10 以下的數、路徑不核對"
             assert answers.dropped("等 30 秒", "等一下", allowed="最多 30 秒嗎") == [], "問題裡本來就有的不核對"
 
+        def t_archive_id():
+            # 回答的文字寫了存檔的 #編號：交回修一次，#編號只寫在 refs（框架討論紀錄第 27 輪的 R2）
+            fake = FakeChat(
+                main=[task("照 docs/spec.md 回答", ["WAITING 時收到不同編號的確認會怎樣"]),
+                      answer("查到了。", [(1, "answered", "不變、繼續等（SPEC-A12，見 #3）", ["docs/spec.md:5"])]),
+                      answer("查到了。", [(1, "answered", "不變、繼續等（SPEC-A12）", ["docs/spec.md:5"])])],
+                session=[ds("domains", domains=["repo_analysis"]), ds("skill", skill="search_text"), fill(args='"SPEC-A12" docs'),
+                         ds("report", answers=[(1, "answered", "不變、繼續等，規格書的編號 #9", ["docs/spec.md:5"])], reply="查到了"),
+                         ds("report", answers=[(1, "answered", "不變、繼續等（SPEC-A12）", ["docs/spec.md:5"])], reply="查到了")])
+            events, _ = turn("照 docs/spec.md：WAITING 時收到不同編號的確認會怎樣？引用規格的編號。", fake)
+            fix = fake.session_msgs(4)[-1]["content"]
+            assert "沒有通過核對" in fix and "存檔的編號「#9」" in fix, ("領域 session 的回報：交回修一次", fix[:400])
+            mains = [c for c in fake.calls if c["role"] == "main"]
+            told = mains[2]["messages"][-1]["content"]
+            assert "沒有通過核對" in told and "存檔的編號「#3」" in told, ("主 session 的回答：交回修一次", told[:400])
+            shown = final_reply(events)
+            assert "⚠️" not in shown and "SPEC-A12" in shown, shown
+
+            def cited(ref):
+                return ("id", [], ["#4 第 2 行：alpha"], [])
+
+            said = [{"item": 1, "status": "answered", "text": "#4 裡寫 alpha", "refs": ["#4"]}]
+            assert not answers.answer_problems(["x"], said, cited, "#4 寫了什麼", "alpha"), "使用者自己寫了 #編號的不擋"
+            got = answers.answer_problems(["x"], said, cited, "", "alpha")
+            assert any("#4" in w for w in got.get(1, [])), got
+            assert not answers.answer_problems(["x"], [{"item": 1, "status": "not_found", "text": "#4 裡沒有", "refs": []}], cited, "", ""), \
+                "查不到的原因不擋"
+
         for name, fn in [("主 session：交辦一節、索引、回覆的 schema 與解析", t_prompt_schema),
                          ("回覆的欄位順序（主 session 的 action 最後；領域 session 照說明的順序）", t_reply_order), ("擋領域的工具與有骨架的技能", t_gate),
                          ("主 session 把領域的名稱當技能：說明要交辦；看到的字不寫識別名稱", t_domain_named),
-                         ("交辦的核對", t_task_checks), ("交辦的每一項附使用者的原話（核對、帶到領域 session、追問時用之前的訊息）", t_quote),
+                         ("交辦的核對", t_task_checks), ("交辦的每一項是使用者的原話（核對、帶到領域 session、追問時用之前的訊息）", t_quote),
                          ("領域 session 用工具：選領域、技能清單、結果、回報、主 session 照項目回答", t_tool_flow),
                          ("評測的紀錄（domain_calls）", t_tool_records),
                          ("有骨架的技能：合約、執行、一模一樣的不執行", t_composite),
@@ -791,7 +819,8 @@ def main():
                          ("有骨架的技能的彙整：程式照收據算的數量存成 #編號、總數照它寫就過核對", t_totals), ("回退換技能", t_composite_switch),
                          ("路徑有好幾個交回決定、0 筆照實交回", t_composite_need_and_empty), ("狀態與上限", t_states_limits),
                          ("確認關卡", t_guard), ("長的結果照舊提煉", t_long_output), ("再交辦帶著上一次的經過", t_previous),
-                         ("主 session 依報告回答的核對", t_main_check), ("依報告回答漏了報告的編號與數字：交回修一次", t_kept)]:
+                         ("主 session 依報告回答的核對", t_main_check), ("依報告回答漏了報告的編號與數字：交回修一次", t_kept),
+                         ("回答的文字寫了存檔的 #編號：交回修一次（回報與主 session 的回答；使用者自己寫了的、查不到的原因不擋）", t_archive_id)]:
             check(name, fn)
     finally:
         os.chdir(cwd)

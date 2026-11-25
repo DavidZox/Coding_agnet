@@ -20,9 +20,9 @@
   "total": 8
  },
  "domain_selftest": {
-  "label": "參數表單：doc 照原文的「<a> 的 <b>」找那一份文件（t_doc_of）（2026-11-25）",
-  "passed": 24,
-  "total": 24
+  "label": "交辦照原話、回答的文字不寫存檔的 #編號（t_archive_id）（2026-11-25）",
+  "passed": 25,
+  "total": 25
  },
  "edg_selftest": {
   "label": "單一迴圈：交辦與領域 session（框架討論紀錄 F1～F6）（2026-11-23）",

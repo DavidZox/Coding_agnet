@@ -11,6 +11,7 @@ from . import prompt_files
 from .extract import _NUM, _REF_TEXT, _drop_ordinals, _has_name, _num_values, missing_tokens
 
 REF = re.compile(r"[\w./-]*\w\.[A-Za-z][A-Za-z0-9]*:\d+")      # 出處：檔案:行號（副檔名是字母開頭，時間、IP 不算）
+_ARCHIVE_ID = re.compile(r"(?<![\w#])#\d+(?!\d)")                  # 存檔的編號（#12）：寫在回答的文字裡的交回（框架討論紀錄第 27 輪的 R2）
 CITE = re.compile(r"(" + REF.pattern + r")(?:\s*[-~～]\s*(\d+))?")    # 出處：檔案:行號，可以是一段（a.py:31-35）
 ID = re.compile(r"#(\d+)")
 # 回答的內文寫的 檔案:行號（待辦 4l ①）：只認英數字的路徑（CITE 的 \w 連中文也算，「定義在pkg/a.py:3」會整串當成路徑）
@@ -159,7 +160,8 @@ def answer_problems(items, answers, cited, allowed, source, unknown=None):
     """answers 每一項的核對（G4 的步驟 7）→ {項目編號: [沒過的原因]}；全部過了是空的。
     items：要回答的項目；answers：parse 過的每一項 {item, status, text, refs}；cited(ref) → (種類, 對到的行, 那幾段的文字, 行號)，
     種類是 line／id／unknown（不在該在的地方）／form（寫法看不懂）；allowed：本來就有的字（問題、項目、子目標），不核對；
-    source：全部的原文（名稱的寫法看它）；unknown(ref)：出處不在該在的地方時的說法（領域 session 換成自己的，預設是 why_ref_unknown）。"""
+    source：全部的原文（名稱的寫法看它）；unknown(ref)：出處不在該在的地方時的說法（領域 session 換成自己的，預設是 why_ref_unknown）。
+    答到的 text 寫了存檔的 #編號（allowed 裡沒有的）也交回：#編號只寫在 refs（why_archive_id，框架討論紀錄第 27 輪的 R2）。"""
     got = {a["item"]: a for a in answers or [] if 1 <= a["item"] <= len(items)}
     out = {}
     for k, _item in enumerate(items, 1):
@@ -172,6 +174,10 @@ def answer_problems(items, answers, cited, allowed, source, unknown=None):
         else:
             if not a["refs"]:
                 bad_why.append(why("why_no_refs"))
+            ids = [x for x in dict.fromkeys(_ARCHIVE_ID.findall(a["text"]))
+                   if not re.search(rf"(?<![\w#]){re.escape(x)}(?!\d)", allowed or "")]
+            if ids:          # 存檔的 #編號只寫在 refs；e4b 把規格書的編號寫成「#2」（框架討論紀錄第 26 輪）
+                bad_why.append(why("why_archive_id", ids="、".join(ids)))
             evidence, lines = list(a["refs"]), []
             for ref in a["refs"]:
                 kind, _, texts, nums = cited(ref)

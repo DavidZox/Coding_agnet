@@ -31,9 +31,9 @@ def calls(agent, parsed, result):
     """交辦的這一步 → tool_calls 的紀錄。"""
     task = parsed["action"]["task"]
     status = "ERROR" if result.lstrip().startswith(("[ERROR]", "[DENIED]")) else "PASS"
-    items = [x["item"] for x in task.get("items") or []]
+    items = [x["quote"] for x in task.get("items") or []]           # 每一項是使用者的原話（框架討論紀錄第 27 輪）
     entry = {"script": None, "skill": "domain_session", "domain": "domain_session", "goal": task.get("goal", ""), "items": items,
-             "quotes": [x["quote"] for x in task.get("items") or []], "args": [task.get("goal", "")] + items, "status": status, "result_id": None}
+             "args": [task.get("goal", "")] + items, "status": status, "result_id": None}
     tasks = agent._domain_turn["tasks"]
     d = tasks[-1] if status == "PASS" and tasks and tasks[-1]["key"] == [task.get("goal", ""), items] else None
     job = JobStore(os.path.join(agent.script_dir, "logs", DOMAIN_JOBS_DIRNAME)).load(d["job"]) if d and d.get("job") else None

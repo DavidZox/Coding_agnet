@@ -193,21 +193,21 @@ class DomainMixin:
         核對沒過回 [ERROR]（附下一步），不執行。"""
         task = action.get("task") or {}
         goal, rows = task.get("goal") or "", task.get("items") or []
-        items, quotes = [x["item"] for x in rows], [x["quote"] for x in rows]
-        why = self._check_task(goal, items, quotes)
+        items = [x["quote"] for x in rows]          # 每一項是使用者的原話（框架討論紀錄第 27 輪）
+        why = self._check_task(goal, items)
         if why:
             return "[ERROR] " + why
         turn = self._domain_turn
-        entry = {"key": [goal, items], "goal": goal, "items": items, "quotes": quotes, "n": len(turn["tasks"]) + 1, "job": None,
+        entry = {"key": [goal, items], "goal": goal, "items": items, "n": len(turn["tasks"]) + 1, "job": None,
                  "status": None, "steps": "", "note": "", "report": "", "result_id": None, "answered": [], "previous": self._previous()}
         turn["tasks"].append(entry)
         before = (self.current_cwd, self.container_cwd, self.target_container)
-        job = domain_session.DomainSession(self, self.domain_registry()).start(self.current_task or goal, goal, items, quotes=quotes,
+        job = domain_session.DomainSession(self, self.domain_registry()).start(self.current_task or goal, goal, items,
                                                                                previous=entry["previous"], attempt=entry["n"])
         return self._task_finish(entry, job, before)
 
-    def _check_task(self, goal, items, quotes):
-        """交辦的核對：有領域、子目標不是空的、項目 1～DOMAIN_ITEMS_MAX 項、每一項的原話一字不改地在使用者說過的話裡（_user_words）、
+    def _check_task(self, goal, items):
+        """交辦的核對：有領域、子目標不是空的、項目 1～DOMAIN_ITEMS_MAX 項、每一項（使用者的原話）一字不改地在使用者說過的話裡（_user_words）、
         跟這一回合交辦過的不一樣（一樣的再交一次結果也一樣）、同一個項目最多 DOMAIN_ITEM_TRIES 次。過了回 None，沒過回說明（不含 [ERROR]）。"""
         turn = self._domain_turn
         if not self.domain_registry()["domains"]:
@@ -217,9 +217,9 @@ class DomainMixin:
         if not 1 <= len(items) <= DOMAIN_ITEMS_MAX:
             return _d("err_items", count=len(items), max=DOMAIN_ITEMS_MAX)
         said = self._user_words()
-        for k, (it, q) in enumerate(zip(items, quotes), 1):
-            if not composite._unquote(q) or composite._unquote(q) not in said:
-                return _d("err_quote", k=k, item=it, quote=q or "（空的）")
+        for k, it in enumerate(items, 1):
+            if not composite._unquote(it) or composite._unquote(it) not in said:
+                return _d("err_quote", k=k, quote=it or "（空的）")
         same = next((x for x in turn["tasks"] if x["key"] == [goal, items]), None)
         if same:
             return _d("err_same", n=same["n"], status=domain_session.STATUS_TEXT.get(same["status"], same["status"] or "—"))
@@ -263,14 +263,8 @@ class DomainMixin:
         self._record_trajectory("domain_task", [entry["goal"]] + entry["items"], DOMAIN_RESULT_HEAD + text, *before)
         entry["result_id"] = self.last_result_id
         items = self.domain_items()
-        hint = _d("answer_hint", items="\n".join(self._hint_row(k, x) for k, x in enumerate(items, 1))) if items else ""
+        hint = _d("answer_hint", items="\n".join(f"{k}. {x}" for k, x in enumerate(items, 1))) if items else ""
         return DOMAIN_RESULT_HEAD + text + ("\n\n" + hint if hint else "")
-
-    def _hint_row(self, k, item):
-        """要回答的項目的一行：附使用者的原話（第一次交辦這一項時抄的）。"""
-        quote = next((q for x in self._domain_turn["tasks"] for it, q in zip(x["items"], x.get("quotes") or [])
-                      if q and answers.norm(it) == answers.norm(item)), "")
-        return _d("hint_item", k=k, item=item, quote=quote) if quote else f"{k}. {item}"
 
     # ---------------------------------------------------------------- 問使用者（程式轉、程式接回）
     def domain_ask_text(self):
@@ -376,8 +370,7 @@ class DomainMixin:
         """answers 的核對 → {項目編號: [沒過的原因]}（0＝回覆的開頭）；全部過了是空的。答到的照 answers.answer_problems；另外報告裡這一項的
         回答（領域 session 寫的、過了它的核對）寫的編號與數字，回答裡要有（answers.dropped；同一個項目交辦好幾次的看最後一次）。"""
         items, turn = self.domain_items(), self._domain_turn
-        allowed = "\n".join([self.current_task or ""] + items + [x["goal"] for x in turn["tasks"]]
-                            + [q for x in turn["tasks"] for q in x.get("quotes") or []])
+        allowed = "\n".join([self.current_task or ""] + items + [x["goal"] for x in turn["tasks"]])
         out = answers.answer_problems(items, parsed.get("answers"), self._cited, allowed, "\n".join(turn["reports"]))
         reported = {answers.norm(it): text for x in turn["tasks"] for it, text in x.get("answered") or []}
         given = {a["item"]: a for a in parsed.get("answers") or [] if 1 <= a["item"] <= len(items)}

@@ -12,7 +12,7 @@ harness 送給模型的字都在這裡：改字不用改程式，存檔之後下
 | `context_modes/harness.md`、`claude_code.md` | 主對話：目前上下文模式的規則（接在 AGENT.md 後面） | `context_mode.context_mode_rules` |
 | `Memory.md` | 主對話：長期記憶——**資料，不是規則**：使用者要求時 `modify_memory` 寫入 | `prompt.load_long_term_memory` |
 | `harness/system_prompt.md` | 主對話 system prompt 裡程式組的部分：各節的標題、長期記憶開頭的說明、接回舊摘要時的提醒、「交辦」一節（`tasks`：交辦的寫法——子目標與要回報的項目（每一項附使用者的原話 quote）、不指定領域；依報告回答的 answers、再交辦與次數的上限、Available Skills 列的你自己直接用；每個領域一行 `task_domain`） | `prompt.py`、`orchestrator.py` |
-| `harness/domain.md` | 主 session 這一側的交辦：交辦之後程式交回主模型的文字（交辦的報告 `report`、停在確認關卡 `ask_waiting`、使用者回答之後接著做完、取消、依報告回答的說明 `answer_hint`、要回答的項目附原話 `hint_item`），擋領域的工具與有骨架的技能（`tool_blocked`、`skill_blocked`）、交辦沒過核對的說明（`err_*`；原話不在使用者說過的話裡 `err_quote`）、依報告回答時 answers 沒有通過核對的說明（`answers_fix`、`why_*`，漏了報告的編號與數字 `why_dropped`；`why_*` 也用在領域 session 回報的核對） | `orchestrator.py`、`answers.py`、`domain_session.py` |
+| `harness/domain.md` | 主 session 這一側的交辦：交辦之後程式交回主模型的文字（交辦的報告 `report`、停在確認關卡 `ask_waiting`、使用者回答之後接著做完、取消、依報告回答的說明 `answer_hint`），擋領域的工具與有骨架的技能（`tool_blocked`、`skill_blocked`）、交辦沒過核對的說明（`err_*`；原話不在使用者說過的話裡 `err_quote`）、依報告回答時 answers 沒有通過核對的說明（`answers_fix`、`why_*`，漏了報告的編號與數字 `why_dropped`；`why_*` 也用在領域 session 回報的核對） | `orchestrator.py`、`answers.py`、`domain_session.py` |
 | `harness/tool_use_index.md` | system prompt 尾端的工具使用檢索清單（兩種模式各一則）、過去的對話片段、動態區的最新一筆 | `tool_use_index.py` |
 | `harness/state_tail.md` | 動態區：目前狀態（工作目錄、容器、Workspace、目前的數據）、Objective | `prompt.build_state_tail`、`analysis_job.analysis_state_line` |
 | `harness/tool_results.md` | 每一則工具結果的框架句、使用者捨棄結果的通知、沒有提煉時只給成功／失敗的那一則 | `protocol.tool_result_message`、`turn.py` |
@@ -29,7 +29,7 @@ harness 送給模型的字都在這裡：改字不用改程式，存檔之後下
 | `extract/inputs.md` | 提煉的 user 訊息裡程式組的標籤、程式的說明、修一次的說明 | `extract.py` |
 | `edg/fix.md` | 低階執行器（有骨架的技能的圖由它執行）：第 1 級修正（一個工具節點參數錯或逾時，只改字面參數；修不好就說修不好）的規則 | `edg.ModelFixer` |
 | `edg/inputs.md` | 第 1 級修正的 user 訊息裡程式組的標籤（子目標、規格、參數、錯誤、逾時的縮小方式） | `edg.fix_message` |
-| `domain/session.md` | 領域 session 看到的字：system prompt（三種狀態 domains／skill／report 的寫法、怎麼做、領域清單）、第一則訊息（子目標、項目與每一項的原話 `item_quote`、原始問題、上一次的經過）、選了領域之後的技能清單（〈做法〉、有骨架的技能與參數、工具與 args 的寫法、共用的工具）、選了技能之後的參數表單（`form_*`；工具的 args 寫成 JSON 或照抄佔位符 `reject_args_*`；重問 `retry_form`）、每一步的結果（步驟的標頭、有骨架的技能的狀態與回退、程式算的彙整 `composite_totals`、每個節點的結果、存檔編號）、擋下與交回改的說明（`err_*`）、回報的核對沒過（`answers_fix`）、回覆不是 JSON、截斷、清掉的舊結果、提煉的錨點（每一項附原話 `anchor_item`）；有骨架的技能的合約沒過（`reject_*`）、要領域 session 決定的事（`need_*`） | `domain_session.py`、`composite.py`、`orchestrator.domain_gate`（`not_my_tool`） |
+| `domain/session.md` | 領域 session 看到的字：system prompt（三種狀態 domains／skill／report 的寫法、怎麼做、領域清單）、第一則訊息（子目標、項目（每一項是使用者的原話）、原始問題、上一次的經過）、選了領域之後的技能清單（〈做法〉、有骨架的技能與參數、工具與 args 的寫法、共用的工具）、選了技能之後的參數表單（`form_*`；工具的 args 寫成 JSON 或照抄佔位符 `reject_args_*`；重問 `retry_form`）、每一步的結果（步驟的標頭、有骨架的技能的狀態與回退、程式算的彙整 `composite_totals`、每個節點的結果、存檔編號）、擋下與交回改的說明（`err_*`）、回報的核對沒過（`answers_fix`）、回覆不是 JSON、截斷、清掉的舊結果、提煉的錨點（`anchor`）；有骨架的技能的合約沒過（`reject_*`）、要領域 session 決定的事（`need_*`） | `domain_session.py`、`composite.py`、`orchestrator.domain_gate`（`not_my_tool`） |
 | `vision/extraction.md` | Web 附圖的影像提取（視覺模型的 system、純文字的退路、user 訊息） | `vision/extraction.py` |
 
 ## 範本的寫法
