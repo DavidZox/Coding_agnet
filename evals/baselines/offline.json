@@ -30,9 +30,9 @@
   "total": 14
  },
  "extract_selftest": {
-  "label": "程式整理好的清單放得進一段時直接給原文（t_listing_raw）（2026-11-24）",
-  "passed": 19,
-  "total": 19
+  "label": "提煉的核對照收據認行號與檔名（t_ground_origins）（2026-11-25）",
+  "passed": 20,
+  "total": 20
  },
  "integrity": {
   "label": "評測的完整性：加上文件與架構圖寫的程式名稱要在程式裡找得到（2026-11-23）",

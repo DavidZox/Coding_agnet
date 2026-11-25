@@ -8,7 +8,8 @@
    沒有人看得到兩份，比不出差異（設計筆記 2.66）。
 2. Workers：每段一個乾淨的 session，只讀那一段（每行前面是原文的行號；只有一段時讀全部），摘出跟使用者的目標／問題有關的事實與錯誤，每條附行號。
    程式核對（missing_tokens）：每條寫的數字與名稱要在它引用的那幾行裡（前後 EVIDENCE_SPAN 行，加上縮排的上層——YAML、巢狀的輸出名稱常在
-   上幾行）；對不上的不交給整合，記在存檔裡。段數超過 EXTRACT_MAX_CHUNKS 時依問題裡的名稱、數字出現在哪幾段挑著讀，沒讀的行號範圍由程式
+   上幾行）；對不上時照收據再試一次（_ground_origins：那幾行所屬的檔名也算、寫的是檔案的行號也認，設計筆記 2.73）；還是對不上的不交給整合，
+   記在存檔裡。段數超過 EXTRACT_MAX_CHUNKS 時依問題裡的名稱、數字出現在哪幾段挑著讀，沒讀的行號範圍由程式
    寫進「未涵蓋」——不會假裝讀過。
 3. 整合（merger）：拿各段核對過的事實＋那幾行的原文（程式附上）＋原文的開頭與大綱，寫回答、未涵蓋、之後可能想知道的、檢索清單的描述、
    還需要的舊存檔。交出去的相關事實與錯誤由程式列——每個 worker 核對過的照段落的順序全部列出、同樣的句子只列一次（listed_items）；
@@ -361,7 +362,8 @@ class Extraction:
 
     def _ground(self, item, si=None, within=None):
         """一條事實或錯誤 → (核對過的 item 或 None, 對不上的字)。si＝哪一份（None：依 record 找——好幾份合成的那一段，找不到就每一份都試）；within＝(開始, 結束)
-        這一段的範圍（worker 的事實只能引用自己那一段附近的行）。沒寫行號、或行號不在範圍裡：在範圍（或整份）裡找出現那些字的行補上。"""
+        這一段的範圍（worker 的事實只能引用自己那一段附近的行）。沒寫行號、或行號不在範圍裡：在範圍（或整份）裡找出現那些字的行補上。
+        每一份都對不上時，再照收據各試一次（_ground_origins：檔名只寫在「## <檔案>」那一行、寫的是檔案的行號）；照上面就收的不變。"""
         cands = [si] if si is not None else ([self._src_index(item.get("record"))] if self._src_index(item.get("record")) is not None
                                              else list(range(len(self.sources))))
         best = None
@@ -384,7 +386,42 @@ class Extraction:
                     return dict(item, src=i, nums=hit), []
             if best is None or len(bad) < len(best):
                 best = bad
+        for i in cands:
+            g = self._ground_origins(item, i, within)
+            if g:
+                return g, []
         return None, best or []
+
+    def _ground_origins(self, item, i, within=None):
+        """照收據核對（設計筆記 2.73）：收據把存檔的每一行對到檔案（origins，_results_common.file_lines）。search_text 一個檔案一節，檔名只寫在
+        「## <檔案>」那一行，命中的行（開頭是「>」、沒有縮排）的核對範圍到不了；view_file、search_text 每一行的 N→ 是檔案的行號，worker 常寫成
+        這一層——兩種都是 worker 寫對了、核對看不到：
+        ① 寫的行號（存檔的）＋那幾行所屬的檔名對得上 → 收（via＝path）；
+        ② 把寫的行號當成這一段裡檔案的行號，只有一個檔案的那幾行（＋檔名）對得上 → 收、行號換成存檔的（via＝file_line）；兩個檔案都對得上不收。
+        沒有收據的（凍結的工具）不試。→ 核對過的 item 或 None。"""
+        origins = self.sources[i].get("origins") or {}
+        if not origins:
+            return None
+        lines = self.sources[i]["lines"]
+
+        def ok(nums, refs):
+            ev = evidence_lines(lines, nums)
+            text = "\n".join([lines[x - 1] for x in ev] + sorted({origins[x][0] for x in ev if x in origins}))
+            return not missing_tokens(item["text"], text, self.texts[i], self.allowed, refs=refs)
+
+        nums = parse_lines(item.get("lines"), len(lines))
+        if within:
+            nums = [x for x in nums if within[0] - EVIDENCE_SPAN < x <= within[1] + EVIDENCE_SPAN]
+        if nums and ok(nums, set(nums)):
+            return dict(item, src=i, nums=nums, via="path")
+        wanted = set(parse_lines(item.get("lines"), max(n for _, n in origins.values())))
+        lo, hi = within if within else (0, len(lines))
+        by_file = {}
+        for k in range(lo + 1, hi + 1):
+            if k in origins and origins[k][1] in wanted:
+                by_file.setdefault(origins[k][0], []).append(k)
+        hits = [ks for ks in by_file.values() if ok(ks, wanted | set(ks))]
+        return dict(item, src=i, nums=hits[0], via="file_line") if len(hits) == 1 else None
 
     def _at(self, si, nums):
         """引用的行（存檔的行號）在檔案裡的位置：「<路徑>:28-29、49」（來源的 origins＝_results_common.file_lines；對不到檔案的行不寫）。"""

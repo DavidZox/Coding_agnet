@@ -516,6 +516,65 @@ def main():
             j = json.load(open(os.path.join(tmp, "logs", "extract_jobs", agent.last_tool_summary["job"], "job.json"), encoding="utf-8"))
             assert j["final"]["facts"][0]["at"] == "a.cpp:49" and j["synth"]["answer_lines"] == [], j["final"]
 
+        def t_ground_origins():
+            # 設計筆記 2.73：worker 寫對了、核對看不到的兩種——檔名只寫在「## <檔案>」那一行（命中的「>」行沒有縮排，核對的範圍到不了標題）、
+            # 寫的是檔案的行號（N→ 那一層）。照原本的核對對不上才照收據再試；原本就收的不變；寫錯的檔名與數值、兩個檔案都對得上的照舊拿掉
+            grep = ["[PASS] 搜尋「make_sub」：共 4 筆命中，分布在 4 個檔案",
+                    "## src/front.cpp（1 筆）", "    20→void setup() {", "    21→  int depth_front = 1;", "    22→  // 前面的雷射",
+                    ">   23→  sub_front = make_sub(depth_front);", "    24→}",
+                    "## src/back.cpp（1 筆）", "     2→void setup_back() {", ">    3→  sub_back = make_sub(depth_back);", "     4→}",
+                    "## src/mirror.cpp（1 筆）", "     1→void mirror() {", ">    2→  sub_front = make_sub(depth_front);",
+                    "## src/copy.cpp（1 筆）", ">    2→  sub_front = make_sub(depth_front);"]
+            rec = {"cwd": "/w", "items": [{"path": "/w/src/front.cpp", "line": 23}, {"path": "/w/src/back.cpp", "line": 3},
+                                          {"path": "/w/src/mirror.cpp", "line": 2}, {"path": "/w/src/copy.cpp", "line": 2}]}
+            origins = rc.file_lines(grep, rec)
+            assert origins[6] == ("src/front.cpp", 23) and origins[10] == ("src/back.cpp", 3) and origins[16] == ("src/copy.cpp", 2), origins
+            src = {"rid": "1", "label": "grep_cmd.py（#1）", "lines": grep}
+            ext = extract.Extraction(agent, "tool_summary", [dict(src, origins=origins)], "這個函式在哪裡被呼叫")
+            bare = extract.Extraction(agent, "tool_summary", [dict(src, origins={})], "這個函式在哪裡被呼叫")   # 沒有收據（凍結的工具）
+
+            def ground(e, text, lines):
+                return e._ground({"text": text, "lines": lines, "record": ""}, 0, (0, len(grep)))
+
+            g, _ = ground(ext, "sub_front = make_sub(depth_front)", "6")
+            assert g["nums"] == [6] and "via" not in g, ("照原本的核對就收的不變", g)
+            g, _ = ground(ext, "在 src/front.cpp 中，sub_front = make_sub(depth_front)", "6")
+            assert g["nums"] == [6] and g["via"] == "path" and ext._at(0, g["nums"]) == "src/front.cpp:23", ("檔名只在「## 」那一行", g)
+            assert ground(bare, "在 src/front.cpp 中，sub_front = make_sub(depth_front)", "6") == (None, ["src/front.cpp"]), "沒有收據：照舊拿掉"
+            g, _ = ground(ext, "src/back.cpp 的 sub_back = make_sub(depth_back)", "3")
+            assert g["nums"] == [10] and g["via"] == "file_line" and ext._at(0, g["nums"]) == "src/back.cpp:3", ("寫的是檔案的行號：換成存檔的", g)
+            for text, lines, why in (("在 src/back.cpp 中，sub_front = make_sub(depth_front)", "6", "檔名寫錯（引用的那一行是 front.cpp 的）"),
+                                     ("在 src/front.cpp 中，sub_front = make_sub(depth_rear)", "6", "數值寫錯"),
+                                     ("sub_front = make_sub(depth_front)", "2", "兩個檔案的第 2 行都對得上：不猜")):
+                g, bad = ground(ext, text, lines)
+                assert g is None and bad, (why, g, bad)
+
+            class FakeFacts:
+                """worker 摘三條：檔名只在標題的、寫檔案行號的、檔名寫錯的；整合照常寫回答。"""
+
+                def __call__(self, model=None, messages=None, format=None, **kw):
+                    if "relevant" in (format or {}).get("properties", {}):
+                        data = {"relevant": True, "summary": "make_sub 的呼叫", "errors": [],
+                                "facts": [{"text": "在 src/front.cpp 中，sub_front = make_sub(depth_front)", "lines": "6"},
+                                          {"text": "src/back.cpp 的 sub_back = make_sub(depth_back)", "lines": "3"},
+                                          {"text": "在 src/back.cpp 中，sub_front = make_sub(depth_front)", "lines": "6"}]}
+                    else:
+                        data = {"answer": "make_sub 在 src/front.cpp 與 src/back.cpp 被呼叫", "not_covered": "無", "suggested_questions": [],
+                                "index_hint": "make_sub 的呼叫", "related_records": []}
+                    return {"message": {"content": json.dumps(data, ensure_ascii=False)}, "prompt_eval_count": 10, "eval_count": 5}
+
+            agent.last_receipt = rec
+            try:
+                rid = archive("\n".join(grep), script="grep_cmd.py", task="這個函式在哪裡被呼叫")
+            finally:
+                agent.last_receipt = None
+            ollama.chat = FakeFacts()
+            out = agent.summarize_tool_result("\n".join(grep), 3000, step={}, result_id=rid)
+            assert "（行 6＝src/front.cpp:23）" in out and "（行 10＝src/back.cpp:3）" in out, out
+            assert "在 src/back.cpp 中，sub_front" not in out, ("檔名寫錯的照舊拿掉", out)
+            w = job_of(out)["workers"][0]
+            assert [f.get("via") for f in w["facts"]] == ["path", "file_line"] and len(w["dropped"]) == 1, w
+
         def t_sub_guidance():
             # 領域 session 沒有 result_recall、也沒有使用者可以問——提煉結尾的下一步建議、沒有提煉時的說明、
             # claude_code 模式的截斷說明只寫它能用的 result_grep、result_view；主對話照舊
@@ -568,6 +627,8 @@ def main():
                           "清單裡的數字、單獨一個序號、句子裡的編號、小數照樣核對；領域 session 回報的核對照收據通過", t_list_ordinals),
                          ("檔案的行號（待辦 4k ②）：照收據把存檔的每一行對到檔案（一個檔案一節、只有一個檔案）；事實附「檔案:行號」；回答寫成存檔的"
                           "行號交回修一次，還是錯就標明；寫的是檔案的行號不用修", t_file_lines),
+                         ("照收據核對（設計筆記 2.73）：照原本的核對對不上才試——檔名只在「## 檔案」那一行的收（via path）、寫的是檔案的行號的收、"
+                          "行號換成存檔的（via file_line）；原本就收的不變；檔名或數值寫錯、兩個檔案都對得上、沒有收據的照舊拿掉", t_ground_origins),
                          ("領域 session 的下一步建議：提煉結尾、沒有提煉時、claude_code 的截斷說明只寫 result_grep、result_view，"
                           "不寫 result_recall、不叫它問使用者；主對話照舊", t_sub_guidance)]:
             check(name, fn)
