@@ -26,7 +26,9 @@ package "prompts/（改字不用改程式；evals/integrity 檢查範本跟程�
         constraints, items}}、先分出背景與限制、每一筆 quote 抄使用者的原話、
         收到報告之後怎麼填 answers、沒答到的再交辦、
         每個領域一行 task_domain）
-      tool_use_index：檢索清單（兩種模式）、對話片段、最新一筆
+      tool_use_index：檢索清單（兩種模式；每一行的事實：之前的 session
+        index_earlier、即時狀態 index_live、動作的紀錄 index_action）、
+        對話片段、最新一筆、最近執行過的動作 actions_index
       state_tail：動態區（工作目錄、容器、Workspace、數據、Objective）
       tool_results：工具結果的框架句、捨棄通知、只給成功／失敗
         （領域 session 的 reduced_sub 只寫 result_grep、result_view）
@@ -87,7 +89,8 @@ package "prompts/（改字不用改程式；evals/integrity 檢查範本跟程�
       need、程式算的彙整 composite_totals；output_head、result_id）、
       擋下或交回改的 err_*、not_my_tool、
       合約沒過 reject_*、要它決定的 need_*（reject_*、need_* 也給
-      composite.py 用）、回報沒過 answers_fix、retry（表單 retry_form）、
+      composite.py 用）、回報沒過 answers_fix（出處是這一回合之前存的資料
+      why_stale）、retry（表單 retry_form）、
       cut、cleared、anchor（子目標與項目（使用者的原話））、
       使用者前面的話 anchor_earlier
     ]
@@ -100,7 +103,7 @@ package "skills_system/：也是模型會讀的" {
     **DOMAIN.md**：領域的清單與共用的工具（給程式讀，不直接給模型）
     **tools/<name>.md**：技能的規格（主對話按需載入；領域 session 的
     技能清單列它〈語法〉的參數寫法；給程式看的 parameters、receipt、
-    narrow 載入時拿掉）
+    narrow、listing、live 載入時拿掉）
   ]
   rectangle K_DOMAIN #D5E8D4 [
     **<領域>/SKILLS.md**（repo_analysis 與凍結的四個）：

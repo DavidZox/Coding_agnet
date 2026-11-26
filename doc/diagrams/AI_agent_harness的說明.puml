@@ -41,11 +41,13 @@ rectangle NodeVision #DDEEF6 [
 rectangle NodeAgent #D1E5F0 [
   **SkillAgent（agent_core/，唯一核心）**
   ----
-  * system prompt 只放不常變的（尾端附工具使用檢索清單）；
+  * system prompt 只放不常變的（尾端附工具使用檢索清單（附程式算的
+    事實）與最近執行過的動作）；
     工作目錄、目標容器、目前的數據每次接在最後一則訊息後（動態區）
   * 呼叫主 session，**只看 action** 派發；
     會改變實體狀態的動作先由程式請使用者確認
-  * 執行腳本 → 記軌跡 → 原文存檔 #編號
+  * 執行腳本 → 記軌跡 → 原文存檔 #編號（檔頭記種類：
+    動作、即時狀態、檔案內容）
   * 依上下文模式決定工具回傳怎麼進主對話：
     harness＝獨立 session 提煉重點（長的切段、每段一個 worker、再整合）；
     claude_code＝原文（太大保留頭尾，註明中間有哪幾節）
@@ -157,6 +159,8 @@ rectangle NodeStore #E1D5E7 [
     腳本寫了收據時旁邊有 <…>.receipt.json（跟存檔一起刪）
   * tool_results/tools_use_index.md：大量回傳的一句話關聯描述
     （「#編號｜使用者想知道什麼：原文有什麼」，整句不截斷，永久累加）
+  * tool_results/actions_index.md：會改狀態的動作每次一行
+    （system prompt 的「最近執行過的動作」）
   * 被壓縮的對話片段也存成 #編號（conversation_segment），描述只講那一段；
     system prompt 另列「過去的對話片段」，保留上限另計（100 份）
   * 附圖的視覺分析也存成 #編號（vision_extract），檢索清單標〔附圖分析〕，
