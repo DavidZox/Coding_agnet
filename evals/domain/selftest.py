@@ -959,7 +959,7 @@ def main():
 
         def t_task_context():
             # 交辦時分清楚問題、限制與背景（框架討論紀錄第 32 輪的 U1）：背景與限制放進自己的欄就不交回；沒放進任何一欄的交回；問句只放進背景或限制的
-            # 由程式整句放進項目（第 34 輪）；領域 session 的第一則訊息與提煉的錨點把背景與限制分開寫；評測的紀錄記下三欄
+            # 由程式整句放進項目（第 34 輪）；背景與限制只記在 job，領域 session 的第一則訊息與提煉的錨點不放（第 36 輪的 L1）；評測的紀錄記下三欄
             q = "pkg 的 alpha 最近改過。alpha 定義在哪？先不要改任何檔案。"
             fake = FakeChat(main=[task3("找 pkg 裡的 alpha 定義在哪", ["alpha 定義在哪？"], ["pkg 的 alpha 最近改過。"], ["先不要改任何檔案。"]), say("好")],
                             session=[ds("domains", domains=["repo_analysis"])])
@@ -969,10 +969,10 @@ def main():
             job = last_job()
             assert (job["items"], job["background"], job["constraints"]) == (["alpha 定義在哪？"], ["pkg 的 alpha 最近改過。"], ["先不要改任何檔案。"]), job
             first = fake.session_msgs(0)[-1]["content"]
-            assert "【限制】" in first and "- 先不要改任何檔案。" in first and "【背景】" in first and "- pkg 的 alpha 最近改過。" in first, first[:900]
-            assert first.index("【要回答的項目】") < first.index("【限制】") < first.index("【使用者的原始問題】"), first[:900]
+            assert "【限制】" not in first and "【背景】" not in first and "- 先不要改任何檔案。" not in first, ("第一則訊息不放背景與限制", first[:900])
+            assert "【要回答的項目】（使用者的原話；回報時 answers 照這個編號）\n1. alpha 定義在哪？\n\n【使用者的原始問題】" in first, first[:900]
             anchor = domain_session.DomainSession._anchor(job)
-            assert "要回答的項目：alpha 定義在哪？" in anchor and "先不要改任何檔案。" in anchor.split("只用來理解，不是要回答的", 1)[1], anchor
+            assert "要回答的項目：alpha 定義在哪？" in anchor and "最近改過" not in anchor and "先不要改" not in anchor, ("錨點不放背景與限制", anchor)
             fake = FakeChat(main=[task3("找 pkg 裡的 alpha", ["alpha 定義在哪？"]),
                                   task3("找 pkg 裡的 alpha", ["alpha 定義在哪？"], ["pkg 的 alpha 最近改過。"], ["先不要改任何檔案。"]), say("好")],
                             session=[ds("domains", domains=["repo_analysis"])])
@@ -990,8 +990,8 @@ def main():
             assert rec["background"] == ["b"] and rec["constraints"] == ["c"] and rec["items"] == ["i"], rec
 
         def t_context_dropped():
-            # 背景與限制不是使用者的原話的由程式拿掉、不交回（框架討論紀錄第 33 輪的 V1）：填的「無」、自己整理的經過拿掉，交辦照收；領域 session
-            # 只看到原話的那幾則；拿掉的記在 job 與評測的紀錄。歸屬只算原話的：改寫的限制拿掉之後，那一段照樣算沒放進任何一欄
+            # 背景與限制不是使用者的原話的由程式拿掉、不交回（框架討論紀錄第 33 輪的 V1）：填的「無」、自己整理的經過拿掉，交辦照收；job 只記原話的
+            # 那幾則（領域 session 看不到背景與限制，第 36 輪）；拿掉的記在 job 與評測的紀錄。歸屬只算原話的：改寫的限制拿掉之後，那一段照樣算沒放進任何一欄
             q = "pkg 的 alpha 最近改過。alpha 定義在哪？先不要改任何檔案。"
             act = task3("找 pkg 裡的 alpha 定義在哪", ["alpha 定義在哪？"], ["pkg 的 alpha 最近改過。", "之前查過一次沒找到"], ["無", "先不要改任何檔案。"])
             fake = FakeChat(main=[act, say("好")], session=[ds("domains", domains=["repo_analysis"])])
@@ -1001,8 +1001,8 @@ def main():
             assert (job["background"], job["constraints"], job["dropped"]) == (["pkg 的 alpha 最近改過。"], ["先不要改任何檔案。"],
                                                                               ["之前查過一次沒找到", "無"]), job
             first = fake.session_msgs(0)[-1]["content"]
-            assert "之前查過一次沒找到" not in first and "- 無" not in first and "- 先不要改任何檔案。" in first, first[:900]
-            assert "之前查過一次沒找到" not in domain_session.DomainSession._anchor(job), "提煉的錨點也只有原話的"
+            assert "之前查過一次沒找到" not in first and "- 無" not in first, first[:900]
+            assert "之前查過一次沒找到" not in domain_session.DomainSession._anchor(job), "提煉的錨點也沒有"
             rec = domain_calls.calls(agent, act, outs[0])[0]
             assert rec["background"] == ["pkg 的 alpha 最近改過。", "之前查過一次沒找到"] and rec["dropped"] == ["之前查過一次沒找到", "無"], rec
             fake = FakeChat(main=[task3("找 pkg 裡的 alpha", ["alpha 定義在哪？"], ["pkg 的 alpha 最近改過。"], ["不要改檔案"]),
@@ -1061,8 +1061,8 @@ def main():
                          ("cpp_symbol 分開宣告與定義：有本體的定義那一份列 .cpp 的成員函式與標頭檔的類別、不列 ; 結尾的宣告，搜尋那一份照舊", t_cpp_defs),
                          ("交辦的核對看每一句與「、」接的每一段：「。」結尾的句子也算、只抄一段不算（問句由程式整句放進項目、「。」結尾的交回並列出缺的那幾段）、整句抄了就過", t_cover_parts),
                          ("出處把原文的行號寫成 #N：收據裡有某個檔案的第 N 行時交回的說明寫明檔案與存檔，對不到的照舊", t_ref_line),
-                         ("交辦時分清楚問題、限制與背景：各放進自己的欄、沒有歸屬的交回、問句只放進背景的由程式放進項目、第一則訊息與提煉的錨點分開寫、評測的紀錄", t_task_context),
-                         ("背景與限制不是使用者的原話的由程式拿掉、不交回：交辦照收、領域 session 只看到原話的、拿掉的記在 job 與評測的紀錄、改寫的那一段照樣算沒放進", t_context_dropped),
+                         ("交辦時分清楚問題、限制與背景：各放進自己的欄、沒有歸屬的交回、問句只放進背景的由程式放進項目、背景與限制只記在 job（第一則訊息與提煉的錨點不放）、評測的紀錄", t_task_context),
+                         ("背景與限制不是使用者的原話的由程式拿掉、不交回：交辦照收、job 只記原話的、拿掉的記在 job 與評測的紀錄、改寫的那一段照樣算沒放進", t_context_dropped),
                          ("問句由程式整句放進項目：只抄一段或只放進背景的換成整句、改寫的項目拿掉、一項都沒留下時交回、第二次以後的交辦不放、記在 job 與評測的紀錄", t_ask_items)]:
             check(name, fn)
     finally:

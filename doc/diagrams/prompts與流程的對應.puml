@@ -22,8 +22,9 @@ package "prompts/（改字不用改程式；evals/integrity 檢查範本跟程�
     rectangle P_HARNESS #D1E5F0 [
       **harness/**（程式組進主對話的字）
       system_prompt：各節標題、記憶的說明、接回舊摘要的提醒、
-        「交辦」一節 tasks（交辦的格式 {task: {goal, items}}、每一項
-        quote 抄使用者的原話、收到報告之後怎麼填 answers、沒答到的再交辦、
+        「交辦」一節 tasks（交辦的格式 {task: {goal, background,
+        constraints, items}}、先分出背景與限制、每一筆 quote 抄使用者的原話、
+        收到報告之後怎麼填 answers、沒答到的再交辦、
         每個領域一行 task_domain）
       tool_use_index：檢索清單（兩種模式）、對話片段、最新一筆
       state_tail：動態區（工作目錄、容器、Workspace、數據、Objective）
@@ -39,8 +40,8 @@ package "prompts/（改字不用改程式；evals/integrity 檢查範本跟程�
         answered、取消 cancelled）、擋領域的工具與有骨架的技能
         （tool_blocked、skill_blocked）、領域的名稱當成技能叫
         （domain_named）、交辦沒過核對的說明（err_*：
-        子目標、項目數、原話不是使用者說的 err_quote、最新這一則
-        問的或要做的那一段沒放進項目 err_cover、一樣的再交辦、同一個項目交太多
+        子目標、項目數、項目都不是使用者的原話 err_quote、最新這一則
+        有一段沒放進任何一欄 err_cover、一樣的再交辦、同一個項目交太多
         次…）、answers 沒有通過核對的說明（answers_fix、why_*，漏了
         報告的編號與數字 why_dropped、文字寫了存檔的 #編號
         why_archive_id；領域 session 回報的核對也用 why_*）
@@ -118,7 +119,7 @@ package "用到它們的 session" {
     **主 session（主對話）**：每一輪；agent_reply_schema(交辦, 項目數)
     （欄位依序 thought、reply、answers、action；thought、command、
     args 有長度上限，2000 字以內）（action 多「交辦」
-    {task: {goal, items}}：項目 1～6，每一項 {quote}（使用者的原話）；這一回合有交辦的報告時
+    {task: {goal, background, constraints, items}}：項目 1～6，每一筆 {quote}（使用者的原話）；這一回合有交辦的報告時
     多 answers：每一項的答到／查不到、回答、出處，程式核對之後
     照項目排給使用者）
   ]
