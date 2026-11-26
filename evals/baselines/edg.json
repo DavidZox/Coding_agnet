@@ -1,10 +1,10 @@
 {
  "models": {
   "gemma4:26b": {
-   "label": "第 5 步（6958dac）（2026-11-20，20261120_124749_edg_gemma4-26b_all_phase）",
+   "label": "單一迴圈第 31 輪之後的階段結束（1c6910e）（2026-11-26，20261126_124411_edg_gemma4-26b_all_phase）",
    "per": {
     "ast_not_python": [
-     2,
+     3,
      3
     ],
     "find_only_path": [
@@ -54,13 +54,13 @@
      6
     ],
     "main": [
-     26,
+     27,
      27
     ]
    }
   },
   "gemma4:e4b": {
-   "label": "第 5 步（6958dac）（2026-11-20，20261120_124811_edg_gemma4-e4b_all_phase）",
+   "label": "單一迴圈第 31 輪之後的階段結束（1c6910e）（2026-11-26，20261126_124434_edg_gemma4-e4b_all_phase）",
    "per": {
     "ast_not_python": [
      3,
@@ -95,7 +95,7 @@
      3
     ],
     "search_split_keyword": [
-     2,
+     3,
      3
     ],
     "view_from_beyond": [
@@ -113,7 +113,7 @@
      6
     ],
     "main": [
-     26,
+     27,
      27
     ]
    }

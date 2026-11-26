@@ -1,9 +1,9 @@
 {
- "date": "2026-11-20",
+ "date": "2026-11-26",
  "dirs": [
-  "20261120_124338_phase"
+  "20261126_124018_phase"
  ],
- "label": "第 5 步（6958dac）",
+ "label": "單一迴圈第 31 輪之後的階段結束（1c6910e）",
  "per": {
   "compare_two_archives": {
    "passed": 3,
@@ -26,7 +26,7 @@
    "runs": 3
   },
   "error_recovery": {
-   "passed": 2,
+   "passed": 3,
    "runs": 3
   },
   "fleet_battery": {
@@ -38,7 +38,7 @@
    "runs": 3
   },
   "followup_in_context": {
-   "passed": 2,
+   "passed": 1,
    "runs": 3
   },
   "guard_dispatch": {

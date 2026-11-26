@@ -1,94 +1,122 @@
 {
  "labels": {
-  "gemma4:26b": "第 5 步（6958dac）（2026-11-20，20261120_124131_extract_gemma4-26b_phase）",
-  "gemma4:e4b": "第 5 步（6958dac）（2026-11-20，20261120_124241_extract_gemma4-e4b_phase）"
+  "gemma4:26b": "單一迴圈第 31 輪之後的階段結束（1c6910e）（2026-11-26，20261126_123820_extract_gemma4-26b_phase）",
+  "gemma4:e4b": "單一迴圈第 31 輪之後的階段結束（1c6910e）（2026-11-26，20261126_123925_extract_gemma4-e4b_phase）"
  },
  "models": {
   "gemma4:26b": {
+   "compare_flat": {
+    "count_ok": null,
+    "extra": 8,
+    "found": 3,
+    "seconds": null,
+    "total": 3
+   },
+   "compare_nodes": {
+    "count_ok": null,
+    "extra": 0,
+    "found": 3,
+    "seconds": null,
+    "total": 3
+   },
    "fleet_120": {
     "count_ok": true,
     "extra": 0,
     "found": 30,
-    "seconds": 13.6,
+    "seconds": 10.0,
     "total": 30
    },
    "fleet_40": {
     "count_ok": null,
     "extra": 0,
     "found": 7,
-    "seconds": 8.2,
+    "seconds": 7.0,
     "total": 7
    },
    "fleet_80": {
     "count_ok": true,
     "extra": 0,
     "found": 21,
-    "seconds": 9.7,
+    "seconds": 6.9,
     "total": 21
    },
    "log_200k": {
     "count_ok": null,
     "extra": 0,
     "found": 6,
-    "seconds": 13.7,
+    "seconds": 12.2,
     "total": 6
    },
    "recall_fleet_120": {
     "count_ok": null,
     "extra": 0,
     "found": 11,
-    "seconds": 7.7,
+    "seconds": 7.0,
     "total": 11
    },
    "robot_heading": {
     "count_ok": null,
     "extra": 0,
     "found": 1,
-    "seconds": 2.5,
+    "seconds": 3.6,
     "total": 1
    }
   },
   "gemma4:e4b": {
+   "compare_flat": {
+    "count_ok": null,
+    "extra": 0,
+    "found": 3,
+    "seconds": null,
+    "total": 3
+   },
+   "compare_nodes": {
+    "count_ok": null,
+    "extra": 0,
+    "found": 2,
+    "seconds": null,
+    "total": 3
+   },
    "fleet_120": {
     "count_ok": null,
     "extra": 0,
     "found": 30,
-    "seconds": 11.4,
+    "seconds": 8.0,
     "total": 30
    },
    "fleet_40": {
     "count_ok": null,
     "extra": 0,
-    "found": 6,
-    "seconds": 5.6,
+    "found": 7,
+    "seconds": 6.6,
     "total": 7
    },
    "fleet_80": {
     "count_ok": null,
     "extra": 0,
     "found": 21,
-    "seconds": 7.3,
+    "seconds": 5.6,
     "total": 21
    },
    "log_200k": {
     "count_ok": null,
     "extra": 0,
     "found": 6,
-    "seconds": 10.5,
+    "seconds": 9.1,
     "total": 6
    },
    "recall_fleet_120": {
     "count_ok": null,
-    "extra": 0,
+    "extra": 24,
     "found": 10,
-    "seconds": 9.0,
+    "seconds": 8.4,
     "total": 11
    },
    "robot_heading": {
     "count_ok": null,
     "extra": 0,
-    "found": 1,
-    "seconds": 2.4,
+    "found": 0,
+    "seconds": 2.8,
     "total": 1
    }
   }
