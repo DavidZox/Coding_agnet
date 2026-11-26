@@ -20,9 +20,9 @@
   "total": 8
  },
  "domain_selftest": {
-  "label": "交辦時分清楚問題、限制與背景（t_task_context）（2026-11-26）",
-  "passed": 32,
-  "total": 32
+  "label": "背景與限制不是原話的由程式拿掉（t_context_dropped）（2026-11-26）",
+  "passed": 33,
+  "total": 33
  },
  "edg_selftest": {
   "label": "單一迴圈：交辦與領域 session（框架討論紀錄 F1～F6）（2026-11-23）",

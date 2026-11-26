@@ -946,13 +946,14 @@ def main():
             assert answers.line_owners([(rid, path)], 9, job["cwd"]) == [], "收據裡沒有第 9 行"
             assert domain_session.DomainSession._ref_unknown(job, "#9", [(rid, path)]) == "出處 #9 不在這個 session 的結果裡", "對不到的照舊"
 
+        def task3(goal, items, background=(), constraints=()):
+            t = task(goal, items)
+            t["action"]["task"].update(background=[{"quote": x} for x in background], constraints=[{"quote": x} for x in constraints])
+            return t
+
         def t_task_context():
-            # 交辦時分清楚問題、限制與背景（框架討論紀錄第 32 輪的 U1）：背景與限制放進自己的欄就不交回；沒放進任何一欄的、問句只放進背景或限制的、
-            # 背景的原話不在使用者的話裡的交回；領域 session 的第一則訊息與提煉的錨點把背景與限制分開寫；評測的紀錄記下三欄
-            def task3(goal, items, background=(), constraints=()):
-                t = task(goal, items)
-                t["action"]["task"].update(background=[{"quote": x} for x in background], constraints=[{"quote": x} for x in constraints])
-                return t
+            # 交辦時分清楚問題、限制與背景（框架討論紀錄第 32 輪的 U1）：背景與限制放進自己的欄就不交回；沒放進任何一欄的、問句只放進背景或限制的
+            # 交回；領域 session 的第一則訊息與提煉的錨點把背景與限制分開寫；評測的紀錄記下三欄
             q = "pkg 的 alpha 最近改過。alpha 定義在哪？先不要改任何檔案。"
             fake = FakeChat(main=[task3("找 pkg 裡的 alpha 定義在哪", ["alpha 定義在哪？"], ["pkg 的 alpha 最近改過。"], ["先不要改任何檔案。"]), say("好")],
                             session=[ds("domains", domains=["repo_analysis"])])
@@ -977,13 +978,32 @@ def main():
                             session=[ds("domains", domains=["repo_analysis"])])
             outs = tools_of(turn(q2, fake)[0])
             assert outs[0].startswith("[ERROR]") and "「誰呼叫它？」是問句，只放進了 background 或 constraints" in outs[0], outs[0][:400]
-            fake = FakeChat(main=[task3("找 pkg 裡的 alpha", ["alpha 定義在哪？", "誰呼叫它？"], ["pkg 的 beta 最近改過"]), say("好")],
-                            session=[ds("domains", domains=["repo_analysis"])])
-            outs = tools_of(turn(q2, fake)[0])
-            assert outs[0].startswith("[ERROR]") and "background（背景）第 1 筆「pkg 的 beta 最近改過」不在使用者說過的話裡" in outs[0], outs[0][:400]
             parsed = {"action": {"task": {"goal": "g", "background": [{"quote": "b"}], "constraints": [{"quote": "c"}], "items": [{"quote": "i"}]}}}
             rec = domain_calls.calls(agent, parsed, "[ERROR] 不行")[0]
             assert rec["background"] == ["b"] and rec["constraints"] == ["c"] and rec["items"] == ["i"], rec
+
+        def t_context_dropped():
+            # 背景與限制不是使用者的原話的由程式拿掉、不交回（框架討論紀錄第 33 輪的 V1）：填的「無」、自己整理的經過拿掉，交辦照收；領域 session
+            # 只看到原話的那幾則；拿掉的記在 job 與評測的紀錄。歸屬只算原話的：改寫的限制拿掉之後，那一段照樣算沒放進任何一欄
+            q = "pkg 的 alpha 最近改過。alpha 定義在哪？先不要改任何檔案。"
+            act = task3("找 pkg 裡的 alpha 定義在哪", ["alpha 定義在哪？"], ["pkg 的 alpha 最近改過。", "之前查過一次沒找到"], ["無", "先不要改任何檔案。"])
+            fake = FakeChat(main=[act, say("好")], session=[ds("domains", domains=["repo_analysis"])])
+            outs = tools_of(turn(q, fake)[0])
+            assert not outs[0].startswith("[ERROR]"), ("不是原話的背景與限制拿掉、交辦照收", outs[0][:300])
+            job = last_job()
+            assert (job["background"], job["constraints"], job["dropped"]) == (["pkg 的 alpha 最近改過。"], ["先不要改任何檔案。"],
+                                                                              ["之前查過一次沒找到", "無"]), job
+            first = fake.session_msgs(0)[-1]["content"]
+            assert "之前查過一次沒找到" not in first and "- 無" not in first and "- 先不要改任何檔案。" in first, first[:900]
+            assert "之前查過一次沒找到" not in domain_session.DomainSession._anchor(job), "提煉的錨點也只有原話的"
+            rec = domain_calls.calls(agent, act, outs[0])[0]
+            assert rec["background"] == ["pkg 的 alpha 最近改過。", "之前查過一次沒找到"] and rec["dropped"] == ["之前查過一次沒找到", "無"], rec
+            fake = FakeChat(main=[task3("找 pkg 裡的 alpha", ["alpha 定義在哪？"], ["pkg 的 alpha 最近改過。"], ["不要改檔案"]),
+                                  task3("找 pkg 裡的 alpha", ["alpha 定義在哪？"], ["pkg 的 alpha 最近改過。"], ["先不要改任何檔案。"]), say("好")],
+                            session=[ds("domains", domains=["repo_analysis"])])
+            outs = tools_of(turn(q, fake)[0])
+            assert outs[0].startswith("[ERROR]") and "「先不要改任何檔案。」沒有放進交辦的任何一欄" in outs[0], ("改寫的限制拿掉，那一段照樣交回", outs[0][:400])
+            assert not outs[1].startswith("[ERROR]") and last_job()["dropped"] == [], "補上原話就過"
 
         for name, fn in [("主 session：交辦一節、索引、回覆的 schema 與解析", t_prompt_schema),
                          ("回覆的欄位順序（主 session 的 action 最後；領域 session 照說明的順序）", t_reply_order), ("擋領域的工具與有骨架的技能", t_gate),
@@ -1010,7 +1030,8 @@ def main():
                          ("cpp_symbol 分開宣告與定義：有本體的定義那一份列 .cpp 的成員函式與標頭檔的類別、不列 ; 結尾的宣告，搜尋那一份照舊", t_cpp_defs),
                          ("交辦的核對看每一句與「、」接的每一段：「。」結尾的句子也算、只抄一段不算、整句抄了就過，交回的說明列出缺的那幾段", t_cover_parts),
                          ("出處把原文的行號寫成 #N：收據裡有某個檔案的第 N 行時交回的說明寫明檔案與存檔，對不到的照舊", t_ref_line),
-                         ("交辦時分清楚問題、限制與背景：各放進自己的欄、沒有歸屬的與問句放錯的交回、第一則訊息與提煉的錨點分開寫、評測的紀錄", t_task_context)]:
+                         ("交辦時分清楚問題、限制與背景：各放進自己的欄、沒有歸屬的與問句放錯的交回、第一則訊息與提煉的錨點分開寫、評測的紀錄", t_task_context),
+                         ("背景與限制不是使用者的原話的由程式拿掉、不交回：交辦照收、領域 session 只看到原話的、拿掉的記在 job 與評測的紀錄、改寫的那一段照樣算沒放進", t_context_dropped)]:
             check(name, fn)
     finally:
         os.chdir(cwd)

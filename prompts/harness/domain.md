@@ -1,6 +1,6 @@
 主 session 這一側的交辦（agent_core/orchestrator.py）：主模型「交辦」之後，程式交回主模型的文字（交辦的報告 report、停在確認關卡 ask_waiting、
 使用者回答之後接著做完 answered、取消 cancelled、依報告回答的說明 answer_hint），擋領域的工具與有骨架的技能（tool_blocked、skill_blocked）、
-交辦沒過核對的說明（err_*，原話不在使用者說過的話裡 err_quote、背景與限制的 err_quote_context（欄位名稱 field_*），有一段沒放進任何一欄 err_cover、問句只放進背景或限制 err_cover_asked；[ERROR] 後面的部分）、
+交辦沒過核對的說明（err_*，原話不在使用者說過的話裡 err_quote，有一段沒放進任何一欄 err_cover、問句只放進背景或限制 err_cover_asked；[ERROR] 後面的部分；背景與限制不是原話的由程式拿掉、不交回）、
 依報告回答時 answers 沒有通過核對的說明（answers_fix、answers_problem、answers_lead、why_*，漏了報告的編號與數字 why_dropped，
 回答的文字寫了存檔的 #編號 why_archive_id；
 why_* 也用在使用者看到的「沒有通過核對」與領域 session 回報的核對，agent_core/answers.py）。開頭的 [PASS] 🗺️／[ERROR] 由程式加。{名稱} 是程式填的值。
@@ -54,15 +54,6 @@ text 寫回答，not_found 寫原因（照報告寫的說明）；refs 寫報告
 
 <!-- @err_cover_asked -->
 {questions}是問句，只放進了 background 或 constraints：問的要回答，抄進 items（同一句也可以留在 background 或 constraints）。
-
-<!-- @err_quote_context -->
-交辦的{field}第 {k} 筆「{quote}」不在使用者說過的話裡。下一步：quote 一字不改地抄使用者的原話裡的那一段（之前幾則訊息裡的也可以），不要改寫、不要補字；沒有這樣的話就不要寫。
-
-<!-- @field_background -->
-background（背景）
-
-<!-- @field_constraints -->
-constraints（限制）
 
 <!-- @err_quote -->
 交辦的第 {k} 項「{quote}」不在使用者說過的話裡。下一步：quote 一字不改地抄使用者的原話裡、這一項在問的那一段（之前幾則訊息裡的也可以），不要改寫、不要補字。

@@ -7,8 +7,9 @@
    名稱也擋）；領域 session 裡只能用它選的領域的工具與共用的工具（agent._sub_allowed）。規格有問題的領域不列、它的工具也不擋，問題放進通知。
 2. **交辦**（run_task，F1）：主模型在 action 填 {"task": {"goal", "background", "constraints", "items"}}——子目標、使用者說明的背景、要求的
    限制與要回答的項目，不指定領域；每一筆 {quote}：一字不改地抄使用者的原話（這段對話裡使用者說過的任何一則，_user_words；框架討論紀錄
-   第 6 輪的 B、第 27 輪：關鍵資訊由程式原樣帶著走，領域 session 照原話判斷項目的意思；背景與限制是第 32 輪的 U1，只用來理解）。程式核對
-   （子目標不是空的、項目 1～DOMAIN_ITEMS_MAX 項、每一筆原話在使用者說過的話裡、最新這一則的每一段都有放進一欄而問句在項目裡、
+   第 6 輪的 B、第 27 輪：關鍵資訊由程式原樣帶著走，領域 session 照原話判斷項目的意思；背景與限制是第 32 輪的 U1，只用來理解——
+   不是原話的由程式拿掉、不交回，第 33 輪的 V1）。程式核對
+   （子目標不是空的、項目 1～DOMAIN_ITEMS_MAX 項、每一項的原話在使用者說過的話裡、最新這一則的每一段都有放進一欄而問句在項目裡、
    跟這一回合交辦過的不一樣、同一個項目最多 DOMAIN_ITEM_TRIES 次），交給領域 session
    （agent_core/domain_session.py：選領域、一次一個技能、太長就提煉、決定回報或再選）。同一個問題再交辦時，之前幾次的經過（每一步的技能
    與結果）一起交下去。結果存成 #編號，報告交回主模型（DOMAIN_RESULT_HEAD 開頭：程式整理好的，不再提煉），後面接依報告回答的說明。
@@ -38,6 +39,12 @@ def _d(key, /, **fields):
 
 
 _SENTENCE_END = re.compile(r"[？。！]|[?!](?=\s|$)")   # 一句的結尾：「？」「。」「！」，或「?」「!」後面是空白或結尾（a?b 這種寫法裡的不算）
+
+
+def _in_words(quote, said):
+    """交辦抄的一則原話（項目、背景、限制）一字不改地在使用者說過的話裡（_user_words；空白正規化、去掉外面的引號）。"""
+    q = composite._unquote(quote)
+    return bool(q) and q in said
 
 
 def ask_parts(text):
@@ -218,8 +225,13 @@ class DomainMixin:
         task = action.get("task") or {}
         goal = task.get("goal") or ""
         items = [x["quote"] for x in task.get("items") or []]       # 每一項是使用者的原話（框架討論紀錄第 27 輪）
-        background = [x["quote"] for x in task.get("background") or []]     # 背景與限制也是原話、只用來理解（第 32 輪的 U1）
-        constraints = [x["quote"] for x in task.get("constraints") or []]
+        # 背景與限制只用來理解（第 32 輪的 U1）：只留使用者說過的原話，不是原話的（「無」、改寫、自己整理的經過）由程式拿掉、
+        # 不交回——原始問題整則本來就附著（第 33 輪的 V1）；拿掉的記在 job
+        said = self._user_words()
+        background, constraints, dropped = [], [], []
+        for field, out in (("background", background), ("constraints", constraints)):
+            for x in task.get(field) or []:
+                (out if _in_words(x["quote"], said) else dropped).append(x["quote"])
         why = self._check_task(goal, items, background, constraints)
         if why:
             return "[ERROR] " + why
@@ -232,14 +244,15 @@ class DomainMixin:
         job = domain_session.DomainSession(self, self.domain_registry()).start(self.current_task or goal, goal, items,
                                                                                previous=entry["previous"], attempt=entry["n"],
                                                                                earlier=self._earlier_turns(),
-                                                                               background=background, constraints=constraints)
+                                                                               background=background, constraints=constraints,
+                                                                               dropped=dropped)
         return self._task_finish(entry, job, before)
 
     def _check_task(self, goal, items, background=(), constraints=()):
-        """交辦的核對：有領域、子目標不是空的、項目 1～DOMAIN_ITEMS_MAX 項、每一項與每一則背景、限制（使用者的原話）一字不改地在使用者說過的話裡
-        （_user_words）、一輪的第一次交辦要把最新這一則的每一句、一句裡用「、」接的每一段放進項目、背景或限制，問句（「？」結尾的那一句）的每一段
-        要在項目裡（_uncovered；交回一次，交回過照收——框架討論紀錄第 28、31、32 輪）、跟這一回合交辦過的不一樣（一樣的再交一次結果也一樣）、
-        同一個項目最多 DOMAIN_ITEM_TRIES 次。過了回 None，沒過回說明（不含 [ERROR]）。"""
+        """交辦的核對：有領域、子目標不是空的、項目 1～DOMAIN_ITEMS_MAX 項、每一項（使用者的原話）一字不改地在使用者說過的話裡（_user_words）、
+        一輪的第一次交辦要把最新這一則的每一句、一句裡用「、」接的每一段放進項目、背景或限制，問句（「？」結尾的那一句）的每一段要在項目裡
+        （_uncovered；交回一次，交回過照收——框架討論紀錄第 28、31、32 輪）、跟這一回合交辦過的不一樣（一樣的再交一次結果也一樣）、
+        同一個項目最多 DOMAIN_ITEM_TRIES 次。背景與限制是 run_task 留下的原話（不是原話的已經拿掉，第 33 輪）。過了回 None，沒過回說明（不含 [ERROR]）。"""
         turn = self._domain_turn
         if not self.domain_registry()["domains"]:
             return _d("err_no_domain")
@@ -249,12 +262,8 @@ class DomainMixin:
             return _d("err_items", count=len(items), max=DOMAIN_ITEMS_MAX)
         said = self._user_words()
         for k, it in enumerate(items, 1):
-            if not composite._unquote(it) or composite._unquote(it) not in said:
+            if not _in_words(it, said):
                 return _d("err_quote", k=k, quote=it or "（空的）")
-        for field, quotes in ((_d("field_background"), background), (_d("field_constraints"), constraints)):
-            for k, it in enumerate(quotes, 1):
-                if not composite._unquote(it) or composite._unquote(it) not in said:
-                    return _d("err_quote_context", field=field, k=k, quote=it or "（空的）")
         if not turn["tasks"] and not turn["cover_asked"]:
             missing = self._uncovered(list(items) + list(background) + list(constraints))
             asked = [p for p in self._uncovered(items, asked_only=True) if p not in missing]

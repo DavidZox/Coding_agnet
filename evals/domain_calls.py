@@ -1,7 +1,8 @@
 """評測的 worker（evals/chat/worker.py、evals/ops/worker.py）共用：主模型「交辦」的那一步怎麼收尾、怎麼記。
 
 - 確認關卡（領域 session 碰到會改狀態的工具）照情境的 guard 回答（approve 同意、deny 不同意），跟主對話的確認關卡一樣算進 guards。
-- 記成 tool_calls：交辦一筆（skill＝domain_session，附子目標、項目與每一項的原話、選過的領域、領域 session 的狀態、工作編號、交辦的結果 #編號），
+- 記成 tool_calls：交辦一筆（skill＝domain_session，附子目標、項目與每一項的原話、模型寫的背景與限制、其中不是原話被拿掉的（dropped）、
+  選過的領域、領域 session 的狀態、工作編號、交辦的結果 #編號），
   領域 session 的每一步各一筆（via＝domain_session；工具附參數，有骨架的技能附參數的值），有骨架的技能再把骨架裡執行的工具各記一筆
   （via＝那個技能）——情境的「用了哪個工具」照樣看得到。交辦沒過核對（[ERROR]）時只有交辦那一筆、狀態 ERROR。
 - 依報告回答：這一步的 answers 與核對的結果記進那一步（record_answers）；最後的回答換成程式照項目排好的那一份（finalize：
@@ -42,7 +43,8 @@ def calls(agent, parsed, result):
     if not job:
         return [entry]
     entry.update(result_id=d.get("result_id"), job=job["id"], session_status=job["status"], domains=list(job["domains"]),
-                 picks=[p["domains"] for p in job["picks"]], steps=len(job["steps"]), turns=job["turns"], forms=job["forms"])
+                 picks=[p["domains"] for p in job["picks"]], steps=len(job["steps"]), turns=job["turns"], forms=job["forms"],
+                 dropped=list(job["dropped"]))         # 背景與限制不是原話、被程式拿掉的（第 33 輪的 V1）
     out = [entry]
     for st in job["steps"]:
         args = ([str(v["value"]) if not isinstance(v["value"], list) else "、".join(map(str, v["value"])) for v in st["params"].values()]

@@ -141,16 +141,17 @@ class DomainSession:
         self.store = JobStore(os.path.join(agent.script_dir, "logs", DOMAIN_JOBS_DIRNAME))
 
     # ---------------------------------------------------------------- 進入點
-    def start(self, question, goal, items, previous=None, attempt=1, earlier=None, background=None, constraints=None):
+    def start(self, question, goal, items, previous=None, attempt=1, earlier=None, background=None, constraints=None, dropped=None):
         """items：要回答的項目——每一項是使用者的原話（orchestrator 核對過；框架討論紀錄第 27 輪）。previous：同一個問題之前交辦的經過
         （[{"n", "job", "status_text", "note", "steps"}]，orchestrator 從這一回合的紀錄取）。earlier：這一則之前的對話（[{"user", "reply"}]，
         orchestrator._earlier_turns）→【前文】（_context；框架討論紀錄第 28 輪）。background、constraints：使用者說明的背景與要求的限制
-        （也是原話）→ 第一則訊息的【背景】【限制】與提煉的錨點，只用來理解、不是要回答的（第 32 輪的 U1）。"""
+        （也是原話）→ 第一則訊息的【背景】【限制】與提煉的錨點，只用來理解、不是要回答的（第 32 輪的 U1）。dropped：交辦寫了、不是使用者
+        原話而被 orchestrator 拿掉的背景與限制（只記在 job，第 33 輪的 V1）。"""
         jid = self.store.new_id()
         self.store.prune(DOMAIN_JOBS_KEEP)
         job = {"id": jid, "kind": "domain", "status": "running", "created": _now(), "updated": _now(), "cwd": self.agent.current_cwd,
                "question": question, "goal": (goal or question).strip(), "items": list(items or []),
-               "background": list(background or []), "constraints": list(constraints or []), "attempt": attempt,
+               "background": list(background or []), "constraints": list(constraints or []), "dropped": list(dropped or []), "attempt": attempt,
                "previous": list(previous or []), "earlier": list(earlier or []), "context": None, "domains": [], "picks": [], "messages": [], "steps": [], "turns": 0, "form": None, "forms": 0,
                "blocked": [], "sources": "", "need_user": None, "asked": [], "nudged": False, "answers": [], "problems": {}, "result": None}
         job["system"] = self._system()
