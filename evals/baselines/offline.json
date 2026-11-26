@@ -20,9 +20,9 @@
   "total": 8
  },
  "domain_selftest": {
-  "label": "背景與限制不是原話的由程式拿掉（t_context_dropped）（2026-11-26）",
-  "passed": 33,
-  "total": 33
+  "label": "問句由程式整句放進項目、改寫的項目拿掉（t_ask_items）（2026-11-26）",
+  "passed": 34,
+  "total": 34
  },
  "edg_selftest": {
   "label": "單一迴圈：交辦與領域 session（框架討論紀錄 F1～F6）（2026-11-23）",

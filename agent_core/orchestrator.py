@@ -7,9 +7,9 @@
    名稱也擋）；領域 session 裡只能用它選的領域的工具與共用的工具（agent._sub_allowed）。規格有問題的領域不列、它的工具也不擋，問題放進通知。
 2. **交辦**（run_task，F1）：主模型在 action 填 {"task": {"goal", "background", "constraints", "items"}}——子目標、使用者說明的背景、要求的
    限制與要回答的項目，不指定領域；每一筆 {quote}：一字不改地抄使用者的原話（這段對話裡使用者說過的任何一則，_user_words；框架討論紀錄
-   第 6 輪的 B、第 27 輪：關鍵資訊由程式原樣帶著走，領域 session 照原話判斷項目的意思；背景與限制是第 32 輪的 U1，只用來理解——
-   不是原話的由程式拿掉、不交回，第 33 輪的 V1）。程式核對
-   （子目標不是空的、項目 1～DOMAIN_ITEMS_MAX 項、每一項的原話在使用者說過的話裡、最新這一則的每一段都有放進一欄而問句在項目裡、
+   第 6 輪的 B、第 27 輪：關鍵資訊由程式原樣帶著走，領域 session 照原話判斷項目的意思；背景與限制是第 32 輪的 U1，只用來理解）。
+   三欄不是原話的由程式拿掉、不交回（第 33 輪的 V1、第 34 輪的 W1b）；一輪還沒有收下的交辦時，最新這一則的問句有一段不在項目的，程式把整句
+   放進項目（_ask_items，第 34 輪）。程式核對（子目標不是空的、項目 1～DOMAIN_ITEMS_MAX 項、最新這一則的每一段都有放進一欄、
    跟這一回合交辦過的不一樣、同一個項目最多 DOMAIN_ITEM_TRIES 次），交給領域 session
    （agent_core/domain_session.py：選領域、一次一個技能、太長就提煉、決定回報或再選）。同一個問題再交辦時，之前幾次的經過（每一步的技能
    與結果）一起交下去。結果存成 #編號，報告交回主模型（DOMAIN_RESULT_HEAD 開頭：程式整理好的，不再提煉），後面接依報告回答的說明。
@@ -47,22 +47,53 @@ def _in_words(quote, said):
     return bool(q) and q in said
 
 
-def ask_parts(text):
-    """使用者這一則裡每一段要交辦的話（框架討論紀錄第 31 輪）→ [(開始, 結束, 顯示的寫法, 是不是問句)]：照句尾分句，最後沒有句尾的那一段也算；
-    一句裡用「、」接的每一段各算一段（「發布到哪個 topic、頻率多少、會不會發 TF？」是三段）。結束是那一段最後一個字的下一個位置；句子的最後一段
-    顯示時附上句尾；那一句是「？」「?」結尾的，每一段都是問句（第 32 輪：問的要放進項目）。沒有字的不算。"""
+def _sentence_ends(text):
+    """照句尾分句 → [(這一句的開始, 句尾的位置, 句尾之後的位置)]；最後沒有句尾的那一段也算（句尾的位置＝之後的位置＝字串長度）。"""
     out, start = [], 0
     for stop, nxt in [(m.start(), m.end()) for m in _SENTENCE_END.finditer(text)] + [(len(text), len(text))]:
+        out.append((start, stop, nxt))
+        start = nxt
+    return out
+
+
+def ask_parts(text):
+    """使用者這一則裡每一段要交辦的話（框架討論紀錄第 31 輪）→ [(開始, 結束, 顯示的寫法)]：照句尾分句，最後沒有句尾的那一段也算；
+    一句裡用「、」接的每一段各算一段（「發布到哪個 topic、頻率多少、會不會發 TF？」是三段）。結束是那一段最後一個字的下一個位置；句子的最後一段
+    顯示時附上句尾。沒有字的不算。"""
+    out = []
+    for start, stop, nxt in _sentence_ends(text):
         pieces = text[start:stop].split("、")
-        asked = text[stop:nxt] in ("？", "?")
         pos = start
         for k, piece in enumerate(pieces):
             body = piece.strip()
             if body:
                 s = pos + len(piece) - len(piece.lstrip())
-                out.append((s, s + len(body), body + (text[stop:nxt] if k == len(pieces) - 1 else ""), asked))
+                out.append((s, s + len(body), body + (text[stop:nxt] if k == len(pieces) - 1 else "")))
             pos += len(piece) + 1
-        start = nxt
+    return out
+
+
+def ask_sentences(text):
+    """使用者這一則的每一句（分句跟 ask_parts 一樣；框架討論紀錄第 34 輪）→ [(開始, 結束, 那一句（含句尾）, 是不是問句（「？」「?」結尾）)]；沒有字的不算。"""
+    out = []
+    for start, stop, nxt in _sentence_ends(text):
+        raw = text[start:nxt]
+        body = raw.strip()
+        if body:
+            s = start + len(raw) - len(raw.lstrip())
+            out.append((s, s + len(body), body, text[stop:nxt] in ("？", "?")))
+    return out
+
+
+def _spans(text, quotes):
+    """每一則原話（_unquote）在 text 裡出現的每一個位置 → [(開始, 結束)]。"""
+    out = []
+    for it in quotes:
+        q = composite._unquote(it)
+        at = text.find(q) if q else -1
+        while at >= 0:
+            out.append((at, at + len(q)))
+            at = text.find(q, at + 1)
     return out
 
 
@@ -224,19 +255,24 @@ class DomainMixin:
         核對沒過回 [ERROR]（附下一步），不執行。"""
         task = action.get("task") or {}
         goal = task.get("goal") or ""
-        items = [x["quote"] for x in task.get("items") or []]       # 每一項是使用者的原話（框架討論紀錄第 27 輪）
-        # 背景與限制只用來理解（第 32 輪的 U1）：只留使用者說過的原話，不是原話的（「無」、改寫、自己整理的經過）由程式拿掉、
-        # 不交回——原始問題整則本來就附著（第 33 輪的 V1）；拿掉的記在 job
+        written = [x["quote"] for x in task.get("items") or []]       # 每一項是使用者的原話（框架討論紀錄第 27 輪）
+        # 三欄都只留使用者說過的原話：不是原話的（「無」、改寫、自己整理的經過）由程式拿掉、不交回、記在 job（第 33 輪的 V1、第 34 輪的 W1b）；
+        # 背景與限制只用來理解（第 32 輪的 U1），原始問題整則本來就附著
         said = self._user_words()
-        background, constraints, dropped = [], [], []
-        for field, out in (("background", background), ("constraints", constraints)):
+        kept = {"items": [], "background": [], "constraints": []}
+        dropped = []
+        for field, out in kept.items():
             for x in task.get(field) or []:
                 (out if _in_words(x["quote"], said) else dropped).append(x["quote"])
-        why = self._check_task(goal, items, background, constraints)
+        items, background, constraints, added = kept["items"], kept["background"], kept["constraints"], []
+        if not self._domain_turn["tasks"]:      # 一輪還沒有收下的交辦：問句由程式整句放進 items（第 34 輪的 W1b）
+            items, added = self._ask_items(items)
+        lost = [(k, q) for k, q in enumerate(written, 1) if not _in_words(q, said)]
+        why = self._check_task(goal, items, background, constraints, lost)
         if why:
             return "[ERROR] " + why
         turn = self._domain_turn
-        entry = {"key": [goal, items], "goal": goal, "items": items, "background": background, "constraints": constraints,
+        entry = {"key": [goal, items], "written": written, "goal": goal, "items": items, "background": background, "constraints": constraints,
                  "n": len(turn["tasks"]) + 1, "job": None, "status": None, "steps": "", "note": "", "report": "", "result_id": None,
                  "answered": [], "previous": self._previous()}
         turn["tasks"].append(entry)
@@ -245,32 +281,49 @@ class DomainMixin:
                                                                                previous=entry["previous"], attempt=entry["n"],
                                                                                earlier=self._earlier_turns(),
                                                                                background=background, constraints=constraints,
-                                                                               dropped=dropped)
+                                                                               dropped=dropped, added=added)
         return self._task_finish(entry, job, before)
 
-    def _check_task(self, goal, items, background=(), constraints=()):
-        """交辦的核對：有領域、子目標不是空的、項目 1～DOMAIN_ITEMS_MAX 項、每一項（使用者的原話）一字不改地在使用者說過的話裡（_user_words）、
-        一輪的第一次交辦要把最新這一則的每一句、一句裡用「、」接的每一段放進項目、背景或限制，問句（「？」結尾的那一句）的每一段要在項目裡
-        （_uncovered；交回一次，交回過照收——框架討論紀錄第 28、31、32 輪）、跟這一回合交辦過的不一樣（一樣的再交一次結果也一樣）、
-        同一個項目最多 DOMAIN_ITEM_TRIES 次。背景與限制是 run_task 留下的原話（不是原話的已經拿掉，第 33 輪）。過了回 None，沒過回說明（不含 [ERROR]）。"""
+    def _ask_items(self, items):
+        """一輪還沒有收下的交辦時（框架討論紀錄第 34 輪的 W1b）：最新這一則的每一個問句（ask_sentences）只要有一段（ask_parts）不在 items，
+        把整句照原話放進 items——items 裡是這一句一部分的那幾項換成整句（放在第一項的位置，其他拿掉），沒有就加在最後，加到 DOMAIN_ITEMS_MAX 項為止。
+        問句一定要回答：程式判斷得了，不用模型分。→ (items, 放進去的問句)"""
+        text = composite._norm(self.current_task or "")
+        parts = ask_parts(text)
+        items, added = list(items), []
+        for s, e, sentence, asked in ask_sentences(text):
+            spans = _spans(text, items)
+            if not asked or all(any(a < pe and b > ps for a, b in spans) for ps, pe, _ in parts if s <= ps and pe <= e):
+                continue
+            inside = [k for k, it in enumerate(items) if composite._unquote(it) in sentence]
+            if inside:
+                items = [sentence if k == inside[0] else it for k, it in enumerate(items) if k == inside[0] or k not in inside]
+            elif len(items) < DOMAIN_ITEMS_MAX:
+                items.append(sentence)
+            else:
+                continue
+            added.append(sentence)
+        return items, added
+
+    def _check_task(self, goal, items, background=(), constraints=(), lost=()):
+        """交辦的核對（items、背景、限制是 run_task 留下的原話：不是原話的已經拿掉，第 33、34 輪；問句已經由程式放進 items）：有領域、子目標不是空的、
+        items 拿掉之後還有（一項都沒有、又有被拿掉的：交回第一項被拿掉的原話，lost＝[(第幾項, 原話)]）、項目 1～DOMAIN_ITEMS_MAX 項、
+        一輪的第一次交辦要把最新這一則的每一句、一句裡用「、」接的每一段放進項目、背景或限制（_uncovered；交回一次，交回過照收——框架討論紀錄
+        第 28、31、32 輪）、跟這一回合交辦過的不一樣（一樣的再交一次結果也一樣）、同一個項目最多 DOMAIN_ITEM_TRIES 次。過了回 None，沒過回說明（不含 [ERROR]）。"""
         turn = self._domain_turn
         if not self.domain_registry()["domains"]:
             return _d("err_no_domain")
         if not goal:
             return _d("err_goal")
+        if not items and lost:
+            return _d("err_quote", k=lost[0][0], quote=lost[0][1] or "（空的）")
         if not 1 <= len(items) <= DOMAIN_ITEMS_MAX:
             return _d("err_items", count=len(items), max=DOMAIN_ITEMS_MAX)
-        said = self._user_words()
-        for k, it in enumerate(items, 1):
-            if not _in_words(it, said):
-                return _d("err_quote", k=k, quote=it or "（空的）")
         if not turn["tasks"] and not turn["cover_asked"]:
             missing = self._uncovered(list(items) + list(background) + list(constraints))
-            asked = [p for p in self._uncovered(items, asked_only=True) if p not in missing]
-            if missing or asked:
+            if missing:
                 turn["cover_asked"] = True
-                return "\n".join(([_d("err_cover", questions="、".join(f"「{q}」" for q in missing))] if missing else [])
-                                 + ([_d("err_cover_asked", questions="、".join(f"「{q}」" for q in asked))] if asked else []))
+                return _d("err_cover", questions="、".join(f"「{q}」" for q in missing))
         same = next((x for x in turn["tasks"] if x["key"] == [goal, items]), None)
         if same:
             return _d("err_same", n=same["n"], status=domain_session.STATUS_TEXT.get(same["status"], same["status"] or "—"))
@@ -280,19 +333,11 @@ class DomainMixin:
                 return _d("err_item_tries", item=it, n=len(tries), max=DOMAIN_ITEM_TRIES, history=self._task_history(tries))
         return None
 
-    def _uncovered(self, quotes, asked_only=False):
-        """最新這一則裡，沒有跟這幾則原話任何一則重疊的那幾段（ask_parts：每一句、一句裡用「、」接的每一段；照 _user_words 的方式正規化空白）；
-        asked_only：只看問句（「？」結尾的那一句）的那幾段。"""
+    def _uncovered(self, quotes):
+        """最新這一則裡，沒有跟這幾則原話任何一則重疊的那幾段（ask_parts：每一句、一句裡用「、」接的每一段；照 _user_words 的方式正規化空白）。"""
         text = composite._norm(self.current_task or "")
-        spans = []
-        for it in quotes:
-            q = composite._unquote(it)
-            at = text.find(q) if q else -1
-            while at >= 0:
-                spans.append((at, at + len(q)))
-                at = text.find(q, at + 1)
-        return [shown for s, e, shown, asked in ask_parts(text)
-                if (asked or not asked_only) and not any(a < e and b > s for a, b in spans)]
+        spans = _spans(text, quotes)
+        return [shown for s, e, shown in ask_parts(text) if not any(a < e and b > s for a, b in spans)]
 
     def _earlier_turns(self):
         """【前文】的來源（框架討論紀錄第 28 輪）：任務線上這一則之前的使用者的話（最多 TASK_HISTORY_KEEP − 1 則），各附那一回合最後的回覆

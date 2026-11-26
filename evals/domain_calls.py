@@ -1,8 +1,8 @@
 """評測的 worker（evals/chat/worker.py、evals/ops/worker.py）共用：主模型「交辦」的那一步怎麼收尾、怎麼記。
 
 - 確認關卡（領域 session 碰到會改狀態的工具）照情境的 guard 回答（approve 同意、deny 不同意），跟主對話的確認關卡一樣算進 guards。
-- 記成 tool_calls：交辦一筆（skill＝domain_session，附子目標、項目與每一項的原話、模型寫的背景與限制、其中不是原話被拿掉的（dropped）、
-  選過的領域、領域 session 的狀態、工作編號、交辦的結果 #編號），
+- 記成 tool_calls：交辦一筆（skill＝domain_session，附子目標、模型寫的項目、背景與限制、其中不是原話被拿掉的（dropped）、程式整句放進項目的
+  問句（added）、選過的領域、領域 session 的狀態、工作編號、交辦的結果 #編號），
   領域 session 的每一步各一筆（via＝domain_session；工具附參數，有骨架的技能附參數的值），有骨架的技能再把骨架裡執行的工具各記一筆
   （via＝那個技能）——情境的「用了哪個工具」照樣看得到。交辦沒過核對（[ERROR]）時只有交辦那一筆、狀態 ERROR。
 - 依報告回答：這一步的 answers 與核對的結果記進那一步（record_answers）；最後的回答換成程式照項目排好的那一份（finalize：
@@ -37,14 +37,14 @@ def calls(agent, parsed, result):
              "background": [x["quote"] for x in task.get("background") or []],       # 背景與限制（第 32 輪的 U1）
              "constraints": [x["quote"] for x in task.get("constraints") or []],
              "args": [task.get("goal", "")] + items, "status": status, "result_id": None}
-    tasks = agent._domain_turn["tasks"]
-    d = tasks[-1] if status == "PASS" and tasks and tasks[-1]["key"] == [task.get("goal", ""), items] else None
+    tasks = agent._domain_turn["tasks"]       # 收下的那一筆：子目標與模型寫的項目對得上（項目可能被程式拿掉或整句換掉，第 33、34 輪）
+    d = tasks[-1] if status == "PASS" and tasks and [tasks[-1]["goal"], tasks[-1]["written"]] == [task.get("goal", ""), items] else None
     job = JobStore(os.path.join(agent.script_dir, "logs", DOMAIN_JOBS_DIRNAME)).load(d["job"]) if d and d.get("job") else None
     if not job:
         return [entry]
     entry.update(result_id=d.get("result_id"), job=job["id"], session_status=job["status"], domains=list(job["domains"]),
                  picks=[p["domains"] for p in job["picks"]], steps=len(job["steps"]), turns=job["turns"], forms=job["forms"],
-                 dropped=list(job["dropped"]))         # 背景與限制不是原話、被程式拿掉的（第 33 輪的 V1）
+                 dropped=list(job["dropped"]), added=list(job["added"]))   # 不是原話被拿掉的、程式整句放進項目的問句（第 33、34 輪）
     out = [entry]
     for st in job["steps"]:
         args = ([str(v["value"]) if not isinstance(v["value"], list) else "、".join(map(str, v["value"])) for v in st["params"].values()]
