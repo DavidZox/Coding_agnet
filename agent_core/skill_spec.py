@@ -7,8 +7,8 @@ frontmatter 的這幾個欄位是給程式看的，值寫成一行 JSON（JSON �
   added：清單多加幾項），低階執行器（agent_core/edg.py）核對修正只動了這些。沒寫的工具逾時就往上報。
 - listing：`true`＝輸出是程式整理好的清單（每一行一筆、附路徑或行號，總數也是程式算的）：超過工具回傳門檻、但放得進一段時直接給原文、
   不提煉（agent_core/turn.py 的 listing_raw；照存檔的收據寫的技能認）。
-- live：`true`＝查的是執行中系統當下的狀態（容器、ROS 2、調度系統的查詢）：存檔是那時候的狀態，之後讀回、引用時程式寫明是什麼時候查的、
-  回答引用了這一回合之前的就交回一次（框架討論紀錄第 42 輪；skills_system/scripts/_results_common.py 的 memory_kind、archive_facts）。
+- live：`true`＝查的是執行中系統當下的狀態（容器、ROS 2、調度系統的查詢）：存檔是那時候的狀態，檢索清單與讀回時程式寫明是什麼時候查的、
+  領域 session 的回報引用了這一回合之前的就交回一次（框架討論紀錄第 42、43 輪；skills_system/scripts/_results_common.py 的 memory_kind、archive_facts）。
 載入規格給模型看時拿掉這幾行（for_model），模型讀到的跟以前一樣。
 
 有骨架的技能（skills_system/<領域>/<名稱>.md，agent_core/composite.py 讀；寫法見 doc/技能撰寫規範.md）另外有：

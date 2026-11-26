@@ -446,28 +446,19 @@ def main():
             out = agent.run_script("result_view_cmd.py", ["501"])
             assert "即時狀態" in out and "#501" in out, out[:400]
 
-        def t_memory_reply():
-            # 回覆引用了這一回合之前存的即時狀態或動作：交回一次、附那一份的事實（每回合最多一次）；這一回合存的、檔案內容沒改過的不算；
-            # 看舊存檔的衍生輸出（這一回合的 result_view）照它讀的那一份算；檢查串（reply_check）有這一道
-            agent.set_current_task("nav2_test 現在還在跑嗎？")
-            first = agent._turn_first_id
-            assert first > 501, first
+        def t_memory_reply_no_sendback():
+            # 主 session 的回覆引用了這一回合之前存的即時狀態：不交回（框架討論紀錄第 43 輪的（F1））——第 42 輪交回之後，模型把問之前查的
+            # 當成問現在、去重查；問的是現在還是當時由模型看清單與讀回時程式寫的事實判斷（t_memory_kinds）。領域 session 的回報照舊核對
+            # （domain_selftest 的 t_stale_refs）
+            if not os.path.exists(os.path.join(agent.results_dir(), "20260926_101500_501_docker_containers.md")):
+                seed_live()
+            agent.set_current_task("昨天查的那份容器清單裡有 nav2_test 嗎？")
+            assert agent._turn_first_id > 501, agent._turn_first_id
             said = lambda text: {"reply": text, "valid": True, "action": None, "answers": []}
-            msg = agent.memory_reply_check(said("根據 #501，nav2_test 正在運行。"))
-            assert msg and "#501" in msg and "即時狀態" in msg and "重新執行工具" in msg, msg
-            assert agent.memory_reply_check(said("根據 #501，nav2_test 正在運行。")) is None, "每回合最多一次"
-            agent.set_current_task("再看一次")
-            fresh = agent._record_trajectory("docker_containers_cmd.py", [], "[PASS] 容器 nav2_test Exited", tmp, "", "")
-            assert agent.memory_reply_check(said(f"根據 #{fresh['id']}，nav2_test 停了。")) is None, "這一回合存的不算"
-            agent.set_current_task("看檔案")
-            old_text = next(r for r in reversed(agent.trajectory) if r.get("script") == "cat_cmd.py")
-            assert agent.memory_reply_check(said(f"照 #{old_text['id']}，內容是 x。")) is None, "檔案內容沒改過：不交回"
+            assert agent.reply_check(said("根據 #501（2026-09-26 查的），nav2_test 在那份清單裡。")) is None, "引用之前的即時狀態：不交回"
             agent.run_script("result_view_cmd.py", ["501"])
             vid = agent.last_result_id
-            msg = agent.memory_reply_check(said(f"照 #{vid}，nav2_test 正在運行。"))
-            assert msg and "#501" in msg, ("衍生輸出照它讀的那一份算", msg)
-            agent.set_current_task("又問一次")
-            assert agent.reply_check(said("#501 寫 nav2_test 正在運行。")), "reply_check 有記憶的核對"
+            assert agent.reply_check(said(f"照 #{vid}，nav2_test 在那份清單裡。")) is None, "看舊存檔的衍生輸出：不交回"
 
         for name, fn in [("卡住偵測：同樣的動作第二次附提醒、第三次加強提醒、第四次停下這一回合（v4.1）", t_stuck),
                          ("卡住偵測：同一個錯誤不管中間做了什麼，第二次提醒、第四次算卡住", t_same_error_not_consecutive),
@@ -489,7 +480,7 @@ def main():
                          ("CLI 的主迴圈：會改變狀態的技能先問 y/n，n 不執行、y 才執行", t_cli_guard),
                          ("回覆的字串上限：schema 有上限、command 寫成 null 是沒有動作、寫到上限被截斷的不執行（重問一次，還是被截斷就不執行）", t_reply_cut),
                          ("存檔分讀取型與動作型：檔頭記種類、動作另列一區、檢索清單寫之前的 session 與即時狀態、讀回開頭寫事實、存檔之後改過的檔案列出來", t_memory_kinds),
-                         ("回覆引用了這一回合之前的即時狀態或動作：交回一次附事實；這一回合的、沒改過的檔案內容不算；衍生輸出照它讀的那一份算", t_memory_reply)]:
+                         ("主 session 的回覆引用了這一回合之前的即時狀態：不交回（問的是現在還是當時由模型看程式寫的事實判斷）", t_memory_reply_no_sendback)]:
             check(name, fn)
     finally:
         os.chdir(cwd)
