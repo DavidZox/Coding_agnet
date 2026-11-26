@@ -1,5 +1,5 @@
 @startuml
-' 複合技能 cpp_symbol 的〈骨架〉與〈回退〉畫成流程（2026-11-23）；來源 skills_system/repo_analysis/cpp_symbol.md。
+' 複合技能 cpp_symbol 的〈骨架〉與〈回退〉畫成流程（2026-11-23；2026-11-26 先列有本體的定義）；來源 skills_system/repo_analysis/cpp_symbol.md。
 skinparam shadowing false
 skinparam defaultFontName "Microsoft JhengHei"
 skinparam ActivityFontSize 13
@@ -21,9 +21,14 @@ py_usage 換過來時由程式帶過來）
 :補齊（composite.py）：沒寫的用預設值；必填的沒寫 → need；
 路徑在工作目錄找不到時照 fetch 用 find_file 找一次
 （剛好一個就自己補；好幾個或沒有 → need，附候選）; <<#DAE8FC>>
-:① hits（search_text --rank，只看 .h、.hpp、.cpp、.cc，附前後 2 行）
+:① defs（code_defs --has，只看 .h、.hpp、.cpp、.cc）
+列名稱或所屬的類別（類別::方法 的最後兩段，命名空間不算）
+有 names 的定義（照字面、不分大小寫）：有本體的類別、函式、
+成員函式，附第幾行到第幾行；分號結尾的宣告不列、0 個不算失敗
+（小標題「有本體的定義」）; <<#DAE8FC>>
+:② hits（search_text --rank，只看 .h、.hpp、.cpp、.cc，附前後 2 行）
 在範圍裡搜 names（用 | 接成同義詞一起搜），
-同一行含最多個名稱的排前面; <<#DAE8FC>>
+同一行含最多個名稱的排前面：標頭檔的宣告、用到的地方與設定; <<#DAE8FC>>
 if (hits 的結果？) then (0 筆)
   :【回退 outside_scope】加節點 wider（search_text）：
   在整個工作目錄的 C++ 檔搜一次（只列檔名）→ 重排
@@ -34,11 +39,13 @@ endif
 ・技能的狀態、回退的經過（say：範圍裡沒有，範圍外有的話在哪些檔案）、
   自己補的參數、need（說明與候選）
 ・範圍外找了的時候，程式照收據算的彙整（存成 #編號）：每個檔案幾筆
-・每個節點的結果（#編號）：搜到的行、行號與前後 2 行
+・每個節點的結果（#編號）：① 有本體的定義（檔案、第幾行到第幾行）、
+  ② 搜到的行、行號與前後 2 行
 ・短的給原文，太長的分段提煉（錨點是子目標與項目，事實附 檔案:行號）; <<#E1D5E7>>
 note right
   **下一步由領域 session 決定**（骨架裡沒有讀與選路的節點）：
-  ・要看整個函式、宣告與定義 → 用 view_file 看那一行前後
+  ・「定義在哪」「哪個成員函式」→ 照 ①（那一行就是定義）；
+    要看整個函式 → 用 view_file 看那一行前後
   ・結果提到別的成員函式、型別 → 用那個名稱再用一次
   ・查到能回答 → 回報（附 檔案:行號；定義要有函式本體的那一行）
 end note
