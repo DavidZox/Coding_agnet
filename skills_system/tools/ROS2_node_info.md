@@ -4,6 +4,7 @@ title: ROS2 節點資訊
 description: 查詢指定 node 的訂閱、發布、服務、Action（標頭算好每一類的數量；容器可省略＝目標容器）。
 version: 1.5.1
 dependencies: ["docker", "ros2"]
+live: true
 ---
 
 # 用途

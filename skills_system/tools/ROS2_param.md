@@ -4,6 +4,7 @@ title: ROS 2 參數
 description: 查詢 ROS 2 node 的參數（list／get，看執行中的實際值）；set 修改執行中的值（會先請使用者確認）。
 version: 1.1.1
 dependencies: ["docker", "ros2"]
+live: true
 ---
 
 # 用途

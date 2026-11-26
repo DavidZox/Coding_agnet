@@ -21,6 +21,7 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROJECT = os.path.dirname(os.path.dirname(HERE))
@@ -398,6 +399,76 @@ def main():
             last = json.loads(next(m["content"] for m in reversed(agent.messages) if m["role"] == "assistant"))
             assert last["action"] is None and "xxxxxxxxxx" not in json.dumps(last), last
 
+        def seed_live(rid=501, session="20260926_101500"):
+            """放一份「之前的 session」的即時狀態存檔（評測世界的寫法：檔頭沒有 memory，照技能判斷）與檢索清單的一行。"""
+            d = agent.results_dir()
+            os.makedirs(d, exist_ok=True)
+            fn = f"{session}_{rid:03d}_docker_containers.md"
+            with open(os.path.join(d, fn), "w", encoding="utf-8") as f:
+                f.write("\n".join(["---", f"id: {rid}", f"session: {session}", "ts: 2026-09-26 10:20:00", "script: docker_containers_cmd.py",
+                                   "skill: docker_containers", "command: EXECUTE: scripts/docker_containers_cmd.py", f"cwd: {tmp}", "container: ",
+                                   "status: PASS", "chars: 40", "task: 有哪些容器在跑", "---", "NAME       STATUS", "nav2_test  Up 20 hours"]) + "\n")
+            with open(os.path.join(d, "tools_use_index.md"), "a", encoding="utf-8") as f:
+                f.write(f"#{rid} | 2026-09-26 10:20 | {session} | {fn} | 有哪些容器在跑：nav2_test 在運行\n")
+            return fn
+
+        def t_memory_kinds():
+            # 存檔分讀取型與動作型（框架討論紀錄第 42 輪）：檔頭記 memory（動作照確認關卡的判斷、即時狀態照規格的 live、其他是檔案內容）；動作另外記一行、
+            # system prompt 列「最近執行過的動作」；檢索清單寫之前的 session、技能、即時狀態；讀回（result_view）開頭寫那一份的事實；存檔之後改過的檔案列出來
+            from skills_system.scripts import _results_common as rc
+            d = agent.results_dir()
+            seed_live()
+            agent.set_current_task("看一下")
+            act = agent._record_trajectory("file_ops_cmd.py", ["write", "kind_note.txt", "hi"], "[PASS] 寫入 kind_note.txt（2 字）", tmp, "", "")
+            live = agent._record_trajectory("docker_containers_cmd.py", [], "[PASS] 容器 nav2_test Exited", tmp, "", "")
+            text = agent._record_trajectory("cat_cmd.py", ["x.txt"], "[PASS] x.txt 的內容", tmp, "", "")
+            kinds = [rc.read_header(os.path.join(d, r["result_file"]))[0].get("memory") for r in (act, live, text)]
+            assert kinds == ["action", "live", "content"], kinds
+            block = agent._actions_block()
+            assert "最近執行過的動作" in block and f"#{act['id']}" in block and "file_ops write kind_note.txt hi" in block, block
+            assert "最近執行過的動作" in agent.get_system_prompt(), "system prompt 有這一區"
+            row = next(r for r in agent._tool_use_index_rows() if r[0] == 501)
+            assert "之前的 session，docker_containers，即時狀態" in row[1], row
+            assert agent._row_facts({"kind": "conversation", "file": "x"}) == "", "對話片段不標"
+            facts = rc.archive_facts(os.path.join(d, "20260926_101500_501_docker_containers.md"))
+            assert "即時狀態" in facts and "天前" in facts and "#501" in facts, facts
+            assert "動作" in rc.archive_facts(os.path.join(d, act["result_file"])), "動作的事實"
+            assert rc.archive_facts(os.path.join(d, text["result_file"])) == "", "檔案內容沒改過：不寫"
+            target = os.path.join(tmp, "kind_changed.txt")
+            with open(target, "w", encoding="utf-8") as f:
+                f.write("old\n")
+            rec = {"id": agent._next_id(), "script": "view_file_cmd.py", "skill": "view_file", "command": "EXECUTE: scripts/view_file_cmd.py kind_changed.txt",
+                   "cwd": tmp, "status": "PASS", "task": "看", "args": ["kind_changed.txt"]}
+            fn = agent._archive_tool_result(rec, "1→old", {"status": "pass", "cwd": tmp, "items": [{"path": target}]})
+            os.utime(target, (time.time() + 120, time.time() + 120))
+            changed = rc.archive_facts(os.path.join(d, fn))
+            assert "kind_changed.txt" in changed and "改過" in changed, changed
+            out = agent.run_script("result_view_cmd.py", ["501"])
+            assert "即時狀態" in out and "#501" in out, out[:400]
+
+        def t_memory_reply():
+            # 回覆引用了這一回合之前存的即時狀態或動作：交回一次、附那一份的事實（每回合最多一次）；這一回合存的、檔案內容沒改過的不算；
+            # 看舊存檔的衍生輸出（這一回合的 result_view）照它讀的那一份算；檢查串（reply_check）有這一道
+            agent.set_current_task("nav2_test 現在還在跑嗎？")
+            first = agent._turn_first_id
+            assert first > 501, first
+            said = lambda text: {"reply": text, "valid": True, "action": None, "answers": []}
+            msg = agent.memory_reply_check(said("根據 #501，nav2_test 正在運行。"))
+            assert msg and "#501" in msg and "即時狀態" in msg and "重新執行工具" in msg, msg
+            assert agent.memory_reply_check(said("根據 #501，nav2_test 正在運行。")) is None, "每回合最多一次"
+            agent.set_current_task("再看一次")
+            fresh = agent._record_trajectory("docker_containers_cmd.py", [], "[PASS] 容器 nav2_test Exited", tmp, "", "")
+            assert agent.memory_reply_check(said(f"根據 #{fresh['id']}，nav2_test 停了。")) is None, "這一回合存的不算"
+            agent.set_current_task("看檔案")
+            old_text = next(r for r in reversed(agent.trajectory) if r.get("script") == "cat_cmd.py")
+            assert agent.memory_reply_check(said(f"照 #{old_text['id']}，內容是 x。")) is None, "檔案內容沒改過：不交回"
+            agent.run_script("result_view_cmd.py", ["501"])
+            vid = agent.last_result_id
+            msg = agent.memory_reply_check(said(f"照 #{vid}，nav2_test 正在運行。"))
+            assert msg and "#501" in msg, ("衍生輸出照它讀的那一份算", msg)
+            agent.set_current_task("又問一次")
+            assert agent.reply_check(said("#501 寫 nav2_test 正在運行。")), "reply_check 有記憶的核對"
+
         for name, fn in [("卡住偵測：同樣的動作第二次附提醒、第三次加強提醒、第四次停下這一回合（v4.1）", t_stuck),
                          ("卡住偵測：同一個錯誤不管中間做了什麼，第二次提醒、第四次算卡住", t_same_error_not_consecutive),
                          ("卡住偵測：評測對照組的舊規則（AGENT_TURN_GUARD_RULE=v4，第三次就停）", t_v4_rule),
@@ -416,7 +487,9 @@ def main():
                          ("腳本 → 技能的對照：規格裡 EXECUTE 指令位置的腳本都對回那個技能（只提到的不算）", t_script_skill_map),
                          ("收據：寫收據的腳本執行完讀得到、軌跡記摘要、存檔旁邊存一份、刪存檔時一起刪；規格裡給程式看的欄位不給模型", t_receipts),
                          ("CLI 的主迴圈：會改變狀態的技能先問 y/n，n 不執行、y 才執行", t_cli_guard),
-                         ("回覆的字串上限：schema 有上限、command 寫成 null 是沒有動作、寫到上限被截斷的不執行（重問一次，還是被截斷就不執行）", t_reply_cut)]:
+                         ("回覆的字串上限：schema 有上限、command 寫成 null 是沒有動作、寫到上限被截斷的不執行（重問一次，還是被截斷就不執行）", t_reply_cut),
+                         ("存檔分讀取型與動作型：檔頭記種類、動作另列一區、檢索清單寫之前的 session 與即時狀態、讀回開頭寫事實、存檔之後改過的檔案列出來", t_memory_kinds),
+                         ("回覆引用了這一回合之前的即時狀態或動作：交回一次附事實；這一回合的、沒改過的檔案內容不算；衍生輸出照它讀的那一份算", t_memory_reply)]:
             check(name, fn)
     finally:
         os.chdir(cwd)

@@ -4,6 +4,7 @@ title: ROS 2 Domain ID 查詢與設定
 description: 查看容器裡新開的 shell 與正在跑的 ROS 節點各在哪個 ROS_DOMAIN_ID（ROS2_* 看不到節點時用）；set 寫入 ~/.bashrc（會先請使用者確認）。
 version: 2.0.1
 dependencies: ["docker", "ros2"]
+live: true
 ---
 
 # 用途

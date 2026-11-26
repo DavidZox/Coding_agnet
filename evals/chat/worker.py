@@ -154,7 +154,7 @@ def main():
             result = domain_calls.settle(agent, parsed, agent.run_tool(parsed, approved=bool(guard)), turn, guard=sc.get("guard", "deny"))
             if not result:
                 # 沒執行卻說做完了、依數據分析的報告回答卻寫成因果、依領域的報告回答時 answers 沒有通過核對：跟 CLI／Web 一樣提醒一次
-                claim = agent.claim_without_action(parsed) or agent.analysis_reply_check(parsed) or agent.domain_reply_check(parsed)
+                claim = agent.reply_check(parsed)
                 domain_calls.record_answers(agent, parsed, turn)
                 if claim:
                     turn.setdefault("claim_nudges", 0)

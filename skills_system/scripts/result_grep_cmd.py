@@ -8,7 +8,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _results_common import (clip, compile_pattern, current_session, describe, list_result_files, numbered, read_body, resolve_result,
+from _results_common import (archive_facts, clip, compile_pattern, current_session, describe, list_result_files, numbered, read_body, resolve_result,
                              results_dir, search_lines)
 import _receipt_common as receipt  # noqa: E402
 
@@ -95,10 +95,11 @@ def render_file(path, regex, ctx, budget_hits, block):
     fn = os.path.basename(path)
     rid = int(meta["id"]) if str(meta.get("id", "")).isdigit() else fn
     found = [{"id": rid, "line": h + 1} for h in hits]
+    facts = archive_facts(path, meta)     # 那一份是什麼時候、什麼種類（框架討論紀錄第 42 輪）
     if not hits:
-        return [f"{describe(meta, fn)}：0 行命中（原文共 {len(lines)} 行）"], 0, timed_out, 0, found
+        return [f"{describe(meta, fn)}：0 行命中（原文共 {len(lines)} 行）"] + ([facts] if facts else []), 0, timed_out, 0, found
     out = [f"{describe(meta, fn)}：命中 {len(hits)} 行（原文共 {len(lines)} 行）"
-           + (f"，列出前 {min(len(hits), budget_hits)} 個" if len(hits) > budget_hits else "")]
+           + (f"，列出前 {min(len(hits), budget_hits)} 個" if len(hits) > budget_hits else "")] + ([facts] if facts else [])
     shown = 0
     last_end = -1
     for h in hits[:budget_hits]:

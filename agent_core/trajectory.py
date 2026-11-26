@@ -65,6 +65,8 @@ class TrajectoryMixin:
             "output_head": output_text[:TRAJECTORY_OUTPUT_HEAD],
             "task": self.current_task or "",
         }
+        if self.changes_state(record["skill"], record["args"]):    # 動作型的存檔（框架討論紀錄第 42 輪）：照確認關卡的判斷，跟問不問使用者無關
+            record["memory"] = "action"
         receipt = getattr(self, "last_receipt", None)      # 腳本寫的收據（dispatch._exec_script）：軌跡記摘要，全文跟存檔放在一起
         if receipt:
             record["receipt"] = {k: receipt.get(k) for k in ("status", "error_kind", "counts", "truncated")}

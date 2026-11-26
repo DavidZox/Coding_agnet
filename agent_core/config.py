@@ -123,6 +123,9 @@ TOOL_RESULTS_MAX_MB = float(os.environ.get("AGENT_TOOL_RESULTS_MAX_MB", "50"))
 # 是「顯示視窗」不是資料上限。
 TOOL_USE_INDEX_NAME = "tools_use_index.md"
 TOOL_USE_INDEX_SHOW = int(os.environ.get("AGENT_TOOL_USE_INDEX_SHOW", "30"))
+# 動作的紀錄（框架討論紀錄第 42 輪）：會改狀態的工具每執行一次記一行（存檔的檔頭 memory: action），system prompt 列最近幾筆「最近執行過的動作」
+ACTIONS_INDEX_NAME = "actions_index.md"
+ACTIONS_SHOW = int(os.environ.get("AGENT_ACTIONS_SHOW", "5"))
 TOOL_USE_INDEX_HINT_TARGET = 60   # prompt 要求的描述長度（中文字數，一段英數路徑算 1 字）；只是給模型的目標，程式不截斷
 # 看舊存檔的衍生輸出：不記進檢索清單（會跟原本那筆重複佔位，recall 到它只拿得到部分內容）
 DERIVED_RESULT_SCRIPTS = {"result_grep_cmd.py", "result_view_cmd.py", "result_list_cmd.py", "result_recall_cmd.py",

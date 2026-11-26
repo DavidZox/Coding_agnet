@@ -4,7 +4,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _results_common import clip, describe, numbered, outline, read_body, resolve_result
+from _results_common import archive_facts, clip, describe, numbered, outline, read_body, resolve_result
 import _receipt_common as receipt  # noqa: E402
 
 DEFAULT_LINES, MAX_LINES = 80, 300
@@ -55,6 +55,7 @@ def main(argv):
     total = len(lines)
     rid = int(meta["id"]) if str(meta.get("id", "")).isdigit() else None
     title = f"{describe(meta, os.path.basename(path))}｜{meta.get('command') or ''}｜原文共 {total} 行"
+    facts = archive_facts(path, meta)     # 那一份是什麼時候、什麼種類（即時狀態、動作、之後改過的檔案；框架討論紀錄第 42 輪）
     if opts["outline"]:
         ol = outline(lines)
         receipt.result("pass" if ol else "empty", counts={"total_lines": total, "sections": len(ol)},
@@ -62,7 +63,7 @@ def main(argv):
         if not ol:
             return (f"[PASS] {title}；沒有章節標題（一行一筆的輸出），用 --from／--lines 分段看，"
                     f"或 result_grep <編號> \"<關鍵字>\" 找要的那幾行。")
-        return "\n".join([f"[PASS] {title}；大綱（{len(ol)} 節，章節標題的行號與行數；用 --from <行號> 看那一節）："]
+        return "\n".join([f"[PASS] {title}；大綱（{len(ol)} 節，章節標題的行號與行數；用 --from <行號> 看那一節）："] + ([facts] if facts else [])
                          + [f"- 行 {n}：{t}（{k} 行）" for n, t, k in ol])
     start = opts["start"] or 1
     if start > total:
@@ -70,7 +71,7 @@ def main(argv):
     end = min(total, start + opts["count"] - 1)
     head = (f"[PASS] {title}；顯示第 {start}～{end} 行"
             + (f"，之後還有 {total - end} 行（--from {end + 1} 繼續）" if end < total else "，已到最後一行") + "：")
-    out = [head]
+    out = [head] + ([facts] if facts else [])
     if meta.get("task"):
         out.append(f"當時的任務：{meta['task']}")
     out += [numbered(j, clip(lines[j - 1])) for j in range(start, end + 1)]

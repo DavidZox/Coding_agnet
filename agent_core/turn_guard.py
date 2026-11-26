@@ -19,6 +19,7 @@ import json
 import os
 import re
 
+from skills_system.scripts import _results_common
 from . import claims, prompt_files
 from .config import ANALYSIS_ANSWER_NOTE, ANALYSIS_REPORT_HEAD
 from .protocol import action_text
@@ -96,6 +97,10 @@ class TurnGuardMixin:
         self._analysis_report = None
         self._analysis_job_id = None
         self._analysis_nudged = False
+        self._memory_nudged = False
+        # 這一回合第一份存檔的編號：比它小的是之前的回合或之前的 session 存的（memory_reply_check、領域 session 的回報核對；框架討論紀錄第 42 輪）
+        self._turn_first_id = (max(getattr(self, "trajectory_seq", 0), self._max_archived_id()) + 1
+                               if getattr(self, "script_dir", None) else None)     # 建立 agent 時（還沒有存檔目錄）沒有回合
         self._reset_domain_turn()     # 交過的領域、排除的領域、放行的工具（orchestrator.py）
 
     def note_tool_result(self, parsed, output):
@@ -147,6 +152,30 @@ class TurnGuardMixin:
         self._claim_nudged = True
         self._add_notice(f"⚠️ AI 的回覆說「{m.group(0)}」，但這一回合沒有執行任何工具：已提醒它確認（要做就實際執行，沒做就照實說）。")
         return _g("claim_done", said=m.group(0))
+
+    def reply_check(self, parsed):
+        """回答前的核對（cli、Web、主對話與維運的評測共用）：沒動作卻說做了、依數據分析的報告、依交辦的報告（orchestrator.domain_reply_check）、
+        引用了這一回合之前的即時狀態或動作的存檔——第一個沒過的回提醒的文字（呼叫端接進對話、再問一次），都過了回 None。"""
+        return (self.claim_without_action(parsed) or self.analysis_reply_check(parsed) or self.domain_reply_check(parsed)
+                or self.memory_reply_check(parsed))
+
+    def memory_reply_check(self, parsed):
+        """回覆（reply 與 answers 的文字、出處）寫了 #編號、那一份是這一回合之前存的即時狀態、動作的紀錄、或存檔之後收據裡的檔案改過
+        （_results_common.stale_facts；看舊存檔的衍生輸出照它讀的那幾份算）→ 交回一次，附那幾份的事實：問的是現在的狀態要重新查、問的是當時的
+        要寫明——模型判斷；「過期的資料能不能當成現在的」由程式提醒（框架討論紀錄第 42 輪的 D3）。這一回合存的不算；每回合最多一次。"""
+        if getattr(self, "_memory_nudged", False) or not parsed or parsed.get("action") or not parsed.get("valid", True):
+            return None
+        first = getattr(self, "_turn_first_id", None)
+        text = "\n".join([parsed.get("reply") or ""] + [f"{a.get('text') or ''} {' '.join(a.get('refs') or [])}" for a in parsed.get("answers") or []])
+        facts, d, session = [], self.results_dir(), getattr(self, "session_id", None)
+        for rid in dict.fromkeys(re.findall(r"#(\d+)", text)):
+            path, err = _results_common.resolve_result(rid, d, session=session)
+            if path and not err:
+                facts += [f for f in _results_common.stale_facts(path, first, d, session) if f not in facts]
+        if not facts:
+            return None
+        self._memory_nudged = True
+        return _g("memory_stale", facts="\n".join(facts))
 
     def analysis_reply_check(self, parsed):
         """依數據分析的報告回答：回覆把報告的事實寫成因果（導致、造成、觸發…），或寫的變化、值跟報告的事實對不上 → 回傳要接在對話

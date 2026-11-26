@@ -601,8 +601,27 @@ class DomainSession:
     def _problems(self, job, given):
         archives = self._archives(job)
         source = "\n".join(answers.read(p) for _, p in archives)
-        return answers.answer_problems(job["items"], given, lambda ref: self._cited(job, ref, archives), self._allowed(job), source,
-                                       unknown=lambda ref: self._ref_unknown(job, ref, archives))
+        problems = answers.answer_problems(job["items"], given, lambda ref: self._cited(job, ref, archives), self._allowed(job), source,
+                                           unknown=lambda ref: self._ref_unknown(job, ref, archives))
+        for k, why in self._stale_refs(given).items():
+            problems.setdefault(k, []).append(why)
+        return problems
+
+    def _stale_refs(self, given):
+        """回報的出處引用了這一回合之前存的即時狀態、動作的紀錄、存檔之後改過的檔案（看舊存檔的衍生輸出照它讀的那幾份算；
+        _results_common.stale_facts）→ {項目: 說明}：問的是現在的狀態要重新執行工具查、問的是當時的要寫明（框架討論紀錄第 42 輪的 D3）。"""
+        first, d, session = getattr(self.agent, "_turn_first_id", None), self.agent.results_dir(), getattr(self.agent, "session_id", None)
+        out = {}
+        for a in given or []:
+            facts = []
+            for ref in a.get("refs") or []:
+                m = answers.ID.match(str(ref).strip())      # 「#12」「#12:5」都算
+                path, err = _results_common.resolve_result(m.group(1), d, session=session) if m else (None, "x")
+                if path and not err:
+                    facts += [f for f in _results_common.stale_facts(path, first, d, session) if f not in facts]
+            if facts:
+                out[a["item"]] = _s("why_stale", facts="；".join(facts))
+        return out
 
     @staticmethod
     def _ref_unknown(job, ref, archives):

@@ -4,6 +4,7 @@ title: 容器狀態與控制
 description: 看容器本身的狀態、log（stdout＋stderr，可接著看新的）、設定（環境變數、掛載、網路），以及啟動／停止／重新啟動容器（會先請使用者確認）。
 version: 2.0.2
 dependencies: ["docker"]
+live: true
 ---
 
 # 用途

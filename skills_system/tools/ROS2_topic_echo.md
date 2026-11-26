@@ -4,6 +4,7 @@ title: ROS2 話題內容（單筆或一段時間的量測）
 description: 讀取指定 topic 的一筆訊息，或用 --duration 觀察一段時間：發布方式與中斷、每個欄位的變化（狀態跳轉的時間、數值統計、尖峰）、--where 門檻判斷（容器可省略＝目標容器）。
 version: 2.0.1
 dependencies: ["docker", "ros2"]
+live: true
 ---
 
 # 用途

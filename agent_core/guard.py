@@ -212,6 +212,11 @@ class GuardMixin:
             return None
         return self.state_change_info(parsed)
 
+    def changes_state(self, skill, args):
+        """這個技能在這些參數下會不會改變實體／外部狀態（不看 /guard 開關）：GUARDED_SKILLS 裡的、不是查詢用法（_guard_exempt）的。
+        確認關卡（state_change_info）與存檔的種類（動作型的存檔：trajectory._record_trajectory，框架討論紀錄第 42 輪）共用。"""
+        return skill in GUARDED_SKILLS and not self._guard_exempt(skill, list(args or []))
+
     def state_change_info(self, parsed):
         """這個 action 會不會改變實體／外部狀態（不看 /guard 開關）：回傳 None 或 {skill, script, command, reason}。
         guard_check（執行前問使用者）用它；不看開關，所以評測也直接用它判斷。"""
@@ -234,7 +239,7 @@ class GuardMixin:
         skill_map = self._script_skill_map()
         skill = skill_map.get(script_name)
         args = self._parse_script_args(script_name, remainder)
-        if skill not in GUARDED_SKILLS or self._guard_exempt(skill, args):
+        if not self.changes_state(skill, args):
             return None
         reason = _GUARD_REASONS.get(skill, "這個技能會改變系統狀態")
         if skill in ("docker_runcmd", "docker_ctl"):   # 實際會操作的容器（省略名稱、部分名稱時使用者看得到是哪一個）

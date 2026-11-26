@@ -4,6 +4,7 @@ title: ROS2 節點列表
 description: 列出容器內運行中的 node，標頭算好總數與實際用的 ROS_DOMAIN_ID；--filter 關鍵字只列符合的並計數。
 version: 1.6.0
 dependencies: ["docker", "ros2"]
+live: true
 ---
 
 # 用途

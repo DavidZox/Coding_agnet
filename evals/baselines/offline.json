@@ -5,9 +5,9 @@
   "total": 12
  },
  "chat_selftest": {
-  "label": "第 5 步（6958dac）（2026-11-20）",
-  "passed": 19,
-  "total": 19
+  "label": "存檔分讀取型與動作型、記憶的有效性（t_memory_kinds、t_memory_reply、t_stale_refs）（2026-11-27）",
+  "passed": 21,
+  "total": 21
  },
  "containers_sandbox": {
   "label": "第 5 步（6958dac）（2026-11-20）",
@@ -20,9 +20,9 @@
   "total": 8
  },
  "domain_selftest": {
-  "label": "問句由程式整句放進項目、改寫的項目拿掉（t_ask_items）（2026-11-26）",
-  "passed": 34,
-  "total": 34
+  "label": "存檔分讀取型與動作型、記憶的有效性（t_memory_kinds、t_memory_reply、t_stale_refs）（2026-11-27）",
+  "passed": 35,
+  "total": 35
  },
  "edg_selftest": {
   "label": "單一迴圈：交辦與領域 session（框架討論紀錄 F1～F6）（2026-11-23）",

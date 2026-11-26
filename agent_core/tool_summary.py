@@ -251,7 +251,7 @@ class ToolSummaryMixin:
             return (f"[ERROR] 第一個參數要是存檔編號（例如 12 或 12,15），收到「{ref_arg}」。{usage}；問題放第二個參數、用雙引號包起來。")
         if not question:
             return f"[ERROR] 需要問題內容。{usage}。"
-        loaded, missing, extra = [], [], refs[RECALL_MAX_RECORDS:]
+        loaded, missing, extra, facts = [], [], refs[RECALL_MAX_RECORDS:], []
         for ref in refs[:RECALL_MAX_RECORDS]:
             path, err = _results_common.resolve_result(ref, self.results_dir(), session=self.session_id)
             if err:
@@ -261,6 +261,7 @@ class ToolSummaryMixin:
             rid = str(meta.get("id") or ref.lstrip("#"))
             if rid not in {x[0] for x in loaded}:
                 loaded.append((rid, meta, lines))
+                facts.append(_results_common.archive_facts(path, meta))   # 那一份是什麼時候、什麼種類（框架討論紀錄第 42 輪）
         if not loaded:
             reasons = "；".join(self._missing_reason(rid, err) for rid, err in missing)
             return f"[ERROR] {reasons}"
@@ -300,7 +301,7 @@ class ToolSummaryMixin:
         notes = [self._missing_reason(rid, err) for rid, err in missing]
         if extra:
             notes.append(f"一次最多讀 {RECALL_MAX_RECORDS} 份，{'、'.join('#' + r.lstrip('#') for r in extra)} 這次沒有讀（要的話另外 recall）。")
-        gone = "".join(f"（{n}）\n" for n in notes)
+        gone = "".join(f"（{n}）\n" for n in notes) + "".join(f"{f}\n" for f in facts if f)
         harness = self.context_mode == "harness"
         how = f"，分 {out['chunks']} 段由獨立 session 各讀一段再整合" if (out.get("chunks") or 0) > 1 else ""
         job = f"；提煉過程存在 logs/extract_jobs/{out['job']}/" if out.get("job") else ""

@@ -4,6 +4,7 @@ title: 查 work package 執行狀態（一幀或一段時間）
 description: 讀 web_console 快照看 work package、distribute 佇列、機器人與事件；--watch 觀察一段時間，整理每個工作包／工作項／機器人的狀態變遷；--until-done 等指定的工作包跑完（看到完成就結束，看得出卡住就提早結束）；--until-confirmed 等目前這一站的授權有結果。
 version: 1.4.0
 dependencies: ["fih_rmf_system web_console (port 8020)"]
+live: true
 ---
 
 # 用途

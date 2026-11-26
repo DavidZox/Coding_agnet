@@ -4,6 +4,7 @@ title: 列出容器
 description: 列出主機上所有容器（名稱、狀態、映像檔），第一行算好總數與執行中、暫停、已停止的數量。
 version: 1.3.0
 dependencies: ["docker"]
+live: true
 ---
 
 # 用途

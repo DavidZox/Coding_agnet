@@ -163,6 +163,7 @@ class PromptMixin:
             self.domain_block(),
             _sp("skills", skills=skills),
             self._tool_use_index_block().strip(),
+            self._actions_block(),       # 最近執行過的動作（框架討論紀錄第 42 輪）
         ]
         return "\n\n".join(b for b in blocks if b)
 

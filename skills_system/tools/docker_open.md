@@ -4,6 +4,7 @@ title: 選定目標容器（進入並驗證連線）
 description: 找出容器真實名稱、確認它在跑並驗證連線，設為之後容器技能預設使用的目標容器。
 version: 1.4.1
 dependencies: ["docker"]
+live: true
 ---
 
 # 用途

@@ -7,6 +7,7 @@ import threading
 import time
 from skills_system.scripts import _results_common
 from .config import (
+    ACTIONS_INDEX_NAME,
     CONVERSATION_SEGMENTS_KEEP,
     TOOL_RESULTS_DIRNAME,
     TOOL_RESULTS_INDEX,
@@ -65,11 +66,13 @@ class ArchiveMixin:
         stem = re.sub(r"[^A-Za-z0-9_-]", "_", re.sub(r"(_cmd)?\.py$", "", record["script"]))
         filename = f"{self.session_id}_{record['id']:03d}_{stem}.md"
         task = " ".join((record.get("task") or "").split())
+        # 存檔的種類（框架討論紀錄第 42 輪）：動作（trajectory 照確認關卡的判斷記的）、即時狀態（規格寫了 live 的技能）、其他是檔案內容
+        memory = record.get("memory") or _results_common.memory_kind({"skill": record.get("skill") or ""})
         header = [
             "---", f"id: {record['id']}", f"session: {self.session_id}", f"ts: {time.strftime('%Y-%m-%d %H:%M:%S')}",
             f"script: {record['script']}", f"skill: {record.get('skill') or ''}", f"command: {record['command']}",
             f"cwd: {record['cwd']}", f"container: {record.get('target_container') or ''}", f"status: {record['status']}",
-            f"chars: {len(output_text)}", f"task: {task}", "---",
+            f"chars: {len(output_text)}", f"task: {task}", f"memory: {memory}", "---",
         ]
         with open(os.path.join(d, filename), "w", encoding="utf-8") as f:
             f.write("\n".join(header) + "\n" + output_text + ("\n" if not output_text.endswith("\n") else ""))
@@ -80,6 +83,12 @@ class ArchiveMixin:
                 f"{len(output_text)} 字 | {filename} | 任務：{task} | 回答：")   # 任務與回答整句照存、不截斷（result_list 直接列這一行）
         with open(os.path.join(d, TOOL_RESULTS_INDEX), "a", encoding="utf-8") as f:
             f.write(line + "\n")
+        if memory == "action":     # 動作另外記一行：system prompt「最近執行過的動作」（tool_use_index._actions_block）
+            args = " ".join(str(a) for a in record.get("args") or [])
+            head = " ".join(output_text.strip().split("\n", 1)[0].split())[:160]
+            with open(os.path.join(d, ACTIONS_INDEX_NAME), "a", encoding="utf-8") as f:
+                f.write(f"#{record['id']} | {time.strftime('%Y-%m-%d %H:%M')} | {self.session_id} | {record.get('skill') or record['script']} | "
+                        f"{' '.join(args.split())[:200]} | {record['status']} | {head}\n")
         self._prune_tool_results(d)
         return filename
 

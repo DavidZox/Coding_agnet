@@ -298,7 +298,7 @@ def run_turn(events):
         if outcome == "end":
             # 這一回合沒有執行任何工具、回覆卻說「已經做了」（要做就執行，沒做就照實說），或依數據分析的報告回答卻寫成因果：提醒一次
             # 依領域的報告回答時 answers 沒有通過核對：只把沒過的項目交回修一次（orchestrator.domain_reply_check）
-            claim = agent.claim_without_action(parsed) or agent.analysis_reply_check(parsed) or agent.domain_reply_check(parsed)
+            claim = agent.reply_check(parsed)
             for notice in agent.pop_notices():
                 events.append({"channel": "system", "text": notice})
             if claim:

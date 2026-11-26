@@ -4,6 +4,7 @@ title: 容器內執行指令
 description: 在指定容器（或目前的目標容器）內執行一行 shell 指令；看容器裡的目錄、檔案、程序都用它。
 version: 2.0.1
 dependencies: ["docker"]
+live: true
 ---
 
 # 用途

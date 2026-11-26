@@ -7,7 +7,10 @@ harness（Agent_Runner._archive_tool_result）每次腳本執行都把完整原�
 
 行號一律是「原文的行號」（工具輸出的第 1 行＝行 1，不含存檔的檔頭）：result_view、result_grep、提煉結果引用的行號、claude_code 模式的
 截斷說明都是同一套，寫成 `120→內容`（不用 L120：數據分析的報告裡 L# 是 Log 訊號的編號）。
+存檔的種類（框架討論紀錄第 42 輪）：檔頭的 memory——action（會改狀態的動作，當時做了什麼的紀錄）、live（查執行中系統當下的狀態：工具規格寫了
+`live: true`）、content（其他）；舊的存檔沒有這個欄位，照檔頭的技能判斷（memory_kind）。讀回時開頭寫那一份的事實（archive_facts）。
 """
+import json
 import os
 import re
 import time
@@ -87,6 +90,126 @@ def read_header(path, max_lines=40):
             if sep:
                 meta[k.strip()] = v.strip()
     return meta, body_start
+
+
+_TOOLS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools")
+_LIVE_LINE = re.compile(r"^live:\s*true\s*$")
+_live = []
+
+
+def live_skills():
+    """工具規格（skills_system/tools/<名稱>.md）的 frontmatter 寫了 `live: true` 的技能（查執行中系統當下的狀態）；讀一次就記住。"""
+    if not _live:
+        names = set()
+        for fn in sorted(os.listdir(_TOOLS_DIR)) if os.path.isdir(_TOOLS_DIR) else []:
+            if fn.endswith(".md"):
+                try:
+                    with open(os.path.join(_TOOLS_DIR, fn), encoding="utf-8") as f:
+                        head = f.read(4000).split("\n---", 1)[0]
+                except OSError:
+                    continue
+                if any(_LIVE_LINE.match(ln) for ln in head.split("\n")):
+                    names.add(fn[:-3])
+        _live.append(names)
+    return _live[0]
+
+
+def memory_kind(meta):
+    """存檔的種類：檔頭的 memory（寫存檔時記的 action／live／content）；沒有的（舊的存檔）照檔頭的技能——規格寫了 live 的是 live，其他 content。"""
+    kind = (meta.get("memory") or "").strip()
+    if kind:
+        return kind
+    return "live" if (meta.get("skill") or "").strip() in live_skills() else "content"
+
+
+def archive_time(meta):
+    """檔頭的 ts（YYYY-MM-DD HH:MM:SS）→ 秒；寫錯、沒有的回 None。"""
+    try:
+        return time.mktime(time.strptime((meta.get("ts") or "").strip(), "%Y-%m-%d %H:%M:%S"))
+    except (ValueError, OverflowError):
+        return None
+
+
+def age_text(seconds):
+    """經過的秒數 → 「剛剛」「N 分鐘前」「N 小時前」「N 天前」。"""
+    if seconds < 90:
+        return "剛剛"
+    if seconds < 5400:
+        return f"{round(seconds / 60)} 分鐘前"
+    if seconds < 172800:
+        return f"{round(seconds / 3600)} 小時前"
+    return f"{round(seconds / 86400)} 天前"
+
+
+def read_receipt(path):
+    """存檔旁邊的收據（<存檔>.receipt.json）；沒有、讀不到的回 None。"""
+    try:
+        with open(path[:-3] + ".receipt.json", encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+def changed_files(receipt, since, limit=20):
+    """收據裡讀過的檔案（絕對路徑，前 limit 個），修改時間比 since（存檔的時間，秒）晚的 → 寫成收據的 cwd 底下的相對路徑。"""
+    if not isinstance(receipt, dict) or since is None:
+        return []
+    paths = [str(it["path"]) for it in receipt.get("items") or [] if isinstance(it, dict) and it.get("path")]
+    paths += [str(p) for p in [receipt.get("path")] + list(receipt.get("per_file") or {}) if p]
+    cwd = str(receipt.get("cwd") or "").rstrip("/")
+    out = []
+    for p in list(dict.fromkeys(x for x in paths if x.startswith("/")))[:limit]:
+        try:
+            if os.path.getmtime(p) > since + 1:
+                out.append(p[len(cwd) + 1:] if cwd and p.startswith(cwd + "/") else p)
+        except OSError:
+            continue
+    return out
+
+
+def archive_facts(path, meta=None, now=None):
+    """讀回存檔時開頭的一行事實（框架討論紀錄第 42 輪）：即時狀態寫什麼時候查的、多久以前；動作寫是當時做了什麼的紀錄；檔案內容在存檔之後
+    收據裡的檔案改過的列出來；都不是回空字串。"""
+    meta = meta if meta is not None else read_header(path)[0]
+    rid, ts, skill = meta.get("id") or "?", meta.get("ts") or "?", meta.get("skill") or meta.get("script") or "?"
+    when = archive_time(meta)
+    age = age_text((now or time.time()) - when) if when else "時間不明"
+    kind = memory_kind(meta)
+    if kind == "live":
+        return f"（#{rid} 是 {skill} 在 {ts}（{age}）查的即時狀態：是那時候的狀態，不一定是現在的；問現在的狀態要重新執行工具）"
+    if kind == "action":
+        return f"（#{rid} 是 {ts}（{age}）執行的動作 {skill} 的結果：是當時做了什麼的紀錄，不是現在的狀態）"
+    changed = changed_files(read_receipt(path), when)
+    if changed:
+        return f"（#{rid} 存檔（{ts}）之後，這些檔案改過：{'、'.join(changed)}——存檔的內容可能跟現在的不一樣）"
+    return ""
+
+
+DERIVED_SCRIPTS = ("result_view_cmd.py", "result_grep_cmd.py", "result_recall_cmd.py")   # 看舊存檔的衍生輸出：照它讀的那幾份算
+
+
+def stale_facts(path, first_id, d=None, session=None):
+    """引用這一份存檔時要提醒的事實（框架討論紀錄第 42 輪的 D3）：這一回合之前存的（編號比 first_id 小）即時狀態、動作的紀錄、存檔之後改過的
+    檔案（archive_facts）；看舊存檔的衍生輸出（result_view、result_grep、result_recall）照它讀的那幾份算（第一個參數寫的編號；latest、all 不算）。
+    → [事實的句子]"""
+    meta = read_header(path)[0]
+    if (meta.get("script") or "") in DERIVED_SCRIPTS:
+        tokens = (meta.get("command") or "").split()
+        at = next((i for i, t in enumerate(tokens) if t.endswith(tuple(DERIVED_SCRIPTS))), None)
+        first_arg = tokens[at + 1].strip("\"'") if at is not None and at + 1 < len(tokens) else ""
+        out = []
+        for ref in first_arg.split(","):
+            if ref.lstrip("#").isdigit() and (first_id is None or int(ref.lstrip("#")) < first_id):
+                src, err = resolve_result(ref.lstrip("#"), d, session=session)
+                fact = archive_facts(src) if src and not err else ""
+                if fact:
+                    out.append(fact)
+        return out
+    rid = meta.get("id") or ""
+    if first_id is not None and (not str(rid).isdigit() or int(rid) >= first_id):
+        return []
+    fact = archive_facts(path, meta)
+    return [fact] if fact else []
 
 
 def read_lines(path):

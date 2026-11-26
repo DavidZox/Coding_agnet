@@ -158,7 +158,7 @@ def main():
             # --- 模式判定流程 ---
             if not result:
                 # 這一回合沒有執行任何工具、回覆卻說「已經做了」，或依數據分析的報告回答卻寫成因果：提醒一次（turn_guard.py）
-                claim = agent.claim_without_action(parsed) or agent.analysis_reply_check(parsed) or agent.domain_reply_check(parsed)
+                claim = agent.reply_check(parsed)
                 for notice in agent.pop_notices():
                     print(notice)
                 if claim:

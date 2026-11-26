@@ -4,6 +4,7 @@ title: 確認並載入 ROS 2 Workspace
 description: 找出（--discover）或確認容器裡的 ROS 2 Workspace 並記錄（之後 ROS 2 技能自動載入）；也可在載入後的同一個 shell 執行一個指令。
 version: 2.0.0
 dependencies: ["docker", "ros2"]
+live: true
 ---
 
 # 用途

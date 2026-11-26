@@ -4,6 +4,7 @@ title: 調度交握（診斷與手動觸發）
 description: 看某台機器人（或某個工作包）跟 distribute 的授權交握並判斷原因（離線、沒回應、回 no、完成訊號遺失、在等忙碌的機器人）；必要時手動回 yes／no 或補發完成訊號（會先請使用者確認）。
 version: 1.3.1
 dependencies: ["fih_rmf_system web_console", "manual_trigger（yes／no／fin）", "ROS 2 容器＋fih_rmf_msgs（status 聽 topic）"]
+live: true
 ---
 
 # 用途

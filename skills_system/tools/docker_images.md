@@ -4,6 +4,7 @@ title: 列出映像檔
 description: 列出本機所有 Docker 映像檔（名稱、tag、大小），建立容器前確認映像檔存在。
 version: 1.2.1
 dependencies: ["docker"]
+live: true
 ---
 
 # 用途

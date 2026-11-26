@@ -4,7 +4,10 @@ import os
 import re
 import time
 from . import prompt_files
+from skills_system.scripts import _results_common
 from .config import (
+    ACTIONS_INDEX_NAME,
+    ACTIONS_SHOW,
     CONVERSATION_ARCHIVE_SCRIPT,
     CONVERSATION_ARCHIVES_SHOW,
     TOOL_USE_INDEX_NAME,
@@ -116,7 +119,8 @@ class ToolUseIndexMixin:
             kind = result_kind(parts[3])
             if kind not in kinds or not os.path.exists(os.path.join(d, os.path.basename(parts[3].strip()))):
                 continue
-            entries.append({"id": int(rid), "ts": parts[1].strip(), "hint": parts[4].strip(), "kind": kind})
+            entries.append({"id": int(rid), "ts": parts[1].strip(), "hint": parts[4].strip(), "kind": kind,
+                            "session": parts[2].strip(), "file": os.path.basename(parts[3].strip())})
             if len(entries) >= limit:
                 break
         return entries
@@ -126,8 +130,59 @@ class ToolUseIndexMixin:
         依時間排，附圖分析的描述前面加〔附圖分析〕）；"conversation" 是過去的對話片段那一區；None 是全部。
         system prompt 的兩區（_tool_use_index_block、_conversation_index_block）與動態區的最新一筆共用。"""
         kinds = {"tool": ("tool", "vision"), "conversation": ("conversation",)}.get(kind, ("tool", "vision", "conversation"))
-        return [(e["id"], e["ts"], (VISION_MARK if e["kind"] == "vision" else "") + e["hint"])
+        return [(e["id"], e["ts"] + self._row_facts(e), (VISION_MARK if e["kind"] == "vision" else "") + e["hint"])
                 for e in self._index_entries(exclude, kinds, limit)]
+
+    def _archive_meta(self, filename):
+        """存檔的檔頭（_results_common.read_header；檔頭寫了就不會變，記住）。"""
+        cache = self.__dict__.setdefault("_archive_meta_cache", {})
+        if filename not in cache:
+            try:
+                cache[filename] = _results_common.read_header(os.path.join(self.results_dir(), filename))[0]
+            except OSError:
+                cache[filename] = {}
+        return cache[filename]
+
+    def _row_facts(self, entry):
+        """清單一行括號裡、時間後面的程式算的事實（框架討論紀錄第 42 輪）：之前的 session、技能、即時狀態或動作的紀錄（檔案內容不標種類）。
+        只看 session，不寫「幾分鐘前」：system prompt 才不會每分鐘都變（KV cache）；多久以前在讀回時寫（_results_common.archive_facts）。"""
+        if entry["kind"] != "tool":
+            return ""
+        meta = self._archive_meta(entry["file"])
+        parts = [_i("index_earlier")] if entry.get("session") and entry["session"] != getattr(self, "session_id", None) else []
+        if meta.get("skill"):
+            parts.append(meta["skill"])
+        kind = _results_common.memory_kind(meta) if meta else "content"
+        if kind == "live":
+            parts.append(_i("index_live"))
+        elif kind == "action":
+            parts.append(_i("index_action"))
+        return "".join(f"，{x}" for x in parts)
+
+    def _actions_block(self):
+        """system prompt「最近執行過的動作」（框架討論紀錄第 42 輪）：actions_index.md 最近 ACTIONS_SHOW 筆（新→舊）——會改狀態的工具執行過的
+        紀錄（存檔的 memory: action，archive._write_archive 記的）；檢索清單只記提煉過的長輸出，動作的回傳通常很短，不在那裡。沒有就不列。"""
+        if ACTIONS_SHOW <= 0:
+            return ""
+        try:
+            with open(os.path.join(self.results_dir(), ACTIONS_INDEX_NAME), "rb") as f:
+                f.seek(0, os.SEEK_END)
+                size = f.tell()
+                f.seek(max(0, size - INDEX_TAIL_BYTES))
+                raw = f.read().decode("utf-8", errors="replace")
+        except OSError:
+            return ""
+        rows = []
+        for ln in reversed([x for x in raw.splitlines()[(1 if size > INDEX_TAIL_BYTES else 0):] if x.strip()]):
+            parts = [p.strip() for p in ln.split(" | ", 6)]
+            if len(parts) < 7:
+                continue
+            rid, ts, session, skill, args, status, head = parts
+            earlier = "，" + _i("index_earlier") if session != getattr(self, "session_id", None) else ""
+            rows.append(f"- {rid}（{ts}{earlier}）：{skill} {args}（{status}）：{head}")
+            if len(rows) >= ACTIONS_SHOW:
+                break
+        return _i("actions_index", rows="\n".join(rows)) if rows else ""
 
     def _tool_use_catalog(self, exclude=()):
         """交給獨立 session 的檢索清單文字與可接受的編號集合（_validate_related 用）；清單空時回 ("", set())。"""

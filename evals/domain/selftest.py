@@ -952,6 +952,28 @@ def main():
             assert answers.line_owners([(rid, path)], 9, job["cwd"]) == [], "收據裡沒有第 9 行"
             assert domain_session.DomainSession._ref_unknown(job, "#9", [(rid, path)]) == "出處 #9 不在這個 session 的結果裡", "對不到的照舊"
 
+        def t_stale_refs():
+            # 回報的出處引用了這一回合之前存的即時狀態（框架討論紀錄第 42 輪的 D3）：交回一次，說明附那一份是什麼時候查的、問現在的要重新執行工具
+            d = agent.results_dir()
+            os.makedirs(d, exist_ok=True)
+            fn = "20260926_101500_701_docker_containers.md"
+            with open(os.path.join(d, fn), "w", encoding="utf-8") as f:
+                f.write("\n".join(["---", "id: 701", "session: 20260926_101500", "ts: 2026-09-26 10:20:00", "script: docker_containers_cmd.py",
+                                   "skill: docker_containers", "command: EXECUTE: scripts/docker_containers_cmd.py", f"cwd: {tmp}", "container: ",
+                                   "status: PASS", "chars: 40", "task: 有哪些容器在跑", "---", "NAME       STATUS", "nav2_test  Up 20 hours"]) + "\n")
+            q = "nav2_test 現在還在跑嗎？"
+            fake = FakeChat(
+                main=[task("查 nav2_test 現在的狀態", [q]), say("好")],
+                session=[ds("domains", domains=["repo_analysis"]), ds("skill", skill="result_view"), fill(args="701"),
+                         ds("report", answers=[(1, "answered", "nav2_test 正在運行（Up 20 hours）", ["#701"])], reply="找到了"),
+                         ds("report", answers=[(1, "not_found", "只有之前的存檔，現在的狀態要重新查", [])], reply="改好了")])
+            turn(q, fake)
+            assert agent._turn_first_id > 701, agent._turn_first_id
+            fix = fake.session_msgs(4)[-1]["content"]
+            assert "出處是這一回合之前存的資料" in fix and "#701" in fix and "即時狀態" in fix and "重新執行工具" in fix, fix[:700]
+            view = fake.session_msgs(3)[-1]["content"]
+            assert "#701 是 docker_containers 在 2026-09-26 10:20:00" in view, ("讀回的結果開頭寫事實", view[:600])
+
         def task3(goal, items, background=(), constraints=()):
             t = task(goal, items)
             t["action"]["task"].update(background=[{"quote": x} for x in background], constraints=[{"quote": x} for x in constraints])
@@ -1063,7 +1085,8 @@ def main():
                          ("出處把原文的行號寫成 #N：收據裡有某個檔案的第 N 行時交回的說明寫明檔案與存檔，對不到的照舊", t_ref_line),
                          ("交辦時分清楚問題、限制與背景：各放進自己的欄、沒有歸屬的交回、問句只放進背景的由程式放進項目、背景與限制只記在 job（第一則訊息與提煉的錨點不放）、評測的紀錄", t_task_context),
                          ("背景與限制不是使用者的原話的由程式拿掉、不交回：交辦照收、job 只記原話的、拿掉的記在 job 與評測的紀錄、改寫的那一段照樣算沒放進", t_context_dropped),
-                         ("問句由程式整句放進項目：只抄一段或只放進背景的換成整句、改寫的項目拿掉、一項都沒留下時交回、第二次以後的交辦不放、記在 job 與評測的紀錄", t_ask_items)]:
+                         ("問句由程式整句放進項目：只抄一段或只放進背景的換成整句、改寫的項目拿掉、一項都沒留下時交回、第二次以後的交辦不放、記在 job 與評測的紀錄", t_ask_items),
+                         ("回報的出處是這一回合之前存的即時狀態：交回一次、說明附什麼時候查的；讀回的結果開頭寫事實", t_stale_refs)]:
             check(name, fn)
     finally:
         os.chdir(cwd)
