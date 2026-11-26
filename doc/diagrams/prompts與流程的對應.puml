@@ -39,10 +39,11 @@ package "prompts/（改字不用改程式；evals/integrity 檢查範本跟程�
         answered、取消 cancelled）、擋領域的工具與有骨架的技能
         （tool_blocked、skill_blocked）、領域的名稱當成技能叫
         （domain_named）、交辦沒過核對的說明（err_*：
-        子目標、項目數、原話不是使用者說的 err_quote、一樣的再交辦、
-        同一個項目交太多次…）、answers 沒有通過核對的說明（answers_fix、
-        why_*，漏了報告的編號與數字 why_dropped；
-        領域 session 回報的核對也用 why_*）
+        子目標、項目數、原話不是使用者說的 err_quote、最新這一則
+        的問句沒放進項目 err_cover、一樣的再交辦、同一個項目交太多
+        次…）、answers 沒有通過核對的說明（answers_fix、why_*，漏了
+        報告的編號與數字 why_dropped、文字寫了存檔的 #編號
+        why_archive_id；領域 session 回報的核對也用 why_*）
       followup：提煉結果最後的下一步建議（領域 session 的 sub_*：
         回原文看用 result_grep／result_view，沒有問使用者）
       direct_commands、attachments：/analyze、附圖、
@@ -73,8 +74,10 @@ package "prompts/（改字不用改程式；evals/integrity 檢查範本跟程�
     rectangle P_DOMAIN #E2F0D9 [
       **domain/session.md**（領域 session）：system（每一輪一個 JSON、
       state 三種之一、怎麼做、領域清單 domain_entry、長期記憶）、
-      first（子目標、要回答的項目（使用者的原話）、原始問題（只用來對照）、
-      上一次的經過 previous）、技能清單 skills（〈做法〉、有骨架的技能
+      first（子目標、要回答的項目（使用者的原話）、原始問題（項目從
+      這一則切出來、照它的前後文讀）、前文 context／context_archived
+      （每一則 context_turn）、上一次的經過 previous）、
+      技能清單 skills（〈做法〉、有骨架的技能
       composite_entry 與參數 param_*、工具 tool_entry 與 args 的寫法、
       共用的工具）、選了技能之後的參數表單（form_composite、form_tool；
       沒過的重填 form_fix、工具的 args 寫法不對 form_fix_tool 與
@@ -84,7 +87,8 @@ package "prompts/（改字不用改程式；evals/integrity 檢查範本跟程�
       擋下或交回改的 err_*、not_my_tool、
       合約沒過 reject_*、要它決定的 need_*（reject_*、need_* 也給
       composite.py 用）、回報沒過 answers_fix、retry（表單 retry_form）、
-      cut、cleared、anchor（子目標與項目（使用者的原話））
+      cut、cleared、anchor（子目標與項目（使用者的原話））、
+      使用者前面的話 anchor_earlier
     ]
   }
 }
@@ -119,7 +123,7 @@ package "用到它們的 session" {
     照項目排給使用者）
   ]
   rectangle S_DOMAIN #E2F0D9 [
-    **領域 session**（交辦之後）：自己的對話，每一輪
+    **領域 session**（交辦之後，第一則訊息附前文）：自己的對話，每一輪
     domain_session_schema(領域, 項目數)（thought、state、domains、
     skill（只寫名稱）、answers、reply；用不到的寫空的）；選了技能的
     下一輪 domain_form_schema(參數)（有骨架的技能：每個參數一欄
