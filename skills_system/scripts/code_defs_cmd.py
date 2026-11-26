@@ -10,8 +10,11 @@
   不算）；有本體的函式定義（名稱後面的括號配對之後接 `{`，或建構子的 `:` 初始化再接 `{`；if、for、while、switch、catch… 不算），在類別
   本體裡的、或寫成 `類別::名稱` 的是方法（qualname 是 類別::名稱）。只有宣告（`;` 結尾的原型）不列。
 - --name（正規表示式，分大小寫；寫成萬用字元的樣子 `<字>*` 回 [ERROR]、附對應的正規表示式，_glob_name）、--kind（class／def）篩定義；--files 只列每份檔案的行數與定義的數量；--sort lines 照行數由多到少。
+- --has（照字面、不分大小寫，`a|b` 是任一個）：只列名稱或所屬的那一層（qualname 的最後兩段 `類別::方法`、`類別.方法`，_tail；命名空間與更外層的
+  不算）有這個字的定義，檔案只列有符合的定義的（其他幾份寫在最後）——用類別的名稱列出它的成員（標頭檔的類別、.cpp 寫成 `類別::方法` 的定義）；
+  有骨架的技能 cpp_symbol 用它列有本體的定義（框架討論紀錄第 29 輪）。
 收據（_receipt_common，欄位見規格的 receipt）：每一個定義一筆（路徑、行號、結束的行、種類、名稱、qualname；Python 有裝飾器的另記 decorator——
-定義的行號從 def／class 那一行算），每份檔案的行數與數量（per_file）。
+定義的行號從 def／class 那一行算），每份檔案的行數與數量（per_file）；用了 --has 時記篩選的字（has）。
 """
 import os
 import re
@@ -31,10 +34,12 @@ PARSE_BYTES = 2_000_000     # 超過這麼大的程式檔只算行數
 CPP_EXT = (".h", ".hh", ".hpp", ".hxx", ".c", ".cc", ".cpp", ".cxx")
 BLOCKED = ("/", "/proc", "/sys", "/dev")
 USAGE = ('用法: scripts/code_defs_cmd.py [路徑…] [--include "<檔名寫法>"] [--exclude-dir <名稱>] [--name "<名稱的寫法>"] '
-         '[--kind class|def] [--files] [--sort lines]\n'
+         '[--has "<名稱>"] [--kind class|def] [--files] [--sort lines]\n'
          '  路徑：目錄或檔案，可以好幾個，預設 .（目前工作目錄）；不能是 /。\n'
          '  --include "*.py"：只算這種檔名（可重複；含 / 時比對整個路徑；不給就是全部的文字檔）　--exclude-dir 名稱：多略過一個目錄（可重複）\n'
          '  --name "^test"：只列名稱符合這個正規表示式的定義（分大小寫；^ 是開頭、$ 是結尾）　--kind class 只列類別、def 只列函式與方法\n'
+         '  --has "<名稱>"：只列名稱或所屬的類別（類別::方法、類別.方法 的最後兩段）有這個字的定義（照字面、不分大小寫；a|b 是任一個），'
+         '只列有符合的檔案\n'
          '  --files：只列每份檔案的行數與定義的數量　--sort lines：檔案照行數由多到少排（預設照路徑）')
 _KEYWORDS = {"if", "for", "while", "switch", "catch", "return", "sizeof", "alignof", "decltype", "static_assert", "new", "delete",
              "throw", "else", "do", "case", "operator", "defined", "typeid", "noexcept", "requires"}
@@ -61,12 +66,12 @@ def _glob_name(v):
 
 def parse_args(argv):
     """解析命令列參數 → (選項 dict, 錯誤)。"""
-    o = {"paths": [], "include": [], "exclude_dir": [], "name": None, "kind": None, "files": False, "sort": "path"}
+    o = {"paths": [], "include": [], "exclude_dir": [], "name": None, "has": [], "kind": None, "files": False, "sort": "path"}
     args = list(argv)
     i = 0
     while i < len(args):
         a = args[i]
-        if a in ("--include", "--exclude-dir", "--name", "--kind", "--sort"):
+        if a in ("--include", "--exclude-dir", "--name", "--has", "--kind", "--sort"):
             if i + 1 >= len(args):
                 return None, f"[ERROR] {a} 後面需要值。\n{USAGE}"
             v = args[i + 1]
@@ -85,6 +90,11 @@ def parse_args(argv):
                 except re.error as e:
                     return None, f"[ERROR] --name 的寫法不是合法的正規表示式（{e}）：「{v}」。下一步：改成像 \"^test\" 這樣的寫法。\n{USAGE}"
                 o["name"] = v
+            elif a == "--has":
+                words = [x.strip() for x in v.split("|") if x.strip()]
+                if not words:
+                    return None, f"[ERROR] --has 後面要寫名稱（好幾個用 | 分開），收到「{v}」。\n{USAGE}"
+                o["has"] += words
             elif a == "--kind":
                 if v not in ("class", "def"):
                     return None, f"[ERROR] --kind 要是 class（類別）或 def（函式與方法），收到「{v}」。\n{USAGE}"
@@ -272,6 +282,12 @@ def _show(path):
     return pc.display(path)
 
 
+def _tail(qualname):
+    """qualname 的最後兩段——所屬的那一層與名稱（`ns::Cls::m` → `Cls::m`、`Cls.m` → `Cls.m`）；--has 比對這一段，命名空間與更外層的不算
+    （比對整個 qualname 時，命名空間的字會把那個命名空間裡的定義全部列出來）。"""
+    return "".join(re.split(r"(::|\.)", qualname)[-3:])
+
+
 def execute(argv):
     o, err = parse_args(argv)
     if err:
@@ -294,6 +310,7 @@ def execute(argv):
         files, skipped_dirs = _walk(roots, excludes, o["include"])
         over = max(0, len(files) - FILES_MAX)
         name_re = re.compile(o["name"]) if o["name"] else None
+        has_re = re.compile("|".join(re.escape(w) for w in o["has"]), re.I) if o["has"] else None
         for path in files[:FILES_MAX]:
             text, why = _read(path)
             if text is None:
@@ -312,6 +329,8 @@ def execute(argv):
                 defs = _cpp_defs(text)
             if name_re:
                 defs = [d for d in defs if name_re.search(d["name"])]
+            if has_re:
+                defs = [d for d in defs if has_re.search(_tail(d["qualname"]))]
             if o["kind"] == "class":
                 defs = [d for d in defs if d["kind"] == "class"]
             elif o["kind"] == "def":
@@ -342,14 +361,19 @@ def _render(o, roots, per_file, items, notes, over, skipped_dirs, excludes, time
         filt += ([f"檔名 {'、'.join(names)}"] if names else []) + ([f"路徑符合 {'、'.join(paths)}"] if paths else [])
     if o["name"]:
         filt.append(f"名稱符合「{o['name']}」")
+    if o["has"]:
+        filt.append(f"名稱或所屬的類別有「{'、'.join(o['has'])}」")
     if o["kind"]:
         filt.append("只算類別" if o["kind"] == "class" else "只算函式與方法")
     rows = sorted(per_file, key=lambda r: (-r["lines"], r["path"])) if o["sort"] == "lines" else per_file
+    if o["has"] and not o["files"]:            # --has：只列有符合的定義的檔案（其他的寫在最後）
+        rows = [r for r in rows if r["classes"] or r["functions"]]
+    hidden = len(per_file) - len(rows)
     truncated = len(rows) > SHOWN_FILES or over > 0 or timed_out
     result("pass" if per_file else "empty",
            counts={"files": len(per_file), "lines": n_lines, "classes": n_cls, "functions": n_fn},
            items=items, truncated=truncated or len(items) > 1000, per_file=per_file, paths=roots, include=o["include"],
-           exclude_dirs=sorted(excludes), name=o["name"], kind=o["kind"], timed_out=timed_out)
+           exclude_dirs=sorted(excludes), name=o["name"], kind=o["kind"], timed_out=timed_out, **({"has": o["has"]} if o["has"] else {}))
     if not per_file:
         return (f"[PASS] 範圍 {scope} 裡沒有符合的檔案（0 份" + (f"；{'、'.join(filt)}" if filt else "") + "）。"
                 f"下一步：確認路徑與 --include 的寫法（例如 \"*.py\"、\"test_*.py\"），或用 find_file 找檔案在哪裡。")
@@ -378,6 +402,8 @@ def _render(o, roots, per_file, items, notes, over, skipped_dirs, excludes, time
     tail = []
     if len(rows) > SHOWN_FILES:
         tail.append(f"只列前 {SHOWN_FILES} 份檔案（共 {len(rows)} 份；數量照樣全部算）")
+    if hidden:
+        tail.append(f"其他 {hidden} 份檔案沒有符合的定義，不列")
     if shown_defs >= SHOWN_DEFS and len(items) > SHOWN_DEFS:
         tail.append(f"定義只列前 {SHOWN_DEFS} 個（共 {len(items)} 個；縮小範圍、加 --name 或 --kind 看其他的）")
     if over:

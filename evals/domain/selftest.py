@@ -23,6 +23,7 @@
   （範圍裡沒有的、詞組照字面沒有的、| 分開的有一個沒有的、正規表示式的符號、寫成好幾個的、path 沒過的、doc_lookup 的字、自己選的檔名寫法照舊
   交回；agent 自己的 logs 不數）；
   回退換技能（.py 沒有、C++ 檔有 → cpp_symbol）；路徑有好幾個交回它決定（附候選）；0 筆照實交回（跑完、結果是 0 筆）；
+  cpp_symbol 先列有本體的定義（code_defs --has：.cpp 的成員函式、標頭檔的類別；; 結尾的宣告不列），再搜名稱（宣告與用到的地方）；
   程式照收據算的彙整（AST 的定義、呼叫與 import 每個檔案幾處、總共幾處；名稱符合的檔案扣掉不含的子目錄）存成 #編號、接在技能的狀態後面，
   回報的總數照它寫、出處寫它的 #編號就過核對；
 - 狀態與上限：第一輪不是選領域、回覆不是 JSON、重選領域超過上限、技能用完上限；
@@ -60,6 +61,12 @@ FILES = {
     "amr_08/docs/lidar.md": "# lidar\n",
     "amr_08/old/lidar.md": "# lidar（舊）\n",
     "logs/big.log": "".join(f"2026-01-01 00:00:{k % 60:02d} worker_{k % 7} step {k} value {k * 3}\n" for k in range(600)),
+}
+CAM_FILES = {       # cpp_symbol 分開宣告與定義（t_cpp_defs 寫進臨時的小專案）：標頭檔有類別與宣告、.cpp 有成員函式的定義
+    "cam/frame_grabber.h": "#pragma once\nnamespace cam {\nclass FrameGrabber {\n public:\n  void grabFrame();\n  int count() const { return n_; }\n"
+                           " private:\n  int n_ = 0;\n};\n}  // namespace cam\n",
+    "cam/frame_grabber.cpp": "#include \"frame_grabber.h\"\nnamespace cam {\n// FrameGrabber::grabFrame 寫進畫面\nvoid FrameGrabber::grabFrame()\n{\n"
+                             "  ++n_;\n}\n}  // namespace cam\n",
 }
 SESSION_MARK = "你是領域 session"
 
@@ -871,6 +878,28 @@ def main():
             rec = next(r for r in reversed(agent.trajectory) if r.get("id") == ctx["result_id"])
             assert rec["script"] == "dispatch_context", rec
 
+        def t_cpp_defs():
+            # cpp_symbol 分開宣告與定義：先列有本體的定義（code_defs --has），再搜名稱（標頭檔的宣告與用到的地方）——框架討論紀錄第 29 輪
+            for rel, text in CAM_FILES.items():
+                os.makedirs(os.path.dirname(os.path.join(tmp, rel)), exist_ok=True)
+                with open(os.path.join(tmp, rel), "w", encoding="utf-8") as f:
+                    f.write(text)
+            q = "cam 裡 FrameGrabber 的哪個成員函式抓畫面？定義在哪個檔案的第幾行？"
+            fake = FakeChat(main=[task("找 cam 裡 FrameGrabber 抓畫面的成員函式與定義的位置", [q]), say("好")],
+                            session=[ds("domains", domains=["repo_analysis"]), ds("skill", skill="cpp_symbol"),
+                                     fill(params=[("names", "FrameGrabber", "FrameGrabber"), ("path", "cam", "cam")])])
+            turn(q, fake)
+            st = next(s for s in last_job()["steps"] if s["kind"] == "composite")
+            assert st["status"] == "done" and [o["tool"] for o in st["composite"]["outputs"]] == ["code_defs", "search_text"], st["composite"]
+            shown = fake.session_msgs(3)[-1]["content"]
+            assert "— 有本體的定義：code_defs" in shown and "— 提到這些名稱的行" in shown, shown[:800]
+            defs = shown.split("— 有本體的定義：code_defs", 1)[1].split("\n— ", 1)[0]
+            for want in ("def FrameGrabber::grabFrame（行 4-7）", "class FrameGrabber（行 3-9）", "def FrameGrabber::count（行 6）"):
+                assert want in defs, (want, defs)
+            assert "grabFrame();" not in defs, ("標頭檔裡 ; 結尾的宣告不在定義那一份", defs)
+            hits = shown.split("— 提到這些名稱的行", 1)[1]
+            assert "grabFrame();" in hits, ("宣告在搜尋那一份", hits[:600])
+
         for name, fn in [("主 session：交辦一節、索引、回覆的 schema 與解析", t_prompt_schema),
                          ("回覆的欄位順序（主 session 的 action 最後；領域 session 照說明的順序）", t_reply_order), ("擋領域的工具與有骨架的技能", t_gate),
                          ("主 session 把領域的名稱當技能：說明要交辦；看到的字不寫識別名稱", t_domain_named),
@@ -892,7 +921,8 @@ def main():
                          ("回答的文字寫了存檔的 #編號：交回修一次（回報與主 session 的回答；使用者自己寫了的、查不到的原因不擋）", t_archive_id),
                          ("問句都要放進項目：一輪的第一次交辦漏了交回一次、補上就過、交回過照收、之後的交辦不核對（「?」在字中間、沒有問句的不核對）", t_cover),
                          ("交辦帶前文：附上一句與當時的回覆、算可以抄的原文、錨點帶使用者前面的話；第一句沒有前文", t_context),
-                         ("交辦帶前文：長的存檔並照錨點提煉", t_context_long)]:
+                         ("交辦帶前文：長的存檔並照錨點提煉", t_context_long),
+                         ("cpp_symbol 分開宣告與定義：有本體的定義那一份列 .cpp 的成員函式與標頭檔的類別、不列 ; 結尾的宣告，搜尋那一份照舊", t_cpp_defs)]:
             check(name, fn)
     finally:
         os.chdir(cwd)

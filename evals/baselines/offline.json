@@ -20,9 +20,9 @@
   "total": 8
  },
  "domain_selftest": {
-  "label": "問句都要放進項目、交辦帶前文（t_cover、t_context、t_context_long）（2026-11-26）",
-  "passed": 28,
-  "total": 28
+  "label": "code_defs 的 --has、cpp_symbol 先列有本體的定義（t_code_defs_has、t_cpp_defs）（2026-11-26）",
+  "passed": 29,
+  "total": 29
  },
  "edg_selftest": {
   "label": "單一迴圈：交辦與領域 session（框架討論紀錄 F1～F6）（2026-11-23）",
@@ -50,9 +50,9 @@
   "total": 11
  },
  "skills": {
-  "label": "待辦 4l 修好之後（設計筆記 2.50）（2026-11-22）",
-  "passed": 119,
-  "total": 119
+  "label": "code_defs 的 --has、cpp_symbol 先列有本體的定義（t_code_defs_has、t_cpp_defs）（2026-11-26）",
+  "passed": 120,
+  "total": 120
  },
  "skills_sandbox": {
   "label": "第 5 步（6958dac）（2026-11-20）",

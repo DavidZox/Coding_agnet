@@ -532,6 +532,58 @@ def t_code_defs():
     assert_error(run("code_defs_cmd.py", "/", d=d), "不列 /")
 
 
+GRABBER_H = """#pragma once
+namespace cam {
+class FrameGrabber {
+ public:
+  void grabFrame();
+  int count() const { return n_; }
+ private:
+  int n_ = 0;
+};
+void resetAll();
+}  // namespace cam
+"""
+GRABBER_CPP = """#include "frame_grabber.h"
+namespace cam {
+// FrameGrabber::grabFrame 在註解裡不算
+void FrameGrabber::grabFrame()
+{
+  ++n_;
+}
+void resetAll() {}
+}  // namespace cam
+void cam::Shutter::open() {
+}
+"""
+
+
+def t_code_defs_has():
+    """code_defs --has：名稱或所屬的類別（qualname 的最後兩段）有這個字的定義——類別的名稱列出它的成員（標頭檔的類別與寫在類別裡的、
+    .cpp 寫成 類別::方法 的；; 結尾的宣告不列），命名空間的字不算、不分大小寫、a|b 是任一個、Python 的 類別.方法 也一樣；
+    只列有符合的定義的檔案（其他幾份寫在最後）；--has 是空的回 [ERROR]"""
+    d = _tmp()
+    _w(d, "src/cam/frame_grabber.h", GRABBER_H)
+    _w(d, "src/cam/frame_grabber.cpp", GRABBER_CPP)
+    _w(d, "src/cam/notes.md", "# FrameGrabber\n")
+    _w(d, "src/other/util.cpp", "int add(int a, int b) { return a + b; }\n")
+    out = run("code_defs_cmd.py", "src", "--include", "*.h", "--include", "*.cpp", "--has", "framegrabber", d=d)
+    head = first_line(out)
+    assert head.startswith("[PASS] 範圍 src：3 份檔案") and "定義：類別 1、函式／方法 2" in head and "名稱或所屬的類別有「framegrabber」" in head, head
+    assert "## src/cam/frame_grabber.cpp（" in out and "  - def FrameGrabber::grabFrame（行 4-7）" in out, out
+    assert "## src/cam/frame_grabber.h（" in out and "  - class FrameGrabber（行 3-9）" in out and "  - def FrameGrabber::count（行 6）" in out, out
+    assert "resetAll" not in out and "Shutter" not in out and "util.cpp" not in out and "（其他 1 份檔案沒有符合的定義，不列）" in out, out
+    out = run("code_defs_cmd.py", "src", "--has", "Shutter|COUNT", d=d)
+    assert "定義：類別 0、函式／方法 2" in first_line(out) and "  - def cam::Shutter::open（行 10-11）" in out and "FrameGrabber::count" in out, out
+    out = run("code_defs_cmd.py", "src", "--has", "cam", d=d)
+    assert "定義：類別 0、函式／方法 0" in first_line(out) and "## " not in out and "其他 4 份檔案沒有符合的定義" in out, ("命名空間的字不算", out)
+    _w(d, "src/py/box.py", TEST_SRC)
+    out = run("code_defs_cmd.py", "src", "--include", "*.py", "--has", "testbox", d=d)
+    assert "  - class TestBox（行 5-10）" in out and "  - def TestBox.test_two（行 6-7）" in out and "  - def TestBox.helper（行 9-10）" in out, out
+    assert "test_one" not in out, out
+    assert_error(run("code_defs_cmd.py", "src", "--has", "|", d=d), "--has 後面要寫名稱")
+
+
 def t_py_refs():
     """py_refs：整個範圍一次分出每一處（AST：定義、呼叫、import…；註解與字串不算、同一行兩個呼叫算兩處），各檔案的數量由腳本算；
     --exclude-dir、--kind；Python 沒有、C++ 檔有時寫出那幾份；名稱不合法、沒給名稱＝[ERROR]"""

@@ -294,7 +294,9 @@ def t_code_defs():
     _, r = run("code_defs", "p", "--include", "*.cpp|*.md", d=d)
     assert r["include"] == ["*.cpp", "*.md"] and r["counts"]["files"] == 2, ("用 | 寫在一起的幾種檔名拆開", r["include"], r["counts"])
     out, r = run("code_defs", "p", "--include", "*.rs", d=d)
-    assert r["status"] == "empty" and r["counts"]["files"] == 0 and r["items"] == []
+    assert r["status"] == "empty" and r["counts"]["files"] == 0 and r["items"] == [] and "has" not in r
+    out, r = run("code_defs", "p", "--has", "s2", d=d)
+    assert r["has"] == ["s2"] and [i["qualname"] for i in r["items"]] == ["S2::get"] and r["counts"]["functions"] == 1, ("--has 記篩選的字", r)
     _error("code_defs", "args", "nope_dir", d=d)
     _error("code_defs", "args", "p", "--kind", "x", d=d)
 
