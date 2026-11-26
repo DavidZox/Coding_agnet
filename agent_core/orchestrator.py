@@ -5,9 +5,10 @@
    主 session 的 system prompt 多一節「交辦」（domain_block）：怎麼交辦，與每個領域一行（標題、說明的第一句），讓主模型知道哪些事要交辦。
    領域的工具（共用的以外）從主 session 的技能索引拿掉（skills_index_text），主模型直接叫的時候程式擋下來（domain_gate；有骨架的技能的
    名稱也擋）；領域 session 裡只能用它選的領域的工具與共用的工具（agent._sub_allowed）。規格有問題的領域不列、它的工具也不擋，問題放進通知。
-2. **交辦**（run_task，F1）：主模型在 action 填 {"task": {"goal", "items"}}——子目標與要回答的項目，不指定領域；每一項 {quote, item}：
-   quote 一字不改地抄使用者的原話（這段對話裡使用者說過的任何一則，_user_words），item 是要回報的事（框架討論紀錄第 6 輪的 B：關鍵資訊由
-   程式原樣帶著走，領域 session 照原話判斷項目的意思）。程式核對（子目標不是空的、項目 1～DOMAIN_ITEMS_MAX 項、每一項的原話在使用者說過的話裡、
+2. **交辦**（run_task，F1）：主模型在 action 填 {"task": {"goal", "background", "constraints", "items"}}——子目標、使用者說明的背景、要求的
+   限制與要回答的項目，不指定領域；每一筆 {quote}：一字不改地抄使用者的原話（這段對話裡使用者說過的任何一則，_user_words；框架討論紀錄
+   第 6 輪的 B、第 27 輪：關鍵資訊由程式原樣帶著走，領域 session 照原話判斷項目的意思；背景與限制是第 32 輪的 U1，只用來理解）。程式核對
+   （子目標不是空的、項目 1～DOMAIN_ITEMS_MAX 項、每一筆原話在使用者說過的話裡、最新這一則的每一段都有放進一欄而問句在項目裡、
    跟這一回合交辦過的不一樣、同一個項目最多 DOMAIN_ITEM_TRIES 次），交給領域 session
    （agent_core/domain_session.py：選領域、一次一個技能、太長就提煉、決定回報或再選）。同一個問題再交辦時，之前幾次的經過（每一步的技能
    與結果）一起交下去。結果存成 #編號，報告交回主模型（DOMAIN_RESULT_HEAD 開頭：程式整理好的，不再提煉），後面接依報告回答的說明。
@@ -40,18 +41,19 @@ _SENTENCE_END = re.compile(r"[？。！]|[?!](?=\s|$)")   # 一句的結尾：�
 
 
 def ask_parts(text):
-    """使用者這一則裡每一段要交辦的話（框架討論紀錄第 31 輪）→ [(開始, 結束, 顯示的寫法)]：照句尾分句，最後沒有句尾的那一段也算；一句裡用「、」
-    接的每一段各算一段（「發布到哪個 topic、頻率多少、會不會發 TF？」是三段）。結束是那一段最後一個字的下一個位置；句子的最後一段顯示時附上句尾。
-    沒有字的不算。"""
+    """使用者這一則裡每一段要交辦的話（框架討論紀錄第 31 輪）→ [(開始, 結束, 顯示的寫法, 是不是問句)]：照句尾分句，最後沒有句尾的那一段也算；
+    一句裡用「、」接的每一段各算一段（「發布到哪個 topic、頻率多少、會不會發 TF？」是三段）。結束是那一段最後一個字的下一個位置；句子的最後一段
+    顯示時附上句尾；那一句是「？」「?」結尾的，每一段都是問句（第 32 輪：問的要放進項目）。沒有字的不算。"""
     out, start = [], 0
     for stop, nxt in [(m.start(), m.end()) for m in _SENTENCE_END.finditer(text)] + [(len(text), len(text))]:
         pieces = text[start:stop].split("、")
+        asked = text[stop:nxt] in ("？", "?")
         pos = start
         for k, piece in enumerate(pieces):
             body = piece.strip()
             if body:
                 s = pos + len(piece) - len(piece.lstrip())
-                out.append((s, s + len(body), body + (text[stop:nxt] if k == len(pieces) - 1 else "")))
+                out.append((s, s + len(body), body + (text[stop:nxt] if k == len(pieces) - 1 else ""), asked))
             pos += len(piece) + 1
         start = nxt
     return out
@@ -214,25 +216,30 @@ class DomainMixin:
         """交辦（F1）：核對 → 交給領域 session → 報告存成 #編號交回（後面接依報告回答的說明）；停在確認關卡時回等回答的說明。
         核對沒過回 [ERROR]（附下一步），不執行。"""
         task = action.get("task") or {}
-        goal, rows = task.get("goal") or "", task.get("items") or []
-        items = [x["quote"] for x in rows]          # 每一項是使用者的原話（框架討論紀錄第 27 輪）
-        why = self._check_task(goal, items)
+        goal = task.get("goal") or ""
+        items = [x["quote"] for x in task.get("items") or []]       # 每一項是使用者的原話（框架討論紀錄第 27 輪）
+        background = [x["quote"] for x in task.get("background") or []]     # 背景與限制也是原話、只用來理解（第 32 輪的 U1）
+        constraints = [x["quote"] for x in task.get("constraints") or []]
+        why = self._check_task(goal, items, background, constraints)
         if why:
             return "[ERROR] " + why
         turn = self._domain_turn
-        entry = {"key": [goal, items], "goal": goal, "items": items, "n": len(turn["tasks"]) + 1, "job": None,
-                 "status": None, "steps": "", "note": "", "report": "", "result_id": None, "answered": [], "previous": self._previous()}
+        entry = {"key": [goal, items], "goal": goal, "items": items, "background": background, "constraints": constraints,
+                 "n": len(turn["tasks"]) + 1, "job": None, "status": None, "steps": "", "note": "", "report": "", "result_id": None,
+                 "answered": [], "previous": self._previous()}
         turn["tasks"].append(entry)
         before = (self.current_cwd, self.container_cwd, self.target_container)
         job = domain_session.DomainSession(self, self.domain_registry()).start(self.current_task or goal, goal, items,
                                                                                previous=entry["previous"], attempt=entry["n"],
-                                                                               earlier=self._earlier_turns())
+                                                                               earlier=self._earlier_turns(),
+                                                                               background=background, constraints=constraints)
         return self._task_finish(entry, job, before)
 
-    def _check_task(self, goal, items):
-        """交辦的核對：有領域、子目標不是空的、項目 1～DOMAIN_ITEMS_MAX 項、每一項（使用者的原話）一字不改地在使用者說過的話裡（_user_words）、
-        一輪的第一次交辦要把最新這一則的每一句、一句裡用「、」接的每一段放進項目（_uncovered；交回一次，交回過照收——框架討論紀錄第 28、31 輪）、
-        跟這一回合交辦過的不一樣（一樣的再交一次結果也一樣）、同一個項目最多 DOMAIN_ITEM_TRIES 次。過了回 None，沒過回說明（不含 [ERROR]）。"""
+    def _check_task(self, goal, items, background=(), constraints=()):
+        """交辦的核對：有領域、子目標不是空的、項目 1～DOMAIN_ITEMS_MAX 項、每一項與每一則背景、限制（使用者的原話）一字不改地在使用者說過的話裡
+        （_user_words）、一輪的第一次交辦要把最新這一則的每一句、一句裡用「、」接的每一段放進項目、背景或限制，問句（「？」結尾的那一句）的每一段
+        要在項目裡（_uncovered；交回一次，交回過照收——框架討論紀錄第 28、31、32 輪）、跟這一回合交辦過的不一樣（一樣的再交一次結果也一樣）、
+        同一個項目最多 DOMAIN_ITEM_TRIES 次。過了回 None，沒過回說明（不含 [ERROR]）。"""
         turn = self._domain_turn
         if not self.domain_registry()["domains"]:
             return _d("err_no_domain")
@@ -244,11 +251,17 @@ class DomainMixin:
         for k, it in enumerate(items, 1):
             if not composite._unquote(it) or composite._unquote(it) not in said:
                 return _d("err_quote", k=k, quote=it or "（空的）")
+        for field, quotes in ((_d("field_background"), background), (_d("field_constraints"), constraints)):
+            for k, it in enumerate(quotes, 1):
+                if not composite._unquote(it) or composite._unquote(it) not in said:
+                    return _d("err_quote_context", field=field, k=k, quote=it or "（空的）")
         if not turn["tasks"] and not turn["cover_asked"]:
-            missing = self._uncovered(items)
-            if missing:
+            missing = self._uncovered(list(items) + list(background) + list(constraints))
+            asked = [p for p in self._uncovered(items, asked_only=True) if p not in missing]
+            if missing or asked:
                 turn["cover_asked"] = True
-                return _d("err_cover", questions="、".join(f"「{q}」" for q in missing))
+                return "\n".join(([_d("err_cover", questions="、".join(f"「{q}」" for q in missing))] if missing else [])
+                                 + ([_d("err_cover_asked", questions="、".join(f"「{q}」" for q in asked))] if asked else []))
         same = next((x for x in turn["tasks"] if x["key"] == [goal, items]), None)
         if same:
             return _d("err_same", n=same["n"], status=domain_session.STATUS_TEXT.get(same["status"], same["status"] or "—"))
@@ -258,17 +271,19 @@ class DomainMixin:
                 return _d("err_item_tries", item=it, n=len(tries), max=DOMAIN_ITEM_TRIES, history=self._task_history(tries))
         return None
 
-    def _uncovered(self, items):
-        """最新這一則裡，沒有跟任何一項的原話重疊的那幾段（ask_parts：每一句、一句裡用「、」接的每一段；照 _user_words 的方式正規化空白）。"""
+    def _uncovered(self, quotes, asked_only=False):
+        """最新這一則裡，沒有跟這幾則原話任何一則重疊的那幾段（ask_parts：每一句、一句裡用「、」接的每一段；照 _user_words 的方式正規化空白）；
+        asked_only：只看問句（「？」結尾的那一句）的那幾段。"""
         text = composite._norm(self.current_task or "")
         spans = []
-        for it in items:
+        for it in quotes:
             q = composite._unquote(it)
             at = text.find(q) if q else -1
             while at >= 0:
                 spans.append((at, at + len(q)))
                 at = text.find(q, at + 1)
-        return [shown for s, e, shown in ask_parts(text) if not any(a < e and b > s for a, b in spans)]
+        return [shown for s, e, shown, asked in ask_parts(text)
+                if (asked or not asked_only) and not any(a < e and b > s for a, b in spans)]
 
     def _earlier_turns(self):
         """【前文】的來源（框架討論紀錄第 28 輪）：任務線上這一則之前的使用者的話（最多 TASK_HISTORY_KEEP − 1 則），各附那一回合最後的回覆

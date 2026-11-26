@@ -1,10 +1,10 @@
 領域 session（agent_core/domain_session.py，docs/框架討論紀錄.md）看到的字：system prompt（system 與領域清單的一行 domain_entry）、
-第一則訊息（first；每一項是使用者的原話；這一則之前的對話 context、context_archived、context_turn；上一次的經過 previous）、選了領域之後的技能清單（skills 與它的各段：skills_domain、skills_practice、skills_composites、
+第一則訊息（first；每一項是使用者的原話；使用者要求的限制 first_constraints、說明的背景 first_background；這一則之前的對話 context、context_archived、context_turn；上一次的經過 previous）、選了領域之後的技能清單（skills 與它的各段：skills_domain、skills_practice、skills_composites、
 composite_entry、param_*、type_*、skills_tools、skills_shared、tool_entry）、選了技能之後的參數表單（form_composite、form_tool；沒過的交回重填
 form_fix、工具的 args 寫法不對 form_fix_tool 與 reject_args_*、重填還是沒過 form_failed）、每一步的結果（step_head、composite_*（程式算的彙整
 composite_totals）、output_head、result_id）、程式擋下的說明（err_*、not_my_tool）、
 回報的核對沒過（answers_fix、why_ref_unknown、出處 #N 是收據裡的行號時 why_ref_line；其他原因用 harness/domain.md 的 why_*）、回覆不是 JSON（retry、表單的 retry_form）、
-寫到長度上限被截斷（cut）、對話太長時清掉的舊結果（cleared）、提煉時的「想知道什麼」（anchor；使用者前面的話 anchor_earlier）。
+寫到長度上限被截斷（cut）、對話太長時清掉的舊結果（cleared）、提煉時的「想知道什麼」（anchor；使用者說明的背景與限制 anchor_context；使用者前面的話 anchor_earlier）。
 agent_core/composite.py 也用這份：合約沒過的說明（reject_*）、要領域 session 決定的事（need_*）、骨架裡有要確認的動作（guard_in_skill）。
 {名稱} 是程式填的值。
 
@@ -42,12 +42,24 @@ agent_core/composite.py 也用這份：合約沒過的說明（reject_*）、要
 {goal}
 
 【要回答的項目】（使用者的原話；回報時 answers 照這個編號）
-{items}
+{items}{constraints}{background}
 
 【使用者的原始問題】（要回答的項目是從這一則切出來的：項目的意思照這一則的前後文讀；也用來對照子目標裡的名稱、路徑、數值）
 {question}
 {context}{previous}
 先選領域（state 寫 domains）。
+
+<!-- @first_constraints -->
+
+
+【限制】（使用者要求的做法、不能做的事；照著做，不是要回答的項目）
+{lines}
+
+<!-- @first_background -->
+
+
+【背景】（使用者說明的現況與前提；只用來理解項目，不是要回答的）
+{lines}
 
 <!-- @context -->
 
@@ -291,6 +303,10 @@ args 照抄了寫法裡的 {marks}（沒有換成值）
 <!-- @anchor -->
 這一件事的子目標：{goal}
 要回答的項目：{items}
+
+<!-- @anchor_context -->
+
+使用者說明的背景與限制（只用來理解，不是要回答的）：{words}
 
 <!-- @anchor_earlier -->
 

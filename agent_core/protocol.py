@@ -47,24 +47,29 @@ def parse_answers(value):
     return out
 
 
-def _task(e):
-    """交辦 → {"goal", "items": [{"quote"}]}：每一項是使用者的原話（去掉多餘的空白與空的項目）。另外寫了 item 的舊寫法只取 quote、quote 是空的才用
-    item，只寫成字串的也當成原話——都由 run_task 核對是不是使用者說過的話（框架討論紀錄第 27 輪）。"""
-    raw = e.get("items")
-    items = []
+def _quotes(raw):
+    """[{"quote"}]：去掉多餘的空白與空的。另外寫了 item 的舊寫法只取 quote、quote 是空的才用 item，只寫成字串的也當成原話。"""
+    out = []
     for x in raw if isinstance(raw, list) else [raw]:
         if x is None:
             continue
         quote = " ".join(str((x.get("quote") or x.get("item") or "") if isinstance(x, dict) else x).split())
         if quote:
-            items.append({"quote": quote})
-    return {"goal": " ".join(str(e.get("goal") or "").split()), "items": items}
+            out.append({"quote": quote})
+    return out
+
+
+def _task(e):
+    """交辦 → {"goal", "background", "constraints", "items"}：每一筆是使用者的原話（_quotes）——都由 run_task 核對是不是使用者說過的話
+    （框架討論紀錄第 27 輪）；背景與限制是第 32 輪的 U1，沒寫的是空的。"""
+    return {"goal": " ".join(str(e.get("goal") or "").split()), "background": _quotes(e.get("background") or []),
+            "constraints": _quotes(e.get("constraints") or []), "items": _quotes(e.get("items"))}
 
 
 def parse_agent_reply(raw):
     """模型回覆（JSON 字串）→ {"thought", "reply", "action", "answers", "valid", "cut"}。
 
-    action 正規化為 None、{"command": str, "args": str}，或「交辦」{"task": {"goal": str, "items": [{"quote": str}]}}
+    action 正規化為 None、{"command": str, "args": str}，或「交辦」{"task": {"goal": str, "background", "constraints", "items": [{"quote": str}]}}
     （agent_core/orchestrator.py；項目去掉空白與空的，數量與長度由 run_task 核對）。不是合法 JSON 時 valid=False、reply=原文、
     action=None：降級成「只顯示文字、不執行任何東西」，絕不退回用文字比對找指令（那正是要避免的誤觸發來源）。
     對非 format= 強制的後端保留一點容錯：args 給成陣列／物件、把整行 `EXECUTE: ...` 塞進 command、

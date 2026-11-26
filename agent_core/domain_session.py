@@ -141,20 +141,23 @@ class DomainSession:
         self.store = JobStore(os.path.join(agent.script_dir, "logs", DOMAIN_JOBS_DIRNAME))
 
     # ---------------------------------------------------------------- 進入點
-    def start(self, question, goal, items, previous=None, attempt=1, earlier=None):
+    def start(self, question, goal, items, previous=None, attempt=1, earlier=None, background=None, constraints=None):
         """items：要回答的項目——每一項是使用者的原話（orchestrator 核對過；框架討論紀錄第 27 輪）。previous：同一個問題之前交辦的經過
         （[{"n", "job", "status_text", "note", "steps"}]，orchestrator 從這一回合的紀錄取）。earlier：這一則之前的對話（[{"user", "reply"}]，
-        orchestrator._earlier_turns）→【前文】（_context；框架討論紀錄第 28 輪）。"""
+        orchestrator._earlier_turns）→【前文】（_context；框架討論紀錄第 28 輪）。background、constraints：使用者說明的背景與要求的限制
+        （也是原話）→ 第一則訊息的【背景】【限制】與提煉的錨點，只用來理解、不是要回答的（第 32 輪的 U1）。"""
         jid = self.store.new_id()
         self.store.prune(DOMAIN_JOBS_KEEP)
         job = {"id": jid, "kind": "domain", "status": "running", "created": _now(), "updated": _now(), "cwd": self.agent.current_cwd,
-               "question": question, "goal": (goal or question).strip(), "items": list(items or []), "attempt": attempt,
+               "question": question, "goal": (goal or question).strip(), "items": list(items or []),
+               "background": list(background or []), "constraints": list(constraints or []), "attempt": attempt,
                "previous": list(previous or []), "earlier": list(earlier or []), "context": None, "domains": [], "picks": [], "messages": [], "steps": [], "turns": 0, "form": None, "forms": 0,
                "blocked": [], "sources": "", "need_user": None, "asked": [], "nudged": False, "answers": [], "problems": {}, "result": None}
         job["system"] = self._system()
         job["context"] = self._context(job)
         job["messages"].append({"role": "user", "content": self._first(job)})
-        job["sources"] = "\n".join([job["question"], job["goal"]] + job["items"] + ([job["context"]["text"]] if job["context"] else []))
+        job["sources"] = "\n".join([job["question"], job["goal"]] + job["items"] + job["background"] + job["constraints"]
+                                   + ([job["context"]["text"]] if job["context"] else []))
         self.store.save(job)
         self._note(jid, f"🧭 領域 session 開始：{job['goal'][:80]}")
         return self._loop(job)
@@ -735,7 +738,12 @@ class DomainSession:
         if ctx:
             context = (_s("context", turns=ctx["shown"]) if ctx["result_id"] is None
                        else _s("context_archived", rid=ctx["result_id"], shown=ctx["shown"]))
-        return _s("first", goal=job["goal"], items=items, question=job["question"], context=context, previous=prev)
+        background = (_s("first_background", lines="\n".join(f"- {x}" for x in job.get("background") or []))
+                      if job.get("background") else "")
+        constraints = (_s("first_constraints", lines="\n".join(f"- {x}" for x in job.get("constraints") or []))
+                       if job.get("constraints") else "")
+        return _s("first", goal=job["goal"], items=items, background=background, constraints=constraints, question=job["question"],
+                  context=context, previous=prev)
 
     def _context(self, job):
         """【前文】：這一則之前的對話（job["earlier"]）。跟工具結果進上下文一樣：門檻（TOOL_RESULT_TOKEN_THRESHOLD）內照原文；超過的存成一份
@@ -818,9 +826,12 @@ class DomainSession:
 
     @staticmethod
     def _anchor(job):
-        """提煉長輸出時的「想知道什麼」：這一件事的子目標與項目（使用者的原話）；有前文時加上使用者前面的話（跟主 session 的任務線一樣）。"""
+        """提煉長輸出時的「想知道什麼」：這一件事的子目標與項目（使用者的原話）；有前文時加上使用者前面的話（跟主 session 的任務線一樣）；
+        使用者說明的背景與要求的限制另外寫、標明只用來理解（框架討論紀錄第 32 輪的 U1）。"""
         earlier = [x["user"] for x in job["earlier"]]
+        context = list(job.get("background") or []) + list(job.get("constraints") or [])
         return (_s("anchor", goal=job["goal"], items="；".join(job["items"]))
+                + (_s("anchor_context", words="；".join(context)) if context else "")
                 + (_s("anchor_earlier", words="；".join(earlier)) if earlier else ""))
 
     def _note(self, jid, text):

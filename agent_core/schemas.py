@@ -19,8 +19,8 @@ def _text(n):
 # 給人看的文字與給系統執行的指令分開存放，不再用文字比對從回覆裡找指令。以 Ollama 的 format= schema 強制
 # 結構（與摘要同一機制），小模型不需要自律「解釋時不要輸出指令」。
 # action 為 null、{"command": 技能名稱｜規格標明的腳本路徑, "args": 參數字串}，或（有領域時）「交辦」{"task": {"goal": 子目標,
-# "items": [{"quote": 使用者的原話}]}}（agent_core/orchestrator.py：交給領域 session，不指定領域；每一項一字不改地抄使用者的原話、
-# 程式核對，原話就是要回答的項目——框架討論紀錄第 6 輪的 B、第 27 輪）。
+# "background": [{"quote"}], "constraints": [{"quote"}], "items": [{"quote": 使用者的原話}]}}（agent_core/orchestrator.py：交給領域 session，
+# 不指定領域；每一筆一字不改地抄使用者的原話、程式核對，items 的原話就是要回答的項目，背景與限制只用來理解——框架討論紀錄第 6 輪的 B、第 27、32 輪）。
 # args 是字串而不是物件，因為所有技能腳本都吃位置參數、規格文件的寫法也是位置參數，這樣既有的 tools/*.md 一份都不用改：
 # 規格裡的 `EXECUTE: <路徑> <參數>` 範例就對應 command=<路徑>、args=<參數>。
 # items：這一回合交辦、有報告的項目數。有的時候多一個 answers：每一項一筆 {item: 編號, status: answered／not_found,
@@ -50,10 +50,13 @@ def agent_reply_schema(tasks=False, items=0):
         {"type": "object", "properties": {"command": _text(REPLY_COMMAND_CHARS), "args": _text(REPLY_ARGS_CHARS)}, "required": ["command", "args"]},
     ]
     if tasks:
+        # 背景與限制排在 items 前面：先挑出使用者說明的現況與要求的限制，剩下的問的、要做的才是要回報的項目（框架討論紀錄第 32 輪的 U1）
         task = {"type": "object", "properties": {
             "goal": _text(DOMAIN_GOAL_CHARS),
+            "background": {"type": "array", "items": _task_item(), "maxItems": DOMAIN_ITEMS_MAX},
+            "constraints": {"type": "array", "items": _task_item(), "maxItems": DOMAIN_ITEMS_MAX},
             "items": {"type": "array", "items": _task_item(), "minItems": 1, "maxItems": DOMAIN_ITEMS_MAX}},
-            "required": ["goal", "items"]}
+            "required": ["goal", "background", "constraints", "items"]}
         actions.append({"type": "object", "properties": {"task": task}, "required": ["task"]})
     props = {"thought": _text(REPLY_THOUGHT_CHARS), "reply": {"type": "string"}}
     if items:

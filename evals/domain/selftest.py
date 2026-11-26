@@ -238,8 +238,12 @@ def main():
             assert list(items["properties"]) == ["quote"], "交辦的每一項只寫使用者的原話（項目就是原話）"
             raw = {"goal": " 找  alpha ", "items": [{"quote": " 在 哪 ", "item": " 哪裡 "}, {"quote": "", "item": " "}, {"quote": "", "item": "在哪"}, "只寫字串"]}
             parsed = parse_agent_reply(json.dumps({"thought": "", "reply": "", "action": {"task": raw}}, ensure_ascii=False))
-            assert parsed["action"] == {"task": {"goal": "找 alpha", "items": [{"quote": "在 哪"}, {"quote": "在哪"}, {"quote": "只寫字串"}]}}, \
-                ("另外寫了 item 的只取 quote、quote 是空的才用 item、字串當成原話", parsed["action"])
+            assert parsed["action"] == {"task": {"goal": "找 alpha", "background": [], "constraints": [],
+                                                 "items": [{"quote": "在 哪"}, {"quote": "在哪"}, {"quote": "只寫字串"}]}}, \
+                ("另外寫了 item 的只取 quote、quote 是空的才用 item、字串當成原話；沒寫背景與限制的是空的", parsed["action"])
+            task_props = next(a for a in actions if "task" in (a.get("properties") or {}))["properties"]["task"]
+            assert list(task_props["properties"]) == ["goal", "background", "constraints", "items"] and task_props["required"] == list(task_props["properties"]), \
+                ("先挑出背景與限制、剩下的才是項目（框架討論紀錄第 32 輪的 U1）", task_props)
             assert action_text(parsed["action"]).startswith("→ 交辦：找 alpha")
 
         def t_reply_order():
@@ -827,7 +831,7 @@ def main():
                             session=[ds("domains", domains=["repo_analysis"])])
             events, _ = turn(q, fake)
             outs = tools_of(events)
-            assert outs[0].startswith("[ERROR]") and "「誰呼叫它？」沒有放進任何一項" in outs[0], ("漏了的問句交回", outs[0][:300])
+            assert outs[0].startswith("[ERROR]") and "「誰呼叫它？」沒有放進交辦的任何一欄" in outs[0], ("漏了的問句交回", outs[0][:300])
             assert last_job()["items"] == ["pkg 裡的 alpha 定義在哪", "誰呼叫它"], "補上就過"
             fake = FakeChat(main=[task("找 pkg 裡的 alpha", ["pkg 裡的 alpha 定義在哪"]), task("找 pkg 裡的 alpha", ["pkg 裡的 alpha 定義在哪"]),
                                   task("找呼叫 alpha 的地方", ["pkg 裡的 alpha 定義在哪"]), say("好")],
@@ -905,7 +909,7 @@ def main():
             # 交辦的核對看每一句與「、」接的每一段（框架討論紀錄第 31 輪）：「。」結尾、要你做的句子也算；一句裡用「、」接的小問題只抄一段不算；
             # 整句抄了、用「、」接的幾段抄在同一項就過；交回的說明列出缺的那幾段
             from agent_core.orchestrator import ask_parts
-            assert ask_parts("a、b？c。d") == [(0, 1, "a"), (2, 3, "b？"), (4, 5, "c。"), (6, 7, "d")], ask_parts("a、b？c。d")
+            assert ask_parts("a、b？c。d") == [(0, 1, "a", True), (2, 3, "b？", True), (4, 5, "c。", False), (6, 7, "d", False)], ask_parts("a、b？c。d")
             agent.current_task = "照 docs/spec.md：alpha 的預設值是多少？引用規格的編號。"
             assert agent._uncovered(["alpha 的預設值是多少？"]) == ["引用規格的編號。"], agent._uncovered(["alpha 的預設值是多少？"])
             assert agent._uncovered(["alpha 的預設值是多少？引用規格的編號。"]) == [], "原話跨兩句：兩句都算"
@@ -919,7 +923,7 @@ def main():
                             session=[ds("domains", domains=["repo_analysis"])])
             events, _ = turn(q, fake)
             outs = tools_of(events)
-            assert outs[0].startswith("[ERROR]") and "「頻率多少？」沒有放進任何一項" in outs[0] and "「、」接的每一段都要抄到" in outs[0], outs[0][:300]
+            assert outs[0].startswith("[ERROR]") and "「頻率多少？」沒有放進交辦的任何一欄" in outs[0] and "「、」接的每一段都要抄到" in outs[0], outs[0][:300]
             assert last_job()["items"] == ["pkg 裡的 alpha 發布到哪個 topic、頻率多少？"], "補上就過"
 
         def t_ref_line():
@@ -941,6 +945,45 @@ def main():
             assert answers.line_owners([(rid, path)], 5, job["cwd"]) == [(rid, "docs/spec.md")], answers.line_owners([(rid, path)], 5, job["cwd"])
             assert answers.line_owners([(rid, path)], 9, job["cwd"]) == [], "收據裡沒有第 9 行"
             assert domain_session.DomainSession._ref_unknown(job, "#9", [(rid, path)]) == "出處 #9 不在這個 session 的結果裡", "對不到的照舊"
+
+        def t_task_context():
+            # 交辦時分清楚問題、限制與背景（框架討論紀錄第 32 輪的 U1）：背景與限制放進自己的欄就不交回；沒放進任何一欄的、問句只放進背景或限制的、
+            # 背景的原話不在使用者的話裡的交回；領域 session 的第一則訊息與提煉的錨點把背景與限制分開寫；評測的紀錄記下三欄
+            def task3(goal, items, background=(), constraints=()):
+                t = task(goal, items)
+                t["action"]["task"].update(background=[{"quote": x} for x in background], constraints=[{"quote": x} for x in constraints])
+                return t
+            q = "pkg 的 alpha 最近改過。alpha 定義在哪？先不要改任何檔案。"
+            fake = FakeChat(main=[task3("找 pkg 裡的 alpha 定義在哪", ["alpha 定義在哪？"], ["pkg 的 alpha 最近改過。"], ["先不要改任何檔案。"]), say("好")],
+                            session=[ds("domains", domains=["repo_analysis"])])
+            events, _ = turn(q, fake)
+            outs = tools_of(events)
+            assert not outs[0].startswith("[ERROR]"), ("背景與限制放進自己的欄：不交回", outs[0][:300])
+            job = last_job()
+            assert (job["items"], job["background"], job["constraints"]) == (["alpha 定義在哪？"], ["pkg 的 alpha 最近改過。"], ["先不要改任何檔案。"]), job
+            first = fake.session_msgs(0)[-1]["content"]
+            assert "【限制】" in first and "- 先不要改任何檔案。" in first and "【背景】" in first and "- pkg 的 alpha 最近改過。" in first, first[:900]
+            assert first.index("【要回答的項目】") < first.index("【限制】") < first.index("【使用者的原始問題】"), first[:900]
+            anchor = domain_session.DomainSession._anchor(job)
+            assert "要回答的項目：alpha 定義在哪？" in anchor and "先不要改任何檔案。" in anchor.split("只用來理解，不是要回答的", 1)[1], anchor
+            fake = FakeChat(main=[task3("找 pkg 裡的 alpha", ["alpha 定義在哪？"]),
+                                  task3("找 pkg 裡的 alpha", ["alpha 定義在哪？"], ["pkg 的 alpha 最近改過。"], ["先不要改任何檔案。"]), say("好")],
+                            session=[ds("domains", domains=["repo_analysis"])])
+            outs = tools_of(turn(q, fake)[0])
+            assert outs[0].startswith("[ERROR]") and "「pkg 的 alpha 最近改過。」、「先不要改任何檔案。」沒有放進交辦的任何一欄" in outs[0], outs[0][:400]
+            assert not outs[1].startswith("[ERROR]"), "補上就過"
+            q2 = "alpha 定義在哪？誰呼叫它？"
+            fake = FakeChat(main=[task3("找 pkg 裡的 alpha", ["alpha 定義在哪？"], ["誰呼叫它？"]), say("好")],
+                            session=[ds("domains", domains=["repo_analysis"])])
+            outs = tools_of(turn(q2, fake)[0])
+            assert outs[0].startswith("[ERROR]") and "「誰呼叫它？」是問句，只放進了 background 或 constraints" in outs[0], outs[0][:400]
+            fake = FakeChat(main=[task3("找 pkg 裡的 alpha", ["alpha 定義在哪？", "誰呼叫它？"], ["pkg 的 beta 最近改過"]), say("好")],
+                            session=[ds("domains", domains=["repo_analysis"])])
+            outs = tools_of(turn(q2, fake)[0])
+            assert outs[0].startswith("[ERROR]") and "background（背景）第 1 筆「pkg 的 beta 最近改過」不在使用者說過的話裡" in outs[0], outs[0][:400]
+            parsed = {"action": {"task": {"goal": "g", "background": [{"quote": "b"}], "constraints": [{"quote": "c"}], "items": [{"quote": "i"}]}}}
+            rec = domain_calls.calls(agent, parsed, "[ERROR] 不行")[0]
+            assert rec["background"] == ["b"] and rec["constraints"] == ["c"] and rec["items"] == ["i"], rec
 
         for name, fn in [("主 session：交辦一節、索引、回覆的 schema 與解析", t_prompt_schema),
                          ("回覆的欄位順序（主 session 的 action 最後；領域 session 照說明的順序）", t_reply_order), ("擋領域的工具與有骨架的技能", t_gate),
@@ -966,7 +1009,8 @@ def main():
                          ("交辦帶前文：長的存檔並照錨點提煉", t_context_long),
                          ("cpp_symbol 分開宣告與定義：有本體的定義那一份列 .cpp 的成員函式與標頭檔的類別、不列 ; 結尾的宣告，搜尋那一份照舊", t_cpp_defs),
                          ("交辦的核對看每一句與「、」接的每一段：「。」結尾的句子也算、只抄一段不算、整句抄了就過，交回的說明列出缺的那幾段", t_cover_parts),
-                         ("出處把原文的行號寫成 #N：收據裡有某個檔案的第 N 行時交回的說明寫明檔案與存檔，對不到的照舊", t_ref_line)]:
+                         ("出處把原文的行號寫成 #N：收據裡有某個檔案的第 N 行時交回的說明寫明檔案與存檔，對不到的照舊", t_ref_line),
+                         ("交辦時分清楚問題、限制與背景：各放進自己的欄、沒有歸屬的與問句放錯的交回、第一則訊息與提煉的錨點分開寫、評測的紀錄", t_task_context)]:
             check(name, fn)
     finally:
         os.chdir(cwd)

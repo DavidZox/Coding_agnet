@@ -20,9 +20,9 @@
   "total": 8
  },
  "domain_selftest": {
-  "label": "交辦的核對看每一句與「、」接的每一段、提煉照事實寫的檔案行號、出處 #N 是行號時寫明檔案（t_cover_parts、t_ref_line、t_ground_written）（2026-11-26）",
-  "passed": 31,
-  "total": 31
+  "label": "交辦時分清楚問題、限制與背景（t_task_context）（2026-11-26）",
+  "passed": 32,
+  "total": 32
  },
  "edg_selftest": {
   "label": "單一迴圈：交辦與領域 session（框架討論紀錄 F1～F6）（2026-11-23）",
