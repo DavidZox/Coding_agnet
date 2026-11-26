@@ -1,10 +1,10 @@
 {
  "models": {
   "gemma4:26b": {
-   "label": "單一迴圈第 31 輪之後的階段結束（1c6910e）（2026-11-26，20261126_110917_repo_gemma4-26b_all_x1、20261126_112720_repo_gemma4-26b_all_x2、20261126_113600_repo_gemma4-26b_all_x3）",
+   "label": "單一迴圈第 36 輪之後的階段結束（f6bb7d7）（2026-11-26，20261126_201802_repo_gemma4-26b_all_ac1、20261126_202618_repo_gemma4-26b_all_ac2、20261126_203513_repo_gemma4-26b_all_ac3）",
    "per": {
     "cnt_hw_params": [
-     1,
+     3,
      3
     ],
     "cnt_rmf_publishers": [
@@ -12,7 +12,7 @@
      3
     ],
     "cnt_rmf_tests": [
-     2,
+     3,
      3
     ],
     "cnt_sw_clients": [
@@ -40,11 +40,11 @@
      3
     ],
     "cpp_rf2o_params": [
-     3,
+     2,
      3
     ],
     "cpp_sick_ports": [
-     1,
+     3,
      3
     ],
     "cpp_sick_services": [
@@ -56,7 +56,7 @@
      3
     ],
     "cross_odom_source": [
-     3,
+     2,
      3
     ],
     "cross_rf2o_runtime": [
@@ -72,7 +72,7 @@
      3
     ],
     "cross_speed_limit": [
-     1,
+     3,
      3
     ],
     "doc_dock_align": [
@@ -125,23 +125,23 @@
     ]
    },
    "runs": [
-    20,
-    21,
+    23,
+    24,
     21
    ],
    "sets": {
     "holdout": [
-     12,
+     11,
      15
     ],
     "main": [
-     62,
+     68,
      75
     ]
    }
   },
   "gemma4:e4b": {
-   "label": "單一迴圈第 31 輪之後的階段結束（1c6910e）（2026-11-26，20261126_114506_repo_gemma4-e4b_all_x1、20261126_115137_repo_gemma4-e4b_all_x2、20261126_115729_repo_gemma4-e4b_all_x3）",
+   "label": "單一迴圈第 36 輪之後的階段結束（f6bb7d7）（2026-11-26，20261126_220224_repo_gemma4-e4b_all_ad1、20261126_220940_repo_gemma4-e4b_all_ad2、20261126_221609_repo_gemma4-e4b_all_ad3）",
    "per": {
     "cnt_hw_params": [
      0,
@@ -156,7 +156,7 @@
      3
     ],
     "cnt_sw_clients": [
-     3,
+     1,
      3
     ],
     "cnt_sw_nodes": [
@@ -164,11 +164,11 @@
      3
     ],
     "cnt_sw_specs": [
-     2,
+     1,
      3
     ],
     "cpp_compact_parser": [
-     3,
+     2,
      3
     ],
     "cpp_laser_qos": [
@@ -176,7 +176,7 @@
      3
     ],
     "cpp_laserscan_pub": [
-     3,
+     1,
      3
     ],
     "cpp_rf2o_params": [
@@ -184,7 +184,7 @@
      3
     ],
     "cpp_sick_ports": [
-     2,
+     1,
      3
     ],
     "cpp_sick_services": [
@@ -192,7 +192,7 @@
      3
     ],
     "cross_imu": [
-     2,
+     1,
      3
     ],
     "cross_odom_source": [
@@ -228,11 +228,11 @@
      3
     ],
     "doc_pred_map": [
-     0,
+     1,
      3
     ],
     "doc_sched_iter": [
-     1,
+     3,
      3
     ],
     "doc_task_confirm": [
@@ -240,7 +240,7 @@
      3
     ],
     "py_check_path": [
-     3,
+     1,
      3
     ],
     "py_encoder": [
@@ -256,7 +256,7 @@
      3
     ],
     "py_solve_conflicts": [
-     3,
+     2,
      3
     ],
     "py_speed_limit": [
@@ -265,17 +265,17 @@
     ]
    },
    "runs": [
+    13,
     14,
-    17,
-    13
+    12
    ],
    "sets": {
     "holdout": [
-     9,
+     6,
      15
     ],
     "main": [
-     44,
+     39,
      75
     ]
    }

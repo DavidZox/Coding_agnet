@@ -1,7 +1,7 @@
 {
  "models": {
   "gemma4:26b": {
-   "label": "單一迴圈第 31 輪之後的階段結束（1c6910e）（2026-11-26，20261126_124411_edg_gemma4-26b_all_phase）",
+   "label": "單一迴圈第 36 輪之後的階段結束（f6bb7d7）（2026-11-26，20261126_220142_edg_gemma4-26b_all_phase）",
    "per": {
     "ast_not_python": [
      3,
@@ -60,7 +60,7 @@
    }
   },
   "gemma4:e4b": {
-   "label": "單一迴圈第 31 輪之後的階段結束（1c6910e）（2026-11-26，20261126_124434_edg_gemma4-e4b_all_phase）",
+   "label": "單一迴圈第 36 輪之後的階段結束（f6bb7d7）（2026-11-26，20261126_220204_edg_gemma4-e4b_all_phase）",
    "per": {
     "ast_not_python": [
      3,
@@ -95,7 +95,7 @@
      3
     ],
     "search_split_keyword": [
-     3,
+     2,
      3
     ],
     "view_from_beyond": [
@@ -113,7 +113,7 @@
      6
     ],
     "main": [
-     27,
+     26,
      27
     ]
    }

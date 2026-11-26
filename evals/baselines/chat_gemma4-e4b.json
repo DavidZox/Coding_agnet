@@ -1,9 +1,9 @@
 {
  "date": "2026-11-26",
  "dirs": [
-  "20261126_124018_phase"
+  "20261126_215725_phase"
  ],
- "label": "單一迴圈第 31 輪之後的階段結束（1c6910e）",
+ "label": "單一迴圈第 36 輪之後的階段結束（f6bb7d7）",
  "per": {
   "compare_two_archives": {
    "passed": 3,
@@ -22,11 +22,11 @@
    "runs": 3
   },
   "current_state_rerun": {
-   "passed": 3,
+   "passed": 2,
    "runs": 3
   },
   "error_recovery": {
-   "passed": 3,
+   "passed": 2,
    "runs": 3
   },
   "fleet_battery": {
@@ -38,7 +38,7 @@
    "runs": 3
   },
   "followup_in_context": {
-   "passed": 1,
+   "passed": 2,
    "runs": 3
   },
   "guard_dispatch": {
