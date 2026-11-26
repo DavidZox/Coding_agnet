@@ -36,18 +36,24 @@ def _d(key, /, **fields):
     return prompt_files.load("harness/domain.md", key, **fields)
 
 
-_ASK = re.compile(r"？|\?(?=\s|$)")       # 問句的結尾：「？」，或「?」後面是空白或結尾（a?b 這種寫法裡的不算）
+_SENTENCE_END = re.compile(r"[？。！]|[?!](?=\s|$)")   # 一句的結尾：「？」「。」「！」，或「?」「!」後面是空白或結尾（a?b 這種寫法裡的不算）
 
 
-def questions(text):
-    """使用者這一則裡的問句 → [(開始, 結束)]（結束是問號的位置；沒有字的那一段不算）。"""
+def ask_parts(text):
+    """使用者這一則裡每一段要交辦的話（框架討論紀錄第 31 輪）→ [(開始, 結束, 顯示的寫法)]：照句尾分句，最後沒有句尾的那一段也算；一句裡用「、」
+    接的每一段各算一段（「發布到哪個 topic、頻率多少、會不會發 TF？」是三段）。結束是那一段最後一個字的下一個位置；句子的最後一段顯示時附上句尾。
+    沒有字的不算。"""
     out, start = [], 0
-    for m in _ASK.finditer(text):
-        seg = text[start:m.start()]
-        lead = len(seg) - len(seg.lstrip())
-        if seg.strip():
-            out.append((start + lead, m.start()))
-        start = m.end()
+    for stop, nxt in [(m.start(), m.end()) for m in _SENTENCE_END.finditer(text)] + [(len(text), len(text))]:
+        pieces = text[start:stop].split("、")
+        pos = start
+        for k, piece in enumerate(pieces):
+            body = piece.strip()
+            if body:
+                s = pos + len(piece) - len(piece.lstrip())
+                out.append((s, s + len(body), body + (text[stop:nxt] if k == len(pieces) - 1 else "")))
+            pos += len(piece) + 1
+        start = nxt
     return out
 
 
@@ -225,7 +231,7 @@ class DomainMixin:
 
     def _check_task(self, goal, items):
         """交辦的核對：有領域、子目標不是空的、項目 1～DOMAIN_ITEMS_MAX 項、每一項（使用者的原話）一字不改地在使用者說過的話裡（_user_words）、
-        一輪的第一次交辦要把最新這一則的每一個問句放進項目（_uncovered；交回一次，交回過照收——框架討論紀錄第 28 輪）、
+        一輪的第一次交辦要把最新這一則的每一句、一句裡用「、」接的每一段放進項目（_uncovered；交回一次，交回過照收——框架討論紀錄第 28、31 輪）、
         跟這一回合交辦過的不一樣（一樣的再交一次結果也一樣）、同一個項目最多 DOMAIN_ITEM_TRIES 次。過了回 None，沒過回說明（不含 [ERROR]）。"""
         turn = self._domain_turn
         if not self.domain_registry()["domains"]:
@@ -253,7 +259,7 @@ class DomainMixin:
         return None
 
     def _uncovered(self, items):
-        """最新這一則裡，沒有跟任何一項的原話重疊的問句（questions；照 _user_words 的方式正規化空白）。"""
+        """最新這一則裡，沒有跟任何一項的原話重疊的那幾段（ask_parts：每一句、一句裡用「、」接的每一段；照 _user_words 的方式正規化空白）。"""
         text = composite._norm(self.current_task or "")
         spans = []
         for it in items:
@@ -262,7 +268,7 @@ class DomainMixin:
             while at >= 0:
                 spans.append((at, at + len(q)))
                 at = text.find(q, at + 1)
-        return [text[s:e + 1] for s, e in questions(text) if not any(a < e and b > s for a, b in spans)]
+        return [shown for s, e, shown in ask_parts(text) if not any(a < e and b > s for a, b in spans)]
 
     def _earlier_turns(self):
         """【前文】的來源（框架討論紀錄第 28 輪）：任務線上這一則之前的使用者的話（最多 TASK_HISTORY_KEEP − 1 則），各附那一回合最後的回覆

@@ -3,7 +3,7 @@
 composite_entry、param_*、type_*、skills_tools、skills_shared、tool_entry）、選了技能之後的參數表單（form_composite、form_tool；沒過的交回重填
 form_fix、工具的 args 寫法不對 form_fix_tool 與 reject_args_*、重填還是沒過 form_failed）、每一步的結果（step_head、composite_*（程式算的彙整
 composite_totals）、output_head、result_id）、程式擋下的說明（err_*、not_my_tool）、
-回報的核對沒過（answers_fix、why_ref_unknown；其他原因用 harness/domain.md 的 why_*）、回覆不是 JSON（retry、表單的 retry_form）、
+回報的核對沒過（answers_fix、why_ref_unknown、出處 #N 是收據裡的行號時 why_ref_line；其他原因用 harness/domain.md 的 why_*）、回覆不是 JSON（retry、表單的 retry_form）、
 寫到長度上限被截斷（cut）、對話太長時清掉的舊結果（cleared）、提煉時的「想知道什麼」（anchor；使用者前面的話 anchor_earlier）。
 agent_core/composite.py 也用這份：合約沒過的說明（reject_*）、要領域 session 決定的事（need_*）、骨架裡有要確認的動作（guard_in_skill）。
 {名稱} 是程式填的值。
@@ -272,6 +272,9 @@ args 照抄了寫法裡的 {marks}（沒有換成值）
 
 <!-- @why_ref_unknown -->
 出處 {ref} 不在這個 session 的結果裡
+
+<!-- @why_ref_line -->
+出處 {ref} 不在這個 session 的結果裡：#編號是存檔的編號（這個 session 的存檔：{ids}），{n} 是 {where}——出處寫「{cite}」或那一份的 #編號
 
 <!-- @retry -->
 【系統提醒】上一次的回覆不是規定的 JSON（或是空的、state 不是 domains／skill／report）。請只回一個 JSON：thought、state、domains、skill、answers、reply。

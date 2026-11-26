@@ -597,7 +597,19 @@ class DomainSession:
         archives = self._archives(job)
         source = "\n".join(answers.read(p) for _, p in archives)
         return answers.answer_problems(job["items"], given, lambda ref: self._cited(job, ref, archives), self._allowed(job), source,
-                                       unknown=lambda ref: _s("why_ref_unknown", ref=ref))
+                                       unknown=lambda ref: self._ref_unknown(job, ref, archives))
+
+    @staticmethod
+    def _ref_unknown(job, ref, archives):
+        """出處對不到的說明：#N 不是這個 session 的存檔、但某一份存檔的收據裡有某個檔案的第 N 行（answers.line_owners）→ 寫明是哪個檔案的
+        第 N 行、在哪一份存檔，出處怎麼寫（框架討論紀錄第 31 輪）；其他照舊。"""
+        m = answers.ID.fullmatch(str(ref).strip())
+        owners = answers.line_owners(archives, int(m.group(1)), job["cwd"]) if m else []
+        if not owners:
+            return _s("why_ref_unknown", ref=ref)
+        n = int(m.group(1))
+        return _s("why_ref_line", ref=ref, n=n, ids="、".join(f"#{r}" for r, _ in archives),
+                  where="、".join(f"#{r} 裡 {p} 的第 {n} 行" for r, p in owners[:3]), cite=f"{owners[0][1]}:{n}")
 
     @staticmethod
     def _allowed(job):

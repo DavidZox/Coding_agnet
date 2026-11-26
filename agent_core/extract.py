@@ -82,7 +82,7 @@ _ORDINAL = re.compile(r"(?:^|(?<=[\s：:；;，,。]))[(（]?(\d{1,3})[.)）、�
 _COUNT = re.compile(r"(?:總共|共計|合計|一共|共)\s*(?:有\s*)?(\d+)\s*(?:台|個|筆|項|則|次|條|件|輛|位|段|行|種)")
 # 回答裡寫的行號（第 149 行、（行 149）、line 149、L149、a.cpp:149；可以是一段）：核對是不是把存檔的行號寫成檔案的行號（Extraction._misplaced）
 _RANGE = r"(\d+)(?:\s*[-~～–]\s*(\d+))?"
-_LINE_WRITTEN = re.compile(r"第\s*" + _RANGE + r"\s*行|(?<![A-Za-z0-9_\u4e00-\u9fff])(?:行|lines?|L)\s*[:：]?\s*" + _RANGE
+_LINE_WRITTEN = re.compile(r"第\s*" + _RANGE + r"\s*行|(?:行號\s*(?:為|是)?|(?<![A-Za-z0-9_\u4e00-\u9fff])(?:行|lines?|L))\s*[:：]?\s*" + _RANGE
                            + r"|[A-Za-z0-9_./-]*\.[A-Za-z][A-Za-z0-9]*:" + _RANGE, re.I)
 
 
@@ -376,7 +376,7 @@ class Extraction:
                 ev = "\n".join(lines[x - 1] for x in evidence_lines(lines, nums))
                 bad = missing_tokens(item["text"], ev, self.texts[i], self.allowed, refs=set(nums))
                 if not bad:
-                    return dict(item, src=i, nums=nums), []
+                    return self._written_file_line(item, i, nums, within) or dict(item, src=i, nums=nums), []
             else:      # 沒寫行號：字都在這個範圍裡就收，補上出現那些字的行（最多 3 行；沒有可以核對的字就不附行號）
                 lo, hi = within if within else (0, len(lines))
                 bad = missing_tokens(item["text"], "\n".join(lines[lo:hi]), self.texts[i], self.allowed)
@@ -397,31 +397,48 @@ class Extraction:
         「## <檔案>」那一行，命中的行（開頭是「>」、沒有縮排）的核對範圍到不了；view_file、search_text 每一行的 N→ 是檔案的行號，worker 常寫成
         這一層——兩種都是 worker 寫對了、核對看不到：
         ① 寫的行號（存檔的）＋那幾行所屬的檔名對得上 → 收（via＝path）；
-        ② 把寫的行號當成這一段裡檔案的行號，只有一個檔案的那幾行（＋檔名）對得上 → 收、行號換成存檔的（via＝file_line）；兩個檔案都對得上不收。
-        沒有收據的（凍結的工具）不試。→ 核對過的 item 或 None。"""
+        ② 把寫的行號當成這一段裡檔案的行號，只有一個檔案的那幾行（＋檔名）對得上 → 收、行號換成存檔的（via＝file_line，_by_file_line）；
+        兩個檔案都對得上不收。① 收之前也看一次事實的文字寫的行號（_written_file_line）。沒有收據的（凍結的工具）不試。→ 核對過的 item 或 None。"""
+        if not self.sources[i].get("origins"):
+            return None
+        nums = parse_lines(item.get("lines"), len(self.sources[i]["lines"]))
+        if within:
+            nums = [x for x in nums if within[0] - EVIDENCE_SPAN < x <= within[1] + EVIDENCE_SPAN]
+        if nums and self._origin_ok(item, i, nums, set(nums)):
+            return self._written_file_line(item, i, nums, within) or dict(item, src=i, nums=nums, via="path")
+        return self._by_file_line(item, i, within)
+
+    def _origin_ok(self, item, i, nums, refs):
+        """這幾行（與上下層）加上它們所屬的檔名（收據），對得上這條事實的字。"""
+        lines, origins = self.sources[i]["lines"], self.sources[i].get("origins") or {}
+        ev = evidence_lines(lines, nums)
+        text = "\n".join([lines[x - 1] for x in ev] + sorted({origins[x][0] for x in ev if x in origins}))
+        return not missing_tokens(item["text"], text, self.texts[i], self.allowed, refs=refs)
+
+    def _by_file_line(self, item, i, within=None):
+        """把寫的行號當成這一段裡檔案的行號（_ground_origins 的 ②）：只有一個檔案的那幾行（＋檔名）對得上 → 收、行號換成存檔的（via＝file_line）；
+        兩個檔案都對得上、沒有收據的 → None。"""
         origins = self.sources[i].get("origins") or {}
         if not origins:
             return None
-        lines = self.sources[i]["lines"]
-
-        def ok(nums, refs):
-            ev = evidence_lines(lines, nums)
-            text = "\n".join([lines[x - 1] for x in ev] + sorted({origins[x][0] for x in ev if x in origins}))
-            return not missing_tokens(item["text"], text, self.texts[i], self.allowed, refs=refs)
-
-        nums = parse_lines(item.get("lines"), len(lines))
-        if within:
-            nums = [x for x in nums if within[0] - EVIDENCE_SPAN < x <= within[1] + EVIDENCE_SPAN]
-        if nums and ok(nums, set(nums)):
-            return dict(item, src=i, nums=nums, via="path")
         wanted = set(parse_lines(item.get("lines"), max(n for _, n in origins.values())))
-        lo, hi = within if within else (0, len(lines))
+        lo, hi = within if within else (0, len(self.sources[i]["lines"]))
         by_file = {}
         for k in range(lo + 1, hi + 1):
             if k in origins and origins[k][1] in wanted:
                 by_file.setdefault(origins[k][0], []).append(k)
-        hits = [ks for ks in by_file.values() if ok(ks, wanted | set(ks))]
+        hits = [ks for ks in by_file.values() if self._origin_ok(item, i, ks, wanted | set(ks))]
         return dict(item, src=i, nums=hits[0], via="file_line") if len(hits) == 1 else None
+
+    def _written_file_line(self, item, i, nums, within=None):
+        """照存檔的行號對得上之後再看一次（框架討論紀錄第 31 輪）：事實的文字自己寫了行號 N（_LINE_WRITTEN）、引用的也是 N，存檔第 N 行換算出來
+        是檔案的另一行——worker 把檔案的行號寫成存檔的（兩行的內容一樣時，照存檔的行號也對得上，原本的核對看不出來）。把 N 當成檔案的行號時
+        只有一個檔案的那幾行對得上（_by_file_line）就照它收；其他回 None（照存檔的行號收，不變）。"""
+        origins = self.sources[i].get("origins") or {}
+        written = {int(g) for m in _LINE_WRITTEN.finditer(item["text"]) for g in m.groups() if g}
+        if any(n in written and n in origins and origins[n][1] != n for n in nums):
+            return self._by_file_line(item, i, within)
+        return None
 
     def _at(self, si, nums):
         """引用的行（存檔的行號）在檔案裡的位置：「<路徑>:28-29、49」（來源的 origins＝_results_common.file_lines；對不到檔案的行不寫）。"""

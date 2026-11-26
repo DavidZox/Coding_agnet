@@ -123,6 +123,19 @@ def rows_from_archives(archives, path, first, last, cwd):
     return rows, texts
 
 
+def line_owners(archives, n, cwd):
+    """出處寫成 #N、N 卻不是存檔的編號時（框架討論紀錄第 31 輪：把原文的行號寫成出處 #488）：這幾份存檔（[(#編號, 存檔的路徑)]）的收據裡
+    有某個檔案的第 N 行的（search_text 命中的行、view_file 看的那一段、定義與呼叫）→ [(#編號, 檔案（cwd 底下的寫法）)]。"""
+    out = []
+    for rid, archive in archives:
+        for it in (load_json(archive[:-3] + ".receipt.json") or {}).get("items") or []:
+            p = str(it.get("path") or "")
+            if p and (it.get("line") == n or (isinstance(it.get("from"), int) and isinstance(it.get("to"), int) and it["from"] <= n <= it["to"])):
+                if (rid, rel(p, cwd)) not in out:
+                    out.append((rid, rel(p, cwd)))
+    return out
+
+
 def _located(text, cited, evidence, lines):
     """回答的內文寫的 檔案:行號 跟出處一樣照收據核對（cited）：對到的從內文拿掉（那幾段與行號加進 evidence、lines），不當成名稱在原文裡找——
     search_text 的原文每一行寫成「行號→」，沒有這種寫法，以前一定擋（待辦 4l ①）；對不到的留著，照舊當成名稱核對。→ 拿掉之後的內文。"""

@@ -20,9 +20,9 @@
   "total": 8
  },
  "domain_selftest": {
-  "label": "code_defs 的 --has、cpp_symbol 先列有本體的定義（t_code_defs_has、t_cpp_defs）（2026-11-26）",
-  "passed": 29,
-  "total": 29
+  "label": "交辦的核對看每一句與「、」接的每一段、提煉照事實寫的檔案行號、出處 #N 是行號時寫明檔案（t_cover_parts、t_ref_line、t_ground_written）（2026-11-26）",
+  "passed": 31,
+  "total": 31
  },
  "edg_selftest": {
   "label": "單一迴圈：交辦與領域 session（框架討論紀錄 F1～F6）（2026-11-23）",
@@ -30,9 +30,9 @@
   "total": 14
  },
  "extract_selftest": {
-  "label": "提煉的核對照收據認行號與檔名（t_ground_origins）（2026-11-25）",
-  "passed": 20,
-  "total": 20
+  "label": "交辦的核對看每一句與「、」接的每一段、提煉照事實寫的檔案行號、出處 #N 是行號時寫明檔案（t_cover_parts、t_ref_line、t_ground_written）（2026-11-26）",
+  "passed": 21,
+  "total": 21
  },
  "integrity": {
   "label": "評測的完整性：加上文件與架構圖寫的程式名稱要在程式裡找得到（2026-11-23）",

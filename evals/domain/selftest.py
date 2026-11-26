@@ -653,7 +653,7 @@ def main():
                 text = "\n".join(m["content"] for m in messages if m["role"] == "user")
                 rid = re.findall(r"【程式照收據算的彙整】（存檔 #(\d+)", text)[-1]
                 return ds("report", answers=[(1, "answered", "呼叫總共 2 次：pkg/mod.py 1 次、pkg/use.py 1 次", [f"#{rid}"])], reply="數好了")
-            fake = FakeChat(main=[task("數 pkg 裡的 alpha 呼叫幾次", ["各幾次、總共幾次"]), say("好")],
+            fake = FakeChat(main=[task("數 pkg 裡的 alpha 呼叫幾次", ["pkg 裡的 alpha 在哪些檔案呼叫、各幾次、總共幾次？"]), say("好")],
                             session=[ds("domains", domains=["repo_analysis"]), ds("skill", skill="py_usage"),
                                      fill(params=[("name", "alpha", "alpha"), ("path", "pkg", "pkg")]), report])
             turn("pkg 裡的 alpha 在哪些檔案呼叫、各幾次、總共幾次？", fake)
@@ -773,7 +773,7 @@ def main():
 
         def t_kept():
             fake = FakeChat(
-                main=[task("照 docs/spec.md 回答", ["WAITING 時收到不同編號的確認會怎樣"]),
+                main=[task("照 docs/spec.md 回答", ["WAITING 時收到不同編號的確認會怎樣？引用規格的編號。"]),
                       answer("查到了。", [(1, "answered", "不變、繼續等", ["docs/spec.md:5"])]),
                       answer("查到了。", [(1, "answered", "不變、繼續等，最多 30 秒（SPEC-A12）", ["docs/spec.md:5"])])],
                 session=[ds("domains", domains=["repo_analysis"]), ds("skill", skill="search_text"), fill(args='"SPEC-A12" docs'),
@@ -793,7 +793,7 @@ def main():
         def t_archive_id():
             # 回答的文字寫了存檔的 #編號：交回修一次，#編號只寫在 refs（框架討論紀錄第 27 輪的 R2）
             fake = FakeChat(
-                main=[task("照 docs/spec.md 回答", ["WAITING 時收到不同編號的確認會怎樣"]),
+                main=[task("照 docs/spec.md 回答", ["WAITING 時收到不同編號的確認會怎樣？引用規格的編號。"]),
                       answer("查到了。", [(1, "answered", "不變、繼續等（SPEC-A12，見 #3）", ["docs/spec.md:5"])]),
                       answer("查到了。", [(1, "answered", "不變、繼續等（SPEC-A12）", ["docs/spec.md:5"])])],
                 session=[ds("domains", domains=["repo_analysis"]), ds("skill", skill="search_text"), fill(args='"SPEC-A12" docs'),
@@ -819,7 +819,8 @@ def main():
                 "查不到的原因不擋"
 
         def t_cover():
-            # 問句都要放進項目（框架討論紀錄第 28 輪的 1）：一輪的第一次交辦漏了問句交回一次、補上就過；交回過一次照收；之後的交辦不核對
+            # 問句都要放進項目（框架討論紀錄第 28 輪的 1；第 31 輪起「。」結尾的句子也算）：一輪的第一次交辦漏了交回一次、補上就過；交回過一次照收；
+            # 之後的交辦不核對
             q = "pkg 裡的 alpha 定義在哪？誰呼叫它？"
             fake = FakeChat(main=[task("找 pkg 裡的 alpha", ["pkg 裡的 alpha 定義在哪"]),
                                   task("找 pkg 裡的 alpha", ["pkg 裡的 alpha 定義在哪", "誰呼叫它"]), say("好")],
@@ -836,12 +837,12 @@ def main():
             assert outs[0].startswith("[ERROR]") and not outs[1].startswith("[ERROR]"), ("交回過一次照收", [o[:80] for o in outs])
             assert len(outs) > 2 and not outs[2].startswith("[ERROR]"), ("之後的交辦不核對", [o[:80] for o in outs])
             agent.current_task = "照 docs/spec.md：alpha 在哪？預設多少？引用規格的編號。"
-            assert agent._uncovered(["alpha 在哪"]) == ["預設多少？"], agent._uncovered(["alpha 在哪"])
-            assert agent._uncovered(["alpha 在哪？預設多少"]) == [], "原話跨兩句：兩句都算"
+            assert agent._uncovered(["alpha 在哪"]) == ["預設多少？", "引用規格的編號。"], agent._uncovered(["alpha 在哪"])
+            assert agent._uncovered(["alpha 在哪？預設多少"]) == ["引用規格的編號。"], "原話跨兩句：兩句都算（第三句沒抄到）"
             agent.current_task = "alpha 在哪? 誰用到?"
             assert agent._uncovered(["alpha 在哪"]) == ["誰用到?"], agent._uncovered(["alpha 在哪"])
             agent.current_task = "列出 pkg 底下符合 a?b 的檔案"
-            assert agent._uncovered(["列出"]) == [], "「?」在字中間不算問句；沒有問句的不核對"
+            assert agent._uncovered(["列出"]) == [], "「?」在字中間不算句尾；項目抄了這一句的一段就算"
 
         def t_context():
             # 交辦帶前文（第 28 輪的 2、3）：第一句沒有前文；第二句附上一句與當時的回覆、算可以抄的原文；前文裡使用者的話不用在出處裡找、
@@ -900,6 +901,47 @@ def main():
             hits = shown.split("— 提到這些名稱的行", 1)[1]
             assert "grabFrame();" in hits, ("宣告在搜尋那一份", hits[:600])
 
+        def t_cover_parts():
+            # 交辦的核對看每一句與「、」接的每一段（框架討論紀錄第 31 輪）：「。」結尾、要你做的句子也算；一句裡用「、」接的小問題只抄一段不算；
+            # 整句抄了、用「、」接的幾段抄在同一項就過；交回的說明列出缺的那幾段
+            from agent_core.orchestrator import ask_parts
+            assert ask_parts("a、b？c。d") == [(0, 1, "a"), (2, 3, "b？"), (4, 5, "c。"), (6, 7, "d")], ask_parts("a、b？c。d")
+            agent.current_task = "照 docs/spec.md：alpha 的預設值是多少？引用規格的編號。"
+            assert agent._uncovered(["alpha 的預設值是多少？"]) == ["引用規格的編號。"], agent._uncovered(["alpha 的預設值是多少？"])
+            assert agent._uncovered(["alpha 的預設值是多少？引用規格的編號。"]) == [], "原話跨兩句：兩句都算"
+            agent.current_task = "啟動時 cam_driver 的影像發布到哪個 topic、頻率多少、會不會發 TF？誰用這個影像？"
+            got = agent._uncovered(["cam_driver 的影像發布到哪個 topic"])
+            assert got == ["頻率多少", "會不會發 TF？", "誰用這個影像？"], got
+            assert agent._uncovered(["啟動時 cam_driver 的影像發布到哪個 topic、頻率多少、會不會發 TF？", "誰用這個影像？"]) == [], "整句抄了就過"
+            q = "pkg 裡的 alpha 發布到哪個 topic、頻率多少？"
+            fake = FakeChat(main=[task("找 pkg 裡的 alpha", ["pkg 裡的 alpha 發布到哪個 topic"]),
+                                  task("找 pkg 裡的 alpha", ["pkg 裡的 alpha 發布到哪個 topic、頻率多少？"]), say("好")],
+                            session=[ds("domains", domains=["repo_analysis"])])
+            events, _ = turn(q, fake)
+            outs = tools_of(events)
+            assert outs[0].startswith("[ERROR]") and "「頻率多少？」沒有放進任何一項" in outs[0] and "「、」接的每一段都要抄到" in outs[0], outs[0][:300]
+            assert last_job()["items"] == ["pkg 裡的 alpha 發布到哪個 topic、頻率多少？"], "補上就過"
+
+        def t_ref_line():
+            # 出處把原文的行號寫成 #N（框架討論紀錄第 31 輪）：#N 不是存檔、但收據裡有某個檔案的第 N 行 → 交回的說明寫明檔案與存檔、出處怎麼寫；
+            # 對不到的照舊
+            q = "照 docs/spec.md：WAITING 時收到不同編號的確認會怎樣？"
+            fake = FakeChat(
+                main=[task("照 docs/spec.md 查 WAITING 時收到不同編號的確認", [q]), say("好")],
+                session=[ds("domains", domains=["repo_analysis"]), ds("skill", skill="search_text"), fill(args='"SPEC-A12" docs/spec.md'),
+                         ds("report", answers=[(1, "answered", "不變：繼續等，最多 30 秒（SPEC-A12）", ["#5"])], reply="找到了"),
+                         ds("report", answers=[(1, "answered", "不變：繼續等，最多 30 秒（SPEC-A12）", ["docs/spec.md:5"])], reply="改好了")])
+            turn(q, fake)
+            job = last_job()
+            rid = job["steps"][0]["result_ids"][0]
+            fix = fake.session_msgs(4)[-1]["content"]
+            assert "出處 #5 不在這個 session 的結果裡" in fix and f"5 是 #{rid} 裡 docs/spec.md 的第 5 行" in fix and "「docs/spec.md:5」" in fix, fix[:600]
+            assert job["status"] == "done" and not job["problems"], (job["status"], job["problems"])
+            path = agent.result_file_path(rid)
+            assert answers.line_owners([(rid, path)], 5, job["cwd"]) == [(rid, "docs/spec.md")], answers.line_owners([(rid, path)], 5, job["cwd"])
+            assert answers.line_owners([(rid, path)], 9, job["cwd"]) == [], "收據裡沒有第 9 行"
+            assert domain_session.DomainSession._ref_unknown(job, "#9", [(rid, path)]) == "出處 #9 不在這個 session 的結果裡", "對不到的照舊"
+
         for name, fn in [("主 session：交辦一節、索引、回覆的 schema 與解析", t_prompt_schema),
                          ("回覆的欄位順序（主 session 的 action 最後；領域 session 照說明的順序）", t_reply_order), ("擋領域的工具與有骨架的技能", t_gate),
                          ("主 session 把領域的名稱當技能：說明要交辦；看到的字不寫識別名稱", t_domain_named),
@@ -919,10 +961,12 @@ def main():
                          ("確認關卡", t_guard), ("長的結果照舊提煉", t_long_output), ("再交辦帶著上一次的經過", t_previous),
                          ("主 session 依報告回答的核對", t_main_check), ("依報告回答漏了報告的編號與數字：交回修一次", t_kept),
                          ("回答的文字寫了存檔的 #編號：交回修一次（回報與主 session 的回答；使用者自己寫了的、查不到的原因不擋）", t_archive_id),
-                         ("問句都要放進項目：一輪的第一次交辦漏了交回一次、補上就過、交回過照收、之後的交辦不核對（「?」在字中間、沒有問句的不核對）", t_cover),
+                         ("問句都要放進項目：一輪的第一次交辦漏了交回一次、補上就過、交回過照收、之後的交辦不核對（「?」在字中間的不算句尾；第 31 輪起「。」結尾的句子也算）", t_cover),
                          ("交辦帶前文：附上一句與當時的回覆、算可以抄的原文、錨點帶使用者前面的話；第一句沒有前文", t_context),
                          ("交辦帶前文：長的存檔並照錨點提煉", t_context_long),
-                         ("cpp_symbol 分開宣告與定義：有本體的定義那一份列 .cpp 的成員函式與標頭檔的類別、不列 ; 結尾的宣告，搜尋那一份照舊", t_cpp_defs)]:
+                         ("cpp_symbol 分開宣告與定義：有本體的定義那一份列 .cpp 的成員函式與標頭檔的類別、不列 ; 結尾的宣告，搜尋那一份照舊", t_cpp_defs),
+                         ("交辦的核對看每一句與「、」接的每一段：「。」結尾的句子也算、只抄一段不算、整句抄了就過，交回的說明列出缺的那幾段", t_cover_parts),
+                         ("出處把原文的行號寫成 #N：收據裡有某個檔案的第 N 行時交回的說明寫明檔案與存檔，對不到的照舊", t_ref_line)]:
             check(name, fn)
     finally:
         os.chdir(cwd)

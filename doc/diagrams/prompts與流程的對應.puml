@@ -40,7 +40,7 @@ package "prompts/（改字不用改程式；evals/integrity 檢查範本跟程�
         （tool_blocked、skill_blocked）、領域的名稱當成技能叫
         （domain_named）、交辦沒過核對的說明（err_*：
         子目標、項目數、原話不是使用者說的 err_quote、最新這一則
-        的問句沒放進項目 err_cover、一樣的再交辦、同一個項目交太多
+        問的或要做的那一段沒放進項目 err_cover、一樣的再交辦、同一個項目交太多
         次…）、answers 沒有通過核對的說明（answers_fix、why_*，漏了
         報告的編號與數字 why_dropped、文字寫了存檔的 #編號
         why_archive_id；領域 session 回報的核對也用 why_*）

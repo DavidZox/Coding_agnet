@@ -575,6 +575,38 @@ def main():
             w = job_of(out)["workers"][0]
             assert [f.get("via") for f in w["facts"]] == ["path", "file_line"] and len(w["dropped"]) == 1, w
 
+        def t_ground_written():
+            # 事實的文字寫的行號是檔案的、引用的也是那個數字（框架討論紀錄第 31 輪）：存檔第 N 行是檔案的另一行，兩行的內容一樣時照存檔的行號也對得上
+            # → 照檔案的行號收（via file_line）；文字沒寫行號、寫的跟換算的一樣、照檔案的行號兩個檔案都對得上的照舊；整合的回答認「行號為 N」
+            grep = ["[PASS] 搜尋「make_sub」：共 2 筆命中，分布在 1 個檔案", "## src/node.cpp（2 筆）", "     6→void setup_a() {",
+                    ">    7→  sub_a = make_sub(qos_fast);", "     8→}", "      …", ">   13→  sub_b = make_sub(qos_fast);", "    14→}"]
+            rec = {"cwd": "/w", "items": [{"path": "/w/src/node.cpp", "line": 7}, {"path": "/w/src/node.cpp", "line": 13}]}
+            origins = rc.file_lines(grep, rec)
+            assert origins[4] == ("src/node.cpp", 7) and origins[7] == ("src/node.cpp", 13), origins
+            ext = extract.Extraction(agent, "tool_summary", [{"rid": "1", "label": "grep_cmd.py（#1）", "lines": grep, "origins": origins}],
+                                     "make_sub 在哪一行")
+
+            def ground(e, text, lines, n):
+                return e._ground({"text": text, "lines": lines, "record": ""}, 0, (0, n))
+
+            g, _ = ground(ext, "在 src/node.cpp 中用 make_sub(qos_fast) 訂閱，行號為 7", "7", len(grep))
+            assert g["nums"] == [4] and g["via"] == "file_line" and ext._at(0, g["nums"]) == "src/node.cpp:7", ("文字寫的是檔案的第 7 行", g)
+            g, _ = ground(ext, "make_sub(qos_fast) 在第 7 行", "7", len(grep))
+            assert g["nums"] == [4] and g["via"] == "file_line", ("沒寫檔名（原本的核對就收的那一種）也一樣", g)
+            g, _ = ground(ext, "在 src/node.cpp 中用 make_sub(qos_fast) 訂閱", "7", len(grep))
+            assert g["nums"] == [7] and ext._at(0, g["nums"]) == "src/node.cpp:13", ("文字沒寫行號：照存檔的行號", g)
+            g, _ = ground(ext, "src/node.cpp 第 13 行用 make_sub(qos_fast) 訂閱", "7", len(grep))
+            assert g["nums"] == [7] and ext._at(0, g["nums"]) == "src/node.cpp:13", ("寫的行號跟換算的一樣：照舊", g)
+            two = ["[PASS] 搜尋「make_sub」：共 3 筆命中，分布在 2 個檔案", "## src/a.cpp（1 筆）", ">    7→  x = make_sub(qos_fast);",
+                   "## src/b.cpp（2 筆）", ">    7→  y = make_sub(qos_fast);", "      …", ">   20→  z = make_sub(qos_fast);"]
+            rec2 = {"cwd": "/w", "items": [{"path": "/w/src/a.cpp", "line": 7}, {"path": "/w/src/b.cpp", "line": 7}, {"path": "/w/src/b.cpp", "line": 20}]}
+            ext2 = extract.Extraction(agent, "tool_summary", [{"rid": "1", "label": "grep_cmd.py（#1）", "lines": two,
+                                                               "origins": rc.file_lines(two, rec2)}], "make_sub 在哪一行")
+            g, _ = ground(ext2, "make_sub(qos_fast) 的行號為 7", "7", len(two))
+            assert g["nums"] == [7] and "via" not in g, ("照檔案的行號兩個檔案都對得上：不猜、照舊", g)
+            got = ext._misplaced("make_sub 的行號為 7", [{"src": 0, "nums": [7], "text": "x"}])
+            assert got == [("行號為 7", "src/node.cpp:13")], ("整合的回答認「行號為 N」", got)
+
         def t_sub_guidance():
             # 領域 session 沒有 result_recall、也沒有使用者可以問——提煉結尾的下一步建議、沒有提煉時的說明、
             # claude_code 模式的截斷說明只寫它能用的 result_grep、result_view；主對話照舊
@@ -629,6 +661,8 @@ def main():
                           "行號交回修一次，還是錯就標明；寫的是檔案的行號不用修", t_file_lines),
                          ("照收據核對（設計筆記 2.73）：照原本的核對對不上才試——檔名只在「## 檔案」那一行的收（via path）、寫的是檔案的行號的收、"
                           "行號換成存檔的（via file_line）；原本就收的不變；檔名或數值寫錯、兩個檔案都對得上、沒有收據的照舊拿掉", t_ground_origins),
+                         ("事實的文字寫的行號是檔案的（第 31 輪）：兩種解讀都對得上時照檔案的行號收；文字沒寫行號、寫的跟換算的一樣、"
+                          "兩個檔案都對得上的照舊；整合的回答認「行號為 N」", t_ground_written),
                          ("領域 session 的下一步建議：提煉結尾、沒有提煉時、claude_code 的截斷說明只寫 result_grep、result_view，"
                           "不寫 result_recall、不叫它問使用者；主對話照舊", t_sub_guidance)]:
             check(name, fn)
