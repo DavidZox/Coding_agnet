@@ -41,10 +41,34 @@ def _d(key, /, **fields):
 _SENTENCE_END = re.compile(r"[？。！]|[?!](?=\s|$)")   # 一句的結尾：「？」「。」「！」，或「?」「!」後面是空白或結尾（a?b 這種寫法裡的不算）
 
 
+_WIDTH = {c: chr(c - 0xFEE0) for c in range(0xFF01, 0xFF5F)} | {0x3000: " "}   # 全形的英數與標點 → 半形；全形空白 → 空白
+
+
+def _loose(text):
+    """原話的寬鬆比對用（框架討論紀錄第 46 輪）：全形的英數與標點換成半形、拿掉空白 → (比對用的字串, 每一個字在 text 的位置)。"""
+    out, where = [], []
+    for i, ch in enumerate(text):
+        ch = _WIDTH.get(ord(ch), ch)
+        if not ch.isspace():
+            out.append(ch)
+            where.append(i)
+    return "".join(out), where
+
+
 def _in_words(quote, said):
-    """交辦抄的一則原話（項目、背景、限制）一字不改地在使用者說過的話裡（_user_words；空白正規化、去掉外面的引號）。"""
+    """交辦抄的一則原話（項目、背景、限制）→ 要存的原話，不是原話回 None。先照原樣找（使用者說過的話 _user_words；空白正規化、去掉外面的
+    引號）：找到就照模型抄的存（以前的做法，字不變）。找不到再寬鬆比——全形與半形的英數、標點當成一樣，空白不算（框架討論紀錄第 46 輪）——
+    比得到的存使用者原本的那一段：項目、背景、限制裡永遠是原話，歸屬（_uncovered）、問句放進項目（_ask_items）照舊找得到。
+    「、」與「,」、「。」與「.」、大小寫不一樣還是算改寫。"""
     q = composite._unquote(quote)
-    return bool(q) and q in said
+    if not q:
+        return None
+    if q in said:
+        return quote
+    lq, _ = _loose(q)
+    ls, where = _loose(said)
+    k = ls.find(lq) if lq else -1
+    return said[where[k]:where[k + len(lq) - 1] + 1] if k >= 0 else None
 
 
 def _sentence_ends(text):
@@ -263,7 +287,11 @@ class DomainMixin:
         dropped = []
         for field, out in kept.items():
             for x in task.get(field) or []:
-                (out if _in_words(x["quote"], said) else dropped).append(x["quote"])
+                found = _in_words(x["quote"], said)     # 只差全形與半形、空白的換成使用者原本的寫法（第 46 輪）
+                if found:
+                    out.append(found)
+                else:
+                    dropped.append(x["quote"])
         items, background, constraints, added = kept["items"], kept["background"], kept["constraints"], []
         if not self._domain_turn["tasks"]:      # 一輪還沒有收下的交辦：問句由程式整句放進 items（第 34 輪的 W1b）
             items, added = self._ask_items(items)

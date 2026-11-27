@@ -1047,6 +1047,23 @@ def main():
             assert outs[0].startswith("[ERROR]") and "「先不要改任何檔案。」沒有放進交辦的任何一欄" in outs[0], ("改寫的限制拿掉，那一段照樣交回", outs[0][:400])
             assert not outs[1].startswith("[ERROR]") and last_job()["dropped"] == [], "補上原話就過"
 
+        def t_quote_width():
+            # 原話的核對把全形與半形當成一樣（框架討論紀錄第 46 輪）：只差全形與半形的逗號、空白的限制照收、存成使用者原本的寫法（不再交回歸屬）；
+            # 模型寫的照舊記在評測的紀錄；「、」寫成「,」還是算改寫、拿掉
+            q = "先不要改任何檔案，只看 pkg。pkg 的 alpha 定義在哪？"
+            act = task3("找 pkg 的 alpha 定義", ["pkg 的 alpha 定義在哪？"], [], ["先不要改任何檔案, 只看 pkg。"])
+            fake = FakeChat(main=[act, say("好")], session=[ds("domains", domains=["repo_analysis"])])
+            outs = tools_of(turn(q, fake)[0])
+            assert not outs[0].startswith("[ERROR]"), ("只差全形與半形的逗號、空白：照收", outs[0][:300])
+            job = last_job()
+            assert (job["constraints"], job["dropped"]) == (["先不要改任何檔案，只看 pkg。"], []), (job["constraints"], job["dropped"])
+            rec = domain_calls.calls(agent, act, outs[0])[0]
+            assert rec["constraints"] == ["先不要改任何檔案, 只看 pkg。"], rec["constraints"]
+            q2 = "alpha、beta 定義在哪？"
+            fake = FakeChat(main=[task("找 alpha 與 beta", ["alpha,beta 定義在哪？"]), say("好")], session=[ds("domains", domains=["repo_analysis"])])
+            tools_of(turn(q2, fake)[0])
+            assert last_job()["dropped"] == ["alpha,beta 定義在哪？"], last_job()["dropped"]
+
         def t_ask_items():
             # 問句由程式整句放進項目（框架討論紀錄第 34 輪的 W1b）：一輪還沒有收下的交辦時，最新這一則的問句有一段不在項目，程式把整句照原話放進項目
             # （項目裡是這一句一部分的換成整句、放在原本的位置，沒有就加在最後）；改寫的項目拿掉；一項都沒留下、也沒有問句可放時交回第一項；
@@ -1098,6 +1115,7 @@ def main():
                          ("出處把原文的行號寫成 #N：收據裡有某個檔案的第 N 行時交回的說明寫明檔案與存檔，對不到的照舊", t_ref_line),
                          ("交辦時分清楚問題、限制與背景：各放進自己的欄、沒有歸屬的交回、問句只放進背景的由程式放進項目、背景與限制只記在 job（第一則訊息與提煉的錨點不放）、評測的紀錄", t_task_context),
                          ("背景與限制不是使用者的原話的由程式拿掉、不交回：交辦照收、job 只記原話的、拿掉的記在 job 與評測的紀錄、改寫的那一段照樣算沒放進", t_context_dropped),
+                         ("原話的核對把全形與半形當成一樣：只差全形與半形、空白的照收、存使用者原本的寫法；「、」寫成「,」照舊拿掉", t_quote_width),
                          ("問句由程式整句放進項目：只抄一段或只放進背景的換成整句、改寫的項目拿掉、一項都沒留下時交回、第二次以後的交辦不放、記在 job 與評測的紀錄", t_ask_items),
                          ("回報的出處是這一回合之前存的即時狀態：交回一次、說明附什麼時候查的；讀回的結果開頭寫事實", t_stale_refs)]:
             check(name, fn)
