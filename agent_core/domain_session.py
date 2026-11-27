@@ -580,9 +580,16 @@ class DomainSession:
 
     # ---------------------------------------------------------------- report：回報
     def _report_state(self, job, parsed):
-        """回報：核對沒過的交回修一次（回 None）；過了或修過一次的收尾（回 job）。"""
+        """回報：交辦帶著限制時第一次回報先交回對照限制（回 None）；核對沒過的交回修一次（回 None）；過了或修過一次的收尾（回 job）。"""
         if not parsed["answers"]:
             self._tell(job, _s("err_empty_report"), "回報沒有寫 answers")
+            return None
+        if job.get("constraints") and not job.get("report_constraints_asked"):
+            # 交辦帶著限制：回報之前先交回一次、列出限制的原話（框架討論紀錄第 50 輪的（Da）；第一則訊息不放限制，L1）——實測「引用規格書的編號」
+            # 放在限制時，26b 回答寫了內容、沒寫編號的一半（設計筆記 2.93）
+            job["report_constraints_asked"] = True
+            self._tell(job, _s("report_constraints", constraints="\n".join(f"- {c}" for c in job["constraints"])),
+                       "回報之前對照交辦的限制：交回一次")
             return None
         problems = self._problems(job, parsed["answers"])
         if problems and not job["nudged"]:

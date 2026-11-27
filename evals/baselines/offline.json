@@ -20,9 +20,9 @@
   "total": 8
  },
  "domain_selftest": {
-  "label": "交辦帶著限制時會改狀態的一步先交回對照（t_constraint_check）（2026-11-27）",
-  "passed": 39,
-  "total": 39
+  "label": "回報之前對照交辦的限制（t_report_constraints）（2026-11-27）",
+  "passed": 40,
+  "total": 40
  },
  "edg_selftest": {
   "label": "單一迴圈：交辦與領域 session（框架討論紀錄 F1～F6）（2026-11-23）",
