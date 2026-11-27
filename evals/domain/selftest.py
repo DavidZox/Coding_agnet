@@ -746,6 +746,19 @@ def main():
             assert job["status"] == "done" and not agent.domain_pending
             assert "使用者回答「否」之後" in tools_of(events2)[0], tools_of(events2)[0][:200]
 
+        def t_guard_previous_domain():
+            # 確認關卡寫出之前做過同樣的動作（框架討論紀錄第 45 輪）：領域 session 停在確認關卡時，問使用者的說明與交回主模型的文字都有那一行
+            rec = agent._record_trajectory("docker_ctl_cmd.py", ["restart", "cam_driver"], "[PASS] 已重新啟動 cam_driver", tmp, "", "")
+            fake = FakeChat(main=[task("重新啟動 cam_driver 容器", ["重新啟動 cam_driver"]), say("沒有重新啟動。")],
+                            session=[ds("domains", domains=["robotics_infra"]), ds("skill", skill="docker_ctl"), fill(args="restart cam_driver"),
+                                     ds("report", answers=[(1, "not_found", "使用者沒有同意重新啟動", [])], reply="沒有做")])
+            events, waiting = turn("重新啟動 cam_driver", fake)
+            note = f"之前做過：#{rec['id']}"
+            assert waiting and agent.domain_pending and note in agent.domain_pending["question"], agent.domain_pending
+            assert any(note in (m.get("content") or "") for m in agent.messages if m["role"] == "user"), "交回主模型的文字也有"
+            flows.answer_domain_turn("否", [])
+            assert not agent.domain_pending
+
         # ------------------------------------------------------------ 提煉、再交辦、主 session 的核對
         def t_long_output():
             goal = "看 logs/big.log 最後的 step 是多少"
@@ -1074,7 +1087,7 @@ def main():
                          ("工具的參數表單：args 寫成 JSON、照抄佔位符、填「[]」的交回重填", t_form_tool),
                          ("有骨架的技能的彙整：程式照收據算的數量存成 #編號、總數照它寫就過核對", t_totals), ("回退換技能", t_composite_switch),
                          ("路徑有好幾個交回決定、0 筆照實交回", t_composite_need_and_empty), ("狀態與上限", t_states_limits),
-                         ("確認關卡", t_guard), ("長的結果照舊提煉", t_long_output), ("再交辦帶著上一次的經過", t_previous),
+                         ("確認關卡", t_guard), ("確認關卡寫出之前做過同樣的動作（領域 session 的說明與交回主模型的文字）", t_guard_previous_domain), ("長的結果照舊提煉", t_long_output), ("再交辦帶著上一次的經過", t_previous),
                          ("主 session 依報告回答的核對", t_main_check), ("依報告回答漏了報告的編號與數字：交回修一次", t_kept),
                          ("回答的文字寫了存檔的 #編號：交回修一次（回報與主 session 的回答；使用者自己寫了的、查不到的原因不擋）", t_archive_id),
                          ("每一句都要有歸屬：「。」結尾的句子漏了，一輪的第一次交辦交回一次、補上就過、交回過照收、之後的交辦不核對（「?」在字中間的不算句尾；問句由程式放進項目）", t_cover),

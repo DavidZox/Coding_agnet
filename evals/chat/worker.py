@@ -41,22 +41,30 @@ def install_fake_model():
 
 
 def seed_archives(results_dir, seeds):
-    """把「之前的存檔」寫進 logs/tool_results/：原文檔（跟 ArchiveMixin._archive_tool_result 同一種檔頭）、
-    index.md 一行、tools_use_index.md 一行（檢索清單）。"""
+    """把「之前的存檔」寫進 logs/tool_results/：原文檔（跟 ArchiveMixin._archive_tool_result 同一種檔頭；有 memory 的寫進檔頭）、
+    index.md 一行、有 hint 的寫 tools_use_index.md 一行（檢索清單）、動作（memory＝action）寫 actions_index.md 一行（跟 archive._write_archive
+    同一種寫法：「最近執行過的動作」與確認關卡的「之前做過」讀它，框架討論紀錄第 45 輪）。"""
     os.makedirs(results_dir, exist_ok=True)
     for s in seeds:
         stem = s["script"].replace("_cmd.py", "").replace(".py", "")
         filename = f"{s['session']}_{s['id']:03d}_{stem}.md"
         header = ["---", f"id: {s['id']}", f"session: {s['session']}", f"ts: {s['ts']}", f"script: {s['script']}",
-                  f"skill: {s['skill']}", f"command: EXECUTE: scripts/{s['script']}", f"cwd: {ROOT}", "container: rmf_sim",
-                  "status: PASS", f"chars: {len(s['output'])}", f"task: {s['task']}", "---"]
+                  f"skill: {s['skill']}", f"command: EXECUTE: scripts/{s['script']} {' '.join(s.get('args') or [])}".rstrip(),
+                  f"cwd: {ROOT}", "container: rmf_sim", "status: PASS", f"chars: {len(s['output'])}", f"task: {s['task']}"]
+        header += ([f"memory: {s['memory']}"] if s.get("memory") else []) + ["---"]
         with open(os.path.join(results_dir, filename), "w", encoding="utf-8") as f:
             f.write("\n".join(header) + "\n" + s["output"] + "\n")
         with open(os.path.join(results_dir, "index.md"), "a", encoding="utf-8") as f:
             f.write(f"#{s['id']} | {s['ts'][:16]} | {s['script']} | PASS | {len(s['output'])} 字 | {filename} | "
                     f"任務：{s['task']} | 回答：\n")
-        with open(os.path.join(results_dir, "tools_use_index.md"), "a", encoding="utf-8") as f:
-            f.write(f"#{s['id']} | {s['ts'][:16]} | {s['session']} | {filename} | {s['hint']}\n")
+        if s.get("hint"):
+            with open(os.path.join(results_dir, "tools_use_index.md"), "a", encoding="utf-8") as f:
+                f.write(f"#{s['id']} | {s['ts'][:16]} | {s['session']} | {filename} | {s['hint']}\n")
+        if s.get("memory") == "action":
+            args = " ".join(" ".join(s.get("args") or []).split())[:200]
+            head = " ".join(s["output"].strip().split("\n", 1)[0].split())[:160]
+            with open(os.path.join(results_dir, "actions_index.md"), "a", encoding="utf-8") as f:
+                f.write(f"#{s['id']} | {s['ts'][:16]} | {s['session']} | {s['skill']} | {args} | PASS | {head}\n")
 
 
 def evaluate(expect, turn):

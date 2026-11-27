@@ -159,11 +159,9 @@ class ToolUseIndexMixin:
             parts.append(_i("index_action"))
         return "".join(f"，{x}" for x in parts)
 
-    def _actions_block(self):
-        """system prompt「最近執行過的動作」（框架討論紀錄第 42 輪）：actions_index.md 最近 ACTIONS_SHOW 筆（新→舊）——會改狀態的工具執行過的
-        紀錄（存檔的 memory: action，archive._write_archive 記的）；檢索清單只記提煉過的長輸出，動作的回傳通常很短，不在那裡。沒有就不列。"""
-        if ACTIONS_SHOW <= 0:
-            return ""
+    def _action_rows(self):
+        """actions_index.md 最後 INDEX_TAIL_BYTES 的動作（新→舊）：[{id, ts, session, skill, args, status, head}]——會改狀態的工具執行過的紀錄
+        （存檔的 memory: action，archive._write_archive 記的）。「最近執行過的動作」與確認關卡的「之前做過」（guard._previous_action）共用；沒有回 []。"""
         try:
             with open(os.path.join(self.results_dir(), ACTIONS_INDEX_NAME), "rb") as f:
                 f.seek(0, os.SEEK_END)
@@ -171,17 +169,23 @@ class ToolUseIndexMixin:
                 f.seek(max(0, size - INDEX_TAIL_BYTES))
                 raw = f.read().decode("utf-8", errors="replace")
         except OSError:
-            return ""
+            return []
         rows = []
         for ln in reversed([x for x in raw.splitlines()[(1 if size > INDEX_TAIL_BYTES else 0):] if x.strip()]):
             parts = [p.strip() for p in ln.split(" | ", 6)]
-            if len(parts) < 7:
-                continue
-            rid, ts, session, skill, args, status, head = parts
-            earlier = "，" + _i("index_earlier") if session != getattr(self, "session_id", None) else ""
-            rows.append(f"- {rid}（{ts}{earlier}）：{skill} {args}（{status}）：{head}")
-            if len(rows) >= ACTIONS_SHOW:
-                break
+            if len(parts) == 7:
+                rows.append(dict(zip(("id", "ts", "session", "skill", "args", "status", "head"), parts)))
+        return rows
+
+    def _actions_block(self):
+        """system prompt「最近執行過的動作」（框架討論紀錄第 42 輪）：最近 ACTIONS_SHOW 筆（新→舊，_action_rows）；檢索清單只記提煉過的長輸出，
+        動作的回傳通常很短，不在那裡。沒有就不列。"""
+        if ACTIONS_SHOW <= 0:
+            return ""
+        rows = []
+        for r in self._action_rows()[:ACTIONS_SHOW]:
+            earlier = "，" + _i("index_earlier") if r["session"] != getattr(self, "session_id", None) else ""
+            rows.append(f"- {r['id']}（{r['ts']}{earlier}）：{r['skill']} {r['args']}（{r['status']}）：{r['head']}")
         return _i("actions_index", rows="\n".join(rows)) if rows else ""
 
     def _tool_use_catalog(self, exclude=()):

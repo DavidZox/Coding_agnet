@@ -460,6 +460,21 @@ def main():
             vid = agent.last_result_id
             assert agent.reply_check(said(f"照 #{vid}，nav2_test 在那份清單裡。")) is None, "看舊存檔的衍生輸出：不交回"
 
+        def t_guard_previous():
+            # 確認關卡寫出之前做過同樣的動作（框架討論紀錄第 45 輪）：同一個技能、同樣的參數照 actions_index.md 記的寫法比；
+            # 沒做過的跟以前一樣，做過兩次寫「一共 2 次」，參數不一樣的不寫；不擋（照樣要確認）
+            agent.set_current_task("寫一下")
+            act = {"action": {"command": "scripts/file_ops_cmd.py", "args": "write guard_prev.txt hi"}}
+            info = agent.state_change_info(act)
+            assert info and not info.get("previous") and "之前做過" not in agent.guard_prompt_text(info), info
+            rec = agent._record_trajectory("file_ops_cmd.py", ["write", "guard_prev.txt", "hi"], "[PASS] 寫入 guard_prev.txt（2 字）", tmp, "", "")
+            text = agent.guard_prompt_text(agent.state_change_info(act))
+            assert f"之前做過：#{rec['id']}" in text and "PASS" in text and "寫入 guard_prev.txt" in text and "一共" not in text, text
+            agent._record_trajectory("file_ops_cmd.py", ["write", "guard_prev.txt", "hi"], "[PASS] 寫入 guard_prev.txt（2 字）", tmp, "", "")
+            assert "一共 2 次" in agent.guard_prompt_text(agent.state_change_info(act))
+            other = agent.state_change_info({"action": {"command": "scripts/file_ops_cmd.py", "args": "write guard_prev.txt bye"}})
+            assert other and "之前做過" not in agent.guard_prompt_text(other), "參數不一樣的不寫"
+
         for name, fn in [("卡住偵測：同樣的動作第二次附提醒、第三次加強提醒、第四次停下這一回合（v4.1）", t_stuck),
                          ("卡住偵測：同一個錯誤不管中間做了什麼，第二次提醒、第四次算卡住", t_same_error_not_consecutive),
                          ("卡住偵測：評測對照組的舊規則（AGENT_TURN_GUARD_RULE=v4，第三次就停）", t_v4_rule),
@@ -480,7 +495,8 @@ def main():
                          ("CLI 的主迴圈：會改變狀態的技能先問 y/n，n 不執行、y 才執行", t_cli_guard),
                          ("回覆的字串上限：schema 有上限、command 寫成 null 是沒有動作、寫到上限被截斷的不執行（重問一次，還是被截斷就不執行）", t_reply_cut),
                          ("存檔分讀取型與動作型：檔頭記種類、動作另列一區、檢索清單寫之前的 session 與即時狀態、讀回開頭寫事實、存檔之後改過的檔案列出來", t_memory_kinds),
-                         ("主 session 的回覆引用了這一回合之前的即時狀態：不交回（問的是現在還是當時由模型看程式寫的事實判斷）", t_memory_reply_no_sendback)]:
+                         ("主 session 的回覆引用了這一回合之前的即時狀態：不交回（問的是現在還是當時由模型看程式寫的事實判斷）", t_memory_reply_no_sendback),
+                         ("確認關卡寫出之前做過同樣的動作：同一個技能、同樣的參數；沒做過、參數不一樣的不寫；做過兩次寫一共幾次", t_guard_previous)]:
             check(name, fn)
     finally:
         os.chdir(cwd)

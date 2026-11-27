@@ -247,14 +247,31 @@ class GuardMixin:
             if container:
                 reason += f"；容器：{container}"
         return {"skill": skill or script_name, "script": script_name,
-                "command": f"scripts/{script_name} {remainder}".strip(), "reason": reason}
+                "command": f"scripts/{script_name} {remainder}".strip(), "reason": reason,
+                "previous": self._previous_action(skill or script_name, args)}
+
+    def _previous_action(self, skill, args):
+        """這個動作之前做過的紀錄（框架討論紀錄第 45 輪）：actions_index.md 裡同一個技能、同樣的參數的那幾行（tool_use_index._action_rows；
+        照 archive._write_archive 記的寫法比：參數用空白接起來、連續的空白合成一個、最多 200 字——寫法不一樣（順序、多一個旗標）就不算）→
+        最近一次（編號、時間、狀態、結果的第一行、是不是之前的 session）與一共幾次；沒有回 None。只是寫給使用者看，不擋。"""
+        key = " ".join(" ".join(str(a) for a in args or []).split())[:200]
+        same = [r for r in self._action_rows() if r["skill"] == skill and r["args"] == key]
+        if not same:
+            return None
+        return dict(same[0], count=len(same), earlier=same[0]["session"] != getattr(self, "session_id", None))
 
     @staticmethod
     def guard_prompt_text(info):
-        """給使用者看的確認說明（CLI 印出、Web 顯示在確認列上方）。"""
-        return (f"🛡️ AI 要執行會改變系統狀態的動作，需要你確認：\n"
+        """給使用者看的確認說明（CLI 印出、Web 顯示在確認列上方；領域 session 停在確認關卡時也交回主模型）。同樣的動作之前做過時多一行
+        （_previous_action；不擋，做不做照舊由使用者決定，框架討論紀錄第 45 輪）。"""
+        text = (f"🛡️ AI 要執行會改變系統狀態的動作，需要你確認：\n"
                 f"- 技能：{info['skill']}（{info['reason']}）\n"
                 f"- 指令：{info['command']}")
+        p = info.get("previous")
+        if p:
+            when = p["ts"] + ("，之前的 session" if p["earlier"] else "")
+            text += f"\n- 之前做過：{p['id']}（{when}，{p['status']}）：{p['head']}" + (f"（一共 {p['count']} 次）" if p["count"] > 1 else "")
+        return text
 
     @staticmethod
     def guard_denied_text(info):
