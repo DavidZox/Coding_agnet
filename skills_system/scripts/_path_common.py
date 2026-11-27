@@ -6,7 +6,8 @@ csv_query、file_ops、image_inspect 共用。只用標準庫。
 2. suggest()：路徑找不到時的「你是不是要找」。小模型最常見的錯是路徑差一點：大小寫、少一層目錄、拼錯一個字（launch／lauch）、
    把檔名當目錄。只回「不存在」時它常常換個更離譜的猜法、或一直重試同一個路徑（主對話的卡住偵測會在第三次停下來）；直接列出
    實際存在、最像的幾個路徑，下一步就對了。做法：從要找的路徑往上找到第一個存在的目錄，在那裡比對缺的那一段（不分大小寫、
-   difflib 相似度）；另外在目前工作目錄底下（最多 4 層、最多看 5000 個項目）找同名的檔案或目錄。候選的清單是 near_paths()，
+   difflib 相似度）；另外在目前工作目錄底下（最多 4 層、最多看 5000 個項目）找同名的檔案或目錄，同名的都沒有就列名稱含這一段的
+   （照相似度排；跟 find_file 的名稱含同一條規則）；整個包在 [ ] 裡的、<目錄>/*.md 這種含萬用字元的另外認（near_paths 的說明）。候選的清單是 near_paths()，
    找不到路徑的錯誤把它帶在 ToolError 的 near（收據記成 near：低階執行器的第 1 級照它判斷，好幾個候選時不替上一層選）。
 3. DEFAULT_EXCLUDES：search_text、find_file 預設略過的目錄（ROS 2 Workspace 的 build／install／log、.git、虛擬環境…）。
 4. newest_line()：「最新修改：A（時間）；其次：B、C」（list_dir、find_file 共用；數值由腳本算、模型照抄）。
@@ -67,18 +68,33 @@ def display(path):
 
 def near_paths(path, want="any", limit=5):
     """相近的路徑：候選的清單（給模型看的寫法；找不到相近的回 []）。want：any／dir／file。
+    另外認得三種寫法（框架討論紀錄第 53 輪）：整個包在 [ ] 裡（照抄用法的 [路徑]）→ 拿掉方括號存在的排第一個；含 * ? 而且前面有目錄
+    （<目錄>/*.md：工具不經過 shell，萬用字元不會展開）→ 只列那個目錄（不存在就照它找相近的目錄；不列對到的檔案，只列幾個的話下一步
+    可能只搜那幾個），要檔案的（want=file）不算；名稱一樣的都找不到 → 名稱含這一段的（照相似度排）。
     評測的對照組用 AGENT_ABLATE=path_suggest 關掉（平常不要設）。"""
     if "path_suggest" in os.environ.get("AGENT_ABLATE", ""):
         return []
+    raw = str(path).strip()
+    if want != "file" and ("*" in raw or "?" in raw):
+        head = raw[:min(raw.index(c) for c in "*?" if c in raw)]
+        if "/" in head:
+            folder = head.rsplit("/", 1)[0] or "/"
+            full = os.path.abspath(expand(folder))
+            return [_show(full)] if os.path.isdir(full) else near_paths(folder, "dir", limit)
+    lead = []
+    if len(raw) > 2 and raw[0] == "[" and raw[-1] == "]":
+        full = os.path.abspath(expand(raw[1:-1].strip()))
+        if os.path.exists(full) and _kind_ok(full, want):
+            lead.append(_show(full))
     try:
         target = os.path.abspath(expand(path))
     except (TypeError, ValueError):
-        return []
+        return lead
     missing, cur = [], target
     while not os.path.exists(cur):
         parent = os.path.dirname(cur)
         if parent == cur:
-            return []
+            return lead
         missing.insert(0, os.path.basename(cur))
         cur = parent
     out = []
@@ -100,19 +116,26 @@ def near_paths(path, want="any", limit=5):
             elif not missing[1:] and _kind_ok(os.path.join(cur, name), want):
                 out.append(_show(os.path.join(cur, name)))
     base = (missing[-1] if missing else os.path.basename(target)).lower()
+    part = []
     if base and len(out) < limit:
         seen, root = 0, os.getcwd()
         for dirpath, dirnames, filenames in os.walk(root):
             depth = dirpath[len(root):].count(os.sep)
-            dirnames[:] = [d for d in dirnames if d not in _SKIP and not d.startswith(".")] if depth < 4 else []
-            for name in dirnames + filenames:
+            keep = [d for d in dirnames if d not in _SKIP and not d.startswith(".")]
+            dirnames[:] = keep if depth < 4 else []      # 最後一層的目錄跟檔案一樣比對名稱，只是不再往下走
+            for name in keep + filenames:
                 seen += 1
-                full = os.path.join(dirpath, name)
-                if name.lower() == base and _kind_ok(full, want) and _show(full) not in out:
+                full, low = os.path.join(dirpath, name), name.lower()
+                if low == base and _kind_ok(full, want) and _show(full) not in out:
                     out.append(_show(full))
+                elif base in low and low != base and _kind_ok(full, want):
+                    part.append(full)
             if seen > 5000 or len(out) >= limit:
                 break
-    return out[:limit]
+    if not out:
+        part.sort(key=lambda f: -difflib.SequenceMatcher(None, base, os.path.basename(f).lower()).ratio())
+        out = [_show(f) for f in part]
+    return (lead + [p for p in out if p not in lead])[:limit]
 
 
 def suggest(path, want="any", limit=5, near=None):

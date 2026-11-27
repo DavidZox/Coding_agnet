@@ -50,9 +50,9 @@
   "total": 11
  },
  "skills": {
-  "label": "code_defs 的 --has、cpp_symbol 先列有本體的定義（t_code_defs_has、t_cpp_defs）（2026-11-26）",
-  "passed": 120,
-  "total": 120
+  "label": "第 53 輪（相近的路徑多認三種寫法）（2026-11-27）",
+  "passed": 121,
+  "total": 121
  },
  "skills_sandbox": {
   "label": "第 5 步（6958dac）（2026-11-20）",

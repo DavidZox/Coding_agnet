@@ -191,6 +191,35 @@ def t_near_paths():
     assert r["status"] == "error" and r["error_kind"] == "args" and "near" not in r, r
 
 
+def t_near_paths_forms():
+    """相近的路徑多認的三種寫法（框架討論紀錄第 53 輪）：名稱只寫了一部分 → 名稱含這一段的（照相似度排；走訪最後一層的目錄也比對）；
+    整個包在 [ ] 裡 → 拿掉方括號的排第一個；<目錄>/*.md → 只列那個目錄（目錄寫錯就照它找相近的目錄）。名稱一樣的找得到時照舊只列那些"""
+    d = _tmp()
+    for rel in ("hw/cam_driver/driver/src/cam_segment_xd/config.cpp", "hw/cam_driver/include/cam_segment_xd/config.h",
+                "hw/cam_driver/launch/cam_segment_xd.launch.py", "docs/specs/nodes/a.md", "docs/specs/nodes/b.md",
+                "solo/notes/c.md", "keep/notes_archive/d.md"):
+        _w(d, rel, "port spec\n")
+    deep = {"hw/cam_driver/driver/src/cam_segment_xd", "hw/cam_driver/include/cam_segment_xd"}
+    out, r = run("search_text", "port", "hw/cam_driver/segment_xd", d=d)
+    assert r["status"] == "error" and set(r["near"][:2]) == deep and r["near"][2:] == ["hw/cam_driver/launch/cam_segment_xd.launch.py"], r
+    assert "相近的路徑：" in out and "hw/cam_driver/driver/src/cam_segment_xd" in out, out
+    _, r = run("find_file", "config", "hw/cam_driver/segment_xd", d=d)
+    assert set(r["near"]) == deep, r
+    _, r = run("list_dir", "notes", d=d)
+    assert r["near"] == ["solo/notes"], r
+    _, r = run("list_dir", "[.]", d=d)
+    assert r["status"] == "error" and r["near"][0] == ".", r
+    _, r = run("find_file", "config", "[./hw]", d=d)
+    assert r["near"][0] == "hw", r
+    _, r = run("code_defs", "[hw]", "--kind", "class", d=d)
+    assert r["near"][0] == "hw", r
+    out, r = run("search_text", "spec", "docs/specs/nodes/*.md", d=d)
+    assert r["status"] == "error" and r["near"] == ["docs/specs/nodes"], r
+    assert "相近的路徑：docs/specs/nodes" in out, out
+    _, r = run("search_text", "spec", "specs/nodes/*.md", d=d)
+    assert r["near"] == ["docs/specs/nodes"], r
+
+
 # ---------------------------------------------------------------- code_ast_reader
 _PY = '''"""模組"""
 LIMIT = 3
