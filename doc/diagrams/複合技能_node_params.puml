@@ -1,0 +1,49 @@
+@startuml
+' 複合技能 node_params 的〈骨架〉與〈回退〉畫成流程（2026-11-27，框架討論紀錄第 52 輪）；來源 skills_system/repo_analysis/node_params.md。
+skinparam shadowing false
+skinparam defaultFontName "Microsoft JhengHei"
+skinparam ActivityFontSize 13
+skinparam NoteFontSize 12
+skinparam LegendFontSize 12
+skinparam ArrowColor #555555
+skinparam ActivityDiamondFontSize 12
+title node_params：ROS 節點（C++ 或 Python）在程式裡宣告了哪些參數、各自的預設值
+
+start
+:參數（領域 session 填，每個參數附一字不改的原文）
+・node：節點所在的套件或目錄（必填；原文寫的節點、套件名稱或路徑）
+・exclude：範圍裡不要的子目錄（選填）; <<#FFE6CC>>
+:合約（程式核對）：原文要一字不改地在問題、子目標、
+項目或前面的結果裡，值照種類對得上原文；
+沒過交回領域 session 改（不算一步）; <<#D5E8D4>>
+:補齊（composite.py）：node 在工作目錄找不到時照 fetch 用 find_file 找一次
+（剛好一個就自己補；好幾個或沒有 → need，附候選）; <<#DAE8FC>>
+:① decl（search_text，只搜 node 底下的 C++ 與 Python 檔）
+搜宣告參數的寫法（寫法在〈骨架〉，載入給模型的規格拿掉），
+不附前後行：每一行就是一個參數與它的預設值; <<#DAE8FC>>
+if (decl 的結果？) then (0 筆)
+  :【回退 no_decl】need：這個目錄的原始碼沒有宣告參數的地方——
+  節點的程式在別的套件或目錄？還是參數只寫在設定檔或 launch 檔
+  （那要用 config_trace）; <<#F8CECC>>
+else (有找到)
+endif
+:結果交回領域 session（domain_session.py 整理）
+・技能的狀態、自己補的參數、need（說明與候選）
+・decl 的結果（#編號）：宣告參數的每一行與行號
+・短的給原文，太長的分段提煉（錨點是子目標與項目，事實附 檔案:行號）; <<#E1D5E7>>
+note right
+  **下一步由領域 session 決定**（骨架裡沒有讀與選路的節點）：
+  ・一行看不完整（預設值寫在下一行、或用變數）→ 用 view_file 看那一行前後
+  ・問的是 launch 或設定檔覆寫成多少 → 用 config_trace
+  ・數有幾個（各檔案幾個、總共幾個）→ 用 count_in_scope 或 py_usage
+  ・查到能回答 → 回報（每個參數的名稱與預設值，附 檔案:行號）
+end note
+stop
+legend bottom
+  顏色：橘＝模型（領域 session 填參數）、綠＝程式核對、藍＝程式照〈骨架〉做（composite.py 排圖、edg.py 執行）、黃＝〈回退〉（程式照收據的條件自動改做）、紅＝need（交回領域 session 決定）、紫＝交回領域 session 的結果。
+  回退的條件在節點跑完之後由程式照收據比對（照〈回退〉列的順序，取第一個符合、還沒用過的）；加節點重排與換技能合計最多 3 次，再要就熔斷。
+  紅色 need：不問使用者，交回領域 session 決定——照候選改參數再用一次、換一個技能，或回報。
+  骨架只有工具節點：結果怎麼讀交給提煉，下一步（再用技能、再選領域、回報）由領域 session 決定。
+  來源：skills_system/repo_analysis/node_params.md 的 parameters、〈骨架〉與〈回退〉（改了技能要一起改這張圖）。
+endlegend
+@enduml

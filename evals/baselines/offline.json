@@ -20,9 +20,9 @@
   "total": 8
  },
  "domain_selftest": {
-  "label": "回報之前對照交辦的限制（t_report_constraints）（2026-11-27）",
-  "passed": 40,
-  "total": 40
+  "label": "ROS 節點的參數與預設值（t_node_params）（2026-11-27）",
+  "passed": 41,
+  "total": 41
  },
  "edg_selftest": {
   "label": "單一迴圈：交辦與領域 session（框架討論紀錄 F1～F6）（2026-11-23）",

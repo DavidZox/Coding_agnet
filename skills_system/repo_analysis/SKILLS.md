@@ -10,6 +10,7 @@
 - [doc_lookup](doc_lookup.md) — 照指定的一份文件（規格書、手冊、說明）回答它寫了什麼：先找到那份文件，在裡面搜問題提到的名稱（附檔案、行號）
 - [cpp_symbol](cpp_symbol.md) — C++ 程式（.h、.hpp、.cpp、.cc）裡的類別、函式、成員或設定：搜問題提到的名稱與前後幾行（附檔案、行號）；範圍裡沒有就看整個工作目錄的 C++ 檔
 - [config_trace](config_trace.md) — 一個參數、topic、節點或 launch 檔在 launch、設定檔（yaml、xml）與程式（.py、C++）裡出現在哪：誰設定、值多少、remap 成什麼、誰發布與訂閱、程式哪裡讀（附檔案、行號）；用一次查一站
+- [node_params](node_params.md) — ROS 節點（C++ 或 Python）在程式裡宣告了哪些參數、各自的預設值：在節點所在的套件或目錄的原始碼裡，列出宣告參數的每一行（預設值寫在那一行；附檔案、行號）
 
 ## 工具
 - [search_text](../tools/search_text.md)

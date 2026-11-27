@@ -69,6 +69,27 @@ CAM_FILES = {       # cpp_symbol 分開宣告與定義（t_cpp_defs 寫進臨時
                              "  ++n_;\n}\n}  // namespace cam\n",
 }
 SESSION_MARK = "你是領域 session"
+NODE_FILES = {   # ROS 節點的參數與預設值（框架討論紀錄第 52 輪的 node_params）：一個 C++ 節點、一個 Python 節點
+    "ndemo/src/demo_node.cpp": (
+        '#include "rclcpp/rclcpp.hpp"\n'
+        'class DemoNode : public rclcpp::Node {\n'
+        ' public:\n'
+        '  DemoNode() : Node("demo_node") {\n'
+        '    this->declare_parameter<std::string>("input_topic", "/demo_in");\n'
+        '    this->declare_parameter<double>("rate_hz", 5.0);\n'
+        '    rate_ = this->get_parameter("rate_hz").as_double();\n'
+        '  }\n'
+        ' private:\n'
+        '  double rate_;\n'
+        '};\n'),
+    "ndemo/scripts/demo_py.py": (
+        "from rclpy.node import Node\n\n\n"
+        "class DemoPy(Node):\n"
+        "    def __init__(self):\n"
+        '        super().__init__("demo_py")\n'
+        '        self.declare_parameter("frame_name", "demo_frame")\n'),
+}
+
 
 
 def task(goal, items):
@@ -918,6 +939,28 @@ def main():
             hits = shown.split("— 提到這些名稱的行", 1)[1]
             assert "grabFrame();" in hits, ("宣告在搜尋那一份", hits[:600])
 
+        def t_node_params():
+            # ROS 節點的參數與預設值（框架討論紀錄第 52 輪的（B2b））：node_params 在節點的目錄搜宣告參數的那一行（C++ 與 Python，預設值寫在那一行）
+            # ——搜的寫法在〈骨架〉，給模型看的規格沒有；讀取參數的那一行（沒有預設值）不列
+            for rel, text in NODE_FILES.items():
+                os.makedirs(os.path.dirname(os.path.join(tmp, rel)), exist_ok=True)
+                with open(os.path.join(tmp, rel), "w", encoding="utf-8") as f:
+                    f.write(text)
+            q = "ndemo 這個節點宣告了哪些參數？預設值是多少？"
+            fake = FakeChat(main=[task("找 ndemo 節點宣告的參數與預設值", [q]), say("好")],
+                            session=[ds("domains", domains=["repo_analysis"]), ds("skill", skill="node_params"),
+                                     fill(params=[("node", "ndemo", "ndemo")])])
+            turn(q, fake)
+            st = next(s for s in last_job()["steps"] if s["kind"] == "composite")
+            assert st["skill"] == "node_params" and st["status"] == "done", (st["skill"], st["status"])
+            assert [o["tool"] for o in st["composite"]["outputs"]] == ["search_text"], st["composite"]
+            shown = fake.session_msgs(3)[-1]["content"]
+            for want in ('"input_topic", "/demo_in"', '"rate_hz", 5.0', '"frame_name", "demo_frame"'):
+                assert want in shown, (want, shown[:900])
+            assert 'get_parameter("rate_hz")' not in shown, ("讀取的那一行不列", shown[:900])
+            spec = skill_spec.for_model(open(os.path.join(tmp, "skills_system", "repo_analysis", "node_params.md"), encoding="utf-8").read())
+            assert "declare_parameter" not in spec, "搜的寫法只在骨架"
+
         def t_cover_parts():
             # 交辦的核對看每一句與「、」接的每一段（框架討論紀錄第 31 輪）：「。」結尾、要你做的句子也算；一句裡用「、」接的只抄一段不算——
             # 問句由程式整句放進項目（第 34 輪）、「。」結尾的交回，說明列出缺的那幾段；整句抄了、用「、」接的幾段抄在同一項就過
@@ -1152,7 +1195,7 @@ def main():
                          ("工具的參數表單：args 寫成 JSON、照抄佔位符、填「[]」的交回重填", t_form_tool),
                          ("有骨架的技能的彙整：程式照收據算的數量存成 #編號、總數照它寫就過核對", t_totals), ("回退換技能", t_composite_switch),
                          ("路徑有好幾個交回決定、0 筆照實交回", t_composite_need_and_empty), ("狀態與上限", t_states_limits),
-                         ("確認關卡", t_guard), ("確認關卡寫出之前做過同樣的動作（領域 session 的說明與交回主模型的文字）", t_guard_previous_domain), ("長的結果照舊提煉", t_long_output), ("再交辦帶著上一次的經過", t_previous),
+                         ("ROS 節點的參數與預設值：node_params 列出 C++ 與 Python 節點宣告參數的那幾行", t_node_params), ("確認關卡", t_guard), ("確認關卡寫出之前做過同樣的動作（領域 session 的說明與交回主模型的文字）", t_guard_previous_domain), ("長的結果照舊提煉", t_long_output), ("再交辦帶著上一次的經過", t_previous),
                          ("主 session 依報告回答的核對", t_main_check), ("依報告回答漏了報告的編號與數字：交回修一次", t_kept),
                          ("回答的文字寫了存檔的 #編號：交回修一次（回報與主 session 的回答；使用者自己寫了的、查不到的原因不擋）", t_archive_id),
                          ("每一句都要有歸屬：「。」結尾的句子漏了，一輪的第一次交辦交回一次、補上就過、交回過照收、之後的交辦不核對（「?」在字中間的不算句尾；問句由程式放進項目）", t_cover),

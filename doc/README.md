@@ -32,8 +32,9 @@
 | ![doc_lookup](images/複合技能_doc_lookup.png) | `diagrams/複合技能_doc_lookup.puml` | 複合技能 doc_lookup（2026-11-23）：照一份文件回答：在指定的那一份文件裡搜問題提到的名稱（同一行含最多個名稱的先列）；0 筆時 need 交回領域 session 換字；看前後、照結果裡的名稱接著找由領域 session 決定 |
 | ![cpp_symbol](images/複合技能_cpp_symbol.png) | `diagrams/複合技能_cpp_symbol.puml` | 複合技能 cpp_symbol（2026-11-23，11-26 先列有本體的定義）：C++ 的名稱與設定：先列有本體的定義（code_defs `--has`：名稱或所屬的類別有這些名稱，附第幾行到第幾行；宣告不列），再搜 C++ 檔（同一行含最多個名稱的先列，附前後 2 行）；0 筆搜整個工作目錄；看整個函式、接著找別的名稱由領域 session 決定 |
 | ![config_trace](images/複合技能_config_trace.png) | `diagrams/複合技能_config_trace.puml` | 複合技能 config_trace（2026-11-23）：沿著 launch、設定檔、程式追一個名稱：在這幾種檔裡搜（附前後 2 行）；0 筆搜整個工作目錄；用一次查一站，下一站由領域 session 照結果裡的名稱再用 |
+| ![node_params](images/複合技能_node_params.png) | `diagrams/複合技能_node_params.puml` | 複合技能 node_params（2026-11-27）：ROS 節點的參數與預設值：在節點所在的套件或目錄的 C++ 與 Python 檔搜宣告參數的寫法，每一行就是一個參數與預設值；沒有一處交回決定目錄或改用 config_trace |
 
-複合技能（有骨架的技能）的六張圖照 `skills_system/repo_analysis/<名稱>.md` 的 parameters、〈骨架〉與〈回退〉畫：橘＝模型（領域 session 填參數）、綠＝程式核對、藍＝程式照骨架做、黃＝回退（程式照條件自動改做）、紅＝交回領域 session 決定（need）、紫＝交回領域 session 的結果。改了技能要一起改圖。
+複合技能（有骨架的技能）的七張圖照 `skills_system/repo_analysis/<名稱>.md` 的 parameters、〈骨架〉與〈回退〉畫：橘＝模型（領域 session 填參數）、綠＝程式核對、藍＝程式照骨架做、黃＝回退（程式照條件自動改做）、紅＝交回領域 session 決定（need）、紫＝交回領域 session 的結果。改了技能要一起改圖。
 
 改完 `.puml` 後重新產生 PNG，一律用本機離線渲染（不要用線上的 PlantUML 伺服器：圖的內容會離開這台機器）。`~/tools/plantuml/` 放了 Temurin JRE 21 與
 plantuml.jar（1.2026.8，從 Maven Central 下載）；這台機器沒有 Microsoft JhengHei，字型換成系統的 Noto Sans CJK TC 再渲染

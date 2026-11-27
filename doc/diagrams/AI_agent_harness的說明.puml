@@ -110,7 +110,7 @@ rectangle NodeSkills #D5E8D4 [
     長的輸出分 ## 章節；計數、排序、門檻由腳本算；不讀標準輸入、有逾時
   * DOMAIN.md：領域的清單與共用的工具（列目錄、找檔案、回顧存檔）；
     <領域>/：領域的說明、〈做法〉、有骨架的技能（〈骨架〉〈回退〉；
-    repo_analysis：6 個，凍結的工具登記成的四個領域沒有）與工具
+    repo_analysis：7 個，凍結的工具登記成的四個領域沒有）與工具
   * 收據：第一版領域的腳本另外寫一份給程式讀的結果
     （_receipt_common：狀態、錯誤種類、數量、項目；給模型的文字不變）；
     規格的 parameters／receipt 是給程式看的，載入給模型時拿掉
@@ -139,7 +139,7 @@ rectangle NodeDomain #E2F0D9 [
     看了結果決定再用技能、再選領域或回報；最多 10 個技能、
     重選領域最多 2 次，一模一樣的技能＋參數不執行
   * 有骨架的技能（repo_analysis）：py_usage、count_in_scope、
-    find_lines、doc_lookup、cpp_symbol、config_trace
+    find_lines、doc_lookup、cpp_symbol、config_trace、node_params
   * 回報：每一項答到／查不到、出處，程式核對（answers.py）→
     整理成報告交回；試錯不進主對話
 ]
