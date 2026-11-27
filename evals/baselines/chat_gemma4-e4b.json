@@ -1,54 +1,54 @@
 {
  "date": "2026-11-27",
  "dirs": [
-  "20261127_063149_S",
-  "20261127_073522_phase"
+  "20261127_130821_X",
+  "20261127_133714_phase"
  ],
- "label": "單一迴圈第 43 輪之後的階段結束（9f3eee9）",
+ "label": "單一迴圈第 50 輪之後的階段結束（b651ee6）",
  "per": {
   "compare_two_archives": {
-   "passed": 9,
-   "runs": 9
+   "passed": 6,
+   "runs": 6
   },
   "containers_basic": {
-   "passed": 3,
-   "runs": 3
+   "passed": 6,
+   "runs": 6
   },
   "count_from_script": {
-   "passed": 3,
-   "runs": 3
+   "passed": 6,
+   "runs": 6
   },
   "cross_session_recall": {
-   "passed": 9,
-   "runs": 9
+   "passed": 6,
+   "runs": 6
   },
   "current_state_rerun": {
-   "passed": 8,
-   "runs": 9
+   "passed": 5,
+   "runs": 6
   },
   "error_recovery": {
-   "passed": 3,
-   "runs": 3
+   "passed": 4,
+   "runs": 6
   },
   "fleet_battery": {
-   "passed": 3,
-   "runs": 3
+   "passed": 6,
+   "runs": 6
   },
   "fleet_followup": {
-   "passed": 8,
-   "runs": 9
+   "passed": 6,
+   "runs": 6
   },
   "followup_in_context": {
-   "passed": 3,
-   "runs": 9
+   "passed": 2,
+   "runs": 6
   },
   "guard_dispatch": {
-   "passed": 7,
-   "runs": 9
+   "passed": 6,
+   "runs": 6
   },
   "memory_stale_state": {
-   "passed": 8,
-   "runs": 9
+   "passed": 6,
+   "runs": 6
   }
  }
 }

@@ -1,10 +1,10 @@
 {
  "models": {
   "gemma4:26b": {
-   "label": "單一迴圈第 43 輪之後的階段結束（9f3eee9）（2026-11-27，20261127_073921_edg_gemma4-26b_all_phase）",
+   "label": "單一迴圈第 50 輪之後的階段結束（b651ee6）（2026-11-27，20261127_134111_edg_gemma4-26b_all_phase）",
    "per": {
     "ast_not_python": [
-     2,
+     3,
      3
     ],
     "find_only_path": [
@@ -54,13 +54,13 @@
      6
     ],
     "main": [
-     26,
+     27,
      27
     ]
    }
   },
   "gemma4:e4b": {
-   "label": "單一迴圈第 43 輪之後的階段結束（9f3eee9）（2026-11-27，20261127_073945_edg_gemma4-e4b_all_phase）",
+   "label": "單一迴圈第 50 輪之後的階段結束（b651ee6）（2026-11-27，20261127_134134_edg_gemma4-e4b_all_phase）",
    "per": {
     "ast_not_python": [
      3,
@@ -75,7 +75,7 @@
      3
     ],
     "ho_find_only_path_unknown": [
-     3,
+     2,
      3
     ],
     "ho_view_lines_zero": [
@@ -87,7 +87,7 @@
      3
     ],
     "search_bad_option": [
-     3,
+     2,
      3
     ],
     "search_only_path_unknown": [
@@ -109,11 +109,11 @@
    },
    "sets": {
     "holdout": [
-     6,
+     5,
      6
     ],
     "main": [
-     26,
+     25,
      27
     ]
    }

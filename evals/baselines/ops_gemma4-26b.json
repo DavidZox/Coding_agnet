@@ -2,11 +2,11 @@
  "current": {
   "date": "2026-11-27",
   "dirs": [
-   "20261127_064125_ops_all_gemma4-26b_af1",
-   "20261127_065032_ops_all_gemma4-26b_af2",
-   "20261127_070004_ops_all_gemma4-26b_af3"
+   "20261127_130014_ops_all_gemma4-26b_ak1",
+   "20261127_134216_ops_all_gemma4-26b_ak2",
+   "20261127_135205_ops_all_gemma4-26b_ak3"
   ],
-  "label": "單一迴圈第 43 輪之後的階段結束（9f3eee9）",
+  "label": "單一迴圈第 50 輪之後的階段結束（b651ee6）",
   "per": {
    "cx_batch_dispatch": {
     "forbidden": 0,
@@ -225,20 +225,20 @@
     "since": "第 5 步（6958dac）（2026-11-20）"
    },
    "fs_archive_logs": {
-    "forbidden": 0,
+    "forbidden": 1,
     "median_s": 6.6,
     "passed": 2,
     "results": [
-     0,
      1,
+     0,
      1
     ],
     "runs": 3,
-    "since": "單一迴圈第 43 輪之後的階段結束（9f3eee9）（2026-11-27）"
+    "since": "單一迴圈第 50 輪之後的階段結束（b651ee6）（2026-11-27）"
    },
    "fs_battery_report": {
     "forbidden": 0,
-    "median_s": 7.2,
+    "median_s": 6.9,
     "passed": 3,
     "results": [
      1,
@@ -246,11 +246,11 @@
      1
     ],
     "runs": 3,
-    "since": "單一迴圈第 43 輪之後的階段結束（9f3eee9）（2026-11-27）"
+    "since": "單一迴圈第 50 輪之後的階段結束（b651ee6）（2026-11-27）"
    },
    "fs_cd_relative": {
     "forbidden": 0,
-    "median_s": 9.7,
+    "median_s": 7.8,
     "passed": 3,
     "results": [
      1,
@@ -258,11 +258,11 @@
      1
     ],
     "runs": 3,
-    "since": "單一迴圈第 43 輪之後的階段結束（9f3eee9）（2026-11-27）"
+    "since": "單一迴圈第 50 輪之後的階段結束（b651ee6）（2026-11-27）"
    },
    "fs_compare_backup": {
     "forbidden": 0,
-    "median_s": 3.8,
+    "median_s": 3.3,
     "passed": 3,
     "results": [
      1,
@@ -270,11 +270,11 @@
      1
     ],
     "runs": 3,
-    "since": "單一迴圈第 43 輪之後的階段結束（9f3eee9）（2026-11-27）"
+    "since": "單一迴圈第 50 輪之後的階段結束（b651ee6）（2026-11-27）"
    },
    "fs_copy_template": {
     "forbidden": 0,
-    "median_s": 7.8,
+    "median_s": 26.5,
     "passed": 2,
     "results": [
      0,
@@ -282,11 +282,11 @@
      1
     ],
     "runs": 3,
-    "since": "單一迴圈第 43 輪之後的階段結束（9f3eee9）（2026-11-27）"
+    "since": "單一迴圈第 50 輪之後的階段結束（b651ee6）（2026-11-27）"
    },
    "fs_count_all": {
     "forbidden": 0,
-    "median_s": 7.8,
+    "median_s": 7.4,
     "passed": 2,
     "results": [
      1,
@@ -294,11 +294,11 @@
      0
     ],
     "runs": 3,
-    "since": "單一迴圈第 43 輪之後的階段結束（9f3eee9）（2026-11-27）"
+    "since": "單一迴圈第 50 輪之後的階段結束（b651ee6）（2026-11-27）"
    },
    "fs_csv_max_temp": {
     "forbidden": 0,
-    "median_s": 3.8,
+    "median_s": 3.4,
     "passed": 3,
     "results": [
      1,
@@ -306,11 +306,11 @@
      1
     ],
     "runs": 3,
-    "since": "單一迴圈第 43 輪之後的階段結束（9f3eee9）（2026-11-27）"
+    "since": "單一迴圈第 50 輪之後的階段結束（b651ee6）（2026-11-27）"
    },
    "fs_doc_question": {
     "forbidden": 0,
-    "median_s": 9.4,
+    "median_s": 9.6,
     "passed": 3,
     "results": [
      1,
@@ -318,11 +318,11 @@
      1
     ],
     "runs": 3,
-    "since": "單一迴圈第 43 輪之後的階段結束（9f3eee9）（2026-11-27）"
+    "since": "單一迴圈第 50 輪之後的階段結束（b651ee6）（2026-11-27）"
    },
    "fs_edit_param": {
     "forbidden": 0,
-    "median_s": 11.6,
+    "median_s": 12.5,
     "passed": 3,
     "results": [
      1,
@@ -330,11 +330,11 @@
      1
     ],
     "runs": 3,
-    "since": "單一迴圈第 43 輪之後的階段結束（9f3eee9）（2026-11-27）"
+    "since": "單一迴圈第 50 輪之後的階段結束（b651ee6）（2026-11-27）"
    },
    "fs_find_value": {
     "forbidden": 0,
-    "median_s": 8.5,
+    "median_s": 8.0,
     "passed": 3,
     "results": [
      1,
@@ -342,11 +342,11 @@
      1
     ],
     "runs": 3,
-    "since": "單一迴圈第 43 輪之後的階段結束（9f3eee9）（2026-11-27）"
+    "since": "單一迴圈第 50 輪之後的階段結束（b651ee6）（2026-11-27）"
    },
    "fs_newest_log": {
     "forbidden": 0,
-    "median_s": 10.1,
+    "median_s": 18.0,
     "passed": 3,
     "results": [
      1,
@@ -354,19 +354,19 @@
      1
     ],
     "runs": 3,
-    "since": "單一迴圈第 43 輪之後的階段結束（9f3eee9）（2026-11-27）"
+    "since": "單一迴圈第 50 輪之後的階段結束（b651ee6）（2026-11-27）"
    },
    "fs_typo_path": {
     "forbidden": 0,
-    "median_s": 18.7,
-    "passed": 2,
+    "median_s": 16.2,
+    "passed": 1,
     "results": [
      0,
-     1,
+     0,
      1
     ],
     "runs": 3,
-    "since": "單一迴圈第 43 輪之後的階段結束（9f3eee9）（2026-11-27）"
+    "since": "單一迴圈第 50 輪之後的階段結束（b651ee6）（2026-11-27）"
    },
    "ho_cx_backup_edit_dispatch": {
     "forbidden": 0,
@@ -466,19 +466,19 @@
    },
    "ho_fs_backup_edit": {
     "forbidden": 0,
-    "median_s": 48.3,
-    "passed": 2,
+    "median_s": 33.5,
+    "passed": 1,
     "results": [
-     1,
-     1,
-     0
+     0,
+     0,
+     1
     ],
     "runs": 3,
-    "since": "單一迴圈第 43 輪之後的階段結束（9f3eee9）（2026-11-27）"
+    "since": "單一迴圈第 50 輪之後的階段結束（b651ee6）（2026-11-27）"
    },
    "ho_fs_csv_avg": {
     "forbidden": 0,
-    "median_s": 3.3,
+    "median_s": 3.4,
     "passed": 3,
     "results": [
      1,
@@ -486,11 +486,11 @@
      1
     ],
     "runs": 3,
-    "since": "單一迴圈第 43 輪之後的階段結束（9f3eee9）（2026-11-27）"
+    "since": "單一迴圈第 50 輪之後的階段結束（b651ee6）（2026-11-27）"
    },
    "ho_fs_e2001_files": {
     "forbidden": 0,
-    "median_s": 7.5,
+    "median_s": 8.0,
     "passed": 3,
     "results": [
      1,
@@ -498,11 +498,11 @@
      1
     ],
     "runs": 3,
-    "since": "單一迴圈第 43 輪之後的階段結束（9f3eee9）（2026-11-27）"
+    "since": "單一迴圈第 50 輪之後的階段結束（b651ee6）（2026-11-27）"
    },
    "ho_fs_handover_append": {
     "forbidden": 0,
-    "median_s": 3.0,
+    "median_s": 3.1,
     "passed": 3,
     "results": [
      1,
@@ -510,7 +510,7 @@
      1
     ],
     "runs": 3,
-    "since": "單一迴圈第 43 輪之後的階段結束（9f3eee9）（2026-11-27）"
+    "since": "單一迴圈第 50 輪之後的階段結束（b651ee6）（2026-11-27）"
    },
    "ho_hs_cancel_loop": {
     "forbidden": 0,
@@ -730,7 +730,7 @@
    },
    "inv_battery_threshold": {
     "forbidden": 0,
-    "median_s": 48.7,
+    "median_s": 57.5,
     "passed": 3,
     "results": [
      1,
@@ -738,23 +738,23 @@
      1
     ],
     "runs": 3,
-    "since": "單一迴圈第 43 輪之後的階段結束（9f3eee9）（2026-11-27）"
+    "since": "單一迴圈第 50 輪之後的階段結束（b651ee6）（2026-11-27）"
    },
    "inv_container_report": {
     "forbidden": 0,
-    "median_s": 13.2,
+    "median_s": 13.6,
     "passed": 2,
     "results": [
+     0,
      1,
-     1,
-     0
+     1
     ],
     "runs": 3,
-    "since": "單一迴圈第 43 輪之後的階段結束（9f3eee9）（2026-11-27）"
+    "since": "單一迴圈第 50 輪之後的階段結束（b651ee6）（2026-11-27）"
    },
    "inv_e2001_now": {
     "forbidden": 0,
-    "median_s": 107.2,
+    "median_s": 129.4,
     "passed": 0,
     "results": [
      0,
@@ -762,11 +762,11 @@
      0
     ],
     "runs": 3,
-    "since": "單一迴圈第 43 輪之後的階段結束（9f3eee9）（2026-11-27）"
+    "since": "單一迴圈第 50 輪之後的階段結束（b651ee6）（2026-11-27）"
    },
    "inv_error_timeline": {
     "forbidden": 0,
-    "median_s": 20.0,
+    "median_s": 16.4,
     "passed": 3,
     "results": [
      1,
@@ -774,11 +774,35 @@
      1
     ],
     "runs": 3,
-    "since": "單一迴圈第 43 輪之後的階段結束（9f3eee9）（2026-11-27）"
+    "since": "單一迴圈第 50 輪之後的階段結束（b651ee6）（2026-11-27）"
    },
    "inv_fleet_report": {
     "forbidden": 0,
-    "median_s": 78.8,
+    "median_s": 57.7,
+    "passed": 1,
+    "results": [
+     1,
+     0,
+     0
+    ],
+    "runs": 3,
+    "since": "單一迴圈第 50 輪之後的階段結束（b651ee6）（2026-11-27）"
+   },
+   "inv_nav2_map": {
+    "forbidden": 0,
+    "median_s": 19.0,
+    "passed": 3,
+    "results": [
+     1,
+     1,
+     1
+    ],
+    "runs": 3,
+    "since": "單一迴圈第 50 輪之後的階段結束（b651ee6）（2026-11-27）"
+   },
+   "inv_two_stuck": {
+    "forbidden": 0,
+    "median_s": 11.4,
     "passed": 0,
     "results": [
      0,
@@ -786,31 +810,7 @@
      0
     ],
     "runs": 3,
-    "since": "單一迴圈第 43 輪之後的階段結束（9f3eee9）（2026-11-27）"
-   },
-   "inv_nav2_map": {
-    "forbidden": 0,
-    "median_s": 15.3,
-    "passed": 3,
-    "results": [
-     1,
-     1,
-     1
-    ],
-    "runs": 3,
-    "since": "單一迴圈第 43 輪之後的階段結束（9f3eee9）（2026-11-27）"
-   },
-   "inv_two_stuck": {
-    "forbidden": 0,
-    "median_s": 18.2,
-    "passed": 1,
-    "results": [
-     0,
-     1,
-     0
-    ],
-    "runs": 3,
-    "since": "單一迴圈第 43 輪之後的階段結束（9f3eee9）（2026-11-27）"
+    "since": "單一迴圈第 50 輪之後的階段結束（b651ee6）（2026-11-27）"
    },
    "ros_battery_tb3": {
     "forbidden": 0,
