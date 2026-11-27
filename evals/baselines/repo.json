@@ -1,10 +1,10 @@
 {
  "models": {
   "gemma4:26b": {
-   "label": "單一迴圈第 36 輪之後的階段結束（f6bb7d7）（2026-11-26，20261126_201802_repo_gemma4-26b_all_ac1、20261126_202618_repo_gemma4-26b_all_ac2、20261126_203513_repo_gemma4-26b_all_ac3）",
+   "label": "單一迴圈第 43 輪之後的階段結束（9f3eee9）（2026-11-27，20261127_070930_repo_gemma4-26b_all_af1、20261127_074005_repo_gemma4-26b_all_af2、20261127_075459_repo_gemma4-26b_all_af3）",
    "per": {
     "cnt_hw_params": [
-     3,
+     2,
      3
     ],
     "cnt_rmf_publishers": [
@@ -40,7 +40,7 @@
      3
     ],
     "cpp_rf2o_params": [
-     2,
+     3,
      3
     ],
     "cpp_sick_ports": [
@@ -60,7 +60,7 @@
      3
     ],
     "cross_rf2o_runtime": [
-     2,
+     3,
      3
     ],
     "cross_scan_chain": [
@@ -72,7 +72,7 @@
      3
     ],
     "cross_speed_limit": [
-     3,
+     0,
      3
     ],
     "doc_dock_align": [
@@ -88,7 +88,7 @@
      3
     ],
     "doc_pred_map": [
-     1,
+     2,
      3
     ],
     "doc_sched_iter": [
@@ -96,7 +96,7 @@
      3
     ],
     "doc_task_confirm": [
-     3,
+     2,
      3
     ],
     "py_check_path": [
@@ -125,9 +125,9 @@
     ]
    },
    "runs": [
-    23,
-    24,
-    21
+    22,
+    22,
+    22
    ],
    "sets": {
     "holdout": [
@@ -135,24 +135,24 @@
      15
     ],
     "main": [
-     68,
+     66,
      75
     ]
    }
   },
   "gemma4:e4b": {
-   "label": "單一迴圈第 36 輪之後的階段結束（f6bb7d7）（2026-11-26，20261126_220224_repo_gemma4-e4b_all_ad1、20261126_220940_repo_gemma4-e4b_all_ad2、20261126_221609_repo_gemma4-e4b_all_ad3）",
+   "label": "單一迴圈第 43 輪之後的階段結束（9f3eee9）（2026-11-27，20261127_071648_repo_gemma4-e4b_all_af1、20261127_074804_repo_gemma4-e4b_all_af2、20261127_080306_repo_gemma4-e4b_all_af3）",
    "per": {
     "cnt_hw_params": [
      0,
      3
     ],
     "cnt_rmf_publishers": [
-     3,
+     2,
      3
     ],
     "cnt_rmf_tests": [
-     2,
+     3,
      3
     ],
     "cnt_sw_clients": [
@@ -164,7 +164,7 @@
      3
     ],
     "cnt_sw_specs": [
-     1,
+     2,
      3
     ],
     "cpp_compact_parser": [
@@ -172,19 +172,19 @@
      3
     ],
     "cpp_laser_qos": [
-     3,
+     2,
      3
     ],
     "cpp_laserscan_pub": [
-     1,
+     2,
      3
     ],
     "cpp_rf2o_params": [
-     0,
+     1,
      3
     ],
     "cpp_sick_ports": [
-     1,
+     0,
      3
     ],
     "cpp_sick_services": [
@@ -192,7 +192,7 @@
      3
     ],
     "cross_imu": [
-     1,
+     3,
      3
     ],
     "cross_odom_source": [
@@ -200,7 +200,7 @@
      3
     ],
     "cross_rf2o_runtime": [
-     0,
+     1,
      3
     ],
     "cross_scan_chain": [
@@ -212,7 +212,7 @@
      3
     ],
     "cross_speed_limit": [
-     0,
+     1,
      3
     ],
     "doc_dock_align": [
@@ -220,19 +220,19 @@
      3
     ],
     "doc_gate_startup": [
-     1,
+     3,
      3
     ],
     "doc_nav_stop": [
-     3,
-     3
-    ],
-    "doc_pred_map": [
      1,
      3
     ],
+    "doc_pred_map": [
+     0,
+     3
+    ],
     "doc_sched_iter": [
-     3,
+     1,
      3
     ],
     "doc_task_confirm": [
@@ -244,7 +244,7 @@
      3
     ],
     "py_encoder": [
-     3,
+     2,
      3
     ],
     "py_fleet_msg": [
@@ -256,7 +256,7 @@
      3
     ],
     "py_solve_conflicts": [
-     2,
+     3,
      3
     ],
     "py_speed_limit": [
@@ -266,8 +266,8 @@
    },
    "runs": [
     13,
-    14,
-    12
+    13,
+    15
    ],
    "sets": {
     "holdout": [
@@ -275,7 +275,7 @@
      15
     ],
     "main": [
-     39,
+     41,
      75
     ]
    }

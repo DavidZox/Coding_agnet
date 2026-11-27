@@ -1,13 +1,13 @@
 {
  "labels": {
-  "gemma4:26b": "單一迴圈第 36 輪之後的階段結束（f6bb7d7）（2026-11-26，20261126_215528_extract_gemma4-26b_phase）",
-  "gemma4:e4b": "單一迴圈第 36 輪之後的階段結束（f6bb7d7）（2026-11-26，20261126_215629_extract_gemma4-e4b_phase）"
+  "gemma4:26b": "單一迴圈第 43 輪之後的階段結束（9f3eee9）（2026-11-27，20261127_073325_extract_gemma4-26b_phase）",
+  "gemma4:e4b": "單一迴圈第 43 輪之後的階段結束（9f3eee9）（2026-11-27，20261127_073426_extract_gemma4-e4b_phase）"
  },
  "models": {
   "gemma4:26b": {
    "compare_flat": {
     "count_ok": null,
-    "extra": 0,
+    "extra": 1,
     "found": 3,
     "seconds": null,
     "total": 3
@@ -23,18 +23,18 @@
     "count_ok": true,
     "extra": 0,
     "found": 30,
-    "seconds": 9.6,
+    "seconds": 9.8,
     "total": 30
    },
    "fleet_40": {
     "count_ok": null,
     "extra": 0,
     "found": 7,
-    "seconds": 6.6,
+    "seconds": 6.8,
     "total": 7
    },
    "fleet_80": {
-    "count_ok": true,
+    "count_ok": null,
     "extra": 0,
     "found": 21,
     "seconds": 6.7,
@@ -44,7 +44,7 @@
     "count_ok": null,
     "extra": 0,
     "found": 6,
-    "seconds": 11.3,
+    "seconds": 11.4,
     "total": 6
    },
    "recall_fleet_120": {
@@ -58,7 +58,7 @@
     "count_ok": null,
     "extra": 0,
     "found": 1,
-    "seconds": 3.5,
+    "seconds": 3.4,
     "total": 1
    }
   },
@@ -81,7 +81,7 @@
     "count_ok": null,
     "extra": 0,
     "found": 30,
-    "seconds": 8.0,
+    "seconds": 8.3,
     "total": 30
    },
    "fleet_40": {
@@ -95,28 +95,28 @@
     "count_ok": null,
     "extra": 0,
     "found": 21,
-    "seconds": 5.7,
+    "seconds": 6.0,
     "total": 21
    },
    "log_200k": {
     "count_ok": null,
     "extra": 0,
     "found": 6,
-    "seconds": 9.3,
+    "seconds": 9.0,
     "total": 6
    },
    "recall_fleet_120": {
     "count_ok": null,
     "extra": 24,
     "found": 10,
-    "seconds": 8.6,
+    "seconds": 8.9,
     "total": 11
    },
    "robot_heading": {
     "count_ok": null,
     "extra": 0,
     "found": 0,
-    "seconds": 3.6,
+    "seconds": 3.1,
     "total": 1
    }
   }
