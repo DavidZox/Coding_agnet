@@ -9,7 +9,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _docker_common import (TARGET_CONTAINER_MARKER, describe_failure, exec_in_container, inspect_container,  # noqa: E402
-                            lookup_container, with_cwd_marker)
+                            lookup_container, paused_next, stopped_next, with_cwd_marker)
 
 EXEC_TIMEOUT_SECONDS = 15   # docker exec 驗證連線
 USAGE = "用法: scripts/docker_open_cmd.py <容器名稱>（可以是部分名稱，不分大小寫；剛好對到一個容器才會用它）"
@@ -32,13 +32,14 @@ def enter_container(target_name, names=None):
         return err
     st = info.get("State") or {}
     status = st.get("Status", "?")
-    if st.get("Paused"):
-        return (f"[ERROR] 容器 '{real_name}' 被暫停（paused），不能進入。下一步：請使用者確認後在主機上 docker unpause {real_name}"
-                f"（host_runcmd，會先請使用者確認），再 docker_open {real_name}")
-    if not st.get("Running") or st.get("Restarting"):
-        why = "一直在重新啟動（啟動後馬上結束）" if st.get("Restarting") else f"沒有在運行（狀態 {status}，結束碼 {st.get('ExitCode')}）"
-        return (f"[ERROR] 容器 '{real_name}' {why}，不能進入。下一步：docker_ctl status {real_name} 看原因；"
-                f"使用者同意後 docker_ctl start {real_name}（會先請使用者確認），再 docker_open {real_name}")
+    if st.get("Paused"):      # 下一步先看狀態，恢復只在使用者要的時候（_docker_common.paused_next，框架討論紀錄第 47 輪）
+        return f"[ERROR] 容器 '{real_name}' 被暫停（paused），不能進入。{paused_next(real_name)}，恢復之後再 docker_open {real_name}"
+    if st.get("Restarting"):
+        return (f"[ERROR] 容器 '{real_name}' 一直在重新啟動（啟動後馬上結束），不能進入。"
+                f"下一步：docker_ctl logs {real_name} 看它為什麼一啟動就結束")
+    if not st.get("Running"):
+        return (f"[ERROR] 容器 '{real_name}' 沒有在運行（狀態 {status}，結束碼 {st.get('ExitCode')}），不能進入。"
+                f"{stopped_next(real_name)}，啟動之後再 docker_open {real_name}")
     res = exec_in_container(real_name, "pwd; id -un 2>/dev/null || id -u", EXEC_TIMEOUT_SECONDS)
     if res["kind"] != "ok":
         return describe_failure(res, f"連線至容器 '{real_name}'", EXEC_TIMEOUT_SECONDS, container=real_name)

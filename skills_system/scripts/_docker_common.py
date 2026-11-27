@@ -239,6 +239,17 @@ def human_duration(seconds):
 
 
 # ---------------------------------------------------------------- 錯誤訊息
+def stopped_next(c):
+    """容器沒在跑時的下一步（explain_error 與 docker_open 共用，框架討論紀錄第 47 輪）：先看原因；啟動會改狀態，只在使用者要的時候
+    （確認關卡會先問）——寫成「同意後就啟動」時，模型在使用者說了不要改的調查裡也照著啟動。"""
+    return f"下一步：docker_ctl status {c}、docker_ctl logs {c} 看它為什麼停了；使用者要啟動時才 docker_ctl start {c}（會先請使用者確認）"
+
+
+def paused_next(c):
+    """容器被暫停時的下一步（同上）：先看狀態；恢復只在使用者要的時候。"""
+    return f"下一步：docker_ctl status {c} 看狀態；使用者要恢復時才在主機上 docker unpause {c}（host_runcmd，會先請使用者確認）"
+
+
 def explain_error(stderr, container=None):
     """常見的 docker／ros2 錯誤 → 「原因。下一步：…」；認不出來回 None。ros2 CLI 的使用錯誤（找不到 node、參數、訊息型別）
     是印在 stderr、exit code 1 的一句話，也在這裡翻。"""
@@ -253,13 +264,11 @@ def explain_error(stderr, container=None):
         return (f"找不到容器 '{c}'（名稱錯誤、已被刪除或改名）。下一步：用 docker_containers 查現有容器的完整名稱；"
                 f"目前的目標容器不見了就用 docker_open 重新選定")
     if "is paused" in s:
-        return (f"容器 '{c}' 被暫停（paused），暫停中不能執行指令。下一步：請使用者確認後在主機上 docker unpause {c}"
-                f"（host_runcmd，會先請使用者確認）")
+        return f"容器 '{c}' 被暫停（paused），暫停中不能執行指令。{paused_next(c)}"
     if "is restarting" in s:
         return f"容器 '{c}' 一直在重新啟動（啟動後馬上結束又被重啟）。下一步：docker_ctl logs {c} 看它為什麼一啟動就結束"
     if "is not running" in s:
-        return (f"容器 '{c}' 存在但沒有在運行。下一步：docker_ctl status {c} 看它為什麼停了；"
-                f"使用者同意後 docker_ctl start {c}（會先請使用者確認）")
+        return f"容器 '{c}' 存在但沒有在運行。{stopped_next(c)}"
     if "invalid container name" in s:
         return "容器名稱不合法（只能用英數字、底線、點、減號，開頭要是英數字，至少 2 個字）。下一步：用 --name 換一個合法的名稱"
     if "invalid reference format" in s:

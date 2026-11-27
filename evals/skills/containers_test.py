@@ -57,6 +57,12 @@ def t_explain_error():
     for err, word in cases.items():
         msg = dc.explain_error(err, "c1")
         assert msg and "下一步" in msg and word in msg, (err, msg)
+    # 會改狀態的（啟動、恢復）不寫成預設的下一步：先看原因，只在使用者要的時候（框架討論紀錄第 47 輪；docker_open 用同一句）
+    stopped = dc.explain_error("Error response from daemon: Container abc is not running", "c1")
+    assert ("docker_ctl status c1" in stopped and "docker_ctl logs c1" in stopped and "使用者要啟動時才 docker_ctl start c1" in stopped
+            and "使用者同意後" not in stopped and dc.stopped_next("c1") in stopped), stopped
+    paused = dc.explain_error("Error response from daemon: Container x is paused, unpause the container before exec", "c1")
+    assert "使用者要恢復時才在主機上 docker unpause c1" in paused and "請使用者確認後" not in paused and dc.paused_next("c1") in paused, paused
     assert dc.explain_error("some random failure") is None
     assert dc.explain_error("Error loading yaml config: error") is None, "使用者程式自己的 yaml 錯誤不能翻成訊息欄位錯"
     reason = dc.failure_reason("", rc=1)

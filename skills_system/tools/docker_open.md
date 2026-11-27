@@ -24,5 +24,5 @@ live: true
 
 # 異常
 * 找不到 → 訊息附相近的名稱與現有容器（太多只列前 15 個；完整清單用 `docker_containers`）。多個符合 → 改用完整名稱，不確定就問使用者。
-* 容器沒有在跑 → `docker_ctl status` 看原因，使用者同意後 `docker_ctl start`，再 docker_open。被暫停 → 請使用者 unpause。
+* 容器沒有在跑 → `docker_ctl status`／`docker_ctl logs` 看原因；使用者要啟動時才 `docker_ctl start`（會先請使用者確認），啟動之後再 docker_open。被暫停 → 使用者要恢復時才 unpause。
 * docker 不可用、逾時：回報使用者。

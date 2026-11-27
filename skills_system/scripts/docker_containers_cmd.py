@@ -70,7 +70,7 @@ def execute(running_only=False, keyword=""):
         return f"[PASS] 目前沒有任何{scope}{filt}{hint}。"
     note = ""
     if "paused" in states:
-        note = "\n（暫停的容器不能執行指令：請使用者確認後在主機上 docker unpause）"
+        note = "\n（暫停的容器不能執行指令；使用者要恢復時才在主機上 docker unpause，會先請使用者確認）"
     return f"[PASS] {scope}{filt}：共 {len(rows)} 個，{summarize(rows, states)}\n{format_table(rows, HEADERS)}{note}"
 
 
