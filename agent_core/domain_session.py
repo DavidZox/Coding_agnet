@@ -300,7 +300,10 @@ class DomainSession:
                 return None
             if self._same(job, name, " ".join(pending["args"].split())):
                 return None
-            guard = self.agent.guard_check({"action": self._action(name, pending["args"])})
+            action = {"action": self._action(name, pending["args"])}
+            if self.agent.state_change_info(action) and self._constraint_check(job, name, pending["args"]):
+                return None
+            guard = self.agent.guard_check(action)
             if guard:
                 self._wait(job, pending, guard)
                 return job
@@ -321,6 +324,21 @@ class DomainSession:
             return None
         self._composite(job, pending, self.reg["domains"][skills[name][0]], name, params, how)
         return None
+
+    def _constraint_check(self, job, skill, args):
+        """交辦帶著使用者的限制、這一步會改狀態（state_change_info：不看 /guard 開關）時先交回一次（框架討論紀錄第 49 輪的（G2））：列出限制的
+        原話與這一步，請它對照——衝突就不做（改用不改狀態的做法，或回報做不到），確定使用者要的再選一次同樣的技能與參數（之後照舊停在確認關卡）。
+        同一個（技能、參數）只交回一次，記在 job 的 constraint_asked；限制的意思由模型判斷，程式只在這時候把原話擺出來（實測：領域 session 看到
+        「不要改任何東西」還是自己判斷啟動容器不算改，設計筆記 2.91）。交回了回 True。"""
+        cons = job.get("constraints") or []
+        step = f"{skill} {' '.join(args.split())}".strip()
+        asked = job.setdefault("constraint_asked", [])
+        if not cons or step in asked:
+            return False
+        asked.append(step)
+        self._tell(job, _s("constraint_check", constraints="\n".join(f"- {c}" for c in cons), step=step),
+                   f"{step} 會改狀態、交辦有限制：先交回對照一次")
+        return True
 
     def _own_args(self, tool, args):
         """工具的參數：開頭照抄了工具名稱或腳本路徑的（「find_file x .」「scripts/ls_cmd.py .」）拿掉那一段，其他照原樣。"""

@@ -1064,6 +1064,30 @@ def main():
             tools_of(turn(q2, fake)[0])
             assert last_job()["dropped"] == ["alpha,beta 定義在哪？"], last_job()["dropped"]
 
+        def t_constraint_check():
+            # 交辦帶著限制、選了會改狀態的一步：程式先交回一次，列出限制的原話與這一步（框架討論紀錄第 49 輪的（G2））——改成回報就不問使用者、
+            # 不執行；再選一次同樣的就照舊停在確認關卡（沒有限制的照舊直接停在確認關卡：t_guard）
+            q = "cam_driver 一直起不來，查原因。不要改任何東西。"
+            act = task3("查 cam_driver 起不來的原因", ["cam_driver 一直起不來，查原因。"], [], ["不要改任何東西。"])
+            fake = FakeChat(main=[act, say("沒有重新啟動。")],
+                            session=[ds("domains", domains=["robotics_infra"]), ds("skill", skill="docker_ctl"), fill(args="restart cam_driver"),
+                                     ds("report", answers=[(1, "not_found", "使用者說不要改任何東西，沒有重新啟動", [])], reply="沒有做")])
+            events, waiting = turn(q, fake)
+            assert not waiting and not agent.domain_pending, "改成回報：不問使用者"
+            job = last_job()
+            assert not [s for s in job["steps"] if s["skill"] == "docker_ctl"], job["steps"]
+            assert job["constraint_asked"] == ["docker_ctl restart cam_driver"], job.get("constraint_asked")
+            told = fake.session_msgs(3)[-1]["content"]
+            assert "不要改任何東西。" in told and "docker_ctl restart cam_driver" in told, told[:400]
+            fake = FakeChat(main=[act, say("沒有重新啟動。")],
+                            session=[ds("domains", domains=["robotics_infra"]), ds("skill", skill="docker_ctl"), fill(args="restart cam_driver"),
+                                     ds("skill", skill="docker_ctl"), fill(args="restart cam_driver"),
+                                     ds("report", answers=[(1, "not_found", "使用者沒有同意", [])], reply="沒有做")])
+            events, waiting = turn(q, fake)
+            assert waiting and agent.domain_pending and agent.domain_pending["kind"] == "guard", "再選一次同樣的：停在確認關卡"
+            flows.answer_domain_turn("否", [])
+            assert not agent.domain_pending
+
         def t_args_backticks_domain():
             # 領域 session 的工具表單填「``」（框架討論紀錄第 48 輪）：當成沒有參數照樣執行，不是當成路徑或名稱的關鍵字
             fake = FakeChat(main=[task("看目前目錄有什麼", ["目前目錄有什麼？"]), say("好")],
@@ -1125,6 +1149,7 @@ def main():
                          ("交辦時分清楚問題、限制與背景：各放進自己的欄、沒有歸屬的交回、問句只放進背景的由程式放進項目、背景與限制只記在 job（第一則訊息與提煉的錨點不放）、評測的紀錄", t_task_context),
                          ("背景與限制不是使用者的原話的由程式拿掉、不交回：交辦照收、job 只記原話的、拿掉的記在 job 與評測的紀錄、改寫的那一段照樣算沒放進", t_context_dropped),
                          ("工具表單填「``」當成沒有參數照樣執行", t_args_backticks_domain),
+                         ("交辦帶著限制、選了會改狀態的一步：先交回一次列出限制的原話；改成回報就不問使用者，再選一次同樣的就停在確認關卡", t_constraint_check),
                          ("原話的核對把全形與半形當成一樣：只差全形與半形、空白的照收、存使用者原本的寫法；「、」寫成「,」照舊拿掉", t_quote_width),
                          ("問句由程式整句放進項目：只抄一段或只放進背景的換成整句、改寫的項目拿掉、一項都沒留下時交回、第二次以後的交辦不放、記在 job 與評測的紀錄", t_ask_items),
                          ("回報的出處是這一回合之前存的即時狀態：交回一次、說明附什麼時候查的；讀回的結果開頭寫事實", t_stale_refs)]:
