@@ -475,6 +475,13 @@ def main():
             other = agent.state_change_info({"action": {"command": "scripts/file_ops_cmd.py", "args": "write guard_prev.txt bye"}})
             assert other and "之前做過" not in agent.guard_prompt_text(other), "參數不一樣的不寫"
 
+        def t_args_backticks():
+            # 工具的參數每一個都只有反引號（「``」）是沒有參數（框架討論紀錄第 48 輪）；跟別的參數寫在一起的照舊；空字串照舊丟掉
+            p = agent._parse_script_args
+            assert p("docker_containers_cmd.py", "``") == [] and p("docker_containers_cmd.py", "`` ``") == [], p("docker_containers_cmd.py", "``")
+            assert p("grep_cmd.py", "``` docs/") == ["```", "docs/"], "跟別的參數寫在一起的照舊"
+            assert p("ls_cmd.py", '. ""') == ["."], "空字串照舊丟掉"
+
         for name, fn in [("卡住偵測：同樣的動作第二次附提醒、第三次加強提醒、第四次停下這一回合（v4.1）", t_stuck),
                          ("卡住偵測：同一個錯誤不管中間做了什麼，第二次提醒、第四次算卡住", t_same_error_not_consecutive),
                          ("卡住偵測：評測對照組的舊規則（AGENT_TURN_GUARD_RULE=v4，第三次就停）", t_v4_rule),
@@ -496,7 +503,8 @@ def main():
                          ("回覆的字串上限：schema 有上限、command 寫成 null 是沒有動作、寫到上限被截斷的不執行（重問一次，還是被截斷就不執行）", t_reply_cut),
                          ("存檔分讀取型與動作型：檔頭記種類、動作另列一區、檢索清單寫之前的 session 與即時狀態、讀回開頭寫事實、存檔之後改過的檔案列出來", t_memory_kinds),
                          ("主 session 的回覆引用了這一回合之前的即時狀態：不交回（問的是現在還是當時由模型看程式寫的事實判斷）", t_memory_reply_no_sendback),
-                         ("確認關卡寫出之前做過同樣的動作：同一個技能、同樣的參數；沒做過、參數不一樣的不寫；做過兩次寫一共幾次", t_guard_previous)]:
+                         ("確認關卡寫出之前做過同樣的動作：同一個技能、同樣的參數；沒做過、參數不一樣的不寫；做過兩次寫一共幾次", t_guard_previous),
+                         ("工具的參數每一個都只有反引號（「``」）是沒有參數；跟別的參數寫在一起的照舊", t_args_backticks)]:
             check(name, fn)
     finally:
         os.chdir(cwd)

@@ -5,9 +5,9 @@
   "total": 12
  },
  "chat_selftest": {
-  "label": "確認關卡寫出之前做過同樣的動作（t_guard_previous、t_guard_previous_domain）（2026-11-27）",
-  "passed": 22,
-  "total": 22
+  "label": "工具的參數每一個都只有反引號是沒有參數（t_args_backticks、t_args_backticks_domain）（2026-11-27）",
+  "passed": 23,
+  "total": 23
  },
  "containers_sandbox": {
   "label": "第 5 步（6958dac）（2026-11-20）",
@@ -20,9 +20,9 @@
   "total": 8
  },
  "domain_selftest": {
-  "label": "原話的核對把全形與半形當成一樣（t_quote_width）（2026-11-27）",
-  "passed": 37,
-  "total": 37
+  "label": "工具的參數每一個都只有反引號是沒有參數（t_args_backticks、t_args_backticks_domain）（2026-11-27）",
+  "passed": 38,
+  "total": 38
  },
  "edg_selftest": {
   "label": "單一迴圈：交辦與領域 session（框架討論紀錄 F1～F6）（2026-11-23）",

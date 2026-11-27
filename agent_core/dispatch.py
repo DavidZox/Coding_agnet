@@ -96,12 +96,15 @@ class DispatchMixin:
 
     def _parse_script_args(self, script_name, remainder):
         """把 action.args 字串以 shlex 依空白／引號拆成參數列表（含空白的參數用雙引號包住）。
-        空字串參數（模型常寫成 `. ""`）一律丟掉：沒有任何腳本需要空的位置參數，留著只會變成 [ERROR] 找不到路徑。"""
+        空字串參數（模型常寫成 `. ""`）一律丟掉：沒有任何腳本需要空的位置參數，留著只會變成 [ERROR] 找不到路徑。每一個都只有反引號
+        （「``」：模型把「沒有參數」寫成空的程式碼片段）也是沒有參數——docker_containers 收到「``」當成名稱的關鍵字、回沒有任何容器，維運 548 次裡
+        18 次因此沒過（框架討論紀錄第 48 輪）；跟別的參數寫在一起的照舊（「```」可能是要搜的字）。"""
         try:
             parts = shlex.split(remainder)
         except Exception:   # 引號不成對（實測模型會送 """）：退回空白切分並去掉殘留的引號
             parts = [a.strip("\"'") for a in remainder.split()]
-        return [a for a in parts if a != ""]
+        parts = [a for a in parts if a != ""]
+        return [] if parts and all(not a.strip("`") for a in parts) else parts
 
     
     @staticmethod
