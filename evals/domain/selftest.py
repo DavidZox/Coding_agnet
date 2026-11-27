@@ -780,6 +780,49 @@ def main():
             flows.answer_domain_turn("否", [])
             assert not agent.domain_pending
 
+        def t_denied_again():
+            # 使用者這一句話裡拒絕過的技能（框架討論紀錄第 54 輪的（a））：同一個技能換參數再選、又是要問的寫法——不問、不執行，直接記成拒絕
+            # （guard 記 asked＝False，說明寫第幾步）；不用問的寫法照常執行；同一回合主 session 再交辦一次也一樣；下一句話照常問
+            store = JobStore(os.path.join(tmp, "logs", "domain_jobs"))
+            fake = FakeChat(main=[task("重新啟動 cam_driver 容器", ["重新啟動 cam_driver"]),
+                                  task("改用 stop 讓 cam_driver 重來", ["重新啟動 cam_driver"]), say("沒有重新啟動。")],
+                            session=[ds("domains", domains=["robotics_infra"]), ds("skill", skill="docker_ctl"), fill(args="restart cam_driver"),
+                                     ds("skill", skill="docker_ctl"), fill(args="stop cam_driver"),
+                                     ds("skill", skill="docker_ctl"), fill(args="status cam_driver"),
+                                     ds("report", answers=[(1, "not_found", "使用者沒有同意重新啟動", [])], reply="沒有做"),
+                                     ds("domains", domains=["robotics_infra"]), ds("skill", skill="docker_ctl"), fill(args="restart cam_driver"),
+                                     ds("report", answers=[(1, "not_found", "使用者沒有同意重新啟動", [])], reply="沒有做")])
+            events, waiting = turn("重新啟動 cam_driver", fake)
+            assert waiting and agent.domain_pending and agent.domain_pending["kind"] == "guard", "第一次照舊停在確認關卡"
+            flows.answer_domain_turn("否", [])
+            assert not agent.domain_pending, "同一句話裡換參數再選、再交辦：不再問使用者"
+            first, second = (store.load(x["job"]) for x in agent._domain_turn["tasks"])
+            assert [s["status"] for s in first["steps"]][:2] == ["DENIED", "DENIED"] and len(first["asked"]) == 1, first["steps"]
+            again = first["steps"][1]
+            assert again["guard"] == {"approve": False, "asked": False} and again["args"] == "stop cam_driver", again
+            told = [m["content"] for m in first["messages"] if m["role"] == "user" and "第 1 步" in m["content"]]
+            assert told and "沒有執行" in told[0], "說明寫使用者在第幾步拒絕過、這一步沒有執行"
+            assert first["steps"][2]["args"] == "status cam_driver" and first["steps"][2]["status"] != "DENIED" and first["steps"][2]["guard"] is None, \
+                "不用問的寫法照常執行"
+            assert second["denied_before"] == ["docker_ctl"] and not second["asked"], second
+            assert second["steps"][0]["status"] == "DENIED" and second["steps"][0]["guard"]["asked"] is False, "同一回合再交辦：不再問"
+            fake = FakeChat(main=[task("重新啟動 cam_driver 容器", ["重新啟動 cam_driver"]), say("沒有重新啟動。")],
+                            session=[ds("domains", domains=["robotics_infra"]), ds("skill", skill="docker_ctl"), fill(args="restart cam_driver"),
+                                     ds("report", answers=[(1, "not_found", "使用者沒有同意重新啟動", [])], reply="沒有做")])
+            events, waiting = turn("重新啟動 cam_driver", fake)
+            assert waiting and agent.domain_pending and agent.domain_pending["kind"] == "guard", "下一句話照常問"
+            flows.answer_domain_turn("否", [])
+            assert not agent.domain_pending
+
+        def t_guard_send_parse_error():
+            # 派工單的參數照腳本自己的解析就錯（腳本自己會拒絕、不會送）：確認關卡不問（框架討論紀錄第 54 輪的（b））；解析得過的照舊問，--dry-run 照舊不問
+            def info(args):
+                return agent.state_change_info({"action": {"command": "scripts/workpackage_send_cmd.py", "args": args}})
+            for args in ("", "--help", "auto --until-done", "auto --watch 10"):
+                assert info(args) is None, (args, info(args))
+            assert info("auto home,a3 --amr tb1") and info("status tb1"), "解析得過的照舊問"
+            assert info("auto home,a3 --dry-run") is None
+
         # ------------------------------------------------------------ 提煉、再交辦、主 session 的核對
         def t_long_output():
             goal = "看 logs/big.log 最後的 step 是多少"
@@ -1195,7 +1238,7 @@ def main():
                          ("工具的參數表單：args 寫成 JSON、照抄佔位符、填「[]」的交回重填", t_form_tool),
                          ("有骨架的技能的彙整：程式照收據算的數量存成 #編號、總數照它寫就過核對", t_totals), ("回退換技能", t_composite_switch),
                          ("路徑有好幾個交回決定、0 筆照實交回", t_composite_need_and_empty), ("狀態與上限", t_states_limits),
-                         ("ROS 節點的參數與預設值：node_params 列出 C++ 與 Python 節點宣告參數的那幾行", t_node_params), ("確認關卡", t_guard), ("確認關卡寫出之前做過同樣的動作（領域 session 的說明與交回主模型的文字）", t_guard_previous_domain), ("長的結果照舊提煉", t_long_output), ("再交辦帶著上一次的經過", t_previous),
+                         ("ROS 節點的參數與預設值：node_params 列出 C++ 與 Python 節點宣告參數的那幾行", t_node_params), ("確認關卡", t_guard), ("確認關卡寫出之前做過同樣的動作（領域 session 的說明與交回主模型的文字）", t_guard_previous_domain), ("使用者這一句話裡拒絕過的技能：換參數再選不再問、記成拒絕；查詢照常執行；同一回合再交辦也不問；下一句話照常問", t_denied_again), ("派工單的參數解析就錯時確認關卡不問（腳本自己會拒絕）", t_guard_send_parse_error), ("長的結果照舊提煉", t_long_output), ("再交辦帶著上一次的經過", t_previous),
                          ("主 session 依報告回答的核對", t_main_check), ("依報告回答漏了報告的編號與數字：交回修一次", t_kept),
                          ("回答的文字寫了存檔的 #編號：交回修一次（回報與主 session 的回答；使用者自己寫了的、查不到的原因不擋）", t_archive_id),
                          ("每一句都要有歸屬：「。」結尾的句子漏了，一輪的第一次交辦交回一次、補上就過、交回過照收、之後的交辦不核對（「?」在字中間的不算句尾；問句由程式放進項目）", t_cover),

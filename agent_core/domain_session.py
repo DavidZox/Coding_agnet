@@ -21,6 +21,7 @@
 3. **report**（回報）：answers 照項目一項一筆（answered／not_found、回答、出處），程式核對（answers.answer_problems：出處是這個 session 的
    結果、數字與名稱在出處裡、查不到的寫原因），沒過的交回修一次；整理成報告交回主 session（F6）。
 確認關卡：會改狀態的工具停下來（need_user），主 session 轉問使用者，resume 接回同一步；拒絕就把 [DENIED] 交給它接著做；cancel 照做到的收尾。
+使用者這一句話裡拒絕過的技能（這個 job 的步驟、同一回合之前的交辦：start 的 denied）再選、又是要問的寫法：不問、不執行，直接記成拒絕（_denied_again）。
 回覆不是 JSON 或空的重問一次；寫到字串上限被截斷的不執行、重問一次。對話太長時，送給模型的那一份把舊的結果換成存檔編號（存著的對話不動）。
 存檔：logs/domain_jobs/<編號>/——job.json（每一步：選的領域、技能、參數與原文、核對、結果的 #編號）、calls.jsonl（每次模型呼叫）、
 events.jsonl（進度）、report.md。
@@ -33,7 +34,7 @@ import time
 from skills_system.scripts import _results_common
 from . import answers, composite, prompt_files, skill_spec
 from .config import (ANALYSIS_REPORT_HEAD, DOMAIN_JOBS_DIRNAME, DOMAIN_JOBS_KEEP, DOMAIN_MODEL, DOMAIN_QUOTE_LINES, DOMAIN_RESELECT_MAX,
-                     DOMAIN_STEPS_MAX, DOMAIN_SYNTAX_LINES, DOMAIN_TURNS_MAX, NUM_CTX, REPLY_ARGS_CHARS, REPLY_THOUGHT_CHARS,
+                     DOMAIN_STEPS_MAX, DOMAIN_SYNTAX_LINES, DOMAIN_TURNS_MAX, GUARD_DENIED_TAG, NUM_CTX, REPLY_ARGS_CHARS, REPLY_THOUGHT_CHARS,
                      TOKEN_THRESHOLD, TOOL_RESULT_TOKEN_THRESHOLD, TOOL_SUMMARY_DEFAULT)
 from .jobstore import JobStore
 from .protocol import parse_answers, tool_result_message
@@ -130,6 +131,16 @@ def answered_items(job):
             if a.get("status") == "answered" and 1 <= a.get("item", 0) <= len(items) and str(a["item"]) not in bad]
 
 
+def denied_skills(job):
+    """這個 job 裡被拒絕的技能（照順序、不重複；確認關卡回不同意的，與因此直接記成拒絕的）：同一回合再交辦時交給新的 job
+    （orchestrator._turn_denied；框架討論紀錄第 54 輪的（a））。"""
+    out = []
+    for st in job.get("steps") or []:
+        if st["status"] == "DENIED" and st["skill"] not in out:
+            out.append(st["skill"])
+    return out
+
+
 class DomainSession:
     """start(問題, 子目標, 項目) → job（也存成 job.json）；停在確認關卡時 resume(編號, approve=…)，使用者取消 cancel(編號)。
     registry：orchestrator.load_registry 的結果。fixer：有骨架的技能交給低階的第 1 級修正（None＝預設的模型）。"""
@@ -141,18 +152,20 @@ class DomainSession:
         self.store = JobStore(os.path.join(agent.script_dir, "logs", DOMAIN_JOBS_DIRNAME))
 
     # ---------------------------------------------------------------- 進入點
-    def start(self, question, goal, items, previous=None, attempt=1, earlier=None, background=None, constraints=None, dropped=None, added=None):
+    def start(self, question, goal, items, previous=None, attempt=1, earlier=None, background=None, constraints=None, dropped=None, added=None,
+              denied=None):
         """items：要回答的項目——每一項是使用者的原話（orchestrator 核對過；框架討論紀錄第 27 輪）。previous：同一個問題之前交辦的經過
         （[{"n", "job", "status_text", "note", "steps"}]，orchestrator 從這一回合的紀錄取）。earlier：這一則之前的對話（[{"user", "reply"}]，
         orchestrator._earlier_turns）→【前文】（_context；框架討論紀錄第 28 輪）。background、constraints：使用者說明的背景與要求的限制
         （也是原話，第 32 輪的 U1）；dropped：交辦寫了、不是使用者原話而被 orchestrator 拿掉的項目、背景與限制；added：orchestrator 整句放進
-        項目的問句（第 33 輪的 V1、第 34 輪的 W1b）——這幾樣只記在 job：第一則訊息與提煉的錨點不放，領域 session 照原始問題理解（第 36 輪的 L1）。"""
+        項目的問句（第 33 輪的 V1、第 34 輪的 W1b）——這幾樣只記在 job：第一則訊息與提煉的錨點不放，領域 session 照原始問題理解（第 36 輪的 L1）。
+        denied：使用者這一句話（同一回合）之前的交辦裡拒絕過的技能（orchestrator._turn_denied；第 54 輪）→ job 的 denied_before。"""
         jid = self.store.new_id()
         self.store.prune(DOMAIN_JOBS_KEEP)
         job = {"id": jid, "kind": "domain", "status": "running", "created": _now(), "updated": _now(), "cwd": self.agent.current_cwd,
                "question": question, "goal": (goal or question).strip(), "items": list(items or []),
                "background": list(background or []), "constraints": list(constraints or []), "dropped": list(dropped or []),
-               "added": list(added or []), "attempt": attempt,
+               "added": list(added or []), "attempt": attempt, "denied_before": list(denied or []),
                "previous": list(previous or []), "earlier": list(earlier or []), "context": None, "domains": [], "picks": [], "messages": [], "steps": [], "turns": 0, "form": None, "forms": 0,
                "blocked": [], "sources": "", "need_user": None, "asked": [], "nudged": False, "answers": [], "problems": {}, "result": None}
         job["system"] = self._system()
@@ -301,9 +314,11 @@ class DomainSession:
             if self._same(job, name, " ".join(pending["args"].split())):
                 return None
             action = {"action": self._action(name, pending["args"])}
+            guard = self.agent.guard_check(action)
+            if guard and self._denied_again(job, pending):
+                return None
             if self.agent.state_change_info(action) and self._constraint_check(job, name, pending["args"]):
                 return None
-            guard = self.agent.guard_check(action)
             if guard:
                 self._wait(job, pending, guard)
                 return job
@@ -324,6 +339,20 @@ class DomainSession:
             return None
         self._composite(job, pending, self.reg["domains"][skills[name][0]], name, params, how)
         return None
+
+    def _denied_again(self, job, pending):
+        """使用者這一句話裡拒絕過同一個技能（這個 job 的步驟，或同一回合之前的交辦：job 的 denied_before），這一步又是確認關卡要問的寫法
+        （框架討論紀錄第 54 輪的（a））：不問、不執行，直接記成拒絕（guard 記 asked＝False），說明寫使用者剛剛拒絕過。實測被拒絕之後同一個技能
+        換參數再送（加 --ros2），使用者被問第二次（26b 4／25、e4b 12／140）。不用問的寫法（查詢、--dry-run）不會到這裡。記成拒絕了回 True。"""
+        name = pending["skill"]
+        before = [st for st in job["steps"] if st["status"] == "DENIED" and st["skill"] == name]
+        if not before and name not in job.get("denied_before", []):
+            return False
+        why = _s("denied_again", skill=name, n=before[0]["n"]) if before else _s("denied_again_turn", skill=name)
+        self._tool(job, pending, output=f"{GUARD_DENIED_TAG} {why}", guarded=True)
+        job["steps"][-1]["guard"]["asked"] = False
+        self.store.save(job)
+        return True
 
     def _constraint_check(self, job, skill, args):
         """交辦帶著使用者的限制、這一步會改狀態（state_change_info：不看 /guard 開關）時先交回一次（框架討論紀錄第 49 輪的（G2））：列出限制的

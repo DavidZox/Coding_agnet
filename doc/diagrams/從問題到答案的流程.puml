@@ -107,6 +107,7 @@ repeat
         |主 session 的程式（orchestrator.py）|
         :接回同一步：同意＝執行；
         不同意＝[DENIED] 交給領域 session；
+        同一句話裡拒絕過的技能再選：不再問、直接記成拒絕；
         取消＝照做到的收尾; <<#DAE8FC>>
         |領域 session 的程式（domain_session.py）|
       else (不用)

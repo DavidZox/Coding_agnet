@@ -2,7 +2,7 @@
 第一則訊息（first；每一項是使用者的原話；這一則之前的對話 context、context_archived、context_turn；上一次的經過 previous）、選了領域之後的技能清單（skills 與它的各段：skills_domain、skills_practice、skills_composites、
 composite_entry、param_*、type_*、skills_tools、skills_shared、tool_entry）、選了技能之後的參數表單（form_composite、form_tool；沒過的交回重填
 form_fix、工具的 args 寫法不對 form_fix_tool 與 reject_args_*、重填還是沒過 form_failed）、每一步的結果（step_head、composite_*（程式算的彙整
-composite_totals）、output_head、result_id）、程式擋下的說明（err_*、not_my_tool）、會改狀態的一步先對照交辦的限制（constraint_check，框架討論紀錄第 49 輪）、回報之前對照交辦的限制（report_constraints，第 50 輪）、
+composite_totals）、output_head、result_id）、程式擋下的說明（err_*、not_my_tool）、會改狀態的一步先對照交辦的限制（constraint_check，框架討論紀錄第 49 輪）、回報之前對照交辦的限制（report_constraints，第 50 輪）、使用者這一句話裡拒絕過的技能再選時直接記成拒絕的說明（denied_again、denied_again_turn，第 54 輪）、
 回報的核對沒過（answers_fix、why_ref_unknown、出處 #N 是收據裡的行號時 why_ref_line、出處是這一回合之前的即時狀態、動作或改過的檔案時 why_stale（框架討論紀錄第 42 輪）；其他原因用 harness/domain.md 的 why_*）、回覆不是 JSON（retry、表單的 retry_form）、
 寫到長度上限被截斷（cut）、對話太長時清掉的舊結果（cleared）、提煉時的「想知道什麼」（anchor；使用者前面的話 anchor_earlier）。
 agent_core/composite.py 也用這份：合約沒過的說明（reject_*）、要領域 session 決定的事（need_*）、骨架裡有要確認的動作（guard_in_skill）。
@@ -308,3 +308,9 @@ args 照抄了寫法裡的 {marks}（沒有換成值）
 <!-- @anchor_earlier -->
 
 使用者前面說的（項目裡的指代照這幾句）：{words}
+
+<!-- @denied_again -->
+使用者剛剛拒絕過 {skill}（第 {n} 步）：這一句話裡同一個技能不再問使用者，這一步沒有問、也沒有執行，系統狀態沒有改變。不要換參數再送；照實回報使用者拒絕了，要換做法等使用者下一句話說明。
+
+<!-- @denied_again_turn -->
+使用者在這一句話之前的交辦裡拒絕過 {skill}：這一句話裡同一個技能不再問使用者，這一步沒有問、也沒有執行，系統狀態沒有改變。不要換參數再送；照實回報使用者拒絕了，要換做法等使用者下一句話說明。

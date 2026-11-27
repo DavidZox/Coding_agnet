@@ -460,6 +460,20 @@ def main():
             vid = agent.last_result_id
             assert agent.reply_check(said(f"照 #{vid}，nav2_test 在那份清單裡。")) is None, "看舊存檔的衍生輸出：不交回"
 
+        def t_fixture_send_like_script():
+            # 主對話評測的派工單假工具比照真的腳本（框架討論紀錄第 54 輪）：參數照 parse_args 解析，錯的回腳本的 [ERROR]（不會送；確認關卡對這種不問），
+            # --dry-run 回尚未送出，其他回已送出（文字跟以前一樣）
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("chat_scenarios", os.path.join(PROJECT, "evals", "chat", "scenarios.py"))
+            scen = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(scen)       # 暫存的副本沒有 evals/：照檔案載入（只用標準庫）
+            from skills_system.scripts.workpackage_send_cmd import parse_args
+            send = scen.COMMON_FIXTURES["workpackage_send_cmd.py"]
+            for args in ([], ["auto", "--until-done"], ["--help"]):
+                assert send(args, agent) == parse_args(args)["error"] and send(args, agent).startswith("[ERROR]"), (args, send(args, agent))
+            assert "尚未送出" in send(["auto", "home,a3", "--dry-run"], agent) and "已送出" not in send(["auto", "home,a3", "--dry-run"], agent)
+            assert send(["auto", "home,a3", "--amr", "tb1"], agent) == "[PASS] work package「auto」已送出：站點 home,a3，循環：不循環（只跑一輪），機器人：tb1"
+
         def t_guard_previous():
             # 確認關卡寫出之前做過同樣的動作（框架討論紀錄第 45 輪）：同一個技能、同樣的參數照 actions_index.md 記的寫法比；
             # 沒做過的跟以前一樣，做過兩次寫「一共 2 次」，參數不一樣的不寫；不擋（照樣要確認）
@@ -504,6 +518,7 @@ def main():
                          ("存檔分讀取型與動作型：檔頭記種類、動作另列一區、檢索清單寫之前的 session 與即時狀態、讀回開頭寫事實、存檔之後改過的檔案列出來", t_memory_kinds),
                          ("主 session 的回覆引用了這一回合之前的即時狀態：不交回（問的是現在還是當時由模型看程式寫的事實判斷）", t_memory_reply_no_sendback),
                          ("確認關卡寫出之前做過同樣的動作：同一個技能、同樣的參數；沒做過、參數不一樣的不寫；做過兩次寫一共幾次", t_guard_previous),
+                         ("主對話評測的派工單假工具比照真的腳本：參數錯回腳本的 [ERROR]、--dry-run 回尚未送出、其他回已送出", t_fixture_send_like_script),
                          ("工具的參數每一個都只有反引號（「``」）是沒有參數；跟別的參數寫在一起的照舊", t_args_backticks)]:
             check(name, fn)
     finally:

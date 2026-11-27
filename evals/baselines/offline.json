@@ -5,9 +5,9 @@
   "total": 12
  },
  "chat_selftest": {
-  "label": "工具的參數每一個都只有反引號是沒有參數（t_args_backticks、t_args_backticks_domain）（2026-11-27）",
-  "passed": 23,
-  "total": 23
+  "label": "第 54 輪（評測的派工單假工具比照真的腳本）（2026-11-27）",
+  "passed": 24,
+  "total": 24
  },
  "containers_sandbox": {
   "label": "第 5 步（6958dac）（2026-11-20）",
@@ -20,9 +20,9 @@
   "total": 8
  },
  "domain_selftest": {
-  "label": "ROS 節點的參數與預設值（t_node_params）（2026-11-27）",
-  "passed": 41,
-  "total": 41
+  "label": "第 54 輪（確認關卡被拒絕之後又問）（2026-11-27）",
+  "passed": 43,
+  "total": 43
  },
  "edg_selftest": {
   "label": "單一迴圈：交辦與領域 session（框架討論紀錄 F1～F6）（2026-11-23）",

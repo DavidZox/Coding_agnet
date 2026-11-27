@@ -309,7 +309,7 @@ class DomainMixin:
                                                                                previous=entry["previous"], attempt=entry["n"],
                                                                                earlier=self._earlier_turns(),
                                                                                background=background, constraints=constraints,
-                                                                               dropped=dropped, added=added)
+                                                                               dropped=dropped, added=added, denied=self._turn_denied())
         return self._task_finish(entry, job, before)
 
     def _ask_items(self, items):
@@ -400,6 +400,14 @@ class DomainMixin:
         said = [x["text"] for x in getattr(self, "_user_said", None) or []] + [self.current_task or ""]
         return "\n".join(composite._norm(x) for x in said)
 
+    def _turn_denied(self):
+        """這一回合（使用者這一句話）之前的交辦裡使用者拒絕過的技能（框架討論紀錄第 54 輪的（a））：新的交辦再選同一個、又是要問的寫法時
+        直接記成拒絕，不再問。回答確認關卡不算新的一句話（_reset_domain_turn）。"""
+        out = []
+        for x in self._domain_turn["tasks"]:
+            out += [s for s in x.get("denied") or [] if s not in out]
+        return out
+
     def _previous(self):
         """這一回合之前的交辦 → 領域 session 的「上一次的經過」（每一次的步驟、結果、原因；程式從紀錄取）。"""
         return [{"n": x["n"], "job": x["job"], "status_text": domain_session.STATUS_TEXT.get(x["status"], x["status"] or "—"),
@@ -412,7 +420,7 @@ class DomainMixin:
     def _task_finish(self, entry, job, before, prefix=""):
         """領域 session 的 job → 交回主模型的文字（存成 #編號）；停在確認關卡時設 domain_pending、回等回答的說明。"""
         entry.update(job=job["id"], status=job["status"], steps=domain_session.steps_text(job), note=(job.get("result") or {}).get("note") or "",
-                     answered=domain_session.answered_items(job))
+                     answered=domain_session.answered_items(job), denied=domain_session.denied_skills(job))
         if job["status"] == "need_user":
             need = job["need_user"]
             self.domain_pending = {"job": job["id"], "kind": need["kind"], "question": need.get("question") or "", "entry": entry, "before": before}

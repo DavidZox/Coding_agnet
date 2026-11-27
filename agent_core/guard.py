@@ -136,10 +136,10 @@ class GuardMixin:
     def _guard_exempt(self, skill, args):
         """被擋的技能在這些參數下其實不會改變狀態：workpackage_send --dry-run、docker_runcmd／host_runcmd 的唯讀指令、各技能的查詢用法。
         參數一律照腳本自己的解析（parse_args）判斷——以前關卡自己再解析一次，跟腳本不一致時會被繞過（`WP1 a3 --desc --dry-run` 真的送出）。"""
-        if skill == "workpackage_send":                # 真的 --dry-run 才不送（照腳本的解析：`--desc --dry-run` 這種被當成值的不算）
-            from skills_system.scripts.workpackage_send_cmd import parse_args as send_args
-            p = send_args(args)
-            return not p.get("error") and bool(p.get("dry_run"))
+        if skill == "workpackage_send":                # 真的 --dry-run 才不送（照腳本的解析：`--desc --dry-run` 這種被當成值的不算）；
+            from skills_system.scripts.workpackage_send_cmd import parse_args as send_args   # 解析就錯的腳本自己會拒絕、不會送，不用問
+            p = send_args(args)                                                               # （框架討論紀錄第 54 輪的（b）；其他技能也是這樣）
+            return bool(p.get("error")) or bool(p.get("dry_run"))
         if skill == "docker_runcmd":                   # 指令照腳本的解析取（以前關卡自己解析：沒加引號的 `mkdir test` 被當成「容器 mkdir、指令 test」放行）
             p = self._guard_parse(skill, args)
             if p.get("error"):                         # 參數錯、不會自己結束的指令：腳本不執行，不必問

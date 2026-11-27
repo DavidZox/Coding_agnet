@@ -166,6 +166,21 @@ def _docker_runcmd(args, agent):
     return f"[PASS] 容器 '{container}' 內 `{command}` 執行完成:\n{out}\n/root{marker}"
 
 
+
+def _workpackage_send(args, agent):
+    """比照真實腳本（框架討論紀錄第 54 輪）：參數照 workpackage_send 的 parse_args 解析——錯的回腳本的 [ERROR]、不會送（確認關卡對解析錯的
+    不問，假工具要跟腳本一樣拒絕；以前不管參數都回已送出，e4b 的 `auto --until-done` 被當成送出），--dry-run 回尚未送出；其他照舊回已送出。"""
+    from skills_system.scripts.workpackage_send_cmd import parse_args
+    p = parse_args(list(args))
+    if p["error"]:
+        return p["error"]
+    head = f"work package「{args[0] if args else 'auto'}」"
+    where = args[1] if len(args) > 1 else "?"
+    robot = args[args.index("--amr") + 1] if "--amr" in args and args.index("--amr") + 1 < len(args) else "交給 distribute 挑"
+    if p["dry_run"]:
+        return f"[PASS] {head}dry-run（尚未送出）：站點 {where}，機器人：{robot}\n拿掉 --dry-run 才會真正送出（系統會先請使用者確認）。"
+    return f"[PASS] {head}已送出：站點 {where}，循環：不循環（只跑一輪），機器人：{robot}"
+
 COMMON_FIXTURES = {
     "docker_containers_cmd.py": lambda args, agent: containers_table(),
     "docker_open_cmd.py": _docker_open,
@@ -174,9 +189,7 @@ COMMON_FIXTURES = {
     "ROS2_topic_list_cmd.py": _topic_list,
     "ROS2_node_list_cmd.py": _node_list,
     "ROS2_node_info_cmd.py": _node_info,
-    "workpackage_send_cmd.py": lambda args, agent: (
-        f"[PASS] work package「{args[0] if args else 'auto'}」已送出：站點 {args[1] if len(args) > 1 else '?'}，循環：不循環（只跑一輪），"
-        f"機器人：{args[args.index('--amr') + 1] if '--amr' in args and args.index('--amr') + 1 < len(args) else '交給 distribute 挑'}"),
+    "workpackage_send_cmd.py": _workpackage_send,
     "workpackage_status_cmd.py": lambda args, agent: "[PASS] 目前沒有執行中的 work package。",
 }
 # 在臨時副本裡真的執行的腳本（不碰外部世界）
